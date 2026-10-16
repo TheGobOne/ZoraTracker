@@ -63,7 +63,7 @@ function makeInitial(): TrackerState {
   const levels = Array.from({ length: 9 }, (_, i) => i)
   return {
     version: 1,
-    quest: 'unknown',
+    quest: 'first',
     triforces: Array(8).fill(false),
     boxes: levels.map(() => Array(BOXES_PER_LEVEL).fill(0)),
     inventory: {},

@@ -1,20 +1,7 @@
 @import 'tailwindcss';
 
 @theme inline {
-  --color-background: #0a0c08;
-  --color-panel: #12150e;
-  --color-panel-2: #1a1e14;
-  --color-line: #2b3220;
-  --color-foreground: #e8ead8;
-  --color-muted: #8a917a;
-  --color-accent: #ef8300;
-  --color-gold: #f2c94c;
-  --color-good: #4ade80;
-  --color-bad: #e5484d;
-  --color-water: #5b8def;
-
   --font-pixel: var(--font-pixel-src), ui-monospace, monospace;
-  --font-sans: var(--font-body-src), ui-monospace, monospace;
 }
 
 :root {
@@ -23,69 +10,44 @@
 
 html,
 body {
-  background: var(--color-background);
-  color: var(--color-foreground);
+  margin: 0;
+  background: #000;
+  color: #ffa500;
 }
 
-body {
-  font-family: var(--font-body-src), ui-monospace, monospace;
-  font-size: 13px;
-  -webkit-font-smoothing: antialiased;
+.zt {
+  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1;
 }
 
-.pixelated {
+.px {
   image-rendering: pixelated;
 }
 
-button:focus-visible,
-textarea:focus-visible,
-input:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
-}
-
-.panel {
-  background: var(--color-panel);
-  border: 1px solid var(--color-line);
-}
-
-.section-title {
-  font-family: var(--font-pixel-src), monospace;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid var(--color-line);
-  background: var(--color-panel-2);
-  color: var(--color-foreground);
-  font-size: 12px;
-  line-height: 1.4;
+.zt button {
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
-}
-.btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-.btn[aria-pressed='true'] {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  background: #231a08;
 }
 
-.scroll-thin::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.zt button:focus-visible,
+.zt textarea:focus-visible,
+.zt input:focus-visible,
+[role='dialog'] button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
 }
-.scroll-thin::-webkit-scrollbar-thumb {
-  background: var(--color-line);
+
+.orange-btn {
+  position: absolute;
+  background: #000;
+  color: #ffa500;
+  border: 1px solid #888;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.orange-btn:hover {
+  background: #2a1a00;
 }

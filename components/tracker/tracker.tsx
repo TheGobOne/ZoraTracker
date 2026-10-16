@@ -1,34 +1,58 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { TrackerProvider } from '@/lib/tracker-state'
-import { Blockers } from './blockers'
-import { DungeonItems } from './dungeon-items'
-import { DungeonTracker } from './dungeon-tracker'
-import { HudBar } from './hud-bar'
-import { Inventory } from './inventory'
-import { Notes } from './notes'
-import { OverworldMap } from './overworld-map'
+import { DungeonTracker } from './dungeon'
+import { Header } from './header'
+import { ItemProgress, Legend, OverworldMap } from './overworld'
+import { PickerProvider } from './picker'
+import { Blockers, Notes, OptionsButton } from './side-panels'
 import { Timeline } from './timeline'
 
+const WIDTH = 768
+const HEIGHT = 967
+
 export function Tracker() {
+  const [scale, setScale] = useState(1)
+  const [coords, setCoords] = useState(false)
+
+  useEffect(() => {
+    const fit = () => setScale(Math.max(0.5, Math.min(window.innerWidth / WIDTH, Math.max(window.innerHeight / HEIGHT, 1))))
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [])
+
   return (
     <TrackerProvider>
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-3 p-3">
-        <HudBar />
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,620px)]">
-          <div className="flex min-w-0 flex-col gap-3">
-            <DungeonItems />
-            <Inventory />
-            <OverworldMap />
-          </div>
-          <div className="flex min-w-0 flex-col gap-3">
+      <PickerProvider>
+        <div style={{ width: WIDTH * scale, height: HEIGHT * scale, margin: '0 auto' }}>
+          <div
+            className="zt"
+            style={{
+              position: 'relative',
+              width: WIDTH,
+              height: HEIGHT,
+              background: '#000',
+              color: '#ffa500',
+              overflow: 'hidden',
+              transform: `scale(${scale})`,
+              transformOrigin: '0 0',
+              userSelect: 'none',
+            }}
+          >
+            <Header coords={coords} onCoords={setCoords} />
+            <OverworldMap coords={coords} />
+            <Legend />
+            <ItemProgress />
             <DungeonTracker />
             <Blockers />
             <Notes />
+            <Timeline />
+            <OptionsButton />
           </div>
         </div>
-        <Timeline />
-      </div>
+      </PickerProvider>
     </TrackerProvider>
   )
 }

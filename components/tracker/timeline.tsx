@@ -1,116 +1,125 @@
 'use client'
 
 import { MAX_SPOTS } from '@/lib/data'
-import { formatTime, useElapsed, useTracker, type TimelineEvent } from '@/lib/tracker-state'
+import { useElapsed, useTracker, type TimelineEvent } from '@/lib/tracker-state'
+import { at } from './header'
+import { ItemIcon, Sprite } from './sprite'
 
-const KIND_COLOR: Record<TimelineEvent['kind'], string> = {
-  triforce: '#f2c94c',
-  item: '#ef8300',
-  dungeon: '#cfd6e3',
-  sword: '#5b8def',
-  road: '#e879b0',
+const TOP = 842
+const HEIGHT = 125
+const X0 = 16
+const PX_PER_MIN = 6.1
+const BASE_Y = TOP + 112
+const CURVE_H = 70
+const MARKER_LANES = [-6, -32, -58]
+
+const xAt = (ms: number) => Math.min(X0 + (ms / 60000) * PX_PER_MIN, 754)
+
+function EventMarker({ event }: { event: TimelineEvent }) {
+  switch (event.kind) {
+    case 'triforce':
+      return <Sprite sheet="icons10" index={1} scale={2} />
+    case 'item':
+      return <ItemIcon code={event.label} />
+    default: {
+      const color = event.kind === 'dungeon' ? '#ffff00' : event.kind === 'road' ? '#da70d6' : '#e6e6e6'
+      return (
+        <div
+          style={{
+            width: 16,
+            height: 22,
+            background: color,
+            color: '#000',
+            fontWeight: 700,
+            fontSize: event.label.length > 1 ? 9 : 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {event.label}
+        </div>
+      )
+    }
+  }
 }
-
-const VIEW_W = 1000
-const VIEW_H = 120
-const PAD_X = 16
-const AXIS_Y = 98
 
 export function Timeline() {
   const { state } = useTracker()
   const elapsed = useElapsed()
+  const max = MAX_SPOTS[state.quest === 'unknown' ? 'first' : state.quest]
 
-  // The axis grows in 20 minute steps, with a 2 hour floor like the desktop tracker.
-  const lastEvent = state.events.reduce((m, e) => Math.max(m, e.t), 0)
-  const spanMin = Math.max(120, Math.ceil(Math.max(elapsed, lastEvent) / 60000 / 20) * 20)
-  const x = (ms: number) => PAD_X + (ms / 60000 / spanMin) * (VIEW_W - PAD_X * 2)
+  const points = state.owHistory.map((p) => `${xAt(p.t)},${BASE_Y - Math.min(1, p.n / max) * CURVE_H}`)
+  const last = state.owHistory[state.owHistory.length - 1]
+  const path = points.length
+    ? `${X0},${BASE_Y} ${points.join(' ')} ${xAt(Math.max(elapsed, last?.t ?? 0))},${BASE_Y - Math.min(1, (last?.n ?? 0) / max) * CURVE_H}`
+    : ''
 
-  const total = MAX_SPOTS[state.quest]
-  const history = [{ t: 0, n: 0 }, ...state.owHistory]
-  const linePoints =
-    history.length > 1
-      ? [...history, { t: Math.max(elapsed, lastEvent), n: history[history.length - 1].n }]
-          .map((p) => `${x(p.t)},${AXIS_Y - Math.min(1, p.n / total) * 70}`)
-          .join(' ')
-      : ''
-
-  const ticks: number[] = []
-  for (let m = 0; m <= spanMin; m += 20) ticks.push(m)
+  const progressAt = (t: number) => {
+    let n = 0
+    for (const p of state.owHistory) if (p.t <= t) n = p.n
+    return Math.min(1, n / max) * CURVE_H
+  }
 
   return (
-    <section className="panel p-3" aria-labelledby="timeline-title">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 id="timeline-title" className="section-title">
-          Timeline
-        </h2>
-        <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
-          {(Object.keys(KIND_COLOR) as TimelineEvent['kind'][]).map((k) => (
-            <li key={k} className="flex items-center gap-1.5 capitalize">
-              <span className="inline-block size-2" style={{ background: KIND_COLOR[k] }} />
-              {k === 'road' ? 'any road' : k === 'sword' ? 'sword cave' : k}
-            </li>
-          ))}
-          <li className="flex items-center gap-1.5">
-            <span className="inline-block h-0.5 w-3 bg-good" />
-            overworld progress
-          </li>
-        </ul>
-      </div>
-
+    <>
+      <div style={{ ...at(0, TOP, 768, HEIGHT), background: '#000' }} />
       <svg
-        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-        className="h-auto w-full border border-line bg-black"
         role="img"
-        aria-label={`Run timeline with ${state.events.length} events`}
+        aria-label="Run timeline"
+        width={768}
+        height={HEIGHT}
+        style={{ ...at(0, TOP), pointerEvents: 'none' }}
       >
-        {ticks.map((m) => (
-          <g key={m}>
-            <line x1={x(m * 60000)} x2={x(m * 60000)} y1={20} y2={AXIS_Y} stroke="#1f2417" />
-            <text x={x(m * 60000)} y={VIEW_H - 4} fill="#8a917a" fontSize="10" textAnchor="middle">
-              {m === 0 ? '0' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`}
-            </text>
-          </g>
-        ))}
-        <line x1={PAD_X} x2={VIEW_W - PAD_X} y1={AXIS_Y} y2={AXIS_Y} stroke="#2b3220" />
-
-        {linePoints && (
-          <polyline points={linePoints} fill="none" stroke="#4ade80" strokeWidth="1.5" opacity="0.7" />
-        )}
-
-        {state.events.map((e, i) => {
-          const cx = x(e.t)
-          // Stagger labels so close-together events stay readable.
-          const cy = 18 + (i % 4) * 16
+        <line x1={X0} x2={X0 + 120 * PX_PER_MIN} y1={BASE_Y - TOP + 4} y2={BASE_Y - TOP + 4} stroke="#ffa500" strokeWidth={2} />
+        {Array.from({ length: 25 }, (_, i) => {
+          const x = X0 + i * 5 * PX_PER_MIN
+          const major = i % 4 === 0
           return (
             <g key={i}>
-              <title>{`${formatTime(e.t)}  ${e.label}`}</title>
-              <line x1={cx} x2={cx} y1={cy} y2={AXIS_Y} stroke={KIND_COLOR[e.kind]} opacity="0.4" />
-              <rect x={cx - 9} y={cy - 8} width="18" height="14" fill="#0a0c08" stroke={KIND_COLOR[e.kind]} />
-              <text
-                x={cx}
-                y={cy + 3}
-                fill={KIND_COLOR[e.kind]}
-                fontSize="8"
-                textAnchor="middle"
-                fontFamily="monospace"
-              >
-                {e.label}
-              </text>
+              <line x1={x} x2={x} y1={BASE_Y - TOP + 4} y2={BASE_Y - TOP + (major ? 12 : 8)} stroke="#ffa500" strokeWidth={2} />
+              {major && i > 0 && (
+                <text x={x} y={BASE_Y - TOP + 22} fill="#ffa500" fontSize={11} textAnchor="middle">
+                  {`${Math.floor(i / 12)}:${String((i % 12) * 5).padStart(2, '0')}`}
+                </text>
+              )}
             </g>
           )
         })}
-
-        {elapsed > 0 && (
-          <line x1={x(elapsed)} x2={x(elapsed)} y1={4} y2={AXIS_Y} stroke="#ef8300" strokeDasharray="3 3" />
+        {path && (
+          <polyline
+            points={path
+              .split(' ')
+              .map((p) => {
+                const [x, y] = p.split(',')
+                return `${x},${Number(y) - TOP}`
+              })
+              .join(' ')}
+            fill="none"
+            stroke="#2fb8b0"
+            strokeWidth={2}
+          />
+        )}
+        {state.timer.startedAt !== null && (
+          <line x1={xAt(elapsed)} x2={xAt(elapsed)} y1={0} y2={HEIGHT - 20} stroke="#4aa3ff" strokeDasharray="3 3" />
         )}
       </svg>
-
-      {state.events.length === 0 && (
-        <p className="mt-2 text-[11px] text-muted">
-          Start the timer, then triforce pieces, dungeon items, dungeons found and caves will be
-          logged here as you mark them.
-        </p>
-      )}
-    </section>
+      <div style={{ ...at(4, TOP + 112 - CURVE_H), fontSize: 10, color: '#2fb8b0', writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+        OW Completion
+      </div>
+      {state.events.map((event, i) => {
+        const lane = MARKER_LANES[i % MARKER_LANES.length]
+        const y = BASE_Y - progressAt(event.t) + lane - 14
+        return (
+          <div
+            key={`${event.t}-${i}`}
+            style={{ ...at(xAt(event.t) - 10, Math.max(TOP + 2, y)), display: 'flex', justifyContent: 'center' }}
+            title={`${event.kind}: ${event.label}`}
+          >
+            <EventMarker event={event} />
+          </div>
+        )
+      })}
+    </>
   )
 }
