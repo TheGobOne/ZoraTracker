@@ -563,9 +563,20 @@ let MakeRemainderSummaryDisplay() =   // Spot Summary
     sp.Children.Add(row) |> ignore
 
     let row = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+    let allBoxes = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
+    let itemCollected(id) = (allBoxes |> Array.exists (fun box -> box.CellCurrent() = id && box.IsDone())) || TrackerModel.mapCollectedCount.[id] > 0
+    let letterCollected = itemCollected(TrackerModel.ITEMS.LETTER)
+    // sword cave tiles (15 = 1st sword, 14 = 2nd, 13 = 3rd) dim once that sword has been collected
+    let swordCollected(tile) =
+        match tile with
+        | 15 -> itemCollected(TrackerModel.ITEMS.WOODSWORD) || itemCollected(TrackerModel.ITEMS.PROGRESSIVESWORD) || TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword.Value()
+        | 14 -> itemCollected(TrackerModel.ITEMS.WHITESWORD) || TrackerModel.startingItemsAndExtras.PlayerHasWhiteSword.Value()
+        | 13 -> itemCollected(TrackerModel.ITEMS.MAGICALSWORD) || TrackerModel.startingItemsAndExtras.PlayerHasMagicalSword.Value() || TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value()
+        | _ -> false
     for i in [9;10;11;12;13;14;15;30;31] do
-        let icon = Graphics.BMPtoImage(MapStateProxy(i).DefaultInteriorBmp())
-        if not(TrackerModel.mapSquareChoiceDomain.CanAddUse(i)) then
+        // the letter uses the same icon as the item menus, and dims once the letter has been collected
+        let icon = if i = 30 then Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.LETTER, None)) else Graphics.BMPtoImage(MapStateProxy(i).DefaultInteriorBmp())
+        if not(TrackerModel.mapSquareChoiceDomain.CanAddUse(i)) || (i = 30 && letterCollected) || swordCollected(i) then
             icon.Opacity <- OPA
         row.Children.Add(b icon) |> ignore
     sp.Children.Add(row) |> ignore
@@ -691,9 +702,18 @@ let MakeRemainderSummaryDisplay() =   // Spot Summary
     for multi in [28; 29; 32; 33; 34] do
         let leftrow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Right, Height=HEIGHT)
         let rightrow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Left, Height=HEIGHT)
+        // potions: show the potion item icon, and grey one out for each potion collected in the tracker (item boxes or map marker icons)
+        let isPotion = (multi = 34)
+        let potionsCollected =
+            if isPotion then
+                let boxes = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
+                let inBoxes = boxes |> Array.sumBy (fun box -> if (box.CellCurrent() = TrackerModel.ITEMS.BLUEPOTION || box.CellCurrent() = TrackerModel.ITEMS.REDPOTION) && box.IsDone() then 1 else 0)
+                inBoxes + TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.BLUEPOTION] + TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.REDPOTION]
+            else 0
+        let usedCount = if isPotion then max (TrackerModel.mapSquareChoiceDomain.NumUses(multi)) potionsCollected else TrackerModel.mapSquareChoiceDomain.NumUses(multi)
         for i = 0 to TrackerModel.mapSquareChoiceDomain.MaxUses(multi)-1 do
-            let icon = Graphics.BMPtoImage(MapStateProxy(multi).DefaultInteriorBmp())
-            if not(i >= TrackerModel.mapSquareChoiceDomain.NumUses(multi)) then
+            let icon = if isPotion then Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.BLUEPOTION, None)) else Graphics.BMPtoImage(MapStateProxy(multi).DefaultInteriorBmp())
+            if not(i >= usedCount) then
                 icon.Opacity <- OPA
                 rightrow.Children.Add(b icon) |> ignore
             else

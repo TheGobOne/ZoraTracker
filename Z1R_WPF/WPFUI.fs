@@ -80,9 +80,11 @@ let decorIconBmp(item:int) : System.Drawing.Bitmap =
                 let B = 3
                 let w, h = src.Width, src.Height
                 let dst = new System.Drawing.Bitmap(w + 2*B, h + 2*B)
+                // the old potion/letter icons have a transparent background, so every opaque pixel (even a dark one) gets the black outline
+                let isOldIcon = TrackerModelOptions.UseOldPotionLetterIcons.Value && (item = 15 || item = 16 || item = 17)
                 let isInk(x, y) = 
                     let p = src.GetPixel(x, y)
-                    p.A > 0uy && (int p.R + int p.G + int p.B) > 40
+                    p.A > 0uy && (isOldIcon || (int p.R + int p.G + int p.B) > 40)
                 for x = 0 to w-1 do
                     for y = 0 to h-1 do
                         if isInk(x, y) then
@@ -173,6 +175,7 @@ let drawRoutesToImpl(routeDestinationOption, point, i, j, drawRouteMarks, maxBol
                         else
                             interestingButInaccesible.Add(i,j)
     let mutable lightUpDestinations = false
+    OverworldRouteDrawing.specificTargetMode <- (match routeDestinationOption with | Some _ -> true | None -> false)
     match routeDestinationOption with
     | Some(RouteDestination.OW_MAP(spots)) ->
         for x,y in spots do
@@ -230,6 +233,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             | _ -> failwith "bad load data at root.Overworld.Quest"
         | _ -> failwith "bad/unsupported (owMapNum,loadData)"
     let owMapBIs = owMapBMPs |> Array2D.map Graphics.BMPToBI
+    let owMapBIsRef = ref owMapBIs   // swapped when the user switches the overworld template (1st/2nd/mixed) from the 1Q/2Q menu
     do! showProgress("after ow map load")
     if owMapNum < 0 || owMapNum > 4 then
         failwith "bad owMapNum"
@@ -308,8 +312,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     let owLocatorTileRectangles = Array2D.zeroCreate 16 8
     let redrawOWCircle = ref(fun (_x,_y) -> ())
     let hideFirstQuestCheckBox, hideSecondQuestCheckBox, moreFQSQoptionsButton = MakeFQSQStuff(cm, isMixed, owLocatorTileRectangles, redrawOWCircle)
-    if isMixed then
-        layout.AddHideQuestCheckboxes(hideFirstQuestCheckBox, hideSecondQuestCheckBox)
+    // (in mixed quest, the Hide 1st/2nd Quest checkboxes now live in the bottom right of the 1Q/2Q popup menu instead of on the main window)
 
     let mutable toggleBookShieldCheckBox : CheckBox = null
     let mutable bookIsAtlasCheckBox : CheckBox = null
@@ -373,9 +376,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     let X_OPACITY = Graphics.X_OPACITY
     let owOpaqueMapGrid = makeGrid(16, 8, int OMTW, 11*3)
     owOpaqueMapGrid.IsHitTestVisible <- false  // do not let this layer see/absorb mouse interactions
+    let owOpaqueImages : Image[,] = Array2D.zeroCreate 16 8
     for i = 0 to 15 do
         for j = 0 to 7 do
             let image = Graphics.BItoImage(owMapBIs.[i,j])
+            owOpaqueImages.[i,j] <- image
             let c = new Canvas(Width=OMTW, Height=float(11*3))
             canvasAdd(c, image, 0., 0.)
             gridAdd(owOpaqueMapGrid, c, i, j)
@@ -404,7 +409,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     canvasAdd(overworldCanvas, owDarkeningMapGrid, 0., 0.)
 
     // layer to place 'hiding' icons - dynamic darkening icons that are below route-drawing but above the previous layers
-    if isMixed then // HFQ/HSQ
+    do // HFQ/HSQ (created for every overworld template, since the template can be switched to mixed from the 1Q/2Q menu)
         let owHidingMapGrid = makeGrid(16, 8, int OMTW, 11*3)
         let owHidingMapGridCanvases = Array2D.zeroCreate 16 8
         owHidingMapGrid.IsHitTestVisible <- false  // do not let this layer see/absorb mouse interactions
@@ -541,6 +546,32 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         let image = Graphics.BItoImage(owMapBIs.[i,j])
         image.Opacity <- 0.001
         image
+        )
+    // Ctrl+Z undoes the most recent overworld tile marking (made from the tile popup)
+    let lastTileChange : (int*int*int) option ref = ref None
+    System.Windows.EventManager.RegisterClassHandler(typeof<System.Windows.Window>, System.Windows.Input.Keyboard.PreviewKeyDownEvent,
+        System.Windows.Input.KeyEventHandler(fun _ ea ->
+            if ea.Key = System.Windows.Input.Key.Z && System.Windows.Input.Keyboard.Modifiers = System.Windows.Input.ModifierKeys.Control
+                    && not popupIsActive && not (ea.OriginalSource :? System.Windows.Controls.TextBox) then
+                match lastTileChange.Value with
+                | Some(ui,uj,orig) ->
+                    lastTileChange.Value <- None
+                    ea.Handled <- true
+                    if TrackerModel.overworldMapMarks.[ui,uj].AttemptToSet(orig) then
+                        OptionsMenu.requestRedrawOverworldEvent.Trigger()
+                | None -> ()))
+    // when the overworld template is switched (e.g. 1st quest -> mixed) from the 1Q/2Q menu, show that template's map art too
+    TrackerModel.overworldQuestChanged.Publish.Add(fun _ ->
+        let n = TrackerModel.owInstance.Quest.AsInt()
+        if n >= 0 && n <= 3 then
+            try
+                let newBIs = Graphics.overworldMapBMPs(n) |> Array2D.map Graphics.BMPToBI
+                owMapBIsRef.Value <- newBIs
+                for i = 0 to 15 do
+                    for j = 0 to 7 do
+                        owOpaqueImages.[i,j].Source <- newBIs.[i,j]
+                        owMapDummyImages.[i,j].Source <- newBIs.[i,j]
+            with _ -> ()
         )
     for i = 0 to 15 do
         for j = 0 to 7 do
@@ -765,6 +796,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     if not(isLegalHere(currentState)) then
                         Graphics.ErrorBeepWithReminderLogText("Tried to mark Armos on an overworld tile other than the 5 possible Armos screens")
                     elif TrackerModel.overworldMapMarks.[i,j].AttemptToSet(currentState) then
+                        lastTileChange.Value <- Some(i,j,originalState)
                         if originalState<>TrackerModel.MapSquareChoiceDomainHelper.DARK_X && originalState <> -1 then  
                             // remind destructive changes
                             RemindOverworldOverwrites(i, j, originalState, currentState, spokenOWTiles, AsyncBrieflyHighlightAnOverworldLocation(i,j))
@@ -788,7 +820,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             let GCOL = 9
             let ST = CustomComboBoxes.borderThickness
             let gridWidth = float(GCOL*(7*3+2*int ST)+int ST)   // cells are 21 wide so the item icons can be shown at full size
-            let tileImage = Graphics.BItoImage(owMapBIs.[i,j])
+            let tileImage = Graphics.BItoImage(owMapBIsRef.Value.[i,j])
             let activatePopup(activationDelta) =
                 // Recompute GROW/GCOUNT live on each popup call so they always match
                 // gridElementsSelectablesAndIDs, which is also built live from the current option value.
@@ -809,7 +841,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 let originalState = TrackerModel.overworldMapMarks.[i,j].Current()
                 let typicalGESAI(n) : FrameworkElement*_*_ =
                     let isSelectable = ((n = originalState) || TrackerModel.mapSquareChoiceDomain.CanAddUse(n)) && isLegalHere(n)
-                    let img = Graphics.BMPtoImage(MapStateProxy(n).DefaultInteriorBmp())   // fresh image each popup; cell is wider than the 15px icon, so center it
+                    let isSwordTile = (n = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 || n = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || n = TrackerModel.MapSquareChoiceDomainHelper.SWORD3)
+                    // the sword cave icons are shown in the menu without their brown background, with white numbers
+                    let tileBmp = if isSwordTile then Graphics.swordMenuBmp(MapStateProxy(n).DefaultInteriorBmp()) else MapStateProxy(n).DefaultInteriorBmp()
+                    let img = Graphics.BMPtoImage(tileBmp)   // fresh image each popup; cell is wider than the 15px icon, so center it
                     let cell = new Canvas(Width=7.*3., Height=9.*3.)
                     canvasAdd(cell, img, 3., 0.)
                     (cell :> FrameworkElement), isSelectable, n
@@ -821,7 +856,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 let swordIconCell(ident) : FrameworkElement*bool*int =
                     // the swords are 15x27 cave-style icons; the dungeon items are shown at full 21x21 size (without the black outline, which is only for the map)
                     let isSword = (ident = TrackerModel.ITEMS.PROGRESSIVESWORD || ident = TrackerModel.ITEMS.WHITESWORD4)
-                    let bmp = if isSword then decorIconBmp ident else decorSourceBmp ident
+                    let bmp = if isSword then Graphics.swordMenuBmp(decorIconBmp ident) else decorSourceBmp ident
                     let img = Graphics.BMPtoImage(bmp)
                     img.Stretch <- Stretch.Uniform
                     img.Width <- (if isSword then 15. else 21.)
@@ -853,14 +888,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     yield typicalGESAI(TrackerModel.MapSquareChoiceDomainHelper.HINT_SHOP)
                     // rows 4-6: dungeon items (decorative icons, in item-menu order from the ladder to the heart container), then the personal preference markers, Don't Care and Unmarked
                     for ident in [ TrackerModel.ITEMS.LADDER; TrackerModel.ITEMS.POWERBRACELET; TrackerModel.ITEMS.RECORDER; TrackerModel.ITEMS.RAFT; TrackerModel.ITEMS.BOW
-                                   TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.KEY
-                                   TrackerModel.ITEMS.WAND; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG
+                                   TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.WAND
+                                   TrackerModel.ITEMS.KEY; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG
                                    TrackerModel.ITEMS.BOOKSHIELD; TrackerModel.ITEMS.SHIELD; TrackerModel.ITEMS.MEAT; TrackerModel.DECOR_BOMB; TrackerModel.ITEMS.OLDKEY
                                    TrackerModel.ITEMS.BLUEPOTION; TrackerModel.ITEMS.LETTER; TrackerModel.ITEMS.HEARTCONTAINER; TrackerModel.ITEMS.BOMBUPGRADE ] do
                         yield swordIconCell(ident)
-                    if TrackerModelOptions.PersonalPrefMarkersEnabled.Value then
-                        yield typicalGESAI(TrackerModel.MapSquareChoiceDomainHelper.PERSONAL_PREF_1)
-                        yield typicalGESAI(TrackerModel.MapSquareChoiceDomainHelper.PERSONAL_PREF_2)
                     |]
                 // Don't Care and Unmarked always end the grid: holes pad the gap so they are the last two cells of the last row
                 let clearIconsCell : FrameworkElement*bool*int =
@@ -869,13 +901,17 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         cell.Children.Add(new System.Windows.Shapes.Line(X1=x1, Y1=y1, X2=x2, Y2=y2, Stroke=Brushes.Red, StrokeThickness=3.5, StrokeStartLineCap=PenLineCap.Round, StrokeEndLineCap=PenLineCap.Round)) |> ignore
                     (cell :> FrameworkElement), true, CLEAR_ICONS
                 let tailCells = [| clearIconsCell; darkXCell; unmarkedCell |]
-                let shopsOnTop = TrackerModelOptions.Overworld.ShopsFirst.Value // start with shops, rather than dungeons, on top of grid
-                let bodyCells = if shopsOnTop then Array.append bottomRows topRows else Array.append topRows bottomRows
+                let bodyCells = Array.append topRows bottomRows
                 let paddedCount = ((bodyCells.Length + tailCells.Length + GCOL - 1) / GCOL) * GCOL
                 let GROW = paddedCount / GCOL
                 let GCOUNT = GCOL*GROW
                 let gridElementsSelectablesAndIDs = Array.concat [ bodyCells; Array.create (paddedCount - bodyCells.Length - tailCells.Length) hole; tailCells ]
-                let originalStateIndex = gridElementsSelectablesAndIDs |> Array.findIndex (fun (_,_,s) -> s = originalState)
+                // the tile's current state might not be offered in this menu (e.g. a potion shop / letter / other state set by a hotkey or an older save);
+                // fall back to the 'Unmarked' cell rather than crashing
+                let originalStateIndex =
+                    match gridElementsSelectablesAndIDs |> Array.tryFindIndex (fun (_,_,s) -> s = originalState) with
+                    | Some idx -> idx
+                    | None -> gridElementsSelectablesAndIDs |> Array.findIndex (fun (_,_,s) -> s = -1)
                 if gridElementsSelectablesAndIDs.Length <> GCOUNT then
                     failwith "bad ow grid tile layout"
                 async {
@@ -1051,7 +1087,30 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             do! SetNewValue(state, originalState)
                             popupIsActive <- false
                         } |> Async.StartImmediate
-                    | None -> ()
+                    | None -> 
+                        // hotkey for a dungeon-item marker icon: toggles it on this tile, exactly like picking it from the tile menu
+                        // (Item_X hotkeys work here too; the bomb marker has its own OverworldMarker_Bomb entry)
+                        let markerIdent =
+                            match HotKeys.OverworldMarkerHotKeyProcessor.TryGetValue(ea.Key) with
+                            | Some(ident) -> Some(ident)
+                            | None ->
+                                match HotKeys.ItemHotKeyProcessor.TryGetValue(ea.Key) with
+                                | Some(item) when HotKeys.OverworldMarkerItems |> Array.contains item -> Some(item)
+                                | _ -> None
+                        match markerIdent with
+                        | Some(ident) ->
+                            popupIsActive <- true
+                            ea.Handled <- true
+                            async {
+                                let before = TrackerModel.owSwordIcons.[i,j]
+                                setDecorIcons(i, j, TrackerModel.decorIconsToggle(before, ident))
+                                if TrackerModel.owSwordIcons.[i,j] = before then
+                                    Graphics.ErrorBeepWithReminderLogText(sprintf "A tile can show at most %d marker icons; click one of its icons again to remove it first" TrackerModel.MaxDecorIcons)
+                                if not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty) && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.overworldMapMarks.[i,j].Current() = -1 then
+                                    do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1)
+                                popupIsActive <- false
+                            } |> Async.StartImmediate
+                        | None -> ()
                 )
             if Graphics.shouldInitiallyHideOverworldMap && not isPermEmpty then
                 TrackerModel.overworldMapMarks.[i,j].Set(TrackerModel.MapSquareChoiceDomainHelper.DARK_X)
@@ -1181,12 +1240,25 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         popupIsActive <- false
                         doUIUpdateEvent.Trigger()
                     } |> Async.StartImmediate)
+            // once a hint has been entered, hovering the button shows it in a much larger popup so it is easy to read at a glance
+            btn.MouseEnter.Add(fun _ ->
+                if hint.Value <> "" && not popupIsActive then
+                    let sp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(12.,6.,12.,6.))
+                    sp.Children.Add(new TextBlock(Text=name, FontSize=27., Foreground=Brushes.Orange, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
+                    sp.Children.Add(new TextBlock(Text=System.String.Join("  ", hint.Value.ToCharArray() |> Array.map string), FontSize=45., FontWeight=FontWeights.Bold, 
+                                                    Foreground=Brushes.Orange, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
+                    let big = new Border(Child=sp, Background=Brushes.Black, BorderThickness=Thickness(3.), BorderBrush=Brushes.Gray, IsHitTestVisible=false)
+                    let pos = btn.TranslatePoint(Point(0., btn.ActualHeight + 4.), cm.AppMainCanvas)
+                    layout.ClearTopLayerHovers()
+                    layout.AddTopLayerHover(big, pos.X, pos.Y)
+                )
+            btn.MouseLeave.Add(fun _ -> layout.ClearTopLayerHovers())
             btn
         let hintsPanel = new StackPanel(Orientation=Orientation.Vertical)
         hintsPanel.Children.Add(new TextBox(Text="ZORA Hints", FontSize=10., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
                                             BorderThickness=Thickness(0.), Padding=Thickness(0.), Height=12., TextAlignment=TextAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center)) |> ignore
         let hintButtons = new StackPanel(Orientation=Orientation.Horizontal)
-        hintButtons.Children.Add(makeHintButton("Dead Woods", "LW")) |> ignore
+        hintButtons.Children.Add(makeHintButton("Dead Woods", "DW")) |> ignore
         hintButtons.Children.Add(makeHintButton("Lost Hills", "LH")) |> ignore
         hintsPanel.Children.Add(hintButtons) |> ignore
         canvasAdd(legendCanvas, hintsPanel, UIComponents.legendAfterStartX + 28. + 8., 0.)

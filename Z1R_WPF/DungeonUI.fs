@@ -629,9 +629,9 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                     } |> Async.StartImmediate
             )
     else
-        let fqcb = new Button(Content=new TextBox(Text="FQ",FontSize=12.0,Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false))
+        let fqcb = new Button(Content=new TextBox(Text="1Q",FontSize=12.0,Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false))
         fqcb.ToolTip <- "Show vanilla first quest dungeon outlines"
-        let sqcb = new Button(Content=new TextBox(Text="SQ",FontSize=12.0,Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false))
+        let sqcb = new Button(Content=new TextBox(Text="2Q",FontSize=12.0,Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false))
         sqcb.ToolTip <- "Show vanilla second quest dungeon outlines"
         for button in [fqcb; sqcb] do
             button.MouseEnter.Add(fun _ -> isHoveringFQSQ.Value <- true)
@@ -693,7 +693,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                         HorizontalContentAlignment=HorizontalAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), Padding=Thickness(0.))
     let getLabelChar(level) = if level = 9 then '9' else if TrackerModel.IsHiddenDungeonNumbers() then (char(int 'A' - 1 + level)) else (char(int '0' + level))
     //let mutable justUnmarked = None
-    let mutable justUnmarked : (int * int * Choice<RoomType, MonsterDetail, FloorDropDetail, 'a>) option = None
+    let mutable justUnmarked : (int * int * Choice<RoomType, MonsterDetail, FloorDropDetail, obj>) option = None
     let choice1 (v: RoomType) = Choice1Of4(v) : Choice<RoomType, MonsterDetail, FloorDropDetail, obj>
     let choice2 (v: MonsterDetail) = Choice2Of4(v) : Choice<RoomType, MonsterDetail, FloorDropDetail, obj>
     let choice3 (v: FloorDropDetail) = Choice3Of4(v) : Choice<RoomType, MonsterDetail, FloorDropDetail, obj>
@@ -1649,7 +1649,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             | _ -> ()
 
                             if not ea.Handled then
-                                let urb(hkOpt: Choice<RoomType, MonsterDetail, FloorDropDetail, 'a> option) =
+                                let urb(hkOpt: Choice<RoomType, MonsterDetail, FloorDropDetail, obj> option) =
                                     match justUnmarked, hkOpt with
                                     | Some(x, y, phk), Some(hk) when x = i && y = j && phk = hk ->
                                         unmarkRemarkBehavior(
@@ -1709,7 +1709,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                     with :? System.InvalidCastException -> ()
 
                                 | Some(Choice4Of4 dhkrObj) ->
-                                    match dhkrObj with
+                                    match box dhkrObj with
                                     | :? DoorHotKeyResponse as doorHotKeyResponse ->
                                         ea.Handled <- true
                                         justUnmarked <- Some(i, j, choice4 doorHotKeyResponse)

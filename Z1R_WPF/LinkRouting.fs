@@ -83,15 +83,13 @@ let SetupLinkRouting(cm:CustomComboBoxes.CanvasManager, changeCurrentRouteTarget
                                     " - click highlighted white/magical sword to route to that\n      cave, if location known or hinted\n"+
                                     " - click highlighted open-cave icon to route to all\n     unmarked open caves\n"+
                                     " - click anywhere else to cancel temporary routing\n"+
-                                    "Link will 'chase' an icon in upper right while this is active")
+                                    "Link (next to the Zora logo) will 'chase' the target icon while this is active")
                                     // TODO item progress, route to all burnables/powerbraceletables/etc?
             let b = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.), Child=explanation, Width=444., Height=290., IsHitTestVisible=false)
             canvasAdd(wholeAppCanvas, b, 0., 150.+8.*11.*3.)
 
             // bright, clickable targets
-            let duplicateLinkIcon = new Canvas(Width=30., Height=30., Background=Brushes.Black)
-            canvasAdd(wholeAppCanvas, duplicateLinkIcon, 16.*OMTW-60., 120.)
-            duplicateLinkIcon.Children.Add(duplicateLinkImage()) |> ignore
+            // (no duplicate Link up in the old upper-right spot anymore; the real Link icon next to the logo animates while routing is active)
             let makeIconTargetImpl(w, h, draw, drawLinkTarget, (x, y), routeDest) =
                 let c = new Canvas(Width=w, Height=h, Background=Brushes.Black)
                 draw(c)

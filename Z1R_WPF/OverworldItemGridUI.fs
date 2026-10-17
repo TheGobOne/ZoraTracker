@@ -114,7 +114,7 @@ let FastHintSelector(cm, levelHintIndex, px, py, activationDelta, shouldDescript
         gesai(TrackerModel.HintZone.GRAVE)
         gesai(TrackerModel.HintZone.LAKE)
         gesai(TrackerModel.HintZone.DESERT)
-        null, false, TrackerModel.HintZone.UNKNOWN
+        (new Canvas() :> FrameworkElement), true, TrackerModel.HintZone.UNKNOWN   // the blank cell: select it to clear the hint
         gesai(TrackerModel.HintZone.DEAD_WOODS)
         gesai(TrackerModel.HintZone.NEAR_START)
         gesai(TrackerModel.HintZone.FOREST)
@@ -143,11 +143,9 @@ let FastHintSelector(cm, levelHintIndex, px, py, activationDelta, shouldDescript
         hideLocator()
         showLocatorHintedZone(hz, false)
     let brushes = CustomComboBoxes.ModalGridSelectBrushes(hintyBrush, Brushes.Lime, Brushes.Red, Brushes.DarkGray)
-    let learnDeco, learnX, learnY = learnMoreHintDecoration
     let extraDecorations = [
         (if shouldDescriptionGoOnLeft then descDecoration, -203., 27. else descDecoration, 153., 27.)
         boxDecoration, -3., 27.
-        upcast learnDeco, learnX - px, learnY - py
         ]
     let! r = CustomComboBoxes.DoModalGridSelect(cm, px, py, tile, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (4, 3, 24, 24), 
                                 17., 12., 27., 27., redrawTile, onClick, extraDecorations, brushes, CustomComboBoxes.WarpToCenter, None, "FastHintSelector", Some(0.2))
@@ -295,7 +293,9 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
             c.Children.Clear()
             c.Children.Add(rect) |> ignore
             c.Children.Add(innerc) |> ignore
-            if prop.Value() then
+            // the magical sword box gets its purple X as soon as a 4th sword has been collected, even if the magical sword itself was also collected
+            let supersededWins = (match timelineID with Some tid -> tid = Timeline.TimelineID.MagicalSword && superseded.Value | None -> false)
+            if prop.Value() && not supersededWins then
                 rect.Stroke <- yes
                 if obj.Equals(TrackerModel.foundBombShop, located) && located.Value then  // special case handling for bombs
                     canvasAdd(c, new Shapes.Line(X1=0., X2=30., Y1=1.5, Y2=1.5, StrokeThickness=3.0, Stroke=loc), 0., 0.)
@@ -352,7 +352,8 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
     blue_ring_box.MouseEnter.Add(fun _ -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BLUE_RING))
     blue_ring_box.MouseLeave.Add(fun _ -> hideLocator())
     gridAddTuple(owItemGrid, blue_ring_box, OW_ITEM_GRID_LOCATIONS.BLUE_RING_BOX)
-    let mags_box = basicBoxImpl("Acquired magical sword (mark timeline)\n(10-14 hearts to lift)", Timeline.TimelineID.MagicalSword, Graphics.magical_sword_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword, TrackerModel.magsCaveFound, FALSE)
+    let mags_box = basicBoxImpl("Acquired magical sword (mark timeline)\n(10-14 hearts to lift)", Timeline.TimelineID.MagicalSword, Graphics.magical_sword_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword, TrackerModel.magsCaveFound, 
+                                    new TrackerModel.SyntheticEventingBool((fun() -> TrackerModel.playerHasSword4.Value = 1), [TrackerModel.playerHasSword4.Changed]))
     let mags_canvas = mags_box.Children.[1] :?> Canvas // a tiny bit fragile
     let magsHintCanvas = new Canvas(Width=30., Height=30., Background=Brushes.Transparent)  // Background to accept mouse input
     let redrawMagicalSwordCanvas(c:Canvas) =
@@ -460,7 +461,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
 
     let highlightOpenCavesCB = 
         if isStandardHyrule then
-            let highlightOpenCaves = new TextBox(Text="Cave highlight", FontSize=12., Background=Brushes.Black, Foreground=Brushes.Orange, BorderThickness=Thickness(0.), IsReadOnly=true, IsHitTestVisible=false)
+            let highlightOpenCaves = new TextBox(Text="Cave highlight", FontSize=14., Background=Brushes.Black, Foreground=Brushes.Orange, BorderThickness=Thickness(0.), IsReadOnly=true, IsHitTestVisible=false)
             TrackerModelOptions.Overworld.OpenCaves.Value <- true   // always start with cave highlight turned on
             let cb = new CheckBox(Content=highlightOpenCaves, IsChecked=TrackerModelOptions.Overworld.OpenCaves.Value)
             cb.ToolTip <- "Highlight unmarked open caves (when hovered)\n" +
@@ -481,15 +482,16 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
     weaponsRowPanel.Children.Add(basicBoxImplNoTimeline("Wood sword", Graphics.brown_sword_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("White sword", Timeline.TimelineID.WhiteSword, Graphics.white_sword_bmp, TrackerModel.startingItemsAndExtras.PlayerHasWhiteSword, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Magical sword", Timeline.TimelineID.StartingMagicalSword, Graphics.magical_sword_bmp, TrackerModel.startingItemsAndExtras.PlayerHasMagicalSword, FALSE, FALSE)) |> ignore
+    weaponsRowPanel.Children.Add(basicBoxImplNoTimeline("4th sword", Graphics.white_sword4_bmp, TrackerModel.startingItemsAndExtras.PlayerHasSword4, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImplNoTimeline("Wood arrow", Graphics.wood_arrow_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodArrow, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Silver arrow", Timeline.TimelineID.SilverArrow, Graphics.silver_arrow_bmp, TrackerModel.startingItemsAndExtras.PlayerHasSilverArrow, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Bow", Timeline.TimelineID.Bow, Graphics.bow_bmp, TrackerModel.startingItemsAndExtras.PlayerHasBow, FALSE, FALSE)) |> ignore
-    weaponsRowPanel.Children.Add(basicBoxImpl("Wand", Timeline.TimelineID.Wand, Graphics.wand_bmp, TrackerModel.startingItemsAndExtras.PlayerHasWand, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImplNoTimeline("Blue candle", Graphics.blue_candle_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueCandle, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Red candle", Timeline.TimelineID.RedCandle, Graphics.red_candle_bmp, TrackerModel.startingItemsAndExtras.PlayerHasRedCandle, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Boomerang", Timeline.TimelineID.Boomerang, Graphics.boomerang_bmp, TrackerModel.startingItemsAndExtras.PlayerHasBoomerang, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Magic boomerang", Timeline.TimelineID.MagicBoomerang, Graphics.magic_boomerang_bmp, TrackerModel.startingItemsAndExtras.PlayerHasMagicBoomerang, FALSE, FALSE)) |> ignore
     let utilityRowPanel = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+    utilityRowPanel.Children.Add(basicBoxImpl("Wand", Timeline.TimelineID.Wand, Graphics.wand_bmp, TrackerModel.startingItemsAndExtras.PlayerHasWand, FALSE, FALSE)) |> ignore
     utilityRowPanel.Children.Add(basicBoxImplNoTimeline("Blue ring", Graphics.blue_ring_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueRing, FALSE, FALSE)) |> ignore
     utilityRowPanel.Children.Add(basicBoxImpl("Red ring", Timeline.TimelineID.RedRing, Graphics.red_ring_bmp, TrackerModel.startingItemsAndExtras.PlayerHasRedRing, FALSE, FALSE)) |> ignore
     utilityRowPanel.Children.Add(basicBoxImpl("Power bracelet", Timeline.TimelineID.PowerBracelet, Graphics.power_bracelet_bmp, TrackerModel.startingItemsAndExtras.PlayerHasPowerBracelet, FALSE, FALSE)) |> ignore
@@ -820,7 +822,8 @@ let MakeFQSQStuff(cm, isMixed, owLocatorTilesZone:Graphics.TileHighlightRectangl
                 let right = new StackPanel(Orientation=Orientation.Vertical)
                 hsp.Children.Add(left) |> ignore
                 hsp.Children.Add(right) |> ignore
-                if isMixed then
+                let nowMixed = (let q = TrackerModel.owInstance.Quest.AsInt() in q = 2 || q = 3)   // follows the current template, which can be switched from this menu
+                if nowMixed then
                     let erase1ok = not(thereAreMarks(OverworldData.owMapSquaresFirstQuestOnly))
                     let erase2ok = not(thereAreMarks(OverworldData.owMapSquaresSecondQuestOnly))
                     let color1 = if not(erase1ok) then Brushes.Red else Brushes.Yellow
@@ -910,16 +913,33 @@ let MakeFQSQStuff(cm, isMixed, owLocatorTilesZone:Graphics.TileHighlightRectangl
                 // Shop prices popout
                 let shopPricesTxt = mkTxt("Shop price notes:")
                 shopPricesTxt.Margin <- Thickness(0.,10.,0.,2.)
-                sp.Children.Add(shopPricesTxt) |> ignore
+                let shopRow = new DockPanel(LastChildFill=true)
+                let hideQuestPanel = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Bottom, Margin=Thickness(10.,0.,10.,4.))
+                DockPanel.SetDock(hideQuestPanel, Dock.Right)
+                if nowMixed then
+                    (hideFirstQuestCheckBox.Content :?> TextBox).Text <- "Hide 1st Quest"
+                    (hideSecondQuestCheckBox.Content :?> TextBox).Text <- "Hide 2nd Quest"
+                    (hideFirstQuestCheckBox.Content :?> TextBox).FontSize <- 14.
+                    (hideSecondQuestCheckBox.Content :?> TextBox).FontSize <- 14.
+                    hideFirstQuestCheckBox.Margin <- Thickness(0.,2.,0.,2.)
+                    hideSecondQuestCheckBox.Margin <- Thickness(0.,2.,0.,2.)
+                    hideQuestPanel.Children.Add(hideFirstQuestCheckBox) |> ignore
+                    hideQuestPanel.Children.Add(hideSecondQuestCheckBox) |> ignore
+                shopRow.Children.Add(hideQuestPanel) |> ignore
+                let shopLeft = new StackPanel(Orientation=Orientation.Vertical)
+                shopRow.Children.Add(shopLeft) |> ignore
+                sp.Children.Add(shopRow) |> ignore
+                shopLeft.Children.Add(shopPricesTxt) |> ignore
                 let shopPricesBtn = Graphics.makeButton("Open Shop Prices Window", Some(14.), Some(Brushes.Orange))
                 shopPricesBtn.HorizontalAlignment <- HorizontalAlignment.Left
                 shopPricesBtn.Margin <- Thickness(2.)
                 shopPricesBtn.ToolTip <- "Opens a window listing all marked shops on the OW map so you can record the prices you saw."
                 shopPricesBtn.Click.Add(fun _ -> Popouts.showShopPricesWindow(); wh.Set() |> ignore)
-                sp.Children.Add(shopPricesBtn) |> ignore
+                shopLeft.Children.Add(shopPricesBtn) |> ignore
                 let b = new Border(Child=sp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(5.), Background=Brushes.Black)
                 clearOW()
                 do! CustomComboBoxes.DoModalCore(cm, wh, (fun (c,e) -> canvasAdd(c, e, 10., 10.)), (fun (c,e) -> c.Children.Remove(e)), b, 0.25)
+                hideQuestPanel.Children.Clear()   // release the checkboxes so the next popup can reuse them
                 popupIsActive <- false
             } |> Async.StartImmediate
         )

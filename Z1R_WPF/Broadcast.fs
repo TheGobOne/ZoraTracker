@@ -149,7 +149,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         canvasAdd(bottomc, owm, afterSoldItemBoxesX, 95.)
         // WANT!
         let kitty = new Image()
-        let imageStream = Graphics.GetResourceStream("CatBird.png")
+        let imageStream = Graphics.GetResourceStream("CustomLogo.png")
         kitty.Source <- System.Windows.Media.Imaging.BitmapFrame.Create(imageStream)
         kitty.Width <- 45.
         kitty.Height <- 45.

@@ -14,7 +14,6 @@ module Overworld =
     let mutable RoutesCanScreenScroll = Bool(false)
     let mutable HighlightNearby = Bool(true)
     let mutable ShowMagnifier = Bool(true)
-    let mutable ShopsFirst = Bool(false)
     let mutable Zones = Bool(false)
     let mutable Coords = Bool(false)
     let mutable Gettables = Bool(true)
@@ -119,7 +118,7 @@ let mutable PlaySoundWhenUseSpeech = Bool(true)
 let mutable BOARDInsteadOfLEVEL = Bool(false)
 // custom item-menu layouts made by Shift+dragging icons in the item-box / overworld-tile menus: menu name -> item key in each cell order ('' = empty cell)
 let MenuLayouts = new System.Collections.Generic.Dictionary<string,string[]>()
-let mutable UseOldPotionLetterIcons = Bool(false)   // 'Use old potion/letter icons' in the dungeon options
+let mutable UseOldPotionLetterIcons = Bool(true)   // the old potion/letter icons are always used now (no longer an option)
 let mutable DisplayIconsInDungeonMap = Bool(false)
 let mutable DungeonMapLocationHintOpacity = 0.3
 let mutable ReverseScrollWheelDirection = Bool(false)
@@ -139,6 +138,7 @@ let mutable SmallerAppWindowScaleFactor = 2.0/3.0
 let mutable ShorterAppWindow = Bool(false)
 let mutable IsMuted = false
 let mutable Volume = 30
+let mutable LastSeenVersionNotes = ""   // version whose About/patch notes the user has opened (version button glows until then)
 //How often should reminders fire?  In milliseconds.
 let mutable ReminderFrequency = 1000
 // Base interval (in minutes) for periodic reminders. Actual intervals scale proportionally.
@@ -147,7 +147,6 @@ let mutable PreferredVoice = ""
 let mutable MainWindowLT = ""
 let mutable BroadcastWindowLT = ""
 let mutable HotKeyWindowLTWH = ""
-let mutable LastSeenVersionNotes = ""   // version whose About/patch notes the user has opened (version button glows until then)
 let mutable OverlayLocatorWindowLTWH = ""
 let mutable MouseMagnifierWindowLTWH = ""
 let mutable SpotSummaryPopout_DisplayedLT = ""
@@ -174,7 +173,6 @@ type ReadWrite() =
     member val HighlightNearby = true with get,set
     member val ShowMagnifier = true with get,set
     member val MirrorOverworld = false with get,set
-    member val ShopsFirst = false with get,set
     member val Zones = false with get,set
     member val Coords = false with get,set
     member val Gettables = false with get,set
@@ -234,7 +232,7 @@ type ReadWrite() =
     member val RequirePTTForSpeech = false with get,set
     member val PlaySoundWhenUseSpeech = true with get,set
     member val BOARDInsteadOfLEVEL = false with get,set
-    member val UseOldPotionLetterIcons = false with get,set
+    member val UseOldPotionLetterIcons = true with get,set
     member val MenuLayouts : System.Collections.Generic.Dictionary<string,string[]> = new System.Collections.Generic.Dictionary<string,string[]>() with get,set
     member val DisplayIconsInDungeonMap = false with get,set
     member val DungeonMapLocationHintOpacity = 0.3 with get,set
@@ -257,12 +255,12 @@ type ReadWrite() =
 
     member val IsMuted = false with get, set
     member val Volume = 30 with get, set
+    member val LastSeenVersionNotes = "" with get, set
     member val PreferredVoice = "" with get,set
     member val ReminderIntervalMinutes = 5 with get,set
     member val MainWindowLT = "" with get,set
     member val BroadcastWindowLT = "" with get,set
     member val HotKeyWindowLTWH = "" with get, set
-    member val LastSeenVersionNotes = "" with get, set
     member val OverlayLocatorWindowLTWH = "" with get, set
     member val MouseMagnifierWindowLTWH = "" with get, set
     member val SpotSummaryPopout_DisplayedLT = "" with get,set
@@ -300,7 +298,6 @@ let private writeImpl(filename) =
     data.RoutesCanScreenScroll <- Overworld.RoutesCanScreenScroll.Value
     data.HighlightNearby <- Overworld.HighlightNearby.Value
     data.ShowMagnifier <- Overworld.ShowMagnifier.Value
-    data.ShopsFirst <- Overworld.ShopsFirst.Value
     data.Zones <- Overworld.Zones.Value
     data.Coords <- Overworld.Coords.Value
     data.Gettables <- Overworld.Gettables.Value
@@ -381,12 +378,12 @@ let private writeImpl(filename) =
     data.ShorterAppWindow <- ShorterAppWindow.Value
     data.IsMuted <- IsMuted
     data.Volume <- Volume
+    data.LastSeenVersionNotes <- LastSeenVersionNotes
     data.PreferredVoice <- PreferredVoice
     data.ReminderIntervalMinutes <- ReminderIntervalMinutes
     data.MainWindowLT <- MainWindowLT
     data.BroadcastWindowLT <- BroadcastWindowLT
     data.HotKeyWindowLTWH <- HotKeyWindowLTWH
-    data.LastSeenVersionNotes <- LastSeenVersionNotes
     data.OverlayLocatorWindowLTWH <- OverlayLocatorWindowLTWH
     data.MouseMagnifierWindowLTWH <- MouseMagnifierWindowLTWH
     data.SpotSummaryPopout_DisplayedLT <- SpotSummaryPopout_DisplayedLT
@@ -432,7 +429,6 @@ let private read(filename) =
         Overworld.RoutesCanScreenScroll.Value <- data.RoutesCanScreenScroll
         Overworld.HighlightNearby.Value <- data.HighlightNearby
         Overworld.ShowMagnifier.Value <- data.ShowMagnifier
-        Overworld.ShopsFirst.Value <- data.ShopsFirst    
         Overworld.Zones.Value <- data.Zones
         Overworld.Coords.Value <- data.Coords
         Overworld.Gettables.Value <- data.Gettables
@@ -492,7 +488,7 @@ let private read(filename) =
         RequirePTTForSpeech.Value <- data.RequirePTTForSpeech
         PlaySoundWhenUseSpeech.Value <- data.PlaySoundWhenUseSpeech
         BOARDInsteadOfLEVEL.Value <- data.BOARDInsteadOfLEVEL
-        UseOldPotionLetterIcons.Value <- data.UseOldPotionLetterIcons
+        UseOldPotionLetterIcons.Value <- true   // always the old icons now; ignore any older saved setting
         MenuLayouts.Clear()
         if not (isNull data.MenuLayouts) then
             for kv in data.MenuLayouts do MenuLayouts.[kv.Key] <- kv.Value
@@ -515,12 +511,12 @@ let private read(filename) =
         ShorterAppWindow.Value <- data.ShorterAppWindow
         IsMuted <- data.IsMuted
         Volume <- max 0 (min 100 data.Volume)
+        LastSeenVersionNotes <- (if data.LastSeenVersionNotes = null then "" else data.LastSeenVersionNotes)
         PreferredVoice <- data.PreferredVoice
         ReminderIntervalMinutes <- max 1 (min 60 data.ReminderIntervalMinutes)
         MainWindowLT <- data.MainWindowLT
         BroadcastWindowLT <- data.BroadcastWindowLT
         HotKeyWindowLTWH <- data.HotKeyWindowLTWH
-        LastSeenVersionNotes <- (if data.LastSeenVersionNotes = null then "" else data.LastSeenVersionNotes)
         OverlayLocatorWindowLTWH <- data.OverlayLocatorWindowLTWH
         MouseMagnifierWindowLTWH <- data.MouseMagnifierWindowLTWH
         SpotSummaryPopout_DisplayedLT <- data.SpotSummaryPopout_DisplayedLT
@@ -529,7 +525,7 @@ let private read(filename) =
         DungeonSummaryTabMode <- data.DungeonSummaryTabMode
 
         AllowItemIconOnNonShopTile.Value <- data.AllowItemIconOnNonShopTile
-        PersonalPrefMarkersEnabled.Value <- data.PersonalPrefMarkersEnabled
+        PersonalPrefMarkersEnabled.Value <- false   // feature removed; ignore any old saved value
         AlphabetizeHintZones.Value <- data.AlphabetizeHintZones
         PerItemReminders.Recorder.Value <- data.PerItemRemind_Recorder
         PerItemReminders.PowerBracelet.Value <- data.PerItemRemind_PowerBracelet

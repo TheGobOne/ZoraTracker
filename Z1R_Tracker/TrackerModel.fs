@@ -441,21 +441,6 @@ type MapSquareChoiceDomainHelper =
             let r,_,_,_ = dummyOverworldTiles.[n] in r
         else
             failwith "bad overworld tile id"
-    static member TilesThatSupportHidingOverworldMarks = // 12 in a particular order to facilitate "More Settings..." layout
-        [| 
-            MapSquareChoiceDomainHelper.SWORD3
-            MapSquareChoiceDomainHelper.SWORD2
-            MapSquareChoiceDomainHelper.SWORD1
-            MapSquareChoiceDomainHelper.MONEY_MAKING_GAME
-            MapSquareChoiceDomainHelper.LARGE_SECRET
-            MapSquareChoiceDomainHelper.MEDIUM_SECRET
-            MapSquareChoiceDomainHelper.SMALL_SECRET
-            MapSquareChoiceDomainHelper.DOOR_REPAIR_CHARGE
-            MapSquareChoiceDomainHelper.THE_LETTER
-            MapSquareChoiceDomainHelper.ARMOS
-            MapSquareChoiceDomainHelper.HINT_SHOP
-            MapSquareChoiceDomainHelper.TAKE_ANY
-        |]
     static member AsTrackerModelOptionsOverworldTilesToHide(n) =
         if n = MapSquareChoiceDomainHelper.SWORD3 then
             TrackerModelOptions.OverworldTilesToHide.Sword3
@@ -628,6 +613,7 @@ type StartingItemsAndExtras() =
     let triforces = Array.init 8 (fun _ -> BoolProperty(false,fun()->extrasLastChangedTime.SetNow()))
     let whiteSword = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
     let magicalSword = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
+    let sword4 = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
     let silverArrow = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
     let bow = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
     let wand = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
@@ -646,6 +632,7 @@ type StartingItemsAndExtras() =
     member _this.HDNStartingTriforcePieces = triforces
     member _this.PlayerHasWhiteSword = whiteSword         // Note that unlike the item box / cave versions of these items, the starting item
     member _this.PlayerHasMagicalSword = magicalSword     // versions of these mean the player actually has a sword, even if WSMS->BU flag is on
+    member _this.PlayerHasSword4 = sword4
     member _this.PlayerHasSilverArrow = silverArrow
     member _this.PlayerHasBow = bow
     member _this.PlayerHasWand = wand
@@ -976,11 +963,13 @@ let mutable playerComputedStateSummary = PlayerComputedStateSummary(false,false,
 let PlayerHasTheBook() = if IsCurrentlyBook() then playerComputedStateSummary.HaveBookOrShield else playerProgressAndTakeAnyHearts.PlayerHasBoomBook.Value()
 let playerComputedStateSummaryLastComputedTime = new LastChangedTime()
 let playerSwordLevel, playerCandleLevel, playerRingLevel, playerArrowLevel = new EventingInt(0), new EventingInt(0), new EventingInt(0), new EventingInt(0)
+let playerHasSword4 = new EventingInt(0)   // 1 if a 4th sword has been collected (an item box, or its marker icon checked off on the map); puts the purple X on the 3rd (magical) sword box
 // how many marker icons of each kind are checked off as 'collected' on the overworld map (index = item id); these count as owning the item
 let mapCollectedCount : int[] = Array.zeroCreate 128
 let recomputePlayerStateSummary() =
     let mutable haveRecorder,haveLadder,haveAnyKey,haveCoastItem,haveWhiteSwordItem,havePowerBracelet,haveRaft,playerHearts = false,false,false,false,false,false,false,3
     let mutable swordLevel,candleLevel,ringLevel,haveBow,arrowLevel,haveWand,haveBookOrShield,boomerangLevel = 0,0,0,false,0,false,false,0
+    let mutable haveSword4 = false
     for b in DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() do
         if b.PlayerHas() = PlayerHas.YES then
             if b.CellCurrent() = ITEMS.RECORDER then
@@ -1014,6 +1003,20 @@ let recomputePlayerStateSummary() =
             elif b.CellCurrent() = ITEMS.WHITESWORD then
                 if not(IsWSMSReplacedByBU()) then
                     swordLevel <- max swordLevel 2
+            elif b.CellCurrent() = ITEMS.BLUECANDLE then
+                candleLevel <- max candleLevel 1
+            elif b.CellCurrent() = ITEMS.BLUERING then
+                ringLevel <- max ringLevel 1
+            elif b.CellCurrent() = ITEMS.WOODARROW then
+                arrowLevel <- max arrowLevel 1
+            elif b.CellCurrent() = ITEMS.WOODSWORD then
+                swordLevel <- max swordLevel 1
+            elif b.CellCurrent() = ITEMS.WHITESWORD4 then
+                swordLevel <- max swordLevel 2
+                haveSword4 <- true
+            elif b.CellCurrent() = ITEMS.MAGICALSWORD then
+                if not(IsWSMSReplacedByBU()) then
+                    swordLevel <- 3
     if playerProgressAndTakeAnyHearts.PlayerHasBlueCandle.Value() then
         candleLevel <- max candleLevel 1
     if playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value() && not(IsWSMSReplacedByBU()) then
@@ -1028,6 +1031,9 @@ let recomputePlayerStateSummary() =
         swordLevel <- max swordLevel 2
     if startingItemsAndExtras.PlayerHasMagicalSword.Value() then
         swordLevel <- 3
+    if startingItemsAndExtras.PlayerHasSword4.Value() then
+        swordLevel <- max swordLevel 2
+        haveSword4 <- true
     if startingItemsAndExtras.PlayerHasSilverArrow.Value() then
         arrowLevel <- 2
     if startingItemsAndExtras.PlayerHasBoomerang.Value() then
@@ -1058,6 +1064,7 @@ let recomputePlayerStateSummary() =
     let mapHas(id) = mapCollectedCount.[id] > 0
     if mapHas ITEMS.WOODSWORD then swordLevel <- max swordLevel 1
     if mapHas ITEMS.WHITESWORD || mapHas ITEMS.WHITESWORD4 then swordLevel <- max swordLevel 2
+    if mapHas ITEMS.WHITESWORD4 then haveSword4 <- true
     if mapHas ITEMS.MAGICALSWORD then swordLevel <- 3
     if mapHas ITEMS.PROGRESSIVESWORD then swordLevel <- min 3 (swordLevel + 1)
     if mapHas ITEMS.BLUECANDLE then candleLevel <- max candleLevel 1
@@ -1091,6 +1098,7 @@ let recomputePlayerStateSummary() =
     playerCandleLevel.Value <- candleLevel
     playerRingLevel.Value <- ringLevel
     playerArrowLevel.Value <- arrowLevel
+    playerHasSword4.Value <- (if haveSword4 then 1 else 0)
     if bookChanged then
         playerComputedStateSummaryForPlayerHasBookChanged.Trigger()
     playerComputedStateSummaryLastComputedTime.SetNow()

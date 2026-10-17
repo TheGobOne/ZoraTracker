@@ -137,15 +137,18 @@ let MakeRemainingItemsDisplay() =
     // An item is "remaining" if no dungeon box has it marked as obtained (IsDone = CellCurrent set AND PlayerHas is YES or SKIPPED).
     // This correctly handles presets where all items are pre-placed but not yet obtained (PlayerHas=NO).
     let allBoxes = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
-    let isObtained(i) = allBoxes |> Array.exists (fun box -> box.CellCurrent() = i && box.IsDone())
+    // (an item whose marker icon has been checked off as collected on the overworld map also counts as obtained)
+    let isObtained(i) = (allBoxes |> Array.exists (fun box -> box.CellCurrent() = i && box.IsDone())) || TrackerModel.mapCollectedCount.[i] > 0
     for i in TrackerModel.ITEMS.PriorityOrderForRemainingDisplay do
         if not (isObtained i) then
             hsp.Children.Add(img(i)) |> ignore
     let h = TrackerModel.ITEMS.HEARTCONTAINER
-    let obtainedHC = allBoxes |> Array.sumBy (fun box -> if box.CellCurrent() = h && box.IsDone() then 1 else 0)
+    let obtainedHC = (allBoxes |> Array.sumBy (fun box -> if box.CellCurrent() = h && box.IsDone() then 1 else 0)) + TrackerModel.mapCollectedCount.[h]
     let c = TrackerModel.allItemWithHeartShuffleChoiceDomain.MaxUses(h) - obtainedHC
     for x = 1 to c do
         hsp.Children.Add(img(h)) |> ignore
+    if c > 1 then
+        hsp.Children.Add(new TextBox(Text=sprintf "x%d" c,FontSize=12.,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),Foreground=Brushes.Orange,Background=Brushes.Black,VerticalAlignment=VerticalAlignment.Center)) |> ignore
     if hsp.Children.Count=0 then
         hsp.Children.Add(new TextBox(Text="None",FontSize=12.,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),Foreground=Brushes.Orange,Background=Brushes.Black)) |> ignore
     let vsp = new StackPanel(Orientation=Orientation.Vertical)
@@ -164,7 +167,7 @@ let mutable theSpotSummaryPopoutWindow : Window = null
 let mutable theInventoryAndHeartsPopoutWindow : Window = null
 let mutable theRemainingItemsPopoutWindow : Window = null
 
-let spotSummaryContent() =
+let spotSummaryContent(doUIUpdateEvent:Event<unit>) =
     let dp = new DockPanel(Background=Brushes.Black)
     let redraw() =
         dp.Children.Clear()
@@ -174,6 +177,8 @@ let spotSummaryContent() =
 //        printfn "redraw spot summary"
         redraw()
         )
+    // also redraw as items get collected (the summary dims potions/letter/swords once collected)
+    doUIUpdateEvent.Publish.Add(fun _ -> redraw())
     dp  // already has a border
 let inventoryAndHeartsContent(doUIUpdateEvent:Event<unit>) =
     let dp = new DockPanel(Background=Brushes.Black)
@@ -214,7 +219,7 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
                 theSpotSummaryPopoutWindow.Close()
             theSpotSummaryPopoutWindow <- w
             w.Title <- "Spot Summary popout"
-            w.Content <- spotSummaryContent()
+            w.Content <- spotSummaryContent(doUIUpdateEvent)
             save <- (fun() ->
                 if w.Left < MINIMIZED_THRESHOLD then // minimized or closing
                     TrackerModelOptions.SpotSummaryPopout_DisplayedLT <- sprintf "0,%d,%d" (int w.RestoreBounds.Left) (int w.RestoreBounds.Top)

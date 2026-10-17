@@ -85,13 +85,20 @@ let tryLayoutTopLeftIcons() =
                             f.Width <- w
                             f.Height <- h
                         | _ -> ()
-                    Canvas.SetLeft(iconQuestion, 530.)
+                    // everything above the Hint Decoder button is centered horizontally on that button
+                    let hintLeft = WEBCAM_LINE-41.
+                    let hintCx = 
+                        match hintDecoderElementForCentering with
+                        | :? FrameworkElement as hd when hd.ActualWidth > 0. -> hintLeft + hd.ActualWidth / 2.
+                        | _ -> 562.   // (the middle of the 2x2 icon block's original spot, until the button has been measured)
+                    let blockLeft = hintCx - (2.*w + 2.) / 2.
+                    Canvas.SetLeft(iconQuestion, blockLeft)
                     Canvas.SetTop(iconQuestion, 0.)
-                    Canvas.SetLeft(iconEye, 562.)
+                    Canvas.SetLeft(iconEye, blockLeft + w + 2.)
                     Canvas.SetTop(iconEye, 0.)
-                    Canvas.SetLeft(iconSave, 530.)
+                    Canvas.SetLeft(iconSave, blockLeft)
                     Canvas.SetTop(iconSave, h + 2.)
-                    Canvas.SetLeft(iconMirror, 562.)
+                    Canvas.SetLeft(iconMirror, blockLeft + w + 2.)
                     Canvas.SetTop(iconMirror, h + 2.)
                     // stack zones above coords so coords ends just above the Hint Decoder button (top 108); never overlap the icon block above
                     match zonesCheckBoxEl, coordsCheckBoxEl with
@@ -99,6 +106,8 @@ let tryLayoutTopLeftIcons() =
                         let coordsTop = 107. - cc.ActualHeight
                         let zonesTop = max (2.*h + 4.) (coordsTop - z.ActualHeight)
                         Canvas.SetTop(z, zonesTop)
+                        Canvas.SetLeft(z, hintCx - z.ActualWidth / 2.)
+                        Canvas.SetLeft(cc, hintCx - cc.ActualWidth / 2.)
                         Canvas.SetTop(cc, max coordsTop (zonesTop + z.ActualHeight))
                     | _ -> ()
             m.SizeChanged.Add(fun _ -> place())
@@ -220,6 +229,7 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddHintDecoderButton(tb) =
             canvasAdd(appMainCanvas, tb, WEBCAM_LINE-41., 108.)
             hintDecoderElementForCentering <- tb
+            hookTopLeftOnSizeChange(tb)
             tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
         member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement) =
             let logoX = 16.*OMTW - kittyWidth - 12. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used
@@ -455,6 +465,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddHintDecoderButton(tb) =
             canvasAdd(upper, tb, WEBCAM_LINE-41., 108.)
             hintDecoderElementForCentering <- tb
+            hookTopLeftOnSizeChange(tb)
             tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
         member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement) =
             let logoX = 16.*OMTW - kittyWidth - 12. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used

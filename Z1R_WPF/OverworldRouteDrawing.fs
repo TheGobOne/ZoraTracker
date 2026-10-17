@@ -99,6 +99,13 @@ let color3    = Graphics.freeze(new SolidColorBrush(Color.FromArgb(150uy, 255uy,
 let color4    = Graphics.freeze(new SolidColorBrush(Color.FromArgb(120uy, 255uy, 255uy, 255uy)))
 let color5    = Graphics.freeze(new SolidColorBrush(Color.FromArgb(100uy, 255uy, 255uy, 255uy)))
 let color6    = Graphics.freeze(new SolidColorBrush(Color.FromArgb( 85uy, 255uy, 255uy, 255uy)))
+// when routing to a specific chosen destination (via the Link icon), draw the path in hot pink instead of white so it's easy to see
+let mutable specificTargetMode = false
+let pink2 = Graphics.freeze(new SolidColorBrush(Color.FromArgb(235uy, 255uy, 20uy, 147uy)))
+let pink3 = Graphics.freeze(new SolidColorBrush(Color.FromArgb(225uy, 255uy, 20uy, 147uy)))
+let pink4 = Graphics.freeze(new SolidColorBrush(Color.FromArgb(210uy, 255uy, 20uy, 147uy)))
+let pink5 = Graphics.freeze(new SolidColorBrush(Color.FromArgb(195uy, 255uy, 20uy, 147uy)))
+let pink6 = Graphics.freeze(new SolidColorBrush(Color.FromArgb(180uy, 255uy, 20uy, 147uy)))
 let colorAlt1 = Graphics.freeze(new SolidColorBrush(Color.FromArgb(230uy, 160uy, 220uy, 255uy)))
 let colorAlt2 = Graphics.freeze(new SolidColorBrush(Color.FromArgb(200uy, 160uy, 220uy, 255uy)))
 let colorAlt3 = Graphics.freeze(new SolidColorBrush(Color.FromArgb(175uy, 160uy, 220uy, 255uy)))
@@ -130,11 +137,18 @@ let drawPathsImpl(owRouteworthySpots:_[,], owUnmarked:bool[,], mousePos:System.W
         let color(cost) =
             // white path that is bright near the cursor, but opacity falls off quickly as you get more cost-distance away
             //if   cost <=  4 then color1   // too bright
-            if   cost <=  8 then color2
-            elif cost <= 14 then color3
-            elif cost <= 22 then color4
-            elif cost <= 30 then color5
-            else                 color6
+            if specificTargetMode then
+                if   cost <=  8 then pink2
+                elif cost <= 14 then pink3
+                elif cost <= 22 then pink4
+                elif cost <= 30 then pink5
+                else                 pink6
+            else
+                if   cost <=  8 then color2
+                elif cost <= 14 then color3
+                elif cost <= 22 then color4
+                elif cost <= 30 then color5
+                else                 color6
         let colorAlt(cost) =
             // white path that is bright near the cursor, but opacity falls off quickly as you get more cost-distance away
             //if   cost <=  4 then colorAlt1   // too bright

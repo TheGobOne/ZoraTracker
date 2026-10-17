@@ -270,6 +270,19 @@ type GlobalHotkeyTargets =
 
 let pad(s:string,n) = if s.Length < n then s + String.replicate (n - s.Length) " " else s
 // Note to self; NumPad . and + are called Decimal and Add, not OemPeriod or OemPlus.  NumPad 'enter' is not supported, sadly.
+// the dungeon-item marker icons that can be placed on an overworld tile (same set, same order as the overworld tile menu); hovering a tile and pressing a bound key toggles that icon on the tile
+let OverworldMarkerItems : int[] = 
+    [| TrackerModel.ITEMS.LADDER; TrackerModel.ITEMS.POWERBRACELET; TrackerModel.ITEMS.RECORDER; TrackerModel.ITEMS.RAFT; TrackerModel.ITEMS.BOW
+       TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.WAND
+       TrackerModel.ITEMS.KEY; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG
+       TrackerModel.ITEMS.BOOKSHIELD; TrackerModel.ITEMS.SHIELD; TrackerModel.ITEMS.MEAT; TrackerModel.DECOR_BOMB; TrackerModel.ITEMS.OLDKEY
+       TrackerModel.ITEMS.BLUEPOTION; TrackerModel.ITEMS.LETTER; TrackerModel.ITEMS.HEARTCONTAINER; TrackerModel.ITEMS.BOMBUPGRADE |]
+// 'BookOrShield' is split: the first item slot is now 'Book' (it still displays as the Magical Shield in a boomstick seed); the separate 'Shield' item keeps its own name.
+// (the old 'Item_BookOrShield' name is still accepted in an existing HotKeys.txt)
+// the Item_X hotkeys also work when hovering an overworld tile (toggling that marker icon); the bomb marker is not an item, so it alone gets its own 'OverworldMarker_Bomb' entry
+let OverworldMarkerOwnHotKeys : int[] = [| TrackerModel.DECOR_BOMB |]
+let ItemHotKeyName(i:int) = if i = TrackerModel.ITEMS.BOOKSHIELD then "Book" else TrackerModel.ITEMS.AsHotKeyName(i)
+let OverworldMarkerHotKeyName(ident:int) = "OverworldMarker_" + (if ident = TrackerModel.DECOR_BOMB then "Bomb" else ItemHotKeyName(ident))
 let MakeDefaultHotKeyFile(filename:string, isSample) =
     let lines = ResizeArray()
     if isSample then 
@@ -292,11 +305,12 @@ let MakeDefaultHotKeyFile(filename:string, isSample) =
 
     """ OverworldData.ProgramNameString).Split('\n') |> Array.iter (fun line -> lines.Add(line.Replace("\r","")))
     // items
-    lines.Add("# ITEMS - these hotkey bindings take effect when mouse-hovering an item box")
-    lines.Add("# Note that BookOrShield refers to Book in a non-boomstick-seed, and Shield in a boomstick seed")
-    let n = [0..TrackerModel.ITEMS.itemNamesAndCounts.Length-1] |> Seq.map (fun i -> TrackerModel.ITEMS.AsHotKeyName(i).Length + 5) |> Seq.max
-    for i = 0 to TrackerModel.ITEMS.itemNamesAndCounts.Length-1 do
-        lines.Add(pad("Item_" + TrackerModel.ITEMS.AsHotKeyName(i),n) + " = ")
+    lines.Add("# ITEMS - these hotkey bindings take effect when mouse-hovering an item box (in the dungeons or the overworld item area),")
+    lines.Add("# and also when mouse-hovering an overworld map tile, where they toggle that item's marker icon on the tile (up to 3 per tile)")
+    lines.Add("# Note that Book is the first item slot (it shows as the Magical Shield in a boomstick seed); Shield is a separate item. (The old name Item_BookOrShield still works as Item_Book.)")
+    let n = [0..TrackerModel.ITEMS.itemNamesAndCounts.Length-1] |> Seq.map (fun i -> (ItemHotKeyName i).Length + 5) |> Seq.max
+    for i in [0..TrackerModel.ITEMS.itemNamesAndCounts.Length-1] |> List.sortBy (fun i -> (ItemHotKeyName i).ToLowerInvariant()) do
+        lines.Add(pad("Item_" + ItemHotKeyName i,n) + " = ")
     lines.Add(pad("Item_Nothing",n) + " = ")
     lines.Add("")
     lines.Add("# OVERWORLD - these hotkey bindings take effect when mouse-hovering an overworld map tile")
@@ -305,6 +319,12 @@ let MakeDefaultHotKeyFile(filename:string, isSample) =
     for i = 0 to TrackerModel.dummyOverworldTiles.Length-1 do
         lines.Add(pad("Overworld_" + TrackerModel.MapSquareChoiceDomainHelper.AsHotKeyName(i),n) + " = ")
     lines.Add(pad("Overworld_Nothing",n) + " = ")
+    lines.Add("")
+    lines.Add("# OVERWORLD MARKER ICONS - the Item_... hotkeys above also toggle marker icons while hovering an overworld tile;")
+    lines.Add("# the bomb marker is not an item, so it has its own entry here")
+    let n = (OverworldMarkerOwnHotKeys |> Seq.map (fun i -> (OverworldMarkerHotKeyName i).Length) |> Seq.max) + 5
+    for ident in OverworldMarkerOwnHotKeys |> Array.sortBy (fun i -> (OverworldMarkerHotKeyName i).ToLowerInvariant()) do
+        lines.Add(pad(OverworldMarkerHotKeyName ident,n) + " = ")
     lines.Add("")
     lines.Add("# BLOCKERS - these hotkey bindings take effect when mouse-hovering a blocker box")
     let n = TrackerModel.DungeonBlocker.All |> Seq.map (fun b -> b.AsHotKeyName().Length) |> Seq.max
@@ -355,7 +375,7 @@ let ParseHotKeyDataFile(filename:string) =
             if not m.Success then
                 let m = data2Regex.Match(line)
                 if not m.Success then
-                    raise <| new UserError(sprintf "Error parsing '%s', line %d" filename lineNumber)
+                    raise <| new UserError(sprintf "Error parsing '%s', line %d:\n    %s\nEach line should look like  Name = KEY  (optionally SHIFT, CTRL or ALT before the key), or start with # for a comment" filename lineNumber (line.Trim()))
                 else
                     let name = m.Groups.[1].Value
                     let value = if m.Groups.Count > 2 then Some(SingleKeyboardModifier.FromHotKeyTxt(m.Groups.[2].Value), enum<Input.Key>(int m.Groups.[3].Value)) else None
@@ -433,6 +453,7 @@ type HotKeyProcessor<'v when 'v : equality>(contextName) =
 // area specific
 let ItemHotKeyProcessor = new HotKeyProcessor<int>("Item")
 let OverworldHotKeyProcessor = new HotKeyProcessor<int>("Overworld")
+let OverworldMarkerHotKeyProcessor = new HotKeyProcessor<int>("OverworldMarker")
 let BlockerHotKeyProcessor = new HotKeyProcessor<TrackerModel.DungeonBlocker>("Blocker")
 let DungeonRoomHotKeyProcessor = new HotKeyProcessor<Choice<RoomType,MonsterDetail,FloorDropDetail,DoorHotKeyResponse> >("DungeonRoom")
 let HintZoneHotKeyProcessor = new HotKeyProcessor<TrackerModel.HintZone>("HintZone")
@@ -447,8 +468,8 @@ let HotKeyBlankSampleFilename = System.IO.Path.Combine(System.AppDomain.CurrentD
 
 let PopulateHotKeyTables() =
     let filename = HotKeyBlankSampleFilename
-    if not(System.IO.File.Exists(filename)) then
-        MakeDefaultHotKeyFile(filename,true)
+    // the blank sample template holds no user data, so regenerate it every launch (keeps it current with new hotkeys)
+    (try MakeDefaultHotKeyFile(filename,true) with _ -> ())
     let filename = HotKeyFilename
     if not(System.IO.File.Exists(filename)) then
         MakeDefaultHotKeyFile(filename,false)
@@ -479,13 +500,18 @@ let PopulateHotKeyTables() =
                         found <- true
             if not found then
                 for i = 0 to TrackerModel.ITEMS.itemNamesAndCounts.Length-1 do
-                    if name = "Item_" + TrackerModel.ITEMS.AsHotKeyName(i) then
+                    if name = "Item_" + ItemHotKeyName(i) || (i = TrackerModel.ITEMS.BOOKSHIELD && name = "Item_BookOrShield") then
                         Add(ItemHotKeyProcessor, chOpt, i)
                         found <- true
             if not found then
                 for i = 0 to TrackerModel.dummyOverworldTiles.Length-1 do
                     if name = "Overworld_" + TrackerModel.MapSquareChoiceDomainHelper.AsHotKeyName(i) then
                         Add(OverworldHotKeyProcessor, chOpt, i)
+                        found <- true
+            if not found then
+                for ident in OverworldMarkerItems do   // (all names still accepted, for files written by pre-release test builds; they work as extra marker bindings)
+                    if name = OverworldMarkerHotKeyName ident then
+                        Add(OverworldMarkerHotKeyProcessor, chOpt, ident)
                         found <- true
             if not found then
                 for x in RoomTypeExtensions.All() do
@@ -520,7 +546,11 @@ let PopulateHotKeyTables() =
                         Add(GlobalHotKeyProcessor, chOpt, x)
                         found <- true
             if not found then
-                raise <| new UserError(sprintf "Bad name '%s' specified in '%s', line %d" name filename lineNumber)
+                raise <| new UserError(sprintf "Bad name '%s' specified in '%s', line %d\nCheck the spelling against the names in HotKeys_BlankSampleTemplate.txt" name filename lineNumber)
+    // the overworld tile and overworld marker bindings apply in the same place (hovering a tile), so they can't share a key
+    for k in OverworldMarkerHotKeyProcessor.Keys() do
+        if OverworldHotKeyProcessor.ContainsKey(k) then
+            raise <| new UserError(sprintf "Keyboard key '%s' is bound both to an 'Overworld_...' entry and to an 'OverworldMarker_...' entry" (PrettyKey k))
     // global conflict check
     for k in GlobalHotKeyProcessor.Keys() do
         let error(kind) =
@@ -530,6 +560,8 @@ let PopulateHotKeyTables() =
             error "an 'Item_...'"
         if OverworldHotKeyProcessor.ContainsKey(k) then
             error "an 'Overworld_...'"
+        if OverworldMarkerHotKeyProcessor.ContainsKey(k) then
+            error "an 'OverworldMarker_...'"
         if BlockerHotKeyProcessor.ContainsKey(k) then
             error "a 'Blocker_...'"
         // don't bother with contextual hotkey conflicts, they're ok

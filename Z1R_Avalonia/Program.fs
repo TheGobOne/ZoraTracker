@@ -256,14 +256,11 @@ let makeMainWindow() =
            yield TrackerModel.MapSquareChoiceDomainHelper.HINT_SHOP, ""
            // rows 4-6: dungeon items (marker icons only), then personal markers, Don't Care and Unmarked
            for ident in [ TrackerModel.ITEMS.LADDER; TrackerModel.ITEMS.POWERBRACELET; TrackerModel.ITEMS.RECORDER; TrackerModel.ITEMS.RAFT; TrackerModel.ITEMS.BOW
-                          TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.KEY
-                          TrackerModel.ITEMS.WAND; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG
+                          TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.WAND
+                          TrackerModel.ITEMS.KEY; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG
                           TrackerModel.ITEMS.BOOKSHIELD; TrackerModel.ITEMS.SHIELD; TrackerModel.ITEMS.MEAT; TrackerModel.DECOR_BOMB; TrackerModel.ITEMS.OLDKEY
                           TrackerModel.ITEMS.BLUEPOTION; TrackerModel.ITEMS.LETTER; TrackerModel.ITEMS.HEARTCONTAINER; TrackerModel.ITEMS.BOMBUPGRADE ] do
                yield 1000 + ident, (if ident = TrackerModel.DECOR_BOMB then "Bomb" else TrackerModel.ITEMS.AsDisplayDescription(ident)) + " (marker icon only)"
-           if TrackerModelOptions.PersonalPrefMarkersEnabled.Value then
-               yield TrackerModel.MapSquareChoiceDomainHelper.PERSONAL_PREF_1, ""
-               yield TrackerModel.MapSquareChoiceDomainHelper.PERSONAL_PREF_2, ""
            |]
     // Don't Care and Unmarked always end the grid: holes pad the gap so they are the last two cells of the last row
     let menuCells =

@@ -58,8 +58,6 @@ let data1o(isStandardHyrule) =
     // Mirror overworld is not useful when not(isStandardHyrule), but if the user has it checked, we want them to be able to uncheck it
 // now a clickable feature of top tracker area
 //    yield "Mirror overworld", "Flip the overworld map East<->West", TrackerModelOptions.Overworld.MirrorOverworld, true, (fun()->()), None
-    yield "Shops before dungeons", "In the overworld map tile popup, the grid starts with shops when this is checked\n(starts with dungeons when unchecked)", TrackerModelOptions.Overworld.ShopsFirst, false, (fun()-> TrackerModelOptions.MenuLayouts.Remove("OWGridTile") |> ignore; TrackerModelOptions.writeSettings()), None   // changing this goes back to the default order (drops any Shift+drag layout, which would otherwise override it)
-    yield "Custom marker tiles", "When enabled, the tile selector popup includes two personal-preference marker tiles\n(asterisk and diamond) you can place on overworld spots for custom notes. Off by default.", TrackerModelOptions.PersonalPrefMarkersEnabled, false, (fun()->()), None
     |]
 
 let data1d = [|
@@ -75,7 +73,6 @@ let data1d = [|
     "Default to NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, (fun()->())
     "Dungeon 'sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, dungeonSunglassesChanged.Trigger
     "Reverse scroll wheel", "When unchecked: scroll up = monster popup, scroll down = floor-drop/item popup.\nWhen checked: scroll up = floor-drop/item popup, scroll down = monster popup.\n(Dungeon rooms)", TrackerModelOptions.ReverseScrollWheelDirection, false, (fun()->())
-    "Use old potion/letter icons", "Rexy is a boomer", TrackerModelOptions.UseOldPotionLetterIcons, false, (fun()->())
     |]
 
 let data2 = [|
@@ -249,7 +246,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     options1sp.Children.Add(tb) |> ignore
     // Options marked as "advanced" only appear in the main-app options popup (not the startup screen),
     // to keep the startup screen compact and avoid layout overflow.
-    let advancedOverworldOptions = [| "Custom marker tiles" |]  // only appears in main-app options popup, not startup screen
+    let advancedOverworldOptions : string[] = [||]   // (none right now) options listed here only appear in the main-app options popup, not the startup screen
     let advancedDungeonOptions   = [| "Alphabetize hint zone list" |]  // only this one remains advanced (hidden on startup)
     let visibleOverworldOpts =
         data1o(isStandardHyrule)
@@ -262,100 +259,21 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
         ToolTipService.SetShowDuration(cb, 10000)
         link(cb, b, needFU, oe)
         options1sp.Children.Add(cb) |> ignore
-    let moreButton = Graphics.makeButton(" More settings... ",None,None)
-    moreButton.HorizontalAlignment <- HorizontalAlignment.Left
-    options1sp.Children.Add(moreButton) |> ignore
-    do  // scope local mutable popupIsActive variable to this one button
-        let mutable popupIsActive = false  // second level of popup, need local copy
-        let mutable changedGlobal = false
-        moreButton.Click.Add(fun _ ->
-            if not popupIsActive then
-                popupIsActive <- true
-                // the options menu is not popped up on the start screen, but is in the main app, so we need to make this consistent for both
-                if not CustomComboBoxes.GlobalFlag.popupIsActive then
-                    CustomComboBoxes.GlobalFlag.popupIsActive <- true  // must be start screen
-                    changedGlobal <- true
-                let wh = new System.Threading.ManualResetEvent(false)
-                let sp = new StackPanel(Orientation=Orientation.Vertical)
-                let tb = new TextBox(Text="Overworld marks to hide", IsReadOnly=true, FontWeight=FontWeights.Bold) |> header
-                sp.Children.Add(tb) |> ignore
-                let desc = "Sometimes you want to mark certain map tiles (e.g. Door Repairs) so the tracker can help you (e.g. by keeping count), but " +
-                            "you don't want to clutter your overworld map with icons (e.g. Door icons) that you don't need to see or come back to.  " +
-                            "In these cases, you can opt to 'hide' certain icons, so that they appear like \"Don't Care\" spots (just grayed out tile " +
-                            "with no icon) rather than with an icon on the map.\n\n" + 
-                            "Check each tile that you would prefer to hide after you mark it."
-                let tb = new TextBox(Text=desc, IsReadOnly=true, TextWrapping=TextWrapping.Wrap)
-                sp.Children.Add(tb) |> ignore
-                let firstThird = TrackerModel.MapSquareChoiceDomainHelper.TilesThatSupportHidingOverworldMarks.[0..3]
-                let secondThird = TrackerModel.MapSquareChoiceDomainHelper.TilesThatSupportHidingOverworldMarks.[4..7]
-                let finalThird = TrackerModel.MapSquareChoiceDomainHelper.TilesThatSupportHidingOverworldMarks.[8..11]
-                let boxes = new StackPanel(Orientation=Orientation.Horizontal, Margin=Thickness(20.,5.,0.,5.))
-                let first = new StackPanel(Orientation=Orientation.Vertical)
-                let second = new StackPanel(Orientation=Orientation.Vertical)
-                let third = new StackPanel(Orientation=Orientation.Vertical)
-                boxes.Children.Add(first) |> ignore
-                boxes.Children.Add(second) |> ignore
-                boxes.Children.Add(third) |> ignore
-                sp.Children.Add(boxes) |> ignore
-                let addTo(sp:StackPanel, a) = 
-                    for tile in a do
-                        let desc = let _,_,_,s = TrackerModel.dummyOverworldTiles.[tile] in s
-                        let desc = 
-                            let i = desc.IndexOf('\n')
-                            if i <> -1 then
-                                desc.Substring(0, i)
-                            else
-                            desc
-                        let cb = new CheckBox(Content=new TextBox(Text=desc,IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
-                        let b = TrackerModel.MapSquareChoiceDomainHelper.AsTrackerModelOptionsOverworldTilesToHide(tile)
-                        link(cb, b, false, requestRedrawOverworldEvent.Trigger)
-                        sp.Children.Add(cb) |> ignore
-                addTo(first, firstThird)
-                addTo(second, secondThird)
-                addTo(third, finalThird)
-                let desc = "Note that even when hidden, certain tiles can be toggled 'bright' by left-clicking them.  For example, a Hint Shop where " +
-                            "you have not yet bought out all the hints, but intend to return later, could be left-clicked to toggle it from dark to " +
-                            "bright.  This behavior is retained even if you choose to hide the tile: left-clicking toggles between a hidden icon and " +
-                            "a bright icon in that case.\n\n" +
-                            "You can also hide no-longer-relevant shop items (key shop after you get the Magic Key, ring shop after you obtain either blue or red ring, " +
-                            "candle shop after you obtain blue or red candle, arrow shop after you buy it or obtain silvers, boomstick book after you buy it) " +
-                            "by checking the box below."
-                let tb = new TextBox(Text=desc, IsReadOnly=true, TextWrapping=TextWrapping.Wrap, Margin=Thickness(0.,0.,0.,5.))
-                sp.Children.Add(tb) |> ignore
-                let cb = new CheckBox(Content=new TextBox(Text="Hide no-longer-relevant shop items",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
-                let b = TrackerModel.MapSquareChoiceDomainHelper.AsTrackerModelOptionsOverworldTilesToHide(TrackerModel.MapSquareChoiceDomainHelper.SHOP)
-                link(cb, b, false, requestRedrawOverworldEvent.Trigger)
-                sp.Children.Add(cb) |> ignore
-                let desc = "Note that bomb shops and shield shops always stay visible.\n\nMeat shops also are always visible, unless you also click the box below, to make " +
-                            "them always be invisible.  If you check this box, then to see the meat shops, you must either (1) uncheck this box, (2) mouse hover Zelda (see below), " +
-                            "(3) mark a meat Blocker and then mouse-hover the Blocker, or (4) place a HungryGoriya room in a dungeon and hover that room " +
-                            "(options (3) or (4) are best).\nThis option is for folks who like to mark meat shops but also know that " +
-                            "in 99% of seed, they'll be unnecessary and just clutter the map.  In the 1% of seeds that have a meat block, mark the Blocker and then mouse hover it to find the shop."
-                let tb = new TextBox(Text=desc, IsReadOnly=true, TextWrapping=TextWrapping.Wrap)
-                sp.Children.Add(tb) |> ignore
-                let cb = new CheckBox(Content=new TextBox(Text="When hiding no-longer-relevant shop items, always hide meat shops",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
-                let b = TrackerModelOptions.OverworldTilesToHide.AlwaysHideMeatShops
-                link(cb, b, false, requestRedrawOverworldEvent.Trigger)
-                sp.Children.Add(cb) |> ignore
-                let tb = new TextBox(Text="", IsReadOnly=true, TextWrapping=TextWrapping.Wrap) |> header
-                sp.Children.Add(tb) |> ignore
-                let desc = "\nYou can mouse-hover the Zelda icon in the top of the tracker to temporarily make all hidden icons re-appear, if desired. And when you finish the seed and click Zelda, all icons reappear."
-                let tb = new TextBox(Text=desc, IsReadOnly=true, TextWrapping=TextWrapping.Wrap)
-                sp.Children.Add(tb) |> ignore
-                AddStyle(sp)
-                let sv = new ScrollViewer(Content=sp, VerticalScrollBarVisibility=ScrollBarVisibility.Auto, HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled)
-                let b = new Border(Child=sv, BorderThickness=Thickness(2.), BorderBrush=Brushes.DarkGray, Background=Brushes.Black, Padding=Thickness(5.), 
-                                    Width=720., MaxHeight=cm.Height-90., HorizontalAlignment=HorizontalAlignment.Right)
-                async {
-                    do! CustomComboBoxes.DoModalDocked(cm, wh, Dock.Bottom, b)
-                    popupIsActive <- false
-                    if changedGlobal then
-                        CustomComboBoxes.GlobalFlag.popupIsActive <- false
-                } |> Async.StartImmediate
-            )
-
     let tb = new TextBox(Text="Dungeon Settings", IsReadOnly=true, FontWeight=FontWeights.Bold) |> header
     options1sp.Children.Add(tb) |> ignore
+    // open the folder containing the crash log (with the log file selected), to make it easy to send to the developer
+    let crashLogButton = Graphics.makeButton(" Show crash log... ",None,None)
+    crashLogButton.HorizontalAlignment <- HorizontalAlignment.Left
+    crashLogButton.Margin <- Thickness(0.,10.,0.,0.)
+    crashLogButton.ToolTip <- "Open the folder containing Z1R_Tracker_crash_log.txt with the file selected,\nso you can send it along when reporting a problem"
+    crashLogButton.Click.Add(fun _ ->
+        try
+            let dir = System.AppDomain.CurrentDomain.BaseDirectory
+            let file = System.IO.Path.Combine(dir, "Z1R_Tracker_crash_log.txt")
+            let args = if System.IO.File.Exists(file) then sprintf "/Select, \"%s\"" file else sprintf "\"%s\"" dir
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("Explorer.exe", args)) |> ignore
+        with _ -> ()
+        )
     let visibleDungeonOpts =
         data1d
         |> Array.filter (fun (text,_,_,_,_) -> includePopupExplainer || not (Array.contains text advancedDungeonOptions))
@@ -365,6 +283,8 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
         ToolTipService.SetShowDuration(cb, 10000)
         link(cb, b, needFU, oe)
         options1sp.Children.Add(cb) |> ignore
+        if text = "Reverse scroll wheel" && includePopupExplainer then
+            options1sp.Children.Add(crashLogButton) |> ignore
         if text = "Dungeon Map Hint" then
             let sliderSp = new StackPanel(Orientation=Orientation.Horizontal, Margin=Thickness(4.,0.,0.,4.))
             let opacityLabel = new TextBox(Text="Opacity",IsReadOnly=true)
@@ -419,6 +339,27 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     muteCB.Checked.Add(fun _ -> TrackerModelOptions.IsMuted <- true; voice.Volume <- 0)
     muteCB.Unchecked.Add(fun _ -> TrackerModelOptions.IsMuted <- false; voice.Volume <- TrackerModelOptions.Volume)
     options2sp.Children.Add(muteCB) |> ignore
+    // reset every setting to its default: delete the settings file and restart (only offered in the in-app options popup)
+    if includePopupExplainer then
+        let resetButton = Graphics.makeButton(" Reset all settings to defaults... ",None,None)
+        resetButton.HorizontalAlignment <- HorizontalAlignment.Left
+        resetButton.Margin <- Thickness(0.,10.,0.,0.)
+        resetButton.ToolTip <- "Delete your saved settings and restart the app, so that every option goes back to its default"
+        resetButton.Click.Add(fun _ ->
+            async {
+                let wasActive = CustomComboBoxes.GlobalFlag.popupIsActive
+                if not wasActive then CustomComboBoxes.GlobalFlag.popupIsActive <- true
+                let resetText = "Reset and restart"
+                let! r = CustomComboBoxes.DoModalMessageBoxCore(cm, System.Drawing.SystemIcons.Warning,
+                                "This will delete your saved settings and restart the application,\nso every option goes back to its default.\nYour current tracker session will not be saved.",
+                                [resetText; "Cancel"], 100., 300.)
+                if not wasActive then CustomComboBoxes.GlobalFlag.popupIsActive <- false
+                if r = resetText then
+                    try System.IO.File.Delete(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_settings.json")) with _ -> ()
+                    Graphics.RestartTheApplication()
+                } |> Async.StartImmediate
+            )
+        options2sp.Children.Add(resetButton) |> ignore
     // other settings
     let options2Grid = new Grid()
     for i = 1 to 3 do

@@ -45,14 +45,14 @@ let boxCurrentBMP(boxCellCurrent, timelineOrigin) =
     | 10 -> Graphics.red_ring_bmp
     | 11 -> Graphics.silver_arrow_bmp
     | 12 -> Graphics.wand_bmp
-    | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then Graphics.ws_ms_bomb_upgrade_bmp else Graphics.white_sword_2_bmp)
+    | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then Graphics.ws_ms_bomb_upgrade_bmp else Graphics.ow_sword2_item_bmp)
     | 15 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_potion_split_bmp else Graphics.potion_split_bmp)
     | 16 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_red_potion_bmp else Graphics.red_potion_bmp)
     | 17 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_letter_bmp else Graphics.letter_bmp)
-    | 18 -> Graphics.progressive_sword_bmp
-    | 19 -> Graphics.wood_sword_1_bmp
-    | 20 -> Graphics.magical_sword_3_bmp
-    | 21 -> Graphics.white_sword_4_bmp
+    | 18 -> Graphics.ow_progressive_item_bmp
+    | 19 -> Graphics.ow_sword1_item_bmp
+    | 20 -> Graphics.ow_sword3_item_bmp
+    | 21 -> Graphics.ow_sword4_item_bmp
     | 22 -> Graphics.blue_ring_bmp
     | 23 -> Graphics.wood_arrow_bmp
     | 24 -> Graphics.blue_candle_bmp
@@ -164,6 +164,18 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
     member _this.BeforeDismissPopupCanvas = beforeDismissPopupCanvas.Publish
     static member TheOnlyCanvasManager with get() = theOnlyCanvasManager.Value
 
+// Escape closes the topmost modal popup (the same as clicking outside it)
+let private modalDismissStack = System.Collections.Generic.Stack<System.Threading.ManualResetEvent>()
+let private escapeHandlerRegistered = ref false
+let private ensureEscapeHandler() =
+    if not escapeHandlerRegistered.Value then
+        escapeHandlerRegistered.Value <- true
+        System.Windows.EventManager.RegisterClassHandler(typeof<System.Windows.Window>, System.Windows.Input.Keyboard.PreviewKeyDownEvent,
+            System.Windows.Input.KeyEventHandler(fun _ ea ->
+                if ea.Key = System.Windows.Input.Key.Escape && modalDismissStack.Count > 0 then
+                    ea.Handled <- true
+                    modalDismissStack.Peek().Set() |> ignore))
+
 // TODO rename DoModals
 let DoModalCore(cm:CanvasManager, wh:System.Threading.ManualResetEvent, placeElementOntoCanvas, removeElementFromCanvas, element:FrameworkElement, blackSunglassesOpacity) = async {
     if not popupIsActive then
@@ -182,8 +194,11 @@ let DoModalCore(cm:CanvasManager, wh:System.Threading.ManualResetEvent, placeEle
                 wh.Set() |> ignore
         )
     let ctxt = System.Threading.SynchronizationContext.Current
+    ensureEscapeHandler()
+    modalDismissStack.Push(wh)
     let! _ = Async.AwaitWaitHandle(wh)
     do! Async.SwitchToContext(ctxt)
+    if modalDismissStack.Count > 0 then modalDismissStack.Pop() |> ignore
     removeElementFromCanvas(c, element)
     cm.DismissPopup()
     }
@@ -392,9 +407,17 @@ let DoModalGridSelect<'State,'Result>
         | None -> originalStateIndex
     let mutable dragFrom = -1
     let COLW, ROWH = gcw+2*int ST, grh+2*int ST
+    let firstRowExtra = if uniqueName = "ItemBox" then 6 else 0   // the item menu's top row (the swords) is taller, so the sword icons can be bigger
     let grid = makeGrid(gnc, gnr, COLW, ROWH)
+    if firstRowExtra > 0 then grid.RowDefinitions.[0].Height <- GridLength(float (ROWH + firstRowExtra))
     grid.Background <- Brushes.Black
-    canvasAdd(popupCanvas, new Border(BorderThickness=Thickness(ST), BorderBrush=brushes.BorderBrush, Child=grid), gx, gy)
+    // the dungeon-room monster and floor-item menus are shown 2x larger (the grid scales from its top-left corner; cell hit-testing and arrow-key navigation follow the transform)
+    let gridScale = if uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail" then 2.0 else 1.0
+    let gridBorder = new Border(BorderThickness=Thickness(ST), BorderBrush=brushes.BorderBrush, Child=grid)
+    if gridScale <> 1.0 then
+        gridBorder.RenderTransform <- new ScaleTransform(gridScale, gridScale)
+        RenderOptions.SetBitmapScalingMode(gridBorder, BitmapScalingMode.NearestNeighbor)
+    canvasAdd(popupCanvas, gridBorder, gx, gy)
     let noteBox = 
         if isReorderable then
             let tb = new TextBlock(Text="Tip: hold Shift and\ndrag an icon to move it\nto your preferred spot.\n(Saved for next time.)", Foreground=Brushes.Gainsboro, FontSize=12., TextWrapping=TextWrapping.Wrap, Width=120.)
@@ -448,7 +471,7 @@ let DoModalGridSelect<'State,'Result>
         | StayPoppedUp -> ()
         )
     tileCanvas.MouseLeave.Add(fun _ -> snapBack())
-    let centerOf(x,y) = grid.TranslatePoint(Point(ST+float(x*COLW)+idealX, ST+float(y*ROWH)+idealY), cm.AppMainCanvas)
+    let centerOf(x,y) = grid.TranslatePoint(Point(ST+float(x*COLW)+idealX, ST+float(y*ROWH)+(if y > 0 then float firstRowExtra else 0.)+idealY), cm.AppMainCanvas)
     tileCanvas.MyKeyAdd(fun ea ->
         let x,y = currentState % gnc, currentState / gnc
         match HotKeys.GlobalHotKeyProcessor.TryGetValue(ea.Key) with
@@ -510,9 +533,23 @@ let DoModalGridSelect<'State,'Result>
         let c = cellBorders.[n].Child :?> Canvas
         let icon,isSel,_ = items.[n]
         if not (isNull (box icon)) then
+            // the sword icons are drawn big in the (taller) top row; if one is moved to another row it shrinks to fit that row's cell
+            match icon with
+            | :? System.Windows.Controls.Image as img when (match img.Tag with :? string as t -> t = "sword" | _ -> false) ->
+                if firstRowExtra > 0 && n / gnc = 0 then
+                    img.Width <- 15.
+                    img.Height <- 27.
+                    Canvas.SetLeft(img, 3.)
+                    Canvas.SetTop(img, 0.)
+                else
+                    img.Width <- 12.
+                    img.Height <- 21.
+                    Canvas.SetLeft(img, 4.)
+                    Canvas.SetTop(img, 0.)
+            | _ -> ()
             c.Children.Add(icon) |> ignore
             if not isSel then // grey out
-                c.Children.Add(new Canvas(Width=float gcw, Height=float grh, Background=Brushes.Black, Opacity=0.6, IsHitTestVisible=false)) |> ignore
+                c.Children.Add(new Canvas(Width=c.Width, Height=c.Height, Background=Brushes.Black, Opacity=0.6, IsHitTestVisible=false)) |> ignore
     let isShiftDown() = Input.Keyboard.IsKeyDown(Input.Key.LeftShift) || Input.Keyboard.IsKeyDown(Input.Key.RightShift)
     let saveLayout() =
         TrackerModelOptions.MenuLayouts.[uniqueName] <- items |> Array.map keyOf
@@ -538,7 +575,7 @@ let DoModalGridSelect<'State,'Result>
             let n = y * gnc + x
             let b = new Border(BorderThickness=Thickness(ST), Background=Brushes.Black)
             gridAdd(grid, b, x, y)
-            let c = new Canvas(Background=Brushes.Black, Width=float gcw, Height=float grh)  // ensure the canvas has a surface on which to receive mouse clicks
+            let c = new Canvas(Background=Brushes.Black, Width=float gcw, Height=float (grh + (if y = 0 then firstRowExtra else 0)))  // ensure the canvas has a surface on which to receive mouse clicks
             b.Child <- c
             cellBorders.[n] <- b
             canvasesToClear.Add(c)
@@ -645,6 +682,15 @@ let itemBoxMouseButtonExplainerDecoration =
     fe
 let itemBoxModalGridSelectBrushes = new ModalGridSelectBrushes(Brushes.Yellow, Brushes.Yellow, new SolidColorBrush(Color.FromRgb(140uy,10uy,0uy)), Brushes.Gray)
 
+// the big (15x27) sword icons for the item menu's top row; null for every other item
+let swordMenuBmpFor(ident:int) : System.Drawing.Bitmap =
+    match ident with
+    | 19 -> Graphics.ow_sword1_menu_bmp
+    | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then null else Graphics.ow_sword2_menu_bmp)
+    | 20 -> Graphics.ow_sword3_menu_bmp
+    | 21 -> Graphics.ow_sword4_menu_bmp
+    | 18 -> Graphics.ow_progressive_menu_bmp
+    | _ -> null
 let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activationDelta, originalPlayerHas, callerExtraDecorations, gridClickDismissalWarpReturn) = async {
     let innerc = new Canvas(Width=24., Height=24., Background=Brushes.Black)  // just has item drawn on it, not the box
     let redraw(n) =
@@ -672,7 +718,17 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
         |]
     let gridElementsSelectablesAndIDs = [|
         for ident in gridIdents do
-            let fe:FrameworkElement = if ident = -1 then upcast new Canvas() else upcast (boxCurrentBMP(ident, None) |> Graphics.BMPtoImage)
+            let fe:FrameworkElement = 
+                if ident = -1 then upcast new Canvas() 
+                else
+                    let sm = swordMenuBmpFor ident
+                    if sm <> null then
+                        let img = Graphics.BMPtoImage(sm)
+                        img.Stretch <- Stretch.Fill
+                        img.Tag <- box "sword"
+                        RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor)
+                        upcast img
+                    else upcast (boxCurrentBMP(ident, None) |> Graphics.BMPtoImage)
             let isSelectable = ident = -1 || ident=boxCellCurrent || TrackerModel.allItemWithHeartShuffleChoiceDomain.CanAddUse(ident)
             yield fe, isSelectable, ident
         |]
@@ -690,7 +746,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
                 newPH)
     let decorationsShouldGoToTheLeft = boxX > Graphics.OMTW*8.
     // the extra row goes above the original grid, so the original items stay where they always were; if that would run off the top of the window, shift the whole grid down instead
-    let extraRowHeight = 54.   // two extra rows of 21 (cell) + 2*3 (border) above the original 4-row grid
+    let extraRowHeight = 60.   // two extra rows of 21 (cell) + 2*3 (border) above the original 4-row grid, plus 6 for the taller top (sword) row
     let wantedGridY = -3. - extraRowHeight   // the grid is 2 rows taller than the original 4-row grid, so it starts 2 rows higher
     let gridY = max wantedGridY (-(boxY+3.))
     let gridX = if decorationsShouldGoToTheLeft then -144. else 27.
@@ -722,7 +778,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta2"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta3"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))

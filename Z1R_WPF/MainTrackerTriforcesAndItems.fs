@@ -62,6 +62,32 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
         let c,activate = Views.MakeBoxItem(cm, box)
         boxActivators.[box] <- (fun () -> activate(0, CustomComboBoxes.WarpToCenter))
         box.Changed.Add(fun _ -> if requiresForceUpdate then TrackerModel.forceUpdate())
+        // an item box (coast, dungeon, etc.) holding one of these items and marked as obtained also checks off that item's box in the upper overworld item grid (and un-checks it again if removed)
+        let gridLinks = 
+            [ TrackerModel.ITEMS.WOODARROW,    TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodArrow
+              TrackerModel.ITEMS.BLUERING,     TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueRing
+              TrackerModel.ITEMS.BLUECANDLE,   TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueCandle
+              TrackerModel.ITEMS.WOODSWORD,    TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword
+              TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword ]
+        let linkedItemId() = 
+            if box.PlayerHas() = TrackerModel.PlayerHas.YES then
+                match gridLinks |> List.tryFind (fun (id,_) -> id = box.CellCurrent()) with
+                | Some(id,_) -> id
+                | None -> -1
+            else -1
+        let wasLinkedItemId = ref (linkedItemId())
+        box.Changed.Add(fun _ ->
+            let now = linkedItemId()
+            let was = wasLinkedItemId.Value
+            if now <> was then
+                wasLinkedItemId.Value <- now
+                if was >= 0 && TrackerModel.mapCollectedCount.[was] = 0 then
+                    for (id,prop) in gridLinks do
+                        if id = was then prop.Set(false)
+                if now >= 0 then
+                    for (id,prop) in gridLinks do
+                        if id = now then prop.Set(true)
+                TrackerModel.recomputePlayerStateSummary())
         c.MouseEnter.Add(fun _ -> 
             match box.CellCurrent() with
             | 3 -> showLocatorInstanceFunc(owInstance.PowerBraceletable)
@@ -191,6 +217,19 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 OptionsMenu.secondQuestDungeonsOptionChanged.Trigger()
                 )
             c
+    // hovering a dungeon's hint box (the two-letter 'zora hint' above its triforce) shows the hint 3x larger in a popup below it
+    let addHintZoomOnHover(fe:FrameworkElement, i:int) =
+        fe.MouseEnter.Add(fun _ ->
+            let hz = TrackerModel.GetLevelHint(i)
+            if hz <> TrackerModel.HintZone.UNKNOWN && not popupIsActive then
+                let inner = OverworldItemGridUI.HintZoneDisplayTextBox(hz.AsDisplayTwoChars())
+                let vb = new Viewbox(Width=72., Height=72., Stretch=Stretch.Uniform, Child=inner)
+                let b = new Border(BorderBrush=OverworldItemGridUI.hintyBrush, BorderThickness=Thickness(3.), Background=Brushes.Black, Child=vb, IsHitTestVisible=false)
+                layout.ClearTopLayerHovers()
+                layout.AddTopLayerHover(b, max 0. (float(30*i) - 24.), 34.)
+            )
+        fe.MouseLeave.Add(fun _ -> layout.ClearTopLayerHovers())
+        fe.MouseDown.Add(fun _ -> layout.ClearTopLayerHovers())
     // numbered triforce display - the extra row of triforce in IsHiddenDungeonNumbers
     let updateNumberedTriforceDisplayImpl(c:Canvas,i) =
         let hasTriforce, index = TrackerModel.doesPlayerHaveTriforceAndWhichDungeonIndexIsIt(i)
@@ -259,6 +298,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 canvasAdd(hintCanvas, OverworldItemGridUI.HintZoneDisplayTextBox(if hz=TrackerModel.HintZone.UNKNOWN then "" else hz.AsDisplayTwoChars()), 3., 3.)
                 )
             OverworldItemGridUI.ApplyFastHintSelectorBehavior(cm, (float(30*i),0.), hintCanvas, i, true, Some(ShowLocatorDescriptor.DungeonIndex i), false)
+            addHintZoomOnHover(hintCanvas, i)
             mainTrackerCanvases.[i,0] <- hintCanvas
             Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(hintCanvas)
             gridAdd(mainTrackerGrid, hintCanvas, i, 0)
@@ -294,6 +334,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
             canvasAdd(level9ColorCanvas, OverworldItemGridUI.HintZoneDisplayTextBox(if hz=TrackerModel.HintZone.UNKNOWN then "" else hz.AsDisplayTwoChars()), 3., 3.)
             )
         OverworldItemGridUI.ApplyFastHintSelectorBehavior(cm, (float(30*8), 0.), level9ColorCanvas, 8, true, Some(ShowLocatorDescriptor.DungeonIndex 8), false)
+        addHintZoomOnHover(level9ColorCanvas, 8)
         Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(level9ColorCanvas)
     gridAdd(mainTrackerGrid, level9ColorCanvas, 8, 0) 
     mainTrackerCanvases.[8,0] <- level9ColorCanvas

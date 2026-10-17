@@ -854,41 +854,6 @@ let magic_key_bmp =
                      "...or.."
                      "...oo.."
                      "...or.." |], ['o', System.Drawing.Color.FromArgb(252,152,56); 'r', System.Drawing.Color.FromArgb(216,40,0)])
-// numbered sword icons, same pixel art as the overworld 'sword1/2/3' tile icons (5x9: digit on top, small sword below), drawn 2x
-// and centered in a 21x21 brown tile so they fit an item cell, exactly like the overworld icons (black digit on brown).
-let makeSprite5x9(rows:string[], palette:(char*System.Drawing.Color) list) =
-    let r = new System.Drawing.Bitmap(21,21)
-    let brown = System.Drawing.Color.FromArgb(185,122,87)   // same brown tile background as the overworld sword icons
-    for px = 0 to 21-1 do
-        for py = 0 to 21-1 do
-            r.SetPixel(px, py, brown)
-    for px = 0 to 10-1 do
-        for py = 0 to 18-1 do
-            let ch = rows.[py/2].[px/2]
-            match List.tryFind (fun (c,_) -> c = ch) palette with
-            | Some(_,col) -> r.SetPixel(5+px, 1+py, col)
-            | None -> ()
-    r
-let private swordDigitWhite = System.Drawing.Color.Black   // (name kept) the digit color
-let private swordBladeWhite = System.Drawing.Color.White
-let wood_sword_1_bmp =
-    makeSprite5x9([| "....."; "..n.."; ".nn.."; "..n.."; "..n.."; ".nnn."; "...f."; "gggff"; "...f." |],
-                  ['n', swordDigitWhite; 'f', System.Drawing.Color.FromArgb(29,148,65); 'g', System.Drawing.Color.FromArgb(136,0,21)])
-let white_sword_2_bmp =
-    makeSprite5x9([| "....."; ".nn.."; "...n."; "..n.."; ".n..."; ".nnn."; "...e."; "dddee"; "...e." |],
-                  ['n', swordDigitWhite; 'd', swordBladeWhite; 'e', System.Drawing.Color.FromArgb(63,72,204)])
-let magical_sword_3_bmp =
-    makeSprite5x9([| "....."; ".nn.."; "...n."; ".nn.."; "...n."; ".nn.."; "...c."; "dddcc"; "...c." |],
-                  ['n', swordDigitWhite; 'd', swordBladeWhite; 'c', System.Drawing.Color.FromArgb(237,0,36)])
-// a sword '4' (same style, with a yellow handle)
-let white_sword_4_bmp =
-    makeSprite5x9([| "....."; ".n.n."; ".n.n."; ".nnn."; "...n."; "...n."; "...y."; "dddyy"; "...y." |],
-                  ['n', swordDigitWhite; 'd', swordBladeWhite; 'y', System.Drawing.Color.FromArgb(255,242,0)])
-// the wood sword icon with a 'P' where the number goes, to mean 'progressive sword'
-let progressive_sword_bmp =
-    makeSprite5x9([| "....."; ".nnn."; ".n.n."; ".nnn."; ".n..."; ".n..."; "...f."; "gggff"; "...f." |],
-                  ['n', swordDigitWhite; 'f', System.Drawing.Color.FromArgb(29,148,65); 'g', System.Drawing.Color.FromArgb(136,0,21)])
-
 let readCacheFileOrCreateBmp(filename, createF : unit -> System.Drawing.Bitmap) =
     if System.IO.File.Exists(filename) then
         System.Drawing.Bitmap.FromFile(filename) :?> System.Drawing.Bitmap
@@ -1091,25 +1056,87 @@ do
 // 'Use old potion/letter icons': the tracker's original overworld-tile artwork for the potion shop and the (blue) letter, shrunk to fit an item cell.
 // The 5x9 interior icon is redrawn at 2x (10x18) and centered in a 21x21 cell.
 let oldTileIconAsItem(interior:System.Drawing.Bitmap) =
+    // drop the brown (corner-colored) background, crop to the artwork, and scale it up (nearest-neighbor) to fill as much of the 21x21 item cell as it can
     let r = new System.Drawing.Bitmap(21,21)
-    // fill the whole cell with the icon's own background (like the sword icons' brown tile) so it fills the same rectangle as the other tall icons
-    let corner = interior.GetPixel(1, 1)
-    let bg = if corner.A = 255uy then corner else System.Drawing.Color.FromArgb(185,122,87)
     for px = 0 to 20 do
         for py = 0 to 20 do
-            r.SetPixel(px, py, bg)
-    for ux = 0 to 4 do
-        for uy = 0 to 8 do
-            let c = interior.GetPixel(ux*3+1, uy*3+1)
-            for dx = 0 to 1 do
-                for dy = 0 to 1 do
-                    r.SetPixel(5 + ux*2 + dx, 1 + uy*2 + dy, c)
+            r.SetPixel(px, py, System.Drawing.Color.Transparent)
+    let art(ux,uy) = interior.GetPixel(ux*3+1, uy*3+1)
+    let bg = art(0,0)
+    let isArt(ux,uy) = let c = art(ux,uy) in not (c.R = bg.R && c.G = bg.G && c.B = bg.B)
+    let pts = [ for ux = 0 to 4 do for uy = 0 to 8 do if isArt(ux,uy) then yield (ux,uy) ]
+    if not pts.IsEmpty then
+        let minX = pts |> List.map fst |> List.min
+        let maxX = pts |> List.map fst |> List.max
+        let minY = pts |> List.map snd |> List.min
+        let maxY = pts |> List.map snd |> List.max
+        let bw, bh = float (maxX-minX+1), float (maxY-minY+1)
+        let scale = min (21. / bw) (21. / bh)
+        let dw, dh = int (bw*scale), int (bh*scale)
+        let offX, offY = (21-dw)/2, (21-dh)/2
+        for x = 0 to dw-1 do
+            for y = 0 to dh-1 do
+                let ux = minX + min (int bw - 1) (int (float x / scale))
+                let uy = minY + min (int bh - 1) (int (float y / scale))
+                if isArt(ux,uy) then
+                    r.SetPixel(offX + x, offY + y, art(ux,uy))
     r
 let old_potion_bmp = oldTileIconAsItem(theInteriorBmpTable.[34].[0])   // the old potion-shop icon, used for both potions
 let old_blue_potion_bmp = old_potion_bmp
 let old_red_potion_bmp = old_potion_bmp
 let old_potion_split_bmp = old_potion_bmp
 let old_letter_bmp = oldTileIconAsItem(theInteriorBmpTable.[30].[0])   // the old (blue) letter icon
+// the overworld sword tile icons (1/2/3), used for the swords in the dungeon item menus
+// the thin, tall overworld cave icon (15x27) scaled to fit the 21-tall item cell: a 12x21 icon centered in the cell, no brown fill around it
+let private swordMenuPixel(c:System.Drawing.Color) = c   // sword icons keep their brown cave background and black number
+let swordIconAsItem(interior:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(21,21)
+    for px = 0 to 20 do
+        for py = 0 to 20 do
+            r.SetPixel(px, py, System.Drawing.Color.Transparent)
+    for x = 0 to 11 do
+        for y = 0 to 20 do
+            let sx = min 14 (int ((float x + 0.5) * 15. / 12.))
+            let sy = min 26 (int ((float y + 0.5) * 27. / 21.))
+            r.SetPixel(4 + x, y, swordMenuPixel(interior.GetPixel(sx, sy)))
+    r
+// the same icon at its natural 15x27 size (3x3 screen pixels per art pixel), used in the (taller) top row of the dungeon item menu
+let swordMenuBmp(interior:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(15,27)
+    for x = 0 to 14 do
+        for y = 0 to 26 do
+            r.SetPixel(x, y, swordMenuPixel(interior.GetPixel(x, y)))
+    r
+let ow_sword1_menu_bmp = swordMenuBmp(theInteriorBmpTable.[15].[0])
+let ow_sword2_menu_bmp = swordMenuBmp(theInteriorBmpTable.[14].[0])
+let ow_sword3_menu_bmp = swordMenuBmp(theInteriorBmpTable.[13].[0])
+let ow_sword1_item_bmp = swordIconAsItem(theInteriorBmpTable.[15].[0])
+let ow_sword2_item_bmp = swordIconAsItem(theInteriorBmpTable.[14].[0])
+let ow_sword3_item_bmp = swordIconAsItem(theInteriorBmpTable.[13].[0])
+// the overworld 4th-sword ('4') and progressive-sword ('P') icons: same pixel art as WPFUI.extraSwordIconBmp
+let private extraSwordInterior(isProg:bool) : System.Drawing.Bitmap =
+    let brown = System.Drawing.Color.FromArgb(185,122,87)
+    let blade = if isProg then System.Drawing.Color.FromArgb(29,148,65) else System.Drawing.Color.FromArgb(255,165,0)
+    let hilt = if isProg then System.Drawing.Color.FromArgb(136,0,21) else System.Drawing.Color.White
+    let glyph = if isProg then [| "abbba"; "ababa"; "abbba"; "abaaa"; "abaaa" |] else [| "ababa"; "ababa"; "abbba"; "aaaba"; "aaaba" |]
+    let rows = Array.append (Array.append [| "aaaaa" |] glyph) [| "aaaXa"; "HHHXX"; "aaaXa" |]
+    let bmp = new System.Drawing.Bitmap(5*3, 9*3)
+    for y = 0 to 8 do
+        for x = 0 to 4 do
+            let c = 
+                match rows.[y].[x] with
+                | 'b' -> System.Drawing.Color.Black
+                | 'X' -> blade
+                | 'H' -> hilt
+                | _ -> brown
+            for dx = 0 to 2 do
+                for dy = 0 to 2 do
+                    bmp.SetPixel(x*3+dx, y*3+dy, c)
+    bmp
+let ow_sword4_item_bmp = swordIconAsItem(extraSwordInterior false)
+let ow_progressive_item_bmp = swordIconAsItem(extraSwordInterior true)
+let ow_sword4_menu_bmp = swordMenuBmp(extraSwordInterior false)
+let ow_progressive_menu_bmp = swordMenuBmp(extraSwordInterior true)
 let theFullTileBmpTable = Array.init theInteriorBmpTable.Length (fun _ -> ResizeArray())
 let initFull() =
     let len = theInteriorBmpTable.Length
@@ -1234,6 +1261,14 @@ let swordLevelToBmp(swordLevel) =
     | 2 -> white_sword_bmp
     | 3 -> magical_sword_bmp
     | _ -> failwith "bad SwordLevel"
+// the white sword with a yellow handle (instead of its usual blue one): shown in the item progress bar once a 4th sword has been collected
+let white_sword4_bmp =
+    let r = new System.Drawing.Bitmap(white_sword_bmp.Width, white_sword_bmp.Height)
+    for x = 0 to r.Width-1 do
+        for y = 0 to r.Height-1 do
+            let c = white_sword_bmp.GetPixel(x, y)
+            r.SetPixel(x, y, (if c.R = 128uy && c.G = 128uy && c.B = 255uy then System.Drawing.Color.FromArgb(255,242,0) else c))
+    r
 let ringLevelToBmp(ringLevel) =
     match ringLevel with
     | 0 -> greyscale red_ring_bmp

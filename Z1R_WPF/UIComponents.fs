@@ -264,7 +264,6 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
         let dungeonX = anyRoadTextRight + g - tileLeft
         let dungeonTextRight = dungeonX + 35. + 2. + measureLines "Dungeon\n(Completed)"
         let recorderX = dungeonTextRight + g - tileLeft
-        let recorderTextRight = recorderX + 48. + 2. + measureLines "Recorder\nDestination"
         let dotsX = recorderX + 100.   // original spot: right next to the word 'Recorder' (371 vs the recorder icon at 271)
         let dotsRight = dotsX + measure "..." + 14.
         let customWaypointX = dotsRight + g
@@ -500,6 +499,9 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
         canvasAdd(itemProgressCanvas, sword, x, y)
         sword
         )
+    let sword4 = Graphics.BMPtoImage(Graphics.white_sword4_bmp)   // once a 4th sword has been collected, the white sword shows with a yellow handle
+    sword4.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, sword4, x, y)
     x <- x + DX
     let grey_candle = Graphics.BMPtoImage(Graphics.greyscale Graphics.red_candle_bmp)
     let blue_candle = Graphics.BMPtoImage Graphics.blue_candle_bmp
@@ -594,7 +596,9 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     canvasAdd(itemProgressCanvas, have_meat, x, y)
 
     let redrawItemProgressBar() = 
-        swordsByLevel |> Array.iteri (fun i sword -> if i = TrackerModel.playerComputedStateSummary.SwordLevel then sword.Opacity <- 1. else sword.Opacity <- 0.)
+        let hasSword4 = (TrackerModel.playerHasSword4.Value = 1)
+        swordsByLevel |> Array.iteri (fun i sword -> if not hasSword4 && i = TrackerModel.playerComputedStateSummary.SwordLevel then sword.Opacity <- 1. else sword.Opacity <- 0.)
+        sword4.Opacity <- (if hasSword4 then 1. else 0.)
         match TrackerModel.playerComputedStateSummary.CandleLevel with
         | 0 -> grey_candle.Opacity <- 1.; blue_candle.Opacity <- 0.; red_candle.Opacity <- 0.
         | 1 -> grey_candle.Opacity <- 0.; blue_candle.Opacity <- 1.; red_candle.Opacity <- 0.
@@ -1276,7 +1280,7 @@ let MakeMouseHoverExplainer(appMainCanvas:Canvas) =
     c.Children.Add(desc) |> ignore
 
     let COL = Brushes.Green
-    let openCaves = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ 531.,138.; 547.,138.; 547.,122.; 531.,122.; 531.,138. ] |> Seq.map Point))
+    let openCaves = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ 410.,115.; 430.,115.; 430.,96.; 410.,96.; 410.,115. ] |> Seq.map Point))
     addLabel(openCaves, "Show locations of unmarked open caves", 430., 180.)
 
     let COL = Brushes.MediumVioletRed
@@ -1287,8 +1291,8 @@ let MakeMouseHoverExplainer(appMainCanvas:Canvas) =
     canvasAdd(c, spotSummary, 0., 0.)
 
     let COL = Brushes.Green
-    let dx,dy = 85., THRU_MAIN_MAP_H + 3.
-    let anyRoad = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ -2.,2.; -2.,25.; 13.,25.; 13.,2.; -2.,2. ] |> Seq.map (fun (x,y) -> Point(dx+x,dy+y))))
+    let dx,dy = 60., THRU_MAIN_MAP_H + 3.
+    let anyRoad = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ -2.,2.; -2.,25.; 16.,25.; 16.,2.; -2.,2. ] |> Seq.map (fun (x,y) -> Point(dx+x,dy+y))))
     addLabel(anyRoad, "Show Any Roads", 40., 340.)
     let COL = Brushes.MediumVioletRed
     let dx,dy = ITEM_PROGRESS_FIRST_ITEM+25., THRU_MAP_AND_LEGEND_H+3.
@@ -1311,7 +1315,7 @@ let MakeMouseHoverExplainer(appMainCanvas:Canvas) =
     c.Children.Add(desc) |> ignore
     let COL = Brushes.MediumVioletRed
     let dx,dy = LEFT_OFFSET + 4.8*OMTW + 15., THRU_MAIN_MAP_H + 3.
-    let recorderDest = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ 13.,2.; -39.,2.; -39.,25.; 13.,25.; 13.,2. ] |> Seq.map (fun (x,y) -> Point(dx+x,dy+y))))
+    let recorderDest = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ 10.,-3.; -12.,-3.; -12.,17.; 10.,17.; 10.,-3. ] |> Seq.map (fun (x,y) -> Point(dx+x,dy+y))))
     recorderDest.Points.Add(Point(330.,340.))
     canvasAdd(c, recorderDest, 0., 0.)
     let desc = mkTxt("Show recorder destinations")
@@ -1321,7 +1325,7 @@ let MakeMouseHoverExplainer(appMainCanvas:Canvas) =
     
     let COL = Brushes.CornflowerBlue
     let dx,dy = LEFT_OFFSET + 7.8*OMTW + 56., THRU_MAIN_MAP_H + 36.
-    let hintDecoderButton = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ 2.,2.; 2.,22.; 79.,22.; 79.,2.; 2.,2. ] |> Seq.map (fun (x,y) -> Point(dx+x,dy+y))))
+    let hintDecoderButton = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ 39.,5.; 39.,29.; 71.,29.; 71.,5.; 39.,5. ] |> Seq.map (fun (x,y) -> Point(dx+x,dy+y))))
     addLabel(hintDecoderButton, "Show hint shops", 442., 348.)
     
     let COL = Brushes.MediumVioletRed
@@ -1331,7 +1335,7 @@ let MakeMouseHoverExplainer(appMainCanvas:Canvas) =
     
     let COL = Brushes.Green
     let dx,dy = BLOCKERS_AND_NOTES_OFFSET-82., START_DUNGEON_AND_NOTES_AREA_H+2.
-    let blockers = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ -4.,0.; -4.,20.; 25.,20.; 25.,0.; -4.,0.; -176.,-34.; -191.,-34.; -191.,-64.; -176.,-64.; -176.,-34.; -4.,0. ] |> Seq.map (fun (x,y) -> Point(dx+x,dy+y))))
+    let blockers = new Shapes.Polyline(Stroke=COL, StrokeThickness=ST, Points=new PointCollection( [ -4.,0.; -4.,20.; 25.,20.; 25.,0.; -4.,0.; -217.,-34.; -235.,-34.; -235.,-64.; -217.,-64.; -217.,-34.; -4.,0. ] |> Seq.map (fun (x,y) -> Point(dx+x,dy+y))))
     addLabel(blockers, "Show\ndungeon\nlocations", 339., 320.)
 
     for dd in delayedDescriptions do   // ensure these draw atop all the PolyLines

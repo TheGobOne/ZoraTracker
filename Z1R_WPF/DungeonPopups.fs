@@ -175,7 +175,7 @@ let DoMonsterDetailPopup(cm:CanvasManager, boxX, boxY, currentMonsterDetail) = a
         innerc.Children.Add(dp) |> ignore
         DockPanel.SetDock(textBorder, Dock.Right)
         Canvas.SetTop(dp, -3.)
-        Canvas.SetLeft(dp, 217.)
+        Canvas.SetLeft(dp, 415.)   // right edge of the (now 2x) grid
     let extraDecorations = 
         let text = new TextBox(Text="Select a Monster Detail for this room", Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
                                     BorderThickness=Thickness(0.), FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center)
@@ -237,7 +237,7 @@ let DoFloorDropDetailPopup(cm:CanvasManager, boxX, boxY, currentFloorDropDetail)
         innerc.Children.Add(dp) |> ignore
         DockPanel.SetDock(textBorder, Dock.Right)
         Canvas.SetTop(dp, -3.)
-        Canvas.SetLeft(dp, 99.)
+        Canvas.SetLeft(dp, 177.)   // right edge of the (now 2x) grid
     let extraDecorations = 
         let text = new TextBox(Text="Select a Floor Drop Detail for this room", Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
                                     BorderThickness=Thickness(0.), FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center)
