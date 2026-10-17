@@ -116,6 +116,17 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
     extrasImage.ToolTip <- "Starting items and extra drops"
     ToolTipService.SetPlacement(extrasImage, System.Windows.Controls.Primitives.PlacementMode.Top)
     gridAdd(mainTrackerGrid, extrasImage, 8, 4)
+    // hovering the button turns the blue part of the icon gold
+    let extrasNormalSource = extrasImage.Source
+    let extrasGoldSource = 
+        let gold = Graphics.transformColor(Graphics.iconExtras_bmp, (fun c ->
+            if c.A > 0uy && c.B > c.R then
+                let v = int c.B
+                System.Drawing.Color.FromArgb(int c.A, v, int (float v * 0.84), 0)
+            else c))
+        (Graphics.BMPtoImage gold).Source
+    extrasImage.MouseEnter.Add(fun _ -> extrasImage.Source <- extrasGoldSource)
+    extrasImage.MouseLeave.Add(fun _ -> extrasImage.Source <- extrasNormalSource)
     let IDEAL = Point(Views.IDEAL_BOX_MOUSE_X, Views.IDEAL_BOX_MOUSE_Y)
     extrasImage.MyKeyAdd(fun ea ->
         match HotKeys.GlobalHotKeyProcessor.TryGetValue(ea.Key) with
@@ -126,7 +137,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
             ea.Handled <- true
             Graphics.NavigationallyWarpMouseCursorTo(mainTrackerCanvases.[8,3].TranslatePoint(IDEAL,cm.AppMainCanvas))
         | _ -> ())
-    Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(extrasImage)
+    // (no hover box on the extras icon: the turquoise highlight was removed here)
     let finalCanvasOf1Or4 = 
         if TrackerModel.IsHiddenDungeonNumbers() then
             null

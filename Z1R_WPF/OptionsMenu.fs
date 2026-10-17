@@ -58,8 +58,7 @@ let data1o(isStandardHyrule) =
     // Mirror overworld is not useful when not(isStandardHyrule), but if the user has it checked, we want them to be able to uncheck it
 // now a clickable feature of top tracker area
 //    yield "Mirror overworld", "Flip the overworld map East<->West", TrackerModelOptions.Overworld.MirrorOverworld, true, (fun()->()), None
-    yield "Shops before dungeons", "In the overworld map tile popup, the grid starts with shops when this is checked\n(starts with dungeons when unchecked)", TrackerModelOptions.Overworld.ShopsFirst, false, (fun()->()), None
-    yield "Non-shop item icons", "When enabled, right-clicking an overworld tile that has no other right-click action lets you add an extra item icon overlay\n(e.g. mark a bomb dropper with a bomb icon). Off by default.", TrackerModelOptions.AllowItemIconOnNonShopTile, false, (fun()->()), None
+    yield "Shops before dungeons", "In the overworld map tile popup, the grid starts with shops when this is checked\n(starts with dungeons when unchecked)", TrackerModelOptions.Overworld.ShopsFirst, false, (fun()-> TrackerModelOptions.MenuLayouts.Remove("OWGridTile") |> ignore; TrackerModelOptions.writeSettings()), None   // changing this goes back to the default order (drops any Shift+drag layout, which would otherwise override it)
     yield "Custom marker tiles", "When enabled, the tile selector popup includes two personal-preference marker tiles\n(asterisk and diamond) you can place on overworld spots for custom notes. Off by default.", TrackerModelOptions.PersonalPrefMarkersEnabled, false, (fun()->()), None
     |]
 
@@ -67,6 +66,7 @@ let data1d = [|
     "Dungeon Map Hint", "Check this box to add a transparent icon to the dungeon map rooms in order to better guess where that room is", TrackerModelOptions.DisplayIconsInDungeonMap, false, displayIconsInDungeonMapOptionChanged.Trigger
 // now a clickable feature of top tracker area
 //    "Second quest dungeons", "Check this if dungeon 4, rather than dungeon 1, has 3 items (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.IsSecondQuestDungeons, false, secondQuestDungeonsOptionChanged.Trigger
+    "BOARD instead of LEVEL", "Check this to label the dungeon tabs and headers BOARD-1 ... BOARD-9\ninstead of LEVEL-1 ... LEVEL-9", TrackerModelOptions.BOARDInsteadOfLEVEL, false, BOARDInsteadOfLEVELOptionChanged.Trigger
     "Show basement info", "Check this if empty dungeon item boxes should suggest whether they are found as\nbasement items rather than floor drops (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.ShowBasementInfo, false, showBasementInfoOptionChanged.Trigger
     "Do door inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, fun()->()
     "Book for Helpful Hints", "Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, bookForHelpfulHintsOptionChanged.Trigger
@@ -75,6 +75,7 @@ let data1d = [|
     "Default to NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, (fun()->())
     "Dungeon 'sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, dungeonSunglassesChanged.Trigger
     "Reverse scroll wheel", "When unchecked: scroll up = monster popup, scroll down = floor-drop/item popup.\nWhen checked: scroll up = floor-drop/item popup, scroll down = monster popup.\n(Dungeon rooms)", TrackerModelOptions.ReverseScrollWheelDirection, false, (fun()->())
+    "Use old potion/letter icons", "Rexy is a boomer", TrackerModelOptions.UseOldPotionLetterIcons, false, (fun()->())
     |]
 
 let data2 = [|
@@ -797,6 +798,14 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     cb.Checked.Add(fun _ -> TrackerModelOptions.SaveOnCompletion.Value <- true)
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.SaveOnCompletion.Value <- false)
     cb.ToolTip <- "When you click Zelda to complete the seed, automatically save the full tracker state to a file"
+    ToolTipService.SetShowDuration(cb, 10000)
+    options3sp.Children.Add(cb) |> ignore
+
+    let cb = new CheckBox(Content=new TextBox(Text="Check for updates on startup",IsReadOnly=true))
+    cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.CheckForUpdates.Value
+    cb.Checked.Add(fun _ -> TrackerModelOptions.CheckForUpdates.Value <- true)
+    cb.Unchecked.Add(fun _ -> TrackerModelOptions.CheckForUpdates.Value <- false)
+    cb.ToolTip <- "When the tracker starts, look on GitHub for a newer release.\nIf there is one, the version button glows green; click it for the download link."
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 

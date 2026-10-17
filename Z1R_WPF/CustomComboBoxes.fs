@@ -46,9 +46,9 @@ let boxCurrentBMP(boxCellCurrent, timelineOrigin) =
     | 11 -> Graphics.silver_arrow_bmp
     | 12 -> Graphics.wand_bmp
     | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then Graphics.ws_ms_bomb_upgrade_bmp else Graphics.white_sword_2_bmp)
-    | 15 -> Graphics.potion_split_bmp
-    | 16 -> Graphics.red_potion_bmp
-    | 17 -> Graphics.letter_bmp
+    | 15 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_potion_split_bmp else Graphics.potion_split_bmp)
+    | 16 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_red_potion_bmp else Graphics.red_potion_bmp)
+    | 17 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_letter_bmp else Graphics.letter_bmp)
     | 18 -> Graphics.progressive_sword_bmp
     | 19 -> Graphics.wood_sword_1_bmp
     | 20 -> Graphics.magical_sword_3_bmp
@@ -355,39 +355,83 @@ let DoModalGridSelect<'State,'Result>
     popupCanvas.Children.Add(pretty) |> ignore
     if gridElementsSelectablesAndIDs.Length > gnr*gnc then
         failwith "the grid is not big enough to accomodate all the choices"
+    // Shift+drag rearranging is supported in the item-box and overworld-tile menus; the layout is remembered in the settings file
+    let isReorderable = (uniqueName = "ItemBox" || uniqueName = "OWGridTile")
+    let total = gnc*gnr
+    let keyOf(it:FrameworkElement*bool*'State) = let ic,_,st = it in if isNull (box ic) then "" else (box st).ToString()
+    let defaultItems : (FrameworkElement*bool*'State)[] = 
+        Array.init total (fun n -> if n < gridElementsSelectablesAndIDs.Length then gridElementsSelectablesAndIDs.[n] else (null, false, Unchecked.defaultof<'State>))
+    let originalKey = keyOf defaultItems.[originalStateIndex]
+    let items : (FrameworkElement*bool*'State)[] = Array.copy defaultItems
+    if isReorderable then
+        match TrackerModelOptions.MenuLayouts.TryGetValue(uniqueName) with
+        | true, saved when not (isNull saved) ->
+            let byKey = new System.Collections.Generic.Dictionary<string, FrameworkElement*bool*'State>()
+            for it in defaultItems do
+                let k = keyOf it
+                if k <> "" && not (byKey.ContainsKey k) then byKey.[k] <- it
+            let used = new System.Collections.Generic.HashSet<string>()
+            let placed : (FrameworkElement*bool*'State)[] = Array.create total (null, false, Unchecked.defaultof<'State>)
+            for pos = 0 to (min saved.Length total) - 1 do
+                let k = saved.[pos]
+                if k <> "" && byKey.ContainsKey k && used.Add k then placed.[pos] <- byKey.[k]
+            // anything not in the saved layout (e.g. a newly added item) goes into the first free spots, in default order
+            let leftovers = [ for it in defaultItems do
+                                let k = keyOf it
+                                if k <> "" && not (used.Contains k) then yield it ]
+            let freeSpots = [ for pos = 0 to total-1 do
+                                let ic,_,_ = placed.[pos]
+                                if isNull (box ic) then yield pos ]
+            if leftovers.Length <= freeSpots.Length then
+                List.iteri (fun i it -> placed.[freeSpots.[i]] <- it) leftovers
+                Array.blit placed 0 items 0 total
+        | _ -> ()
+    let mutable origIdx = 
+        match items |> Array.tryFindIndex (fun it -> let ic,_,_ = it in not (isNull (box ic)) && keyOf it = originalKey) with
+        | Some i -> i
+        | None -> originalStateIndex
+    let mutable dragFrom = -1
     let COLW, ROWH = gcw+2*int ST, grh+2*int ST
     let grid = makeGrid(gnc, gnr, COLW, ROWH)
     grid.Background <- Brushes.Black
     canvasAdd(popupCanvas, new Border(BorderThickness=Thickness(ST), BorderBrush=brushes.BorderBrush, Child=grid), gx, gy)
-    let mutable currentState = originalStateIndex   // the only bit of local mutable state during the modal - it ranges from 0..gridElements.Length-1
+    let noteBox = 
+        if isReorderable then
+            let tb = new TextBlock(Text="Tip: hold Shift and\ndrag an icon to move it\nto your preferred spot.\n(Saved for next time.)", Foreground=Brushes.Gainsboro, FontSize=12., TextWrapping=TextWrapping.Wrap, Width=120.)
+            let b = new Border(Child=tb, Background=Brushes.Black, BorderBrush=brushes.BorderBrush, BorderThickness=Thickness(1.), Padding=Thickness(6.), IsHitTestVisible=false)
+            canvasAdd(popupCanvas, b, gx + float(gnc*COLW) + 2.*ST + 6., gy)
+            Some b
+        else None
+    let mutable currentState = origIdx   // the only bit of local mutable state during the modal - it ranges from 0..gridElements.Length-1
     let mutable allDoneSoNoLongerNeedToMouseLeaveSnapback = false
     let canvasesToClear = ResizeArray<Canvas>()
     let selfCleanup() =
         for (d,_x,_y) in extraDecorations do
             popupCanvas.Children.Remove(d)
         popupCanvas.Children.Remove(pretty)
+        match noteBox with Some b -> popupCanvas.Children.Remove(b) | None -> ()
         for c in canvasesToClear do
             c.Children.Clear()
     let dismiss() =
         wh.Set() |> ignore
-    let isSelectable() = let _,s,_ = gridElementsSelectablesAndIDs.[currentState] in s
-    let stateID() = let _,_,x = gridElementsSelectablesAndIDs.[currentState] in x
+    let isSelectable() = let _,s,_ = items.[currentState] in s
+    let stateID() = let _,_,x = items.[currentState] in x
     let redrawGridFuncs = ResizeArray()
     let changeCurrentState(newState) =
         currentState <- newState
         redrawTile(stateID())
         for r in redrawGridFuncs do r()
     let next() =
-        currentState <- (currentState+1) % gridElementsSelectablesAndIDs.Length
+        currentState <- (currentState+1) % items.Length
         while not(isSelectable()) do
-            currentState <- (currentState+1) % gridElementsSelectablesAndIDs.Length
+            currentState <- (currentState+1) % items.Length
         changeCurrentState(currentState)
     let prev() =
-        currentState <- (currentState-1+gridElementsSelectablesAndIDs.Length) % gridElementsSelectablesAndIDs.Length
+        currentState <- (currentState-1+items.Length) % items.Length
         while not(isSelectable()) do
-            currentState <- (currentState-1+gridElementsSelectablesAndIDs.Length) % gridElementsSelectablesAndIDs.Length
+            currentState <- (currentState-1+items.Length) % items.Length
         changeCurrentState(currentState)
-    let snapBack() = if not allDoneSoNoLongerNeedToMouseLeaveSnapback then changeCurrentState(originalStateIndex)     // don't redraw and do other work after the popup is done (MouseLeave can be very error-prone if not careful!)
+    let snapBack() = if not allDoneSoNoLongerNeedToMouseLeaveSnapback then changeCurrentState(origIdx)     // don't redraw and do other work after the popup is done (MouseLeave can be very error-prone if not careful!)
     // original tile
     redrawTile(stateID())
     let centerOfTile = Point(tileX+tileCanvas.Width/2., tileY+tileCanvas.Height/2.)   // use actual center, not the "ideal" coords, as we want the most wiggle-room, even if mouse obscures item a little
@@ -460,49 +504,97 @@ let DoModalGridSelect<'State,'Result>
         | Some(HotKeys.GlobalHotkeyTargets.MiddleClick) -> Graphics.Win32.MiddleMouseClick()
         | Some(HotKeys.GlobalHotkeyTargets.RightClick) -> Graphics.Win32.RightMouseClick()
         | _ -> ()                    
-    // grid of choices
+    // grid of choices (every cell, including holes, is a bordered canvas so that Shift+drag can move items into empty spots too)
+    let cellBorders : Border[] = Array.zeroCreate total
+    let populate(n) =
+        let c = cellBorders.[n].Child :?> Canvas
+        let icon,isSel,_ = items.[n]
+        if not (isNull (box icon)) then
+            c.Children.Add(icon) |> ignore
+            if not isSel then // grey out
+                c.Children.Add(new Canvas(Width=float gcw, Height=float grh, Background=Brushes.Black, Opacity=0.6, IsHitTestVisible=false)) |> ignore
+    let isShiftDown() = Input.Keyboard.IsKeyDown(Input.Key.LeftShift) || Input.Keyboard.IsKeyDown(Input.Key.RightShift)
+    let saveLayout() =
+        TrackerModelOptions.MenuLayouts.[uniqueName] <- items |> Array.map keyOf
+        TrackerModelOptions.writeSettings()
+    let refreshHighlights() = for r in redrawGridFuncs do r()
+    let swapCells(a, m) =
+        let ca, cm_ = (cellBorders.[a].Child :?> Canvas), (cellBorders.[m].Child :?> Canvas)
+        ca.Children.Clear()
+        cm_.Children.Clear()
+        let tmp = items.[a]
+        items.[a] <- items.[m]
+        items.[m] <- tmp
+        populate a
+        populate m
+        // keep tracking where the tile's original state now lives
+        let ok = originalKey
+        match items |> Array.tryFindIndex (fun it -> let ic,_,_ = it in not (isNull (box ic)) && keyOf it = ok) with
+        | Some i -> origIdx <- i
+        | None -> ()
+        saveLayout()
     for y = 0 to gnr - 1 do
         for x = 0 to gnc - 1 do
             let n = y * gnc + x
-            let icon,isSelectable,_ = if n < gridElementsSelectablesAndIDs.Length then gridElementsSelectablesAndIDs.[n] else null,false,Unchecked.defaultof<_>
-            if icon <> null then
-                let b = new Border(BorderThickness=Thickness(ST), Background=Brushes.Black)
-                gridAdd(grid, b, x, y)
-                let c = new Canvas(Background=Brushes.Black, Width=float gcw, Height=float grh)  // ensure the canvas has a surface on which to receive mouse clicks
-                b.Child <- c
-                canvasesToClear.Add(c)
-                c.Children.Add(icon) |> ignore
-                if not(isSelectable) then // grey out
-                    c.Children.Add(new Canvas(Width=float gcw, Height=float grh, Background=Brushes.Black, Opacity=0.6, IsHitTestVisible=false)) |> ignore
-                b.MouseEnter.Add(fun _ -> changeCurrentState(n))
-                let redraw() = b.BorderBrush <- (if n = currentState then (if isSelectable then brushes.GridSelectableHighlightBrush else brushes.GridNotSelectableHighlightBrush) else Brushes.Black)
-                redrawGridFuncs.Add(redraw)
-                redraw()
-                let mouseWarpDismiss() =
-                    allDoneSoNoLongerNeedToMouseLeaveSnapback <- true
-                    match gridClickDismissalWarpReturn with
-                    | WarpTo(pos) -> Graphics.WarpMouseCursorTo(pos)
-                    | WarpToCenter -> 
-                        let pos = tileCanvas.TranslatePoint(Point(tileCanvas.Width/2.,tileCanvas.Height/2.), cm.AppMainCanvas)
-                        Graphics.WarpMouseCursorTo(pos)
-                    | NoWarp -> ()
-                    dismiss()
-                b.MouseDown.Add(fun ea -> 
+            let b = new Border(BorderThickness=Thickness(ST), Background=Brushes.Black)
+            gridAdd(grid, b, x, y)
+            let c = new Canvas(Background=Brushes.Black, Width=float gcw, Height=float grh)  // ensure the canvas has a surface on which to receive mouse clicks
+            b.Child <- c
+            cellBorders.[n] <- b
+            canvasesToClear.Add(c)
+            populate n
+            b.MouseEnter.Add(fun _ -> 
+                let ic,_,_ = items.[n]
+                if isNull (box ic) then snapBack() else changeCurrentState(n))
+            let redraw() = 
+                let ic,isSel,_ = items.[n]
+                b.BorderBrush <- 
+                    if isNull (box ic) && dragFrom <> n then Brushes.Black
+                    elif dragFrom = n then Brushes.Orange
+                    elif n = currentState then (if isSel then brushes.GridSelectableHighlightBrush else brushes.GridNotSelectableHighlightBrush) 
+                    else Brushes.Black
+            redrawGridFuncs.Add(redraw)
+            redraw()
+            let mouseWarpDismiss() =
+                allDoneSoNoLongerNeedToMouseLeaveSnapback <- true
+                match gridClickDismissalWarpReturn with
+                | WarpTo(pos) -> Graphics.WarpMouseCursorTo(pos)
+                | WarpToCenter -> 
+                    let pos = tileCanvas.TranslatePoint(Point(tileCanvas.Width/2.,tileCanvas.Height/2.), cm.AppMainCanvas)
+                    Graphics.WarpMouseCursorTo(pos)
+                | NoWarp -> ()
+                dismiss()
+            b.MouseDown.Add(fun ea -> 
+                ea.Handled <- true
+                let ic,isSel,_ = items.[n]
+                if isReorderable && ea.ChangedButton = Input.MouseButton.Left && isShiftDown() then
+                    // Shift+drag: pick up this item (if there is one); it is dropped on whatever cell the mouse is released over
+                    if not (isNull (box ic)) then
+                        dragFrom <- n
+                        refreshHighlights()
+                elif not (isNull (box ic)) && isSel then
+                    match onClick(ea, stateID()) with
+                    | DismissPopupWithResult(r) -> result <- Some(r); mouseWarpDismiss()
+                    | DismissPopupWithNoResult -> mouseWarpDismiss()
+                    | StayPoppedUp -> ()
+                )
+            b.MouseUp.Add(fun ea ->
+                if dragFrom >= 0 && ea.ChangedButton = Input.MouseButton.Left then
                     ea.Handled <- true
-                    if isSelectable then
-                        match onClick(ea, stateID()) with
-                        | DismissPopupWithResult(r) -> result <- Some(r); mouseWarpDismiss()
-                        | DismissPopupWithNoResult -> mouseWarpDismiss()
-                        | StayPoppedUp -> ()
-                    )
-                b.MyKeyAdd(handleCursorHotKey(x,y))
-            else
-                let dp = new DockPanel(Background=Brushes.Black)
-                dp.MouseEnter.Add(fun _ -> snapBack())
-                dp.MouseDown.Add(fun ea -> ea.Handled <- true)  // empty grid elements swallow clicks because we don't want to commit or dismiss
-                dp.MyKeyAdd(handleCursorHotKey(x,y))
-                gridAdd(grid, dp, x, y)
-    grid.MouseLeave.Add(fun _ -> snapBack())
+                    let a = dragFrom
+                    dragFrom <- -1
+                    if a <> n then
+                        swapCells(a, n)
+                        let ic,isSel,_ = items.[n]
+                        if not (isNull (box ic)) && isSel then changeCurrentState(n)
+                    refreshHighlights()
+                )
+            b.MyKeyAdd(handleCursorHotKey(x,y))
+    grid.MouseLeave.Add(fun _ -> 
+        if dragFrom >= 0 then
+            dragFrom <- -1
+            refreshHighlights()
+        snapBack())
     for (d,x,y) in extraDecorations do
         canvasAdd(popupCanvas, d, x, y)
     // initial input
@@ -629,6 +721,60 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
+// ---- update check (GitHub releases) ----
+let CurrentReleaseLabel = "2.2.0-beta2"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let private parseTagForCompare(tag:string) =
+    let t = tag.Trim().TrimStart('v','V')
+    let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))
+    let nums = main.Split('.') |> Array.map (fun p -> match System.Int32.TryParse(p) with | true, v -> v | _ -> 0) |> Array.toList
+    let nums = nums @ List.replicate (max 0 (4 - nums.Length)) 0
+    let preKey =
+        if pre = "" then (1, "", 0)   // a final release sorts after any beta/rc of the same number
+        else
+            let letters = new string(pre |> Seq.takeWhile (fun c -> not (System.Char.IsDigit c)) |> Seq.toArray)
+            let digits = pre.Substring(letters.Length)
+            (0, letters.ToLowerInvariant(), (match System.Int32.TryParse(digits) with | true, v -> v | _ -> 0))
+    nums, preKey
+let isNewerRelease(candidateTag:string, currentLabel:string) = parseTagForCompare candidateTag > parseTagForCompare currentLabel
+let mutable updateAvailable : (string*string) option = None   // (tag, release page url) of a newer release, once one has been found
+let updateListeners = new System.Collections.Generic.List<(string*string) -> unit>()
+// blocking: call from a background thread. Returns the newest non-draft release (pre-releases included), or None if it could not be determined.
+let fetchLatestRelease() : (string*string) option =
+    try
+        System.Net.ServicePointManager.SecurityProtocol <- System.Net.ServicePointManager.SecurityProtocol ||| System.Net.SecurityProtocolType.Tls12
+        use wc = new System.Net.WebClient()
+        wc.Headers.Add("User-Agent", "ZoraTracker-update-check")
+        let json = wc.DownloadString("https://api.github.com/repos/TheGobOne/ZoraTracker/releases?per_page=10")
+        use doc = System.Text.Json.JsonDocument.Parse(json)
+        let mutable best : (string*string) option = None
+        for r in doc.RootElement.EnumerateArray() do
+            let ok, d = r.TryGetProperty("draft")
+            let isDraft = ok && d.GetBoolean()
+            if not isDraft then
+                let tag = r.GetProperty("tag_name").GetString()
+                let url = r.GetProperty("html_url").GetString()
+                match best with
+                | Some(bt,_) when not (isNewerRelease(tag, bt)) -> ()
+                | _ -> best <- Some(tag, url)
+        best
+    with _ -> None
+// whenDone(latest, newer) runs on the UI thread: latest = newest release found (None if the check failed), newer = Some if it is newer than this build
+let checkForUpdatesAsync(whenDone:(string*string) option -> (string*string) option -> unit) =
+    System.Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+        let latest = fetchLatestRelease()
+        let newer = match latest with | Some(tag,url) when isNewerRelease(tag, CurrentReleaseLabel) -> Some(tag,url) | _ -> None
+        Application.Current.Dispatcher.BeginInvoke(new System.Action(fun () -> whenDone latest newer)) |> ignore) |> ignore
+let mutable private updateCheckStarted = false
+let startupUpdateCheck() =
+    if not updateCheckStarted && TrackerModelOptions.CheckForUpdates.Value then
+        updateCheckStarted <- true
+        checkForUpdatesAsync (fun _ newer ->
+            match newer with
+            | Some n -> 
+                updateAvailable <- Some n
+                for l in updateListeners do l n
+            | None -> ())
+
 let makeVersionButtonWithBehavior(cm:CanvasManager) =
     let vb = Graphics.makeButton(sprintf "v%s" OverworldData.VersionString, Some(12.), Some(Brushes.Orange))
     // rainbow glow until the user has opened the notes for this version
@@ -644,6 +790,15 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
         glow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.ColorProperty, anim)
         vb.Effect <- glow
         versionGlowClearers.Add(fun () -> vb.Effect <- null)
+    // a green glow plus tooltip when a newer release is available on GitHub
+    let showUpdateGlow(tag:string, _url:string) =
+        vb.ToolTip <- sprintf "Update available: %s (click for details)" tag
+        vb.Effect <- new System.Windows.Media.Effects.DropShadowEffect(ShadowDepth=0., BlurRadius=16., Opacity=1., Color=Colors.Lime)
+    updateListeners.Add(showUpdateGlow)
+    match updateAvailable with
+    | Some n -> showUpdateGlow n
+    | None -> ()
+    startupUpdateCheck()
     vb.Click.Add(fun _ ->
         if TrackerModelOptions.LastSeenVersionNotes <> OverworldData.VersionString then
             TrackerModelOptions.LastSeenVersionNotes <- OverworldData.VersionString
@@ -653,10 +808,36 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
         if not popupIsActive then
             popupIsActive <- true
             async {
-                let! r = DoModalMessageBox(cm, System.Drawing.SystemIcons.Information, OverworldData.AboutBody, ["Go to website"; "Ok"])
+                let body, buttons = 
+                    match updateAvailable with
+                    | Some(tag,_) -> sprintf "%s\n*** A newer version is available: %s (you have v%s) ***\n" OverworldData.AboutBody tag CurrentReleaseLabel, ["Download update"; "Go to website"; "Ok"]
+                    | None -> OverworldData.AboutBody, ["Check for updates"; "Go to website"; "Ok"]
+                let! r = DoModalMessageBox(cm, System.Drawing.SystemIcons.Information, body, buttons)
                 popupIsActive <- false
                 if r = "Go to website" then
                     System.Diagnostics.Process.Start(OverworldData.Website) |> ignore
+                elif r = "Download update" then
+                    match updateAvailable with
+                    | Some(_,url) -> 
+                        // only ever open a page on this project's GitHub repo
+                        System.Diagnostics.Process.Start(if not (isNull url) && url.StartsWith(OverworldData.Website) then url else OverworldData.Website) |> ignore
+                    | None -> ()
+                elif r = "Check for updates" then
+                    checkForUpdatesAsync (fun latest newer ->
+                        let msg, icon = 
+                            match newer, latest with
+                            | Some(tag,_), _ -> 
+                                updateAvailable <- newer
+                                for l in updateListeners do l newer.Value
+                                sprintf "A newer version is available: %s\n(you have v%s)\nClick the version button again to download it." tag CurrentReleaseLabel, System.Drawing.SystemIcons.Information
+                            | None, Some(_) -> sprintf "You are up to date (v%s)." CurrentReleaseLabel, System.Drawing.SystemIcons.Information
+                            | None, None -> "Could not check for updates right now.\n(Are you offline?)", System.Drawing.SystemIcons.Warning
+                        if not popupIsActive then
+                            popupIsActive <- true
+                            async {
+                                let! _ = DoModalMessageBox(cm, icon, msg, ["Ok"])
+                                popupIsActive <- false
+                            } |> Async.StartImmediate)
             } |> Async.StartImmediate
         )
     vb

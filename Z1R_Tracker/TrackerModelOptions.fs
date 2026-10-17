@@ -110,12 +110,16 @@ let mutable UseBlurEffects = Bool(true)
 let mutable AnimateTileChanges = Bool(true)
 let mutable AnimateShopHighlights = Bool(true)
 let mutable SaveOnCompletion = Bool(false)
+let mutable CheckForUpdates = Bool(true)   // look for a newer GitHub release on startup
 let mutable SnoopSeedAndFlags = Bool(false)
 let mutable DisplaySeedAndFlags = Bool(true)
 let mutable ListenForSpeech = Bool(false)
 let mutable RequirePTTForSpeech = Bool(false)
 let mutable PlaySoundWhenUseSpeech = Bool(true)
 let mutable BOARDInsteadOfLEVEL = Bool(false)
+// custom item-menu layouts made by Shift+dragging icons in the item-box / overworld-tile menus: menu name -> item key in each cell order ('' = empty cell)
+let MenuLayouts = new System.Collections.Generic.Dictionary<string,string[]>()
+let mutable UseOldPotionLetterIcons = Bool(false)   // 'Use old potion/letter icons' in the dungeon options
 let mutable DisplayIconsInDungeonMap = Bool(false)
 let mutable DungeonMapLocationHintOpacity = 0.3
 let mutable ReverseScrollWheelDirection = Bool(false)
@@ -223,12 +227,15 @@ type ReadWrite() =
     member val AnimateTileChanges = true with get,set
     member val AnimateShopHighlights = true with get,set
     member val SaveOnCompletion = false with get,set
+    member val CheckForUpdates = true with get,set
     member val SnoopSeedAndFlags = false with get,set
     member val DisplaySeedAndFlags = true with get,set
     member val ListenForSpeech = false with get,set
     member val RequirePTTForSpeech = false with get,set
     member val PlaySoundWhenUseSpeech = true with get,set
     member val BOARDInsteadOfLEVEL = false with get,set
+    member val UseOldPotionLetterIcons = false with get,set
+    member val MenuLayouts : System.Collections.Generic.Dictionary<string,string[]> = new System.Collections.Generic.Dictionary<string,string[]>() with get,set
     member val DisplayIconsInDungeonMap = false with get,set
     member val DungeonMapLocationHintOpacity = 0.3 with get,set
     member val ReverseScrollWheelDirection = false with get,set
@@ -346,12 +353,15 @@ let private writeImpl(filename) =
     data.AnimateTileChanges <- AnimateTileChanges.Value
     data.AnimateShopHighlights <- AnimateShopHighlights.Value
     data.SaveOnCompletion <- SaveOnCompletion.Value
+    data.CheckForUpdates <- CheckForUpdates.Value
     data.SnoopSeedAndFlags <- SnoopSeedAndFlags.Value
     data.DisplaySeedAndFlags <- DisplaySeedAndFlags.Value
     data.ListenForSpeech <- ListenForSpeech.Value
     data.RequirePTTForSpeech <- RequirePTTForSpeech.Value
     data.PlaySoundWhenUseSpeech <- PlaySoundWhenUseSpeech.Value
     data.BOARDInsteadOfLEVEL <- BOARDInsteadOfLEVEL.Value
+    data.UseOldPotionLetterIcons <- UseOldPotionLetterIcons.Value
+    data.MenuLayouts <- new System.Collections.Generic.Dictionary<string,string[]>(MenuLayouts)
     data.DisplayIconsInDungeonMap <- DisplayIconsInDungeonMap.Value
     data.DungeonMapLocationHintOpacity <- DungeonMapLocationHintOpacity
     data.ReverseScrollWheelDirection <- ReverseScrollWheelDirection.Value
@@ -475,12 +485,17 @@ let private read(filename) =
         AnimateTileChanges.Value <- data.AnimateTileChanges
         AnimateShopHighlights.Value <- data.AnimateShopHighlights
         SaveOnCompletion.Value <- data.SaveOnCompletion
+        CheckForUpdates.Value <- data.CheckForUpdates
         SnoopSeedAndFlags.Value <- data.SnoopSeedAndFlags
         DisplaySeedAndFlags.Value <- data.DisplaySeedAndFlags
         ListenForSpeech.Value <- data.ListenForSpeech
         RequirePTTForSpeech.Value <- data.RequirePTTForSpeech
         PlaySoundWhenUseSpeech.Value <- data.PlaySoundWhenUseSpeech
-        BOARDInsteadOfLEVEL.Value <- false   // option removed from the UI; always LEVEL
+        BOARDInsteadOfLEVEL.Value <- data.BOARDInsteadOfLEVEL
+        UseOldPotionLetterIcons.Value <- data.UseOldPotionLetterIcons
+        MenuLayouts.Clear()
+        if not (isNull data.MenuLayouts) then
+            for kv in data.MenuLayouts do MenuLayouts.[kv.Key] <- kv.Value
         DisplayIconsInDungeonMap.Value <- data.DisplayIconsInDungeonMap
         DungeonMapLocationHintOpacity <- max 0.05 (min 1.0 data.DungeonMapLocationHintOpacity)
         ReverseScrollWheelDirection.Value <- data.ReverseScrollWheelDirection

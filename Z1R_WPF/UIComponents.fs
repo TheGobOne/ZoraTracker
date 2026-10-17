@@ -264,6 +264,7 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
         let dungeonX = anyRoadTextRight + g - tileLeft
         let dungeonTextRight = dungeonX + 35. + 2. + measureLines "Dungeon\n(Completed)"
         let recorderX = dungeonTextRight + g - tileLeft
+        let recorderTextRight = recorderX + 48. + 2. + measureLines "Recorder\nDestination"
         let dotsX = recorderX + 100.   // original spot: right next to the word 'Recorder' (371 vs the recorder icon at 271)
         let dotsRight = dotsX + measure "..." + 14.
         let customWaypointX = dotsRight + g
@@ -471,6 +472,8 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     itemProgressCanvas.MouseMove.Add(fun ea ->
         let pos = ea.GetPosition(itemProgressCanvas)
         let x = pos.X - ITEM_PROGRESS_FIRST_ITEM
+        if x > 120. && x < 150. then
+            showArrowLocator()
         if x >  30. && x <  60. then
             showLocatorInstanceFunc(owInstance.Burnable)
         if x > 240. && x < 270. then
@@ -481,6 +484,10 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
             showLocatorInstanceFunc(owInstance.PowerBraceletable)
         if x > 330. && x < 360. then
             showLocatorInstanceFunc(owInstance.Raftable)
+        if x > 360. && x < 390. then
+            showKeyLocator()
+        if x > 390. && x < 420. then
+            showMeatLocator()
         )
     itemProgressCanvas.MouseLeave.Add(fun _ -> hideLocator())
 
@@ -647,6 +654,7 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
         // meat: lights up once a Meat item has been marked as obtained in any dungeon item box
         let haveMeat = 
             TrackerModel.startingItemsAndExtras.PlayerHasMeat.Value() ||
+            TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.MEAT] > 0 ||   // meat icon checked off on the overworld map
             (TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() 
              |> Seq.exists (fun b -> b.CellCurrent() = TrackerModel.ITEMS.MEAT && b.PlayerHas() = TrackerModel.PlayerHas.YES))
         if haveMeat then
@@ -778,13 +786,63 @@ let MakeHintDecoderUI(cm:CustomComboBoxes.CanvasManager) =
     hintSP.Children.Add(hintDescriptionTextBox) |> ignore
     hintSP.Children.Add(hintGrid) |> ignore
     let makeHintText(txt) = new TextBox(FontSize=16., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, Text=txt)
-    let otherChoices = new DockPanel(LastChildFill=true)
-    let otherTB = makeHintText("There are a few other types of hints. To see them, click here:")
-    let otherButton = new Button(Content=new Label(FontSize=16., Content="Other hints"))
-    DockPanel.SetDock(otherButton, Dock.Right)
-    otherChoices.Children.Add(otherTB)|> ignore
-    otherChoices.Children.Add(otherButton)|> ignore
-    hintSP.Children.Add(otherChoices) |> ignore
+    // 'Other hints' section, shown underneath the hint decoder grid (rebuilt on each open so the checkboxes show current state)
+    let makeOtherHintsSection() : UIElement =
+        let otherSP = new StackPanel(Orientation=Orientation.Vertical)
+        let otherTopTB = makeHintText("Here are the meanings of some hints, which you need to track on your own:")
+        otherTopTB.BorderThickness <- Thickness(0.,0.,0.,4.)
+        otherSP.Children.Add(otherTopTB) |> ignore
+        for desc,mean in 
+            [|
+            "A feat of strength will lead to...", "Either push a gravestone, or push\nan overworld rock requiring Power Bracelet"
+            "Sail across the water...", "Raft required to reach a place"
+            "Play a melody...", "Either an overworld recorder spot, or a\nDigdogger in a dungeon logically blocks..."
+            "Fire the arrow...", "In a dungeon, Gohma logically blocks..."
+            "Step over the water...", "Ladder required to obtain... (coast item,\noverworld river, or dungeon moat)"
+            |] do
+            let dp = new DockPanel(LastChildFill=true)
+            let d = makeHintText(desc)
+            d.Width <- 240.
+            dp.Children.Add(d) |> ignore
+            let m = makeHintText(mean)
+            DockPanel.SetDock(m, Dock.Right)
+            dp.Children.Add(m) |> ignore
+            otherSP.Children.Add(dp) |> ignore
+        let otherBottomTB = makeHintText("\nHere are the meanings of a couple final hints, which the tracker can help with\nby darkening the overworld spots you can logically ignore\n(click the checkbox to darken corresponding spots on the overworld)")
+        otherBottomTB.BorderThickness <- Thickness(0.,4.,0.,4.)
+        otherSP.Children.Add(otherBottomTB) |> ignore
+        let featsCheckBox  = new CheckBox(Content=makeHintText("No feat of strength... (Power Bracelet / pushing graves not required)"))
+        featsCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.NoFeatOfStrengthHintWasGiven
+        featsCheckBox.Checked.Add(fun _ -> TrackerModel.NoFeatOfStrengthHintWasGiven <- true; hideFeatsOfStrength true)
+        featsCheckBox.Unchecked.Add(fun _ -> TrackerModel.NoFeatOfStrengthHintWasGiven <- false; hideFeatsOfStrength false)
+        otherSP.Children.Add(featsCheckBox) |> ignore
+        let raftsCheckBox  = new CheckBox(Content=makeHintText("Sail not... (Raft not required)"))
+        raftsCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.SailNotHintWasGiven
+        raftsCheckBox.Checked.Add(fun _ -> TrackerModel.SailNotHintWasGiven <- true; hideRaftSpots true)
+        raftsCheckBox.Unchecked.Add(fun _ -> TrackerModel.SailNotHintWasGiven <- false; hideRaftSpots false)
+        otherSP.Children.Add(raftsCheckBox) |> ignore
+        let sailToCheckBox = new CheckBox(Content=makeHintText("Sail across the water... (Raft required to reach a place)"))
+        sailToCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.SailToHintWasGiven
+        sailToCheckBox.Checked.Add(fun _ -> TrackerModel.SailToHintWasGiven <- true)
+        sailToCheckBox.Unchecked.Add(fun _ -> TrackerModel.SailToHintWasGiven <- false)
+        otherSP.Children.Add(sailToCheckBox) |> ignore
+        let melodyCheckBox = new CheckBox(Content=makeHintText("Play a melody... (Recorder required)"))
+        melodyCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.PlayMelodyHintWasGiven
+        melodyCheckBox.Checked.Add(fun _ -> TrackerModel.PlayMelodyHintWasGiven <- true)
+        melodyCheckBox.Unchecked.Add(fun _ -> TrackerModel.PlayMelodyHintWasGiven <- false)
+        otherSP.Children.Add(melodyCheckBox) |> ignore
+        let stepOverCheckBox = new CheckBox(Content=makeHintText("Step over the water... (Ladder required)"))
+        stepOverCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.StepOverWaterHintWasGiven
+        stepOverCheckBox.Checked.Add(fun _ -> TrackerModel.StepOverWaterHintWasGiven <- true)
+        stepOverCheckBox.Unchecked.Add(fun _ -> TrackerModel.StepOverWaterHintWasGiven <- false)
+        otherSP.Children.Add(stepOverCheckBox) |> ignore
+        let fireArrowsCheckBox = new CheckBox(Content=makeHintText("Fire the arrow... (Bow and arrow required for Gohma)"))
+        fireArrowsCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.FireArrowsHintWasGiven
+        fireArrowsCheckBox.Checked.Add(fun _ -> TrackerModel.FireArrowsHintWasGiven <- true)
+        fireArrowsCheckBox.Unchecked.Add(fun _ -> TrackerModel.FireArrowsHintWasGiven <- false)
+        otherSP.Children.Add(fireArrowsCheckBox) |> ignore
+        otherSP :> UIElement
+    let otherSection : UIElement ref = ref null
     let hintBorder = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(8.), Background=Brushes.Black, Child=hintSP)
     hintBorder.MouseDown.Add(fun ea -> ea.Handled <- true)
     let tb = Graphics.makeButton("Hint Decoder", Some(12.), Some(Brushes.Orange))
@@ -795,75 +853,16 @@ let MakeHintDecoderUI(cm:CustomComboBoxes.CanvasManager) =
             popupIsActive <- true
             for i = 0 to 10 do
                 updateViewFunctions.[i]()
+            if otherSection.Value <> null then hintSP.Children.Remove(otherSection.Value)
+            otherSection.Value <- makeOtherHintsSection()
+            hintSP.Children.Add(otherSection.Value) |> ignore
             let wh = new System.Threading.ManualResetEvent(false)
-            let mutable otherButtonWasClicked = false
-            otherButton.Click.Add(fun _ ->
-                otherButtonWasClicked <- true
-                wh.Set() |> ignore
-                )
             async {
                 let all = new Canvas()
                 canvasAdd(all, hintBorder, 0., 0.)
                 canvasAdd(all, hintExplainer, 560., 0.)
-                do! CustomComboBoxes.DoModal(cm, wh, 0., 65., all)
+                do! CustomComboBoxes.DoModal(cm, wh, 0., 5., all)
                 all.Children.Clear()
-                if otherButtonWasClicked then
-                    wh.Reset() |> ignore
-                    let otherSP = new StackPanel(Orientation=Orientation.Vertical)
-                    let otherTopTB = makeHintText("Here are the meanings of some hints, which you need to track on your own:")
-                    otherTopTB.BorderThickness <- Thickness(0.,0.,0.,4.)
-                    otherSP.Children.Add(otherTopTB) |> ignore
-                    for desc,mean in 
-                        [|
-                        "A feat of strength will lead to...", "Either push a gravestone, or push\nan overworld rock requiring Power Bracelet"
-                        "Sail across the water...", "Raft required to reach a place"
-                        "Play a melody...", "Either an overworld recorder spot, or a\nDigdogger in a dungeon logically blocks..."
-                        "Fire the arrow...", "In a dungeon, Gohma logically blocks..."
-                        "Step over the water...", "Ladder required to obtain... (coast item,\noverworld river, or dungeon moat)"
-                        |] do
-                        let dp = new DockPanel(LastChildFill=true)
-                        let d = makeHintText(desc)
-                        d.Width <- 240.
-                        dp.Children.Add(d) |> ignore
-                        let m = makeHintText(mean)
-                        DockPanel.SetDock(m, Dock.Right)
-                        dp.Children.Add(m) |> ignore
-                        otherSP.Children.Add(dp) |> ignore
-                    let otherBottomTB = makeHintText("\nHere are the meanings of a couple final hints, which the tracker can help with\nby darkening the overworld spots you can logically ignore\n(click the checkbox to darken corresponding spots on the overworld)")
-                    otherBottomTB.BorderThickness <- Thickness(0.,4.,0.,4.)
-                    otherSP.Children.Add(otherBottomTB) |> ignore
-                    let featsCheckBox  = new CheckBox(Content=makeHintText("No feat of strength... (Power Bracelet / pushing graves not required)"))
-                    featsCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.NoFeatOfStrengthHintWasGiven
-                    featsCheckBox.Checked.Add(fun _ -> TrackerModel.NoFeatOfStrengthHintWasGiven <- true; hideFeatsOfStrength true)
-                    featsCheckBox.Unchecked.Add(fun _ -> TrackerModel.NoFeatOfStrengthHintWasGiven <- false; hideFeatsOfStrength false)
-                    otherSP.Children.Add(featsCheckBox) |> ignore
-                    let raftsCheckBox  = new CheckBox(Content=makeHintText("Sail not... (Raft not required)"))
-                    raftsCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.SailNotHintWasGiven
-                    raftsCheckBox.Checked.Add(fun _ -> TrackerModel.SailNotHintWasGiven <- true; hideRaftSpots true)
-                    raftsCheckBox.Unchecked.Add(fun _ -> TrackerModel.SailNotHintWasGiven <- false; hideRaftSpots false)
-                    otherSP.Children.Add(raftsCheckBox) |> ignore
-                    let sailToCheckBox = new CheckBox(Content=makeHintText("Sail across the water... (Raft required to reach a place)"))
-                    sailToCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.SailToHintWasGiven
-                    sailToCheckBox.Checked.Add(fun _ -> TrackerModel.SailToHintWasGiven <- true)
-                    sailToCheckBox.Unchecked.Add(fun _ -> TrackerModel.SailToHintWasGiven <- false)
-                    otherSP.Children.Add(sailToCheckBox) |> ignore
-                    let melodyCheckBox = new CheckBox(Content=makeHintText("Play a melody... (Recorder required)"))
-                    melodyCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.PlayMelodyHintWasGiven
-                    melodyCheckBox.Checked.Add(fun _ -> TrackerModel.PlayMelodyHintWasGiven <- true)
-                    melodyCheckBox.Unchecked.Add(fun _ -> TrackerModel.PlayMelodyHintWasGiven <- false)
-                    otherSP.Children.Add(melodyCheckBox) |> ignore
-                    let stepOverCheckBox = new CheckBox(Content=makeHintText("Step over the water... (Ladder required)"))
-                    stepOverCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.StepOverWaterHintWasGiven
-                    stepOverCheckBox.Checked.Add(fun _ -> TrackerModel.StepOverWaterHintWasGiven <- true)
-                    stepOverCheckBox.Unchecked.Add(fun _ -> TrackerModel.StepOverWaterHintWasGiven <- false)
-                    otherSP.Children.Add(stepOverCheckBox) |> ignore
-                    let fireArrowsCheckBox = new CheckBox(Content=makeHintText("Fire the arrow... (Bow and arrow required for Gohma)"))
-                    fireArrowsCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.FireArrowsHintWasGiven
-                    fireArrowsCheckBox.Checked.Add(fun _ -> TrackerModel.FireArrowsHintWasGiven <- true)
-                    fireArrowsCheckBox.Unchecked.Add(fun _ -> TrackerModel.FireArrowsHintWasGiven <- false)
-                    otherSP.Children.Add(fireArrowsCheckBox) |> ignore
-                    let otherHintBorder = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(8.), Background=Brushes.Black, Child=otherSP)
-                    do! CustomComboBoxes.DoModal(cm, wh, 0., 65., otherHintBorder)
                 popupIsActive <- false
                 } |> Async.StartImmediate
         )

@@ -1088,6 +1088,28 @@ do
         p3 pp2bmp ux uy
     theInteriorBmpTable.[37].Add(pp2bmp)
 // full tiles just have interior bmp in the center and transparent pixels all around (except for the final 'X' one)
+// 'Use old potion/letter icons': the tracker's original overworld-tile artwork for the potion shop and the (blue) letter, shrunk to fit an item cell.
+// The 5x9 interior icon is redrawn at 2x (10x18) and centered in a 21x21 cell.
+let oldTileIconAsItem(interior:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(21,21)
+    // fill the whole cell with the icon's own background (like the sword icons' brown tile) so it fills the same rectangle as the other tall icons
+    let corner = interior.GetPixel(1, 1)
+    let bg = if corner.A = 255uy then corner else System.Drawing.Color.FromArgb(185,122,87)
+    for px = 0 to 20 do
+        for py = 0 to 20 do
+            r.SetPixel(px, py, bg)
+    for ux = 0 to 4 do
+        for uy = 0 to 8 do
+            let c = interior.GetPixel(ux*3+1, uy*3+1)
+            for dx = 0 to 1 do
+                for dy = 0 to 1 do
+                    r.SetPixel(5 + ux*2 + dx, 1 + uy*2 + dy, c)
+    r
+let old_potion_bmp = oldTileIconAsItem(theInteriorBmpTable.[34].[0])   // the old potion-shop icon, used for both potions
+let old_blue_potion_bmp = old_potion_bmp
+let old_red_potion_bmp = old_potion_bmp
+let old_potion_split_bmp = old_potion_bmp
+let old_letter_bmp = oldTileIconAsItem(theInteriorBmpTable.[30].[0])   // the old (blue) letter icon
 let theFullTileBmpTable = Array.init theInteriorBmpTable.Length (fun _ -> ResizeArray())
 let initFull() =
     let len = theInteriorBmpTable.Length

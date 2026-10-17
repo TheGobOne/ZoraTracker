@@ -976,6 +976,8 @@ let mutable playerComputedStateSummary = PlayerComputedStateSummary(false,false,
 let PlayerHasTheBook() = if IsCurrentlyBook() then playerComputedStateSummary.HaveBookOrShield else playerProgressAndTakeAnyHearts.PlayerHasBoomBook.Value()
 let playerComputedStateSummaryLastComputedTime = new LastChangedTime()
 let playerSwordLevel, playerCandleLevel, playerRingLevel, playerArrowLevel = new EventingInt(0), new EventingInt(0), new EventingInt(0), new EventingInt(0)
+// how many marker icons of each kind are checked off as 'collected' on the overworld map (index = item id); these count as owning the item
+let mapCollectedCount : int[] = Array.zeroCreate 128
 let recomputePlayerStateSummary() =
     let mutable haveRecorder,haveLadder,haveAnyKey,haveCoastItem,haveWhiteSwordItem,havePowerBracelet,haveRaft,playerHearts = false,false,false,false,false,false,false,3
     let mutable swordLevel,candleLevel,ringLevel,haveBow,arrowLevel,haveWand,haveBookOrShield,boomerangLevel = 0,0,0,false,0,false,false,0
@@ -1052,6 +1054,28 @@ let recomputePlayerStateSummary() =
         haveAnyKey <- true
     if startingItemsAndExtras.PlayerHasBook.Value() then
         haveBookOrShield <- true
+    // items checked off as collected on the overworld map
+    let mapHas(id) = mapCollectedCount.[id] > 0
+    if mapHas ITEMS.WOODSWORD then swordLevel <- max swordLevel 1
+    if mapHas ITEMS.WHITESWORD || mapHas ITEMS.WHITESWORD4 then swordLevel <- max swordLevel 2
+    if mapHas ITEMS.MAGICALSWORD then swordLevel <- 3
+    if mapHas ITEMS.PROGRESSIVESWORD then swordLevel <- min 3 (swordLevel + 1)
+    if mapHas ITEMS.BLUECANDLE then candleLevel <- max candleLevel 1
+    if mapHas ITEMS.REDCANDLE then candleLevel <- 2
+    if mapHas ITEMS.BLUERING then ringLevel <- max ringLevel 1
+    if mapHas ITEMS.REDRING then ringLevel <- 2
+    if mapHas ITEMS.WOODARROW then arrowLevel <- max arrowLevel 1
+    if mapHas ITEMS.SILVERARROW then arrowLevel <- 2
+    if mapHas ITEMS.BOOMERANG then boomerangLevel <- max boomerangLevel 1
+    if mapHas ITEMS.MAGICBOOMERANG then boomerangLevel <- 2
+    if mapHas ITEMS.BOW then haveBow <- true
+    if mapHas ITEMS.WAND then haveWand <- true
+    if mapHas ITEMS.POWERBRACELET then havePowerBracelet <- true
+    if mapHas ITEMS.LADDER then haveLadder <- true
+    if mapHas ITEMS.RAFT then haveRaft <- true
+    if mapHas ITEMS.RECORDER then haveRecorder <- true
+    if mapHas ITEMS.KEY then haveAnyKey <- true   // the regular (old) key is only dimmed on the map; it does not count as the any key
+    if mapHas ITEMS.BOOKSHIELD then haveBookOrShield <- true   // a collected (plain) shield does not count as the book
     if ladderBox.IsDone() then
         haveCoastItem <- true
     if sword2Box.IsDone() then
@@ -1059,7 +1083,7 @@ let recomputePlayerStateSummary() =
     for h = 0 to 3 do
         if playerProgressAndTakeAnyHearts.GetTakeAnyHeart(h) = 1 then
             playerHearts <- playerHearts + 1
-    playerHearts <- playerHearts + startingItemsAndExtras.MaxHeartsDifferential
+    playerHearts <- playerHearts + startingItemsAndExtras.MaxHeartsDifferential + mapCollectedCount.[ITEMS.HEARTCONTAINER]
     let bookChanged = haveBookOrShield <> playerComputedStateSummary.HaveBookOrShield
     playerComputedStateSummary <- PlayerComputedStateSummary(haveRecorder,haveLadder,haveAnyKey,haveCoastItem,haveWhiteSwordItem,havePowerBracelet,haveRaft,playerHearts,
                                                                 swordLevel,candleLevel,ringLevel,haveBow,arrowLevel,haveWand,haveBookOrShield,boomerangLevel)
@@ -1092,7 +1116,35 @@ let mutable owInstance = new OverworldData.OverworldInstance(OverworldData.OWQue
 let overworldQuestChanged = new Event<unit>()   // fired when reinitializeOverworld switches to a new quest
 
 let mapLastChangedTime = new LastChangedTime()
-let owSwordIcons = Array2D.create 16 8 -1   // decorative item icon per overworld tile (ITEMS.WHITESWORD4 or ITEMS.PROGRESSIVESWORD), -1 means none
+let owSwordIcons = Array2D.create 16 8 -1   // decorative marker icons per overworld tile: up to 3 packed into one int (see decorIconsOf/decorIconsPack below), -1 means none
+let DECOR_BOMB = 100   // marker-icon id for the generic bomb (it is not a tracked ITEMS entry, so it lives outside that id range)
+let MaxDecorIcons = 3
+// each icon takes 7 bits holding (id+1); 0 means an empty slot. Ids are ITEMS ids (0-29) or DECOR_BOMB.
+// bits 21-23 hold a 'collected' flag for each of the three slots
+let decorEntriesOf(packed:int) : (int*bool) list =
+    if packed <= 0 then [] else [ for k in 0..MaxDecorIcons-1 do
+                                    let v = (packed >>> (7*k)) &&& 127
+                                    if v > 0 then yield (v-1, ((packed >>> (21+k)) &&& 1) = 1) ]
+let decorEntriesPack(entries:(int*bool) list) : int =
+    if entries.IsEmpty then -1 else entries |> List.truncate MaxDecorIcons |> List.mapi (fun k (ident,col) -> ((ident+1) <<< (7*k)) ||| (if col then 1 <<< (21+k) else 0)) |> List.sum
+let decorIconsOf(packed:int) : int list = decorEntriesOf packed |> List.map fst
+let decorIconsPack(idents:int list) : int = idents |> List.map (fun i -> (i,false)) |> decorEntriesPack
+// remove the icon if the tile already has it; otherwise add it (uncollected) if there is room (unchanged when the tile is full)
+let decorIconsToggle(packed:int, ident:int) : int =
+    let cur = decorEntriesOf packed
+    if cur |> List.exists (fun (x,_) -> x = ident) then cur |> List.filter (fun (x,_) -> x <> ident) |> decorEntriesPack
+    elif cur.Length < MaxDecorIcons then decorEntriesPack (cur @ [(ident,false)])
+    else packed
+// collected (checked-off) state of the marker icons on a tile
+let decorIsCollected(packed:int, ident:int) = decorEntriesOf packed |> List.exists (fun (x,c) -> x = ident && c)
+// Some ident: flip that one icon; None: if every icon is collected un-collect them all, otherwise collect them all
+let decorToggleCollected(packed:int, identOpt:int option) : int =
+    let cur = decorEntriesOf packed
+    match identOpt with
+    | Some ident -> cur |> List.map (fun (x,c) -> if x = ident then (x, not c) else (x,c)) |> decorEntriesPack
+    | None ->
+        let allDone = cur |> List.forall snd
+        cur |> List.map (fun (x,_) -> (x, not allDone)) |> decorEntriesPack
 let overworldMapCircles = Array2D.create 16 8 0   // 0 means none, 1 means just circle, 48-57 means circle with 0-9 label, 65-90 means circle with A-Z label; +100 of those or +200 of those changes color
 let toggleOverworldMapCircle(i,j) =
     overworldMapCircles.[i,j] <- 

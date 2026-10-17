@@ -9,9 +9,10 @@ open CustomComboBoxes.GlobalFlag
 
 let canvasAdd = Graphics.canvasAdd
 
-type GlobalBoxMouseOverHighlight() =
-    let globalBoxMouseOverHighlight = new System.Windows.Shapes.Rectangle(Width=34., Height=34., Stroke=Brushes.DarkTurquoise, StrokeThickness=2.0, Opacity=0.0, IsHitTestVisible=false)
+type GlobalBoxMouseOverHighlight(stroke:Brush) =
+    let globalBoxMouseOverHighlight = new System.Windows.Shapes.Rectangle(Width=34., Height=34., Stroke=stroke, StrokeThickness=2.0, Opacity=0.0, IsHitTestVisible=false)
     let mutable setGlobalBoxMouseOverHighlight = fun(_b,_e:UIElement) -> ()
+    new() = GlobalBoxMouseOverHighlight(Brushes.DarkTurquoise)   // the usual turquoise box
     member this.DetachFromGlobalCanvas(c:Canvas) =
         c.Children.Remove(globalBoxMouseOverHighlight)
     member this.AttachToGlobalCanvas(c) =

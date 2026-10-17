@@ -52,6 +52,7 @@ type DoorChangeInfo =
         NewState: Dungeon.DoorState
     }
 
+let customLevelNameChanged = new Event<unit>()   // raised when the user changes the custom LEVEL/BOARD name from the dungeon header
 let doorChangedEvent = new Event<DoorChangeInfo>()
 let triggerDoorChanged args = doorChangedEvent.Trigger args
 
@@ -1317,6 +1318,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
         let roomCirclesCanvas = new Canvas()
         dungeonBodyCanvas.Children.Add(roomCanvas) |> ignore
         dungeonBodyCanvas.Children.Add(roomCirclesCanvas) |> ignore
+        let headerButtons = ResizeArray<Button>()   // dungeon-letter chooser buttons, so a header redraw (custom name change) can move them
         let makeLabelButton(i) =
                 let tb = new TextBox(Width=float(13*3-16), Height=float(TH+8), FontSize=float(TH+8), Foreground=Brushes.Black, Background=rainbowBrush, IsReadOnly=true, IsHitTestVisible=false,
                                         Text=sprintf"%c"labelChar, BorderThickness=Thickness(0.), FontFamily=HFF, FontWeight=FontWeights.Bold,
@@ -1325,6 +1327,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 canvasAdd(tbc, tb, 0., -8.)
                 let button = new Button(Height=float(TH), Content=tbc, BorderThickness=Thickness(2.), Margin=Thickness(0.), Padding=Thickness(0.), BorderBrush=Brushes.White)
                 canvasAdd(dungeonCanvas, button, float(i*51)+6., 0.)
+                headerButtons.Add(button)
                 button.Click.Add(fun _ ->
                     if not popupIsActive then
                         popupIsActive <- true
@@ -1334,59 +1337,45 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             popupIsActive <- false
                             } |> Async.StartImmediate
                     )
-        // custom level name (up to 7 chars) replaces 'LEVEL-n': name (up to 6 chars), then a dash, then the dungeon number, then blanks
-        let customName = 
-            let n = TrackerModel.CustomLevelName
-            if n = "" then "" else ((if n.Length > 6 then n.Substring(0,6) else n) + "-").PadRight(7, ' ')
-        let customNumberSlot = 
-            let n = TrackerModel.CustomLevelName
-            (min n.Length 6) + 1
-        for i = 0 to 7 do
-            if i<>7 then
-                let makeLetter(bmpFunc) =
-                    let bi = bmpFunc() 
-                    let img = Graphics.BItoImage bi
-                    img.Width <- float TH
-                    img.Height <- float TH
-                    img.Stretch <- Stretch.UniformToFill
-                    RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor)
-                    img
-                if TrackerModel.IsHiddenDungeonNumbers() then
-                    if i <> 6 || labelChar = '9' || customName <> "" then
-                        let mutable img = null
-                        let update() =
-                            dungeonHeaderCanvas.Children.Remove(img)
-                            dungeonHeaderCanvas.Children.Remove(highlightColumnCanvases.[i])
-                            img <- makeLetter(fun() -> Dungeon.MakeLetterBIInZeldaFont((if customName <> "" then customName else (if TrackerModelOptions.BOARDInsteadOfLEVEL.Value then "BOARD" else "LEVEL")+"-9").Substring(i,1).[0], 
-                                                                                                Graphics.isBlackGoodContrast(TrackerModel.GetDungeon(level-1).Color)))
-                            if not (customName <> "" && i = customNumberSlot) then   // that slot holds the dungeon-letter button instead
-                                canvasAdd(dungeonHeaderCanvas, img, float(i*51)+9., 0.)
-                                canvasAdd(dungeonHeaderCanvas, highlightColumnCanvases.[i], float(i*51)-6., 0.)
-                        update()
-                        OptionsMenu.BOARDInsteadOfLEVELOptionChanged.Publish.Add(fun _ -> update())
-                        TrackerModel.GetDungeon(level-1).HiddenDungeonColorOrLabelChanged.Add(fun _ -> 
-                            if Graphics.isBlackGoodContrast(TrackerModel.GetDungeon(level-1).Color) then
-                                for i = 0 to 7 do
-                                    highlightColumnCanvases.[i].Background <- Brushes.Black
-                            else
-                                for i = 0 to 7 do
-                                    highlightColumnCanvases.[i].Background <- Brushes.White
-                            update()
-                            )
-                    else
-                        makeLabelButton(i)
-                else
-                    let bmpFunc() = Dungeon.MakeLetterBIInZeldaFont((if customName <> "" then customName else sprintf "%s-%d " (if TrackerModelOptions.BOARDInsteadOfLEVEL.Value then "BOARD" else "LEVEL") level).Substring(i,1).[0], false)
-                    let mutable img = makeLetter(bmpFunc)
-                    canvasAdd(dungeonHeaderCanvas, img, float(i*51)+9., 0.)
-                    canvasAdd(dungeonHeaderCanvas, highlightColumnCanvases.[i], float(i*51)-6., 0.)
-                    OptionsMenu.BOARDInsteadOfLEVELOptionChanged.Publish.Add(fun _ -> 
-                        dungeonHeaderCanvas.Children.Remove(img)
+        // header text: 'LEVEL-n' / 'BOARD-n', or the custom name (up to 6 chars, then a dash, then the dungeon number); redrawn whenever the name or option changes
+        let headerElems = ResizeArray<UIElement>()
+        let drawHeader() =
+            for e in headerElems do dungeonHeaderCanvas.Children.Remove(e)
+            headerElems.Clear()
+            for b in headerButtons do dungeonCanvas.Children.Remove(b)
+            headerButtons.Clear()
+            let customName = 
+                let n = TrackerModel.CustomLevelName
+                if n = "" then "" else ((if n.Length > 6 then n.Substring(0,6) else n) + "-").PadRight(7, ' ')
+            let customNumberSlot = 
+                let n = TrackerModel.CustomLevelName
+                (min n.Length 6) + 1
+            for i = 0 to 7 do
+                if i<>7 then
+                    let makeLetter(bmpFunc) =
+                        let bi = bmpFunc() 
+                        let img = Graphics.BItoImage bi
+                        img.Width <- float TH
+                        img.Height <- float TH
+                        img.Stretch <- Stretch.UniformToFill
+                        RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor)
+                        img
+                    let addLetterAndHighlight(img:Image) =
                         dungeonHeaderCanvas.Children.Remove(highlightColumnCanvases.[i])
-                        img <- makeLetter(bmpFunc)
                         canvasAdd(dungeonHeaderCanvas, img, float(i*51)+9., 0.)
                         canvasAdd(dungeonHeaderCanvas, highlightColumnCanvases.[i], float(i*51)-6., 0.)
-                        )
+                        headerElems.Add(img)
+                    if TrackerModel.IsHiddenDungeonNumbers() then
+                        if i <> 6 || labelChar = '9' || customName <> "" then
+                            let img = makeLetter(fun() -> Dungeon.MakeLetterBIInZeldaFont((if customName <> "" then customName else (if TrackerModelOptions.BOARDInsteadOfLEVEL.Value then "BOARD" else "LEVEL")+"-9").Substring(i,1).[0], 
+                                                                                                Graphics.isBlackGoodContrast(TrackerModel.GetDungeon(level-1).Color)))
+                            if not (customName <> "" && i = customNumberSlot) then   // that slot holds the dungeon-letter button instead
+                                addLetterAndHighlight img
+                        else
+                            makeLabelButton(i)
+                    else
+                        let bmpFunc() = Dungeon.MakeLetterBIInZeldaFont((if customName <> "" then customName else sprintf "%s-%d " (if TrackerModelOptions.BOARDInsteadOfLEVEL.Value then "BOARD" else "LEVEL") level).Substring(i,1).[0], false)
+                        addLetterAndHighlight (makeLetter bmpFunc)
             if TrackerModel.IsHiddenDungeonNumbers() && customName <> "" && labelChar <> '9' then
                 makeLabelButton(customNumberSlot)   // the dungeon-letter chooser sits right after the name's dash
             elif customName <> "" then
@@ -1397,6 +1386,46 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 numImg.Stretch <- Stretch.UniformToFill
                 RenderOptions.SetBitmapScalingMode(numImg, BitmapScalingMode.NearestNeighbor)
                 canvasAdd(dungeonHeaderCanvas, numImg, float(customNumberSlot*51)+9., 0.)
+                headerElems.Add(numImg)
+        drawHeader()
+        OptionsMenu.BOARDInsteadOfLEVELOptionChanged.Publish.Add(fun _ -> drawHeader())
+        customLevelNameChanged.Publish.Add(fun _ -> drawHeader())
+        if TrackerModel.IsHiddenDungeonNumbers() then
+            TrackerModel.GetDungeon(level-1).HiddenDungeonColorOrLabelChanged.Add(fun _ -> 
+                if Graphics.isBlackGoodContrast(TrackerModel.GetDungeon(level-1).Color) then
+                    for i = 0 to 7 do
+                        highlightColumnCanvases.[i].Background <- Brushes.Black
+                else
+                    for i = 0 to 7 do
+                        highlightColumnCanvases.[i].Background <- Brushes.White
+                drawHeader()
+                )
+        // right-click the header text to type a custom name (also settable on the start screen)
+        dungeonHeaderCanvas.ToolTip <- "Right-click to set a custom name"
+        ToolTipService.SetInitialShowDelay(dungeonHeaderCanvas, 400)
+        dungeonHeaderCanvas.MouseRightButtonDown.Add(fun ea ->
+            ea.Handled <- true
+            let w = new Window(Title="Custom level name", SizeToContent=SizeToContent.WidthAndHeight, ResizeMode=ResizeMode.NoResize, WindowStartupLocation=WindowStartupLocation.CenterOwner,
+                                Owner=Application.Current.MainWindow, ShowInTaskbar=false)
+            let sp = new StackPanel(Margin=Thickness(12.))
+            sp.Children.Add(new TextBlock(Text="Name to show instead of LEVEL / BOARD (up to 6 characters).\nLeave blank to go back to the default.", Margin=Thickness(0.,0.,0.,8.))) |> ignore
+            let tb = new TextBox(Text=TrackerModel.CustomLevelName, MaxLength=6, Width=140., HorizontalAlignment=HorizontalAlignment.Left, CharacterCasing=CharacterCasing.Upper)
+            sp.Children.Add(tb) |> ignore
+            let buttons = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Right, Margin=Thickness(0.,10.,0.,0.))
+            let ok = new Button(Content=" OK ", IsDefault=true, Margin=Thickness(0.,0.,6.,0.))
+            let cancel = new Button(Content=" Cancel ", IsCancel=true)
+            buttons.Children.Add(ok) |> ignore
+            buttons.Children.Add(cancel) |> ignore
+            sp.Children.Add(buttons) |> ignore
+            w.Content <- sp
+            ok.Click.Add(fun _ -> 
+                TrackerModel.CustomLevelName <- tb.Text.Trim().ToUpperInvariant()
+                customLevelNameChanged.Trigger()
+                w.DialogResult <- System.Nullable<bool>(true))
+            w.Loaded.Add(fun _ -> tb.Focus() |> ignore; tb.SelectAll())
+            w.ShowDialog() |> ignore
+            )
+        for i = 0 to 7 do
             // room map
             for j = 0 to 7 do
                 let BUFFER = 2.  // I often accidentally click room when trying to target doors with mouse, make canvas smaller and draw outside it, so clicks on very edge not seen

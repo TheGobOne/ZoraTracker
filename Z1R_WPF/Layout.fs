@@ -189,8 +189,20 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddHideQuestCheckboxes(hideFirstQuestCheckBox, hideSecondQuestCheckBox) = 
             canvasAdd(appMainCanvas, hideFirstQuestCheckBox,  WEBCAM_LINE + 5., 110.) 
             canvasAdd(appMainCanvas, hideSecondQuestCheckBox, WEBCAM_LINE + 5., 130.)
-        member this.AddLinkRouting(_linkIcon, _currentTargetIcon) =
-            ()   // the Link routing icon is intentionally not shown
+        member this.AddLinkRouting(linkIcon, currentTargetIcon) =
+            // Link routing icon (and its current-destination icon to its left), scaled down to sit left of the logo, above the triforce chart
+            let scale = 0.9   // 50% bigger than the first 0.6
+            let size = 30.*scale
+            let logoX = 16.*OMTW - kittyWidth - 12. + (kittyWidth - 44.)/2.
+            let x = logoX - 18. - 2. - 25. + 20. - 10.   // 25px further left than the original spot, 20px back to the right, then 10px left again
+            let y = THRU_MAIN_MAP_H + 3. + 25. - 20.   // ...and 25px lower, then 20px back up
+            linkIcon.RenderTransform <- new ScaleTransform(scale, scale)
+            currentTargetIcon.RenderTransform <- new ScaleTransform(scale, scale)
+            canvasAdd(appMainCanvas, linkIcon, x, y)
+            canvasAdd(appMainCanvas, currentTargetIcon, x - size - 2., y)
+            Canvas.SetZIndex(linkIcon, 50)           // above the triforce chart (added later) so hovering/clicking Link always works
+            Canvas.SetZIndex(currentTargetIcon, 50)
+            currentTargetIcon.Visibility <- Visibility.Collapsed   // routing still works; just don't show the destination box next to Link
         member this.AddWebcamLine() = () // the webcam area was always too small to be useful
         member this.AddOverworldCanvas(overworldCanvas) =
             canvasAdd(appMainCanvas, overworldCanvas, 0., 150.)

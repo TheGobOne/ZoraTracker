@@ -140,6 +140,7 @@ let itemIcon (ident:int) : Control =
         | 26 -> itemStrip 27     // meat
         | 27 -> itemStrip 9      // old key
         | 28 -> itemStrip 31     // bomb upgrade
+        | 100 -> itemStrip 25    // generic bomb
         | _ -> coloredBox Brushes.Gray (digitText "?")
 
 // the marker icon as drawn ON the map: the item picture on a black plate, so it stays visible over the busy map art
@@ -175,13 +176,6 @@ let makeMainWindow() =
                     Canvas.SetTop(shade, top)
                     canvas.Children.Add(shade)
                 else
-                    let decor = TrackerModel.owSwordIcons.[x, y]
-                    if decor >= 0 then
-                        marked <- marked + 1
-                        let d = decorOnMap decor
-                        Canvas.SetLeft(d, left + (TILE_W - 27.) / 2.)
-                        Canvas.SetTop(d, top + 3.)
-                        canvas.Children.Add(d)
                     let st = TrackerModel.overworldMapMarks.[x, y].Current()
                     if st >= 0 && st <= TrackerModel.MapSquareChoiceDomainHelper.DARK_X + 2 then
                         marked <- marked + 1
@@ -196,6 +190,22 @@ let makeMainWindow() =
                             Canvas.SetLeft(icon, left + (TILE_W - 15.) / 2.)
                             Canvas.SetTop(icon, top + (TILE_H - 27.) / 2.)
                             canvas.Children.Add(icon)
+                    // marker icons go on top of the tile's own mark and its darkening, so they stay bright on finished (Don't Care) tiles
+                    let decorList = TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[x, y])
+                    let n = decorList.Length
+                    if n > 0 then
+                        marked <- marked + 1
+                    decorList |> List.iteri (fun k ident ->
+                        // 1 icon: 27px centered; 2-3 icons: smaller and side by side so they all fit on the tile
+                        let size, dx, dy =
+                            match n with
+                            | 1 -> 27., (TILE_W - 27.) / 2., 3.
+                            | 2 -> 24., float k * 24., 4.
+                            | _ -> 16., float k * 16., 8.
+                        let d = Viewbox(Width=size, Height=size, Child=decorOnMap ident, IsHitTestVisible=false)
+                        Canvas.SetLeft(d, left + dx)
+                        Canvas.SetTop(d, top + dy)
+                        canvas.Children.Add(d))
         status.Text <- sprintf "%d marked tiles" marked
 
     let tileAt (p:Point) =
@@ -246,28 +256,33 @@ let makeMainWindow() =
            yield TrackerModel.MapSquareChoiceDomainHelper.HINT_SHOP, ""
            // rows 4-6: dungeon items (marker icons only), then personal markers, Don't Care and Unmarked
            for ident in [ TrackerModel.ITEMS.LADDER; TrackerModel.ITEMS.POWERBRACELET; TrackerModel.ITEMS.RECORDER; TrackerModel.ITEMS.RAFT; TrackerModel.ITEMS.BOW
-                          TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.KEY; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW
+                          TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.KEY
                           TrackerModel.ITEMS.WAND; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG
-                          TrackerModel.ITEMS.BOOKSHIELD; TrackerModel.ITEMS.SHIELD; TrackerModel.ITEMS.MEAT; TrackerModel.ITEMS.OLDKEY; TrackerModel.ITEMS.BOMBUPGRADE
-                          TrackerModel.ITEMS.BLUEPOTION; TrackerModel.ITEMS.LETTER; TrackerModel.ITEMS.HEARTCONTAINER ] do
-               yield 1000 + ident, TrackerModel.ITEMS.AsDisplayDescription(ident) + " (marker icon only)"
+                          TrackerModel.ITEMS.BOOKSHIELD; TrackerModel.ITEMS.SHIELD; TrackerModel.ITEMS.MEAT; TrackerModel.DECOR_BOMB; TrackerModel.ITEMS.OLDKEY
+                          TrackerModel.ITEMS.BLUEPOTION; TrackerModel.ITEMS.LETTER; TrackerModel.ITEMS.HEARTCONTAINER; TrackerModel.ITEMS.BOMBUPGRADE ] do
+               yield 1000 + ident, (if ident = TrackerModel.DECOR_BOMB then "Bomb" else TrackerModel.ITEMS.AsDisplayDescription(ident)) + " (marker icon only)"
            if TrackerModelOptions.PersonalPrefMarkersEnabled.Value then
                yield TrackerModel.MapSquareChoiceDomainHelper.PERSONAL_PREF_1, ""
                yield TrackerModel.MapSquareChoiceDomainHelper.PERSONAL_PREF_2, ""
-           else
-               yield -999, ""
-               yield -999, ""
-           yield M, ""
-           yield -1, "Unmarked" |]
+           |]
+    // Don't Care and Unmarked always end the grid: holes pad the gap so they are the last two cells of the last row
+    let menuCells =
+        let paddedCount = ((menuCells.Length + 3 + 8) / 9) * 9
+        Array.concat [ menuCells; Array.create (paddedCount - menuCells.Length - 3) (-999, ""); [| 2000, "Clear this tile's marker icons (keeps the tile's mark)"; M, ""; -1, "Unmarked" |] ]
     let floorColor = SolidColorBrush(Color.FromRgb(204uy, 176uy, 136uy))
     let floorColorDark = SolidColorBrush(Color.FromRgb(112uy, 97uy, 75uy))
     let cellContent (id:int) : Control =
-        if id = -1 then Border(Width=15., Height=27., Background=floorColor) :> Control
+        if id = 2000 then
+            let c = Canvas(Width=15., Height=27.)
+            for (x1, y1, x2, y2) in [ (2., 7., 13., 20.); (13., 7., 2., 20.) ] do
+                c.Children.Add(Line(StartPoint=Point(x1, y1), EndPoint=Point(x2, y2), Stroke=Brushes.Red, StrokeThickness=3.))
+            c :> Control
+        elif id = -1 then Border(Width=15., Height=27., Background=floorColor) :> Control
         elif id = M then Border(Width=15., Height=27., Background=floorColorDark) :> Control
         elif id >= 1000 then itemIcon (id - 1000)
         else makeIcon id
     let menuGrid = StackPanel(Orientation=Orientation.Vertical, Spacing=2.)
-    for r = 0 to 5 do
+    for r = 0 to menuCells.Length / 9 - 1 do
         let rp = StackPanel(Orientation=Orientation.Horizontal, Spacing=2.)
         for c = 0 to 8 do
             let (id, tip) = menuCells.[r * 9 + c]
@@ -283,10 +298,16 @@ let makeMainWindow() =
                 ToolTip.SetTip(b, text)
                 b.Click.Add(fun _ ->
                     let (x, y) = menuTile.Value
-                    if id >= 1000 then
+                    if id = 2000 then
+                        TrackerModel.owSwordIcons.[x, y] <- -1   // red X: remove every marker icon; a tile that was auto-finished goes back to unmarked
+                        if TrackerModel.overworldMapMarks.[x, y].Current() = M then TrackerModel.overworldMapMarks.[x, y].AttemptToSet(-1) |> ignore
+                    elif id >= 1000 then
                         // decorative marker icon: click toggles it on this tile (the tile's real mark is unchanged)
                         let ident = id - 1000
-                        TrackerModel.owSwordIcons.[x, y] <- (if TrackerModel.owSwordIcons.[x, y] = ident then -1 else ident)
+                        TrackerModel.owSwordIcons.[x, y] <- TrackerModel.decorIconsToggle(TrackerModel.owSwordIcons.[x, y], ident)
+                        // an unmarked tile that gets a marker icon counts as finished (Don't Care); the icons stay visible
+                        if not (TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[x, y]).IsEmpty) && TrackerModel.overworldMapMarks.[x, y].Current() = -1 then
+                            TrackerModel.overworldMapMarks.[x, y].AttemptToSet(M) |> ignore
                     else
                         TrackerModel.overworldMapMarks.[x, y].AttemptToSet(id) |> ignore
                         if id = -1 then TrackerModel.owSwordIcons.[x, y] <- -1   // 'Unmarked' also clears any marker icon

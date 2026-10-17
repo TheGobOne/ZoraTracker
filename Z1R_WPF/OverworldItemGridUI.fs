@@ -68,6 +68,9 @@ let mutable showLocatorExactLocation = fun(_x:int,_y:int) -> ()
 let mutable showLocatorHintedZone = fun(_hz:TrackerModel.HintZone,_also:bool) -> ()
 let mutable showLocatorInstanceFunc = fun(_f:int*int->bool) -> ()
 let mutable showHintShopLocator = fun() -> ()
+let mutable showArrowLocator = fun() -> ()   // highlights every tile you put a wood/silver arrow marker icon on
+let mutable showMeatLocator = fun() -> ()   // highlights every tile you put a meat marker icon on
+let mutable showKeyLocator = fun() -> ()   // highlights every tile you put a key marker icon on
 let mutable showLocatorPotionAndTakeAny = fun() -> ()
 let mutable showLocatorRupees = fun() -> ()
 let mutable showLocatorNoneFound = fun() -> ()
@@ -267,7 +270,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
     white_sword_canvas.MouseEnter.Add(fun _ -> showLocator(ShowLocatorDescriptor.Sword2))
     white_sword_canvas.MouseLeave.Add(fun _ -> hideLocator())
 
-    let extrasCanvasGlobalBoxMouseOverHighlight = new Views.GlobalBoxMouseOverHighlight()
+    let extrasCanvasGlobalBoxMouseOverHighlight = new Views.GlobalBoxMouseOverHighlight(Brushes.Gold)   // gold (not the usual turquoise) hover box inside the Starting Items / extras popup
     // brown sword, blue candle, blue ring, magical sword
     let veryBasicBoxImpl(bmp:System.Drawing.Bitmap, timelineID, prop:TrackerModel.BoolProperty, located:TrackerModel.IEventingReader<bool>, superseded:TrackerModel.IEventingReader<bool>) =
         let c = new Canvas(Width=30., Height=30., Background=Brushes.Black)
