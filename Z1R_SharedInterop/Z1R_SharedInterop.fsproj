@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <!-- Pin FSharp.Core to the same version Z1R_WPF ships (6.0.4). Without this, a newer SDK compiles this project against its bundled FSharp.Core (10.x),
+       which Z1R_WPF cannot load at runtime ("Failed to complete setup of assembly" / Major Version mismatch). -->
+  <PropertyGroup>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="6.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="TrackerOptionsBridge.fs" />
+    <Compile Include="..\GlobalAssemblyInfo.fs"/>
+  </ItemGroup>
+
+</Project>

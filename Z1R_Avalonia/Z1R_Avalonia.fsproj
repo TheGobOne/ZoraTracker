@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Cross-platform preview front end (Windows / macOS / Linux). Uses the real tracker logic from Z1R_Tracker_Core. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RootNamespace>Z1R_Avalonia</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <!-- the overworld map art is shared with the Windows tracker (same file), copied next to the exe -->
+  <ItemGroup>
+    <Content Include="..\Z1R_WPF\icons\s_map_overworld_vanilla_strip8.png" Link="s_map_overworld_vanilla_strip8.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Z1R_WPF\icons\ow_icons5x9.png" Link="ow_icons5x9.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Z1R_WPF\icons\icons7x7.png" Link="icons7x7.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Z1R_WPF\icons\icons3x7.png" Link="icons3x7.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.*" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.*" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Z1R_Tracker_Core\Z1R_Tracker_Core.fsproj" />
+  </ItemGroup>
+
+</Project>

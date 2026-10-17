@@ -1,0 +1,1211 @@
+﻿module Dungeon
+
+open System.Windows.Media
+open System.Windows.Controls
+open System.Windows
+
+open HotKeys.MyKey
+open CustomComboBoxes.GlobalFlag
+
+open Z1R_Tracker.Models.Z1R_TrackerInterop
+open Z1R_Tracker.Models
+
+
+
+
+// door colors
+let highlightOpacity = 1.0
+let highlight = Brushes.Cyan // new SolidColorBrush(Color.FromRgb(200uy, 200uy, 200uy)) :> Brush
+let unknown = Graphics.freeze(new SolidColorBrush(Color.FromRgb(30uy, 30uy, 45uy))) :> Brush
+let no      = Graphics.freeze(new SolidColorBrush(Color.FromRgb(145uy, 0uy, 0uy))) :> Brush
+let yes     = Graphics.freeze(new SolidColorBrush(Color.FromRgb(60uy,120uy,60uy))) :> Brush
+let yellow  = Graphics.freeze(new SolidColorBrush(Color.FromRgb(160uy, 160uy, 40uy)))  :> Brush
+let purple  = Graphics.freeze(new SolidColorBrush(Color.FromRgb(140uy, 30uy, 140uy)))  :> Brush
+
+[<RequireQualifiedAccess>]
+type DoorState = 
+    | UNKNOWN | NO | YES | YELLOW | PURPLE
+    member this.AsInt() =
+        match this with
+        | UNKNOWN -> 0
+        | NO -> 1
+        | YES -> 2
+        | YELLOW -> 3
+        | PURPLE -> 4
+    static member FromInt(x) =
+        if x=0 then DoorState.UNKNOWN
+        elif x=1 then DoorState.NO
+        elif x=2 then DoorState.YES
+        elif x=3 then DoorState.YELLOW
+        elif x=4 then DoorState.PURPLE
+        else failwith "bad DoorState.FromInt() value"
+    static member FromString(str: string) =
+        match str with
+        | "UNKNOWN" -> DoorState.UNKNOWN
+        | "NO"      -> DoorState.NO
+        | "YES"     -> DoorState.YES
+        | "YELLOW"  -> DoorState.YELLOW
+        | "PURPLE"  -> DoorState.PURPLE
+        | _         -> failwithf "Unknown DoorState string: %s" str
+
+
+module DoorInterop =
+    let fromCSharp (cs: Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState) : DoorState =
+        match cs with
+        | Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.Unknown -> DoorState.UNKNOWN
+        | Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.No      -> DoorState.NO
+        | Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.Yes     -> DoorState.YES
+        | Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.Yellow  -> DoorState.YELLOW
+        | Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.Purple  -> DoorState.PURPLE
+        | _ -> failwith "Unrecognized DoorState from C# interop"
+
+    let toCSharp (fs: DoorState) : Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState =
+        match fs with
+        | DoorState.UNKNOWN -> Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.Unknown
+        | DoorState.NO      -> Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.No
+        | DoorState.YES     -> Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.Yes
+        | DoorState.YELLOW  -> Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.Yellow
+        | DoorState.PURPLE  -> Z1R_Tracker.Models.Z1R_TrackerInterop.DoorState.Purple
+
+    let fromString (s: string) =
+        match s.ToUpperInvariant() with
+        | "UNKNOWN" -> DoorState.UNKNOWN
+        | "NO"      -> DoorState.NO
+        | "YES"     -> DoorState.YES
+        | "YELLOW"  -> DoorState.YELLOW
+        | "PURPLE"  -> DoorState.PURPLE
+        | other     -> failwithf "Unrecognized DoorState string: %s" other
+
+type Door(state: DoorState, redraw: DoorState -> unit, level: int, x: int, y: int, isHorizontal: bool) =
+    let mutable state = state
+
+    member _this.State
+        with get() = state
+        and set(value) =
+            state <- value
+            redraw(value)
+            // Sync back to C# model
+            let csharpState = DoorInterop.toCSharp value
+            if isHorizontal then
+                CDungeonModelStore.HorizontalDoors.[level - 1].[y, x] <- csharpState
+            else
+                CDungeonModelStore.VerticalDoors.[level - 1].[y, x] <- csharpState
+
+    member _this.Next() =
+        let newState =
+            match state with
+            | DoorState.UNKNOWN -> DoorState.YES
+            | DoorState.YES -> DoorState.NO
+            | DoorState.NO -> DoorState.YELLOW
+            | DoorState.YELLOW -> DoorState.PURPLE
+            | DoorState.PURPLE -> DoorState.UNKNOWN
+        _this.State <- newState
+
+    member _this.Prev() =
+        let newState =
+            match state with
+            | DoorState.UNKNOWN -> DoorState.PURPLE
+            | DoorState.PURPLE -> DoorState.YELLOW
+            | DoorState.YELLOW -> DoorState.NO
+            | DoorState.NO -> DoorState.YES
+            | DoorState.YES -> DoorState.UNKNOWN
+        _this.State <- newState
+
+    member _this.Redraw() = redraw(state)
+
+    member _this.IsTraversible =
+        state = DoorState.YES || state = DoorState.YELLOW || state = DoorState.PURPLE
+
+let mutable roomChangedCallback : (int -> int -> int -> unit) = fun _ _ _ -> ()
+
+let SetRoomChangedCallback(cb: int -> int -> int -> unit) =
+    roomChangedCallback <- cb
+
+let mutable signalRHostProcess : System.Diagnostics.Process option = None
+
+// Windows Job Object: ties child process lifetime to the parent process.
+// When this process exits for any reason (crash, task kill, window close),
+// the OS automatically kills all processes in the job.
+[<System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)>]
+extern System.IntPtr CreateJobObject(System.IntPtr lpJobAttributes, System.IntPtr lpName)
+
+[<System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)>]
+extern bool AssignProcessToJobObject(System.IntPtr hJob, System.IntPtr hProcess)
+
+[<System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)>]
+extern bool SetInformationJobObject(System.IntPtr hJob, int infoClass, System.IntPtr lpInfo, uint32 cbInfoLength)
+
+let mutable signalRJobHandle = System.IntPtr.Zero
+
+let createSignalRJob() =
+    try
+        let job = CreateJobObject(System.IntPtr.Zero, System.IntPtr.Zero)
+        if job <> System.IntPtr.Zero then
+            // LimitFlags is always at offset 16 (after two LARGE_INTEGERs) regardless of bitness.
+            // The total struct size depends on compiler alignment settings; try all plausible values:
+            //   x64 natural alignment: 144  |  x64 pack=4: 136
+            //   x86 with 8-byte-aligned ULONGLONG: 112  |  x86 pack=4: 108
+            let JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+            let JobObjectExtendedLimitInformation = 9
+            let sizesToTry =
+                if System.IntPtr.Size = 8 then [| 144; 136 |]
+                else [| 112; 108 |]
+            let mutable jobSet = false
+            for structSize in sizesToTry do
+                if not jobSet then
+                    let ptr = System.Runtime.InteropServices.Marshal.AllocHGlobal(structSize)
+                    try
+                        for i in 0 .. structSize - 1 do
+                            System.Runtime.InteropServices.Marshal.WriteByte(ptr, i, 0uy)
+                        System.Runtime.InteropServices.Marshal.WriteInt32(ptr, 16, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+                        if SetInformationJobObject(job, JobObjectExtendedLimitInformation, ptr, uint32 structSize) then
+                            signalRJobHandle <- job
+                            jobSet <- true
+                        else
+                            let err = System.Runtime.InteropServices.Marshal.GetLastWin32Error()
+                            if err <> 24 then  // 24 = ERROR_BAD_LENGTH; only retry for that specific error
+                                printfn "[Sync] SetInformationJobObject failed (error %d)" err
+                                jobSet <- true  // non-recoverable error; stop trying other sizes
+                    finally
+                        System.Runtime.InteropServices.Marshal.FreeHGlobal(ptr)
+            if not jobSet then
+                printfn "[Sync] SetInformationJobObject: no struct size worked (%s)" (if System.IntPtr.Size = 8 then "x64" else "x86")
+    with ex ->
+        printfn "[Sync] Could not create job object: %s" ex.Message
+
+let startLocalSignalRHost (port: string) =
+    try
+        let exePath = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Z1R_SignalRHost.exe")
+        if System.IO.File.Exists(exePath) then
+            // Defer job creation to first actual use; calling at module-load time (do) can trigger
+            // SetInformationJobObject error 24 on first launch due to static-initializer ordering.
+            if signalRJobHandle = System.IntPtr.Zero then
+                createSignalRJob()
+            let psi = new System.Diagnostics.ProcessStartInfo()
+            psi.FileName <- exePath
+            psi.Arguments <- port
+            psi.UseShellExecute <- false
+            psi.CreateNoWindow <- true
+            let proc = System.Diagnostics.Process.Start(psi)
+            // Add to job object so it is killed automatically if ZTracker exits for any reason
+            if signalRJobHandle <> System.IntPtr.Zero then
+                AssignProcessToJobObject(signalRJobHandle, proc.Handle) |> ignore
+            signalRHostProcess <- Some proc
+            printfn "[Sync] Launched SignalR host on port %s" port
+        else
+            printfn "[Sync] Host EXE not found at %s" exePath
+    with ex ->
+        printfn "[Sync] Launch error: %s" ex.Message
+
+let stopLocalSignalRHost() =
+    match signalRHostProcess with
+    | Some proc ->
+        try
+            if not proc.HasExited then
+                proc.Kill()
+                proc.WaitForExit(3000) |> ignore
+            proc.Dispose()
+            printfn "[Sync] Stopped Z1R_SignalRHost.exe"
+        with ex ->
+            printfn "[Sync] Error stopping host: %s" (ex.Message)
+        signalRHostProcess <- None
+    | _ -> ()
+
+type GrabHelper() =
+    let mutable isGrabMode = false
+    let mutable grabMouseX, grabMouseY = -1, -1
+    let grabContiguousRooms = Array2D.zeroCreate 8 8
+    let mutable roomStatesIfGrabWereACut = null
+    let mutable roomIsCircledIfGrabWereACut = null
+    let mutable horizontalDoorsIfGrabWereACut = null
+    let mutable verticalDoorsIfGrabWereACut = null
+
+    member this.PreviewGrab(mouseX, mouseY, roomStates:DungeonRoomState.DungeonRoomState[,]) =
+        if not this.IsGrabMode || this.HasGrab then
+            failwith "bad"
+        if RoomTypeExtensions.IsNotMarked(roomStates.[mouseX,mouseY].RoomType) then
+            failwith "bad"
+        // compute set of contiguous rooms
+        let contiguous = Array2D.zeroCreate 8 8
+        let q = new System.Collections.Generic.Queue<_>()
+        q.Enqueue(mouseX, mouseY)
+        while q.Count > 0 do
+            let roomX,roomY = q.Dequeue()
+            contiguous.[roomX,roomY] <- true
+            let unvisited(x,y) = x>=0 && x<=7 && y>=0 && y<=7 && not contiguous.[x,y]
+            let attempt(x,y) = if unvisited(x,y) && not(roomStates.[x,y].IsEmpty) then q.Enqueue(x,y)
+            attempt(roomX-1,roomY)
+            attempt(roomX+1,roomY)
+            attempt(roomX,roomY-1)
+            attempt(roomX,roomY+1)
+        // return them
+        contiguous
+    member this.StartGrab(mouseX, mouseY, roomStates:DungeonRoomState.DungeonRoomState[,], roomIsCircled:bool[,], horizontalDoors:Door[,], verticalDoors:Door[,]) =
+        let contigous = this.PreviewGrab(mouseX, mouseY, roomStates)
+        // save them
+        grabMouseX <- mouseX
+        grabMouseY <- mouseY
+        contigous |> Array2D.iteri (fun x y v -> grabContiguousRooms.[x,y] <- v)
+        roomStatesIfGrabWereACut <- Array2D.init 8 8 (fun x y ->
+            let clone = roomStates.[x,y].Clone()
+            clone
+        )
+
+        roomIsCircledIfGrabWereACut <- Array2D.init 8 8 (fun x y -> if contigous.[x,y] then false else roomIsCircled.[x,y])
+        horizontalDoorsIfGrabWereACut <- Array2D.init 7 8 (fun x y -> if contigous.[x,y] || contigous.[x+1,y] then DoorState.UNKNOWN else horizontalDoors.[x,y].State)
+        verticalDoorsIfGrabWereACut <- Array2D.init 8 7 (fun x y -> if contigous.[x,y] || contigous.[x,y+1] then DoorState.UNKNOWN else verticalDoors.[x,y].State)
+        contigous
+
+    member this.PreviewDrop(mouseX, mouseY) =
+        if not this.IsGrabMode || not this.HasGrab then
+            failwith "bad"
+        let dx,dy = mouseX-grabMouseX, mouseY-grabMouseY
+        let contiguousOk = Array2D.zeroCreate 8 8
+        let contiguousWarn = Array2D.zeroCreate 8 8
+        for x = 0 to 7 do
+            for y = 0 to 7 do
+                let i,j = x-dx, y-dy
+                if i>=0 && i<=7 && j>=0 && j<=7 then
+                    if grabContiguousRooms.[i,j] then
+                        if not(roomStatesIfGrabWereACut.[x,y].IsEmpty) then
+                            contiguousWarn.[x,y] <- true
+                        else
+                            contiguousOk.[x,y] <- true
+        contiguousOk, contiguousWarn
+
+    member this.DoDrop(mouseX, mouseY, roomStates:DungeonRoomState.DungeonRoomState[,], roomIsCircled:bool[,], horizontalDoors:Door[,], verticalDoors:Door[,]) =  // mutates arrays
+        if not this.IsGrabMode || not this.HasGrab then
+            failwith "bad"
+        let dx,dy = mouseX-grabMouseX, mouseY-grabMouseY
+        let oldRoomStates = roomStates |> Array2D.map (fun s -> 
+            let clone = s.Clone()
+            (clone, s)  // return both clone and original reference
+        )
+
+        let oldRoomIsCircled = roomIsCircled.Clone() :?> bool[,]
+        let oldHorizontalDoors = horizontalDoors |> Array2D.map (fun c -> c.State)
+        let oldVerticalDoors = verticalDoors |> Array2D.map (fun c -> c.State)
+        roomStatesIfGrabWereACut
+        |> Array2D.iteri (fun x y clone ->
+            let target = roomStates.[x,y]
+            target.CSharp.CopyFrom(clone.CSharp)
+            target.CSharp.FireChangedManually()
+        )
+
+
+        roomIsCircledIfGrabWereACut |> Array2D.iteri (fun x y v -> roomIsCircled.[x,y] <- v)
+        horizontalDoorsIfGrabWereACut |> Array2D.iteri (fun x y v -> horizontalDoors.[x,y].State <- v)
+        verticalDoorsIfGrabWereACut |> Array2D.iteri (fun x y v -> verticalDoors.[x,y].State <- v)
+        for i = 0 to 7 do
+            for j = 0 to 7 do
+                if grabContiguousRooms.[i,j] then
+                    let x, y = i + dx, j + dy
+                    if x >= 0 && x <= 7 && y >= 0 && y <= 7 then
+                        let source = oldRoomStates.[i,j] |> fst
+                        let destination = roomStates.[x,y]
+
+                        // Move room data
+                        destination.CSharp.CopyFrom(source.CSharp)
+                        destination.CSharp.X <- x
+                        destination.CSharp.Y <- y
+                        destination.CSharp.FireChangedManually()
+
+                        roomIsCircled.[x,y] <- oldRoomIsCircled.[i,j]
+
+                        let do_door(target:Door[,], x, y, source:DoorState[,], i, j) =
+                            if source.[i,j] <> DoorState.UNKNOWN then
+                                target.[x,y].State <- source.[i,j]
+                        if x<7 && i<7 then do_door(horizontalDoors,x,y,oldHorizontalDoors,i,j)
+                        if x>0 && i>0 then do_door(horizontalDoors,x-1,y,oldHorizontalDoors,i-1,j)
+                        if y<7 && j<7 then do_door(verticalDoors,x,y,oldVerticalDoors,i,j)
+                        if y>0 && j>0 then do_door(verticalDoors,x,y-1,oldVerticalDoors,i,j-1)
+
+        // Second pass: clear source positions that are not also destinations of another grabbed room.
+        // Doing this in the same loop as the copy causes rooms to be erroneously cleared when the
+        // destination of one grabbed room coincides with the source of another (e.g. moving a group right).
+        for i = 0 to 7 do
+            for j = 0 to 7 do
+                if grabContiguousRooms.[i,j] then
+                    let si, sj = i - dx, j - dy
+                    let isAlsoDestination = si >= 0 && si <= 7 && sj >= 0 && sj <= 7 && grabContiguousRooms.[si,sj]
+                    if not isAlsoDestination then
+                        roomStates.[i,j].CSharp.Clear()
+
+        this.Abort()
+
+    member this.ToggleGrabMode() = isGrabMode <- not isGrabMode
+    member this.IsGrabMode = isGrabMode
+    member this.HasGrab = grabMouseX <> -1
+    member this.Abort() =
+        isGrabMode <- false
+        grabMouseX <- -1
+        grabMouseY <- -1
+        for x = 0 to 7 do
+            for y = 0 to 7 do
+                grabContiguousRooms.[x,y] <- false
+        roomStatesIfGrabWereACut <- null
+        roomIsCircledIfGrabWereACut <- null
+    member this.Log() =
+        printfn "log"
+
+///////////////////////////////////////////
+
+let flatColorArray = [|
+    // dungeon colors
+    0x808080
+    0xADADAD
+    0xE0E0E0
+
+    0x0050F1
+    0x4BA0FF
+    0xB6D8FF
+    
+    0x3B34FF
+    0x8A84FF
+    0xD0CDFF
+    
+    0x8022E8
+    0xD172FF
+    0xEDC6FF
+    
+    0xBB1EA5
+    0xFF6DF7
+    0xFFC4FC
+    
+    0xDB294E
+    0xFF799E
+    0xFFC8D8
+    
+    0xD74000
+    0xFF9047
+    0xFFD2B4
+    
+    0xB15E00
+    0xFFAE0A
+    0xFFDE9C
+    
+    0x737900
+    0xC4CA00
+    0xE7E994
+    
+    0x2D8B00
+    0x7DDC13
+    0xCAF19F
+
+    0x008F08
+    0x41E157
+    0xB2F3BB
+
+    0x008460
+    0x21D5B0
+    0xA5EEDF
+
+    0x006DB5
+    0x25BEFF
+    0xA6E5FF
+
+    0x000000   // add black as default
+    0x000000   
+    0x000000   
+    |]
+let threeTallColorArray = 
+    let a = ResizeArray()
+    let mutable i = 0
+    while i < flatColorArray.Length do
+        a.Add(flatColorArray.[i])
+        i <- i + 3
+    i <- 1
+    while i < flatColorArray.Length do
+        a.Add(flatColorArray.[i])
+        i <- i + 3
+    i <- 2
+    while i < flatColorArray.Length do
+        a.Add(flatColorArray.[i])
+        i <- i + 3
+    a.ToArray()
+
+let makeColor = Graphics.makeColor
+
+let canvasAdd = Graphics.canvasAdd
+
+let TRIFORCE_SIZE = 80.
+let DrawTriforceMapCore(haves:bool[], labels:string) =
+    let N = TRIFORCE_SIZE
+    
+    let p1 = Point(2.*N, 0.)
+    
+    let p2 = Point(N, N)
+    let p3 = Point(2.*N, N)
+    let p4 = Point(3.*N, N)
+
+    let p5 = Point(0., 2.*N)
+    let p6 = Point(N, 2.*N)
+    let p7 = Point(2.*N, 2.*N)
+    let p8 = Point(3.*N, 2.*N)
+    let p9 = Point(4.*N, 2.*N)
+
+    let tri(ps:seq<_>) = new Shapes.Polygon(Stroke=Brushes.DarkSlateBlue, StrokeThickness=2., Fill=Brushes.Black, Points=new PointCollection(ps))
+    let triforces = [|   // first quest mapping
+        tri [| p1; p2; p3 |]
+        tri [| p1; p3; p4 |]
+        tri [| p2; p5; p6 |]
+        tri [| p4; p8; p9 |]
+        tri [| p2; p3; p7 |]
+        tri [| p2; p6; p7 |]
+        tri [| p3; p4; p7 |]
+        tri [| p4; p7; p8 |]
+        |]
+    let labelLocations = [|
+        (1.5*N, 0.5*N)
+        (2.0*N, 0.5*N)
+        (0.5*N, 1.5*N)
+        (3.0*N, 1.5*N)
+        (1.5*N, 1.0*N)
+        (1.0*N, 1.5*N)
+        (2.0*N, 1.0*N)
+        (2.5*N, 1.5*N)
+        |]
+    let c = new Canvas(Width=4.*N, Height=2.*N, Background=Brushes.Black)
+    for i = 0 to 7 do
+        canvasAdd(c, triforces.[i], 0., 0.)
+        let x,y = labelLocations.[i]
+        let tb = new TextBox(Width=N/2., Height=N/2., IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=N/3., FontWeight=FontWeights.Bold, 
+                                    VerticalContentAlignment=VerticalAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center, 
+                                    Text=(sprintf"%c"(labels.ToCharArray().[i])), Foreground=Brushes.White, Background=Brushes.Transparent)
+        canvasAdd(c, tb, x, y)
+        if haves.[i] then
+            triforces.[i].Fill <- Brushes.Orange
+            tb.Foreground <- Brushes.Black
+    c.Margin <- Thickness(N/8.)
+    c
+let DrawTriforces1Q(haves) = 
+    DrawTriforceMapCore(haves, "12345678")
+let DrawTriforces2Q(haves:_[]) = 
+    let h = Array.zeroCreate 8
+    h.[0] <- haves.[0]
+    h.[1] <- haves.[2]
+    h.[2] <- haves.[1]
+    h.[3] <- haves.[4]
+    h.[4] <- haves.[3]
+    h.[5] <- haves.[5]
+    h.[6] <- haves.[7]
+    h.[7] <- haves.[6]
+    DrawTriforceMapCore(h, "13254687")
+
+let HiddenDungeonColorChooserPopup(cm:CustomComboBoxes.CanvasManager, tileX, tileY, tileW, tileH, originalColor, dungeonIndex, warp) = async {
+    let colors = threeTallColorArray
+    let tileCanvas = new Canvas(Width=tileW, Height=tileH)
+    let gridElementsSelectablesAndIDs = colors |> Array.mapi (fun i c -> new Canvas(Width=30., Height=30., Background=new SolidColorBrush(makeColor(c))) :> FrameworkElement, true, i)
+    let originalStateIndex = match colors |> Array.tryFindIndex (fun c -> c=originalColor) with Some i -> i | None -> colors.Length-1
+    tileCanvas.Background <- new SolidColorBrush(makeColor(colors.[originalStateIndex]))
+    let activationDelta = 0
+    let gnc = colors.Length / 3
+    let gnr = 3
+    let gcw,grh = 30,30
+    let gx,gy = -60., tileH+30.
+    let redrawTile(i) = tileCanvas.Background <- new SolidColorBrush(makeColor(colors.[i]))
+    let onClick(_ea, state) =
+        TrackerModel.GetDungeon(dungeonIndex).Color <- colors.[state]
+        CustomComboBoxes.DismissPopupWithNoResult
+    let extraDecorations = []
+    let brushes=CustomComboBoxes.ModalGridSelectBrushes.Defaults()
+    do! Async.Ignore <| CustomComboBoxes.DoModalGridSelect(cm, tileX, tileY, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
+                            float gcw/2., float grh/2., gx, gy, redrawTile, onClick, extraDecorations, brushes, warp, None, "HDNColorChooser", None)
+    }
+
+let MakeTriforceDecoderDiagram() =
+    let sp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(5.), Opacity=0.8)
+    let haves = TrackerModel.GetTriforceHaves()
+    let makeTB(text) = new TextBox(Width=TRIFORCE_SIZE*3.8, IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=16., 
+                                    VerticalContentAlignment=VerticalAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center, 
+                                    Text=text, Foreground=Brushes.Orange, Background=Brushes.Black)
+    sp.Children.Add(makeTB("Reference diagram - don't click here")) |> ignore
+    sp.Children.Add(makeTB("(Note: in Mixed Quest dungeons,\n7 and 8 may be swapped)")) |> ignore
+    sp.Children.Add(new DockPanel(Height=TRIFORCE_SIZE/3.)) |> ignore
+    sp.Children.Add(makeTB("First Quest or Shapes dungeons")) |> ignore
+    sp.Children.Add(DrawTriforces1Q(haves)) |> ignore
+    sp.Children.Add(new DockPanel(Height=TRIFORCE_SIZE/3.)) |> ignore
+    sp.Children.Add(makeTB("Second Quest dungeons")) |> ignore
+    sp.Children.Add(DrawTriforces2Q(haves)) |> ignore
+    let b = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(4.), Background=Brushes.Black, Child=sp)
+    b
+
+let HotKeyAHiddenDungeonLabel(fe:FrameworkElement, dungeon:TrackerModel.Dungeon, who:System.Threading.ManualResetEvent option) =
+    if TrackerModel.IsHiddenDungeonNumbers() then
+        fe.MyKeyAdd(fun ea ->
+            match HotKeys.OverworldHotKeyProcessor.TryGetValue(ea.Key) with   // overworld key for e.g. dungeon 4 is key used to hotkey 4
+            | Some(dungIdx) when dungIdx >=0 && dungIdx <=7 -> 
+                let ch = char(int '1' + dungIdx)
+                dungeon.LabelChar <- ch
+                match who with
+                | Some wh -> wh.Set() |> ignore
+                | _ -> ()
+            | _ -> ()
+            )
+
+let mutable HDNCP = None
+let HiddenDungeonNumberChooserPopup(cm:CustomComboBoxes.CanvasManager, tileX, tileY, tileW, tileH, originalLabelChar:char, dungeonIndex, warp) = async {
+    // TODO can you choose same # twice?
+    let tileCanvas = new Canvas(Width=tileW, Height=tileH, Background=Brushes.Black)
+    let dp = new DockPanel(Width=tileW, Height=tileH)
+    canvasAdd(tileCanvas, dp, 0., 0.)
+    let mkTxt(ch) =
+        new TextBox(Width=60., Height=60., FontSize=40., Foreground=Brushes.White, Background=Brushes.Black, IsHitTestVisible=false, 
+                    BorderThickness=Thickness(0.), Text=sprintf "%c" ch, VerticalContentAlignment=VerticalAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center,
+                    VerticalAlignment=VerticalAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center)
+    let theTB = mkTxt(originalLabelChar)
+    dp.Children.Add(theTB) |> ignore
+    let gridElementsSelectablesAndIDs = [|
+        for ch in "?12345678" do
+            yield (mkTxt(ch) :> FrameworkElement), true, ch
+        |]
+    let originalStateIndex = 
+        let i = "?12345678".IndexOf(originalLabelChar)
+        if i = -1 then 0 else i
+    let activationDelta = 0
+    let gnc,gnr = 3,3
+    let gcw,grh = 60,60
+    let gx,gy = -73., tileH+30.
+    let redrawTile(ch) = theTB.Text <- sprintf "%c" ch
+    let onClick(_ea, ch) =
+        TrackerModel.GetDungeon(dungeonIndex).LabelChar <- ch
+        CustomComboBoxes.DismissPopupWithNoResult
+    let extraDecorations = 
+        let warnTB = new TextBox(IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=16., Margin=Thickness(5.),
+                                    VerticalContentAlignment=VerticalAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center, 
+                                    Text="Don't mark anything other than '?'\nunless you are certain!", Foreground=Brushes.OrangeRed, Background=Brushes.Black)
+        let warnBorder = new Border(BorderThickness=Thickness(4.), BorderBrush=Brushes.Gray, Background=Brushes.Black, Child=warnTB)
+        let b = MakeTriforceDecoderDiagram()
+        b.MouseDown.Add(fun ea -> ea.Handled <- true)  // clicking the reference diagram should not close the dialog, people will do it by accident
+        [(upcast warnBorder : FrameworkElement), -123., 284.; (upcast b : FrameworkElement), 190., -120.]
+    let brushes=CustomComboBoxes.ModalGridSelectBrushes.Defaults()
+    let wh = new System.Threading.ManualResetEvent(false)
+    let dungeon = TrackerModel.GetDungeon(dungeonIndex)
+    HDNCP <- Some(dungeon, wh)
+    Graphics.WarpMouseCursorTo(Point(tileX+gx+float gcw/2.+18., tileY+gy+float grh/2.+15.))   // the +(18,15) makes mouse still inside the box but not overlapping the '?', easier to see
+    do! Async.Ignore <| CustomComboBoxes.DoModalGridSelect(cm, tileX, tileY, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
+                    44., 34., gx, gy, redrawTile, onClick, extraDecorations, brushes, warp, Some(wh), "HDNNumberChooser", None)
+    HDNCP <- None
+    }
+do
+    // Add() permanently adds an event listener.  We want to only call Add() once, but only listen while the popup is active
+    CustomComboBoxes.CanvasManager.TheOnlyCanvasManager.AfterCreatePopupCanvas.Add(fun popupCanvas ->
+        match HDNCP with
+        | Some(dungeon, wh) -> HotKeyAHiddenDungeonLabel(popupCanvas, dungeon, Some(wh))
+        | _ -> ()
+    )
+
+let HiddenDungeonCustomizerPopup(cm:CustomComboBoxes.CanvasManager, dungeonIndex, curColor, curLabel, accelerateIntoNumberChooser, accelerateIntoColorChooser, warpReturn:Point) = async {
+    let wh = new System.Threading.ManualResetEvent(false)
+    // setup main visual tree
+    let mainDock = new DockPanel(Background=Brushes.Black)
+    
+    let text = sprintf "Dungeon %c" "ABCDEFGH".[dungeonIndex]
+    let tb = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Black, FontSize=24., Text=text, IsHitTestVisible=false, 
+                            HorizontalContentAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), Margin=Thickness(0.,0.,0.,20.))
+    mainDock.Children.Add(tb) |> ignore
+    DockPanel.SetDock(tb, Dock.Top)
+
+// TODO ideally button1 and button2 would respond to simulated mouse clicks and arrow keys    
+    let innerDock = new DockPanel(LastChildFill=false)
+    let button1Content = new Canvas(Width=60., Height=60., Background=new SolidColorBrush(makeColor(curColor)))
+    let button1 = new Button(Content=button1Content, Margin=Thickness(20.,0.,20.,0.), BorderThickness=Thickness(5.))
+    let button2Content = new TextBox(Width=60., Height=60., IsHitTestVisible=false, FontSize=40., Foreground=Brushes.White, Background=Brushes.Black, 
+                                        Text=sprintf "%c" curLabel, HorizontalContentAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.))
+    let button2 = new Button(Content=button2Content, Margin=Thickness(20.,0.,20.,0.), BorderThickness=Thickness(5.), HorizontalAlignment=HorizontalAlignment.Center)
+    let b1a = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Black, FontSize=12., Text="Change", IsHitTestVisible=false, 
+                            HorizontalContentAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), HorizontalAlignment=HorizontalAlignment.Center)
+    let b1b = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Black, FontSize=12., Text="Color", IsHitTestVisible=false, 
+                            HorizontalContentAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), HorizontalAlignment=HorizontalAlignment.Center)
+    let b1sp = new StackPanel(Orientation=Orientation.Vertical)
+    b1sp.Children.Add(b1a) |> ignore
+    b1sp.Children.Add(button1) |> ignore
+    b1sp.Children.Add(b1b) |> ignore
+    let b2a = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Black, FontSize=12., Text="Change", IsHitTestVisible=false, 
+                            HorizontalContentAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), HorizontalAlignment=HorizontalAlignment.Center)
+    let b2b = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Black, FontSize=12., Text="Number", IsHitTestVisible=false, 
+                            HorizontalContentAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), HorizontalAlignment=HorizontalAlignment.Center)
+    let b2sp = new StackPanel(Orientation=Orientation.Vertical)
+    b2sp.Children.Add(b2a) |> ignore
+    b2sp.Children.Add(button2) |> ignore
+    b2sp.Children.Add(b2b) |> ignore
+
+    innerDock.Children.Add(b1sp) |> ignore
+    DockPanel.SetDock(button1, Dock.Left)
+    innerDock.Children.Add(b2sp) |> ignore
+    DockPanel.SetDock(button2, Dock.Right)
+
+    mainDock.Children.Add(innerDock) |> ignore
+
+    let theBorder = new Border(BorderBrush=Brushes.Black, BorderThickness=Thickness(10.), Child=mainDock)
+    let theBorder = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(4.), Child=theBorder)
+
+    let mutable popupIsActive = false  // second level of popup, need local copy
+    // hook up the button actions
+    let button1Body() =
+        if not popupIsActive then
+            popupIsActive <- true
+            let pos = button1Content.TranslatePoint(Point(), cm.AppMainCanvas)
+            async {
+                do! HiddenDungeonColorChooserPopup(cm, pos.X, pos.Y, button1Content.Width, button1Content.Height, curColor, dungeonIndex, CustomComboBoxes.WarpTo(warpReturn))
+                popupIsActive <- false
+                wh.Set() |> ignore
+                } |> Async.StartImmediate
+    button1.Click.Add(fun _ -> button1Body())
+    let button2Body() =
+        if not popupIsActive then
+            popupIsActive <- true
+            let pos = button2Content.TranslatePoint(Point(), cm.AppMainCanvas)
+            async {
+                do! HiddenDungeonNumberChooserPopup(cm, pos.X, pos.Y, button2Content.Width, button2Content.Height, curLabel, dungeonIndex, CustomComboBoxes.WarpTo(warpReturn))
+                popupIsActive <- false
+                wh.Set() |> ignore
+                } |> Async.StartImmediate
+    button2.Click.Add(fun _ -> button2Body())
+
+    // add main element and extra decorations 
+    let popupCanvas = new Canvas()
+    canvasAdd(popupCanvas, theBorder, 0., 0.)
+    
+    let mainX,mainY = 24.,(if warpReturn.Y > 400. then 325. else 165.)   // if this originated from the lower half, move the popups down some, so they fit better in the broadcast window
+
+    let dungeonColorCanvas = new Canvas(Width=30., Height=30.)
+    canvasAdd(popupCanvas, dungeonColorCanvas, float dungeonIndex*30. - mainX, 0. - mainY)
+    let pretty = CustomComboBoxes.GetPrettyDashes("DungeonColorThingy", Brushes.Lime, 30., 30., 3., 2., 1.)
+    dungeonColorCanvas.Children.Add(pretty) |> ignore
+
+//    let guideline = new Shapes.Line(X1=float dungeonIndex*30. - mainX + 15., Y1=36. - mainY, X2=0., Y2=0., Stroke=Brushes.Gray, StrokeThickness=3.)
+//    canvasAdd(popupCanvas, guideline, 0., 0.)
+
+    if accelerateIntoNumberChooser then
+        button2.Loaded.Add(fun _ -> button2Body())
+    elif accelerateIntoColorChooser then
+        button2.Loaded.Add(fun _ -> button1Body())
+    else
+        button1.Loaded.Add(fun _ -> Graphics.WarpMouseCursorTo(button1.TranslatePoint(Point(button1Content.Width/2., button1Content.Height/2.),cm.AppMainCanvas)))
+    do! CustomComboBoxes.DoModal(cm, wh, mainX, mainY, popupCanvas)
+    dungeonColorCanvas.Children.Remove(pretty)
+    }
+
+// Zelda-like minimap
+
+module ZeldaFont =
+    let A = """
+..XXX...
+.XX.XX..
+XX...XX.
+XX...XX.
+XXXXXXX.
+XX...XX.
+XX...XX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let B = """
+XXXXXX..
+XX...XX.
+XX...XX.
+XXXXXX..
+XX...XX.
+XX...XX.
+XXXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let C = """
+..XXXX..
+.XX..XX.
+XX......
+XX......
+XX......
+.XX..XX.
+..XXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let D = """
+XXXXX...
+XX..XX..
+XX...XX.
+XX...XX.
+XX...XX.
+XX..XX..
+XXXXX...
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let E = """
+XXXXXXX.
+XX......
+XX......
+XXXXXX..
+XX......
+XX......
+XXXXXXX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let F = """
+XXXXXXX.
+XX......
+XX......
+XXXXXX..
+XX......
+XX......
+XX......
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let G = """
+..XXXXX.
+.XX.....
+XX......
+XX..XXX.
+XX...XX.
+.XX..XX.
+..XXXXX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let H = """
+XX...XX.
+XX...XX.
+XX...XX.
+XXXXXXX.
+XX...XX.
+XX...XX.
+XX...XX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let lettersAthruH = [| A; B; C; D; E; F; G; H |]
+    let L = """
+.XXX....
+.XXX....
+.XXX....
+.XXX....
+.XXX....
+.XXX....
+.XXXXXX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let O = """
+.XXXXX..
+XX...XX.
+XX...XX.
+XX...XX.
+XX...XX.
+XX...XX.
+.XXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let R = """
+XXXXXX..
+XX...XX.
+XX...XX.
+XX..XXX.
+XXXXX...
+XX.XXX..
+XX..XXX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let V = """
+XX...XX.
+XX...XX.
+XX...XX.
+XXX.XXX.
+.XXXXX..
+..XXX...
+...X....
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let hyphen = """
+........
+........
+........
+.XXXXX..
+........
+........
+........
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let questionMark = """
+..XXX...
+.X...X..
+.....X..
+....X...
+...X....
+........
+...X....
+........"""             .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit0 = """
+..XXX...
+.X..XX..
+XX...XX.
+XX...XX.
+XX...XX.
+.XX..X..
+..XXX...
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit1 = """
+..XX....
+.XXX....
+..XX....
+..XX....
+..XX....
+..XX....
+XXXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit2 = """
+.XXXXX..
+XX...XX.
+....XXX.
+..XXXX..
+.XXXX...
+XXX.....
+XXXXXXX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit3 = """
+.XXXXXX.
+....XX..
+...XX...
+..XXXX..
+.....XX.
+XX...XX.
+.XXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit4 = """
+...XXX..
+..XXXX..
+.XX.XX..
+XX..XX..
+XXXXXXX.
+....XX..
+....XX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit5 = """
+XXXXXX..
+XX......
+XXXXXX..
+.....XX.
+.....XX.
+XX...XX.
+.XXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit6 = """
+..XXXX..
+.XX.....
+XX......
+XXXXXX..
+XX...XX.
+XX...XX.
+.XXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit7 = """
+XXXXXXX.
+XX...XX.
+....XX..
+...XX...
+..XX....
+..XX....
+..XX....
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit8 = """
+.XXXXX..
+XX...XX.
+XX...XX.
+.XXXXX..
+XX...XX.
+XX...XX.
+.XXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digit9 = """
+.XXXXX..
+XX...XX.
+XX...XX.
+.XXXXXX.
+.....XX.
+....XX..
+.XXXX...
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let digits = [| digit0; digit1; digit2; digit3; digit4; digit5; digit6; digit7; digit8; digit9 |]
+    let gI = """
+.XXXXX..
+..XXX...
+..XXX...
+..XXX...
+..XXX...
+..XXX...
+.XXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gJ = """
+...XXXX.
+....XX..
+....XX..
+....XX..
+XX..XX..
+XX..XX..
+.XXXX...
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gK = """
+XX...XX.
+XX..XX..
+XX.XX...
+XXXX....
+XX.XX...
+XX..XX..
+XX...XX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gM = """
+XX...XX.
+XXX.XXX.
+XXXXXXX.
+XXXXXXX.
+XX.X.XX.
+XX...XX.
+XX...XX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gN = """
+XX...XX.
+XXX..XX.
+XXXX.XX.
+XXXXXXX.
+XX.XXXX.
+XX..XXX.
+XX...XX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gP = """
+XXXXXX..
+XX...XX.
+XX...XX.
+XXXXXX..
+XX......
+XX......
+XX......
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gQ = """
+.XXXXX..
+XX...XX.
+XX...XX.
+XX...XX.
+XX.X.XX.
+XX..XX..
+.XXXX.X.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gS = """
+.XXXXX..
+XX...XX.
+XX......
+.XXXXX..
+.....XX.
+XX...XX.
+.XXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gT = """
+XXXXXXX.
+..XXX...
+..XXX...
+..XXX...
+..XXX...
+..XXX...
+..XXX...
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gU = """
+XX...XX.
+XX...XX.
+XX...XX.
+XX...XX.
+XX...XX.
+XX...XX.
+.XXXXX..
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gW = """
+XX...XX.
+XX...XX.
+XX...XX.
+XX.X.XX.
+XXXXXXX.
+XXX.XXX.
+XX...XX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gX = """
+XX...XX.
+XX...XX.
+.XX.XX..
+..XXX...
+.XX.XX..
+XX...XX.
+XX...XX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gY = """
+XX...XX.
+XX...XX.
+.XX.XX..
+..XXX...
+..XXX...
+..XXX...
+..XXX...
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gZ = """
+XXXXXXX.
+.....XX.
+....XX..
+...XX...
+..XX....
+.XX.....
+XXXXXXX.
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let gBlank = """
+........
+........
+........
+........
+........
+........
+........
+........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let extraGlyphs = dict [ 'I', gI; 'J', gJ; 'K', gK; 'M', gM; 'N', gN; 'P', gP; 'Q', gQ; 'S', gS; 'T', gT; 'U', gU; 'W', gW; 'X', gX; 'Y', gY; 'Z', gZ ]
+    let fromLetter(letter) = 
+        if letter >= 'A' && letter <= 'H' then
+            lettersAthruH.[int letter - int 'A']
+        elif letter = 'L' then
+            L
+        elif letter = 'O' then
+            O
+        elif letter = 'R' then
+            R
+        elif letter = 'V' then
+            V
+        elif letter = '-' then
+            hyphen
+        elif letter = ' ' then
+            gBlank
+        elif extraGlyphs.ContainsKey(letter) then
+            extraGlyphs.[letter]
+        elif letter >= '0' && letter <= '9' then
+            digits.[int letter - int '0']
+        else //elif letter = '?' then
+            questionMark
+
+let BLUE = System.Drawing.Color.FromArgb(71, 47, 228)
+let zeldaLetterCache = new System.Collections.Generic.Dictionary<_,_>()
+let MakeLetterBIInZeldaFont(letter, preferBlack) =
+    match zeldaLetterCache.TryGetValue((letter,preferBlack)) with
+    | true, v -> v
+    | _ ->
+        let bmp = new System.Drawing.Bitmap(8, 8)
+        for x = 0 to 7 do
+            for y = 0 to 7 do
+                bmp.SetPixel(x,y,System.Drawing.Color.Transparent)
+        let a = ZeldaFont.fromLetter(letter)
+        for x = 0 to 7 do
+            for y = 0 to 7 do
+                if a.[y].Chars(x)='X' then
+                    bmp.SetPixel(x, y, if preferBlack then System.Drawing.Color.Black else System.Drawing.Color.White)
+        let bi = Graphics.BMPToBI bmp
+        zeldaLetterCache.Add((letter, preferBlack), bi)
+        bi
+let MakeMiniMiniMapBmp() =
+    let bmp = new System.Drawing.Bitmap(8, 8)
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            bmp.SetPixel(x,y,System.Drawing.Color.Black)
+    for x = 0 to 6 do
+        for y = 0 to 2 do
+            bmp.SetPixel(x,y,BLUE)
+        for y = 4 to 6 do
+            bmp.SetPixel(x,y,BLUE)
+    bmp
+let MakeLoZMinimapDisplayBmp(rooms:bool[,], letter) =
+    let OFFWHITE = System.Drawing.Color.FromArgb(210, 210, 210)
+    let YELLOW = System.Drawing.Color.FromArgb(215, 152, 42)
+    let bmp = new System.Drawing.Bitmap(80, 40)
+    for x = 0 to 79 do
+        for y = 0 to 39 do
+            bmp.SetPixel(x,y,System.Drawing.Color.Black)
+    let mutable xoff = 0
+    let w(x,y) = bmp.SetPixel(xoff+x,y,OFFWHITE)
+    let LEVEL = [| ZeldaFont.L; ZeldaFont.E; ZeldaFont.V; ZeldaFont.E; ZeldaFont.L |]
+    let BOARD = [| ZeldaFont.B; ZeldaFont.O; ZeldaFont.A; ZeldaFont.R; ZeldaFont.D |]
+    let which = if TrackerModelOptions.BOARDInsteadOfLEVEL.Value then BOARD else LEVEL
+    // L B
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if which.[0].[y].Chars(x)='X' then w(x,y)
+    xoff <- 8
+    // E O
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if which.[1].[y].Chars(x)='X' then w(x,y)
+    xoff <- 16
+    // V A
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if which.[2].[y].Chars(x)='X' then w(x,y)
+    xoff <- 24
+    // E R
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if which.[3].[y].Chars(x)='X' then w(x,y)
+    xoff <- 32
+    // L D
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if which.[4].[y].Chars(x)='X' then w(x,y)
+    xoff <- 40
+    // -
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if ZeldaFont.hyphen.[y].Chars(x)='X' then w(x,y)
+    xoff <- 48
+    if letter >= 'A' && letter <= 'H' then
+        let a = ZeldaFont.lettersAthruH.[int letter - int 'A']
+        for x = 0 to 7 do
+            for y = 0 to 7 do
+                if a.[y].Chars(x)='X' then w(x,y)
+    elif letter >= '0' && letter <= '9' then
+        let a = ZeldaFont.digits.[int letter - int '0']
+        for x = 0 to 7 do
+            for y = 0 to 7 do
+                if a.[y].Chars(x)='X' then w(x,y)
+    else
+        // ?
+        for x = 0 to 7 do
+            for y = 0 to 7 do
+                if ZeldaFont.questionMark.[y].Chars(x)='X' then w(x,y)
+    for i = 0 to 7 do
+        for j = 0 to 7 do
+            if rooms.[i,j] then
+                let x = i*8
+                let y = j*4 + 8
+                for dx = 0 to 6 do
+                    for dy = 0 to 2 do
+                        bmp.SetPixel(x+dx, y+dy, BLUE)
+    // rupee
+    xoff <- 72
+    let mutable yoff = 8
+    let pattern = """
+...XXXXX
+..XXXX.X
+.XXXXX.X
+XXXXXX.X
+XXXXX...
+XXXX.XX.
+X...XX..
+XXX.X..."""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let b(x,y) = bmp.SetPixel(xoff+x,yoff+y,YELLOW)
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if pattern.[y].Chars(x)='X' then b(x,y)
+    // key
+    yoff <- 24
+    let pattern = """
+....XXX.
+...X..XX
+...X...X
+....X..X
+...X.XX.
+..X.....
+.X.X....
+X.X....."""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if pattern.[y].Chars(x)='X' then b(x,y)
+    // bomb
+    yoff <- 32
+    let pattern = """
+.......o
+..XXXX.o
+.XoXXXX.
+XoXXXXXX
+XoXXXXXX
+XXXXXXXX
+.XXXXXX.
+..XXXX.."""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
+    let w(x,y) = bmp.SetPixel(xoff+x,yoff+y,OFFWHITE)
+    let b(x,y) = bmp.SetPixel(xoff+x,yoff+y,BLUE)
+    for x = 0 to 7 do
+        for y = 0 to 7 do
+            if pattern.[y].Chars(x)='X' then b(x,y)
+            elif pattern.[y].Chars(x)='o' then w(x,y)
+    bmp
+    

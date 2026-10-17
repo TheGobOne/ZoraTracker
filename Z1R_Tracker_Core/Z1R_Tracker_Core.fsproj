@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Cross-platform build of the tracker logic (no UI). Same source files as Z1R_Tracker, linked rather than copied,
+       so the Windows (WPF) tracker and any future Avalonia/web front end share one copy of the logic. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RootNamespace>Z1R_Tracker</RootNamespace>
+    <AssemblyName>Z1R_Tracker_Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\GlobalAssemblyInfo.fs" />
+    <Compile Include="..\Z1R_Tracker\OverworldData.fs" Link="OverworldData.fs" />
+    <Compile Include="..\Z1R_Tracker\DungeonData.fs" Link="DungeonData.fs" />
+    <Compile Include="..\Z1R_Tracker\TrackerModelOptions.fs" Link="TrackerModelOptions.fs" />
+    <Compile Include="..\Z1R_Tracker\TrackerModel.fs" Link="TrackerModel.fs" />
+    <Compile Include="..\Z1R_Tracker\OverworldRouting.fs" Link="OverworldRouting.fs" />
+    <Compile Include="..\Z1R_Tracker\SaveAndLoad.fs" Link="SaveAndLoad.fs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,786 @@
+﻿REMINDERS
+
+Z-Tracker targets .Net Framework 4.8.  That's because Framework 4.x is part of the Windows OS, and so that makes Z-Tracker a small .zip file.
+I could target .NET 6.0 in the future, but it would require users to have the .NET runtime installed as a pre-req (or else 'Publish' the app 
+as self-contained, making the .zip file I give people hundreds of megs, which does not make sense as a strategy for adoption).
+
+I should be able to upgrade to VS2022 and keep targetting as I am today.
+
+see also https://devblogs.microsoft.com/visualstudio/support-ends-for-older-versions-of-visual-studio-feb2022/ and https://github.com/dotnet/core/blob/main/releases.md
+
+
+CURRENT PRIORITIES
+
+update docs with changes
+update whats new with changes
+
+
+since 1.2.1e...
+ - dungeon tracker visual tweaks/fixes; add more monster types and another door state
+ - option to snoop&display seed&flags
+ - link can route to potion shops or blockers; mouse-hovering a shop item (or blocker shop item) with no map shops gives visual feedback
+ - hotkeys for TakeAny/TakeThis 4-way-menu
+ - Timeline improvements: shows triforce numbers rather than letters in Hidden Dungeon Numbers; shows skipped items; can mouse-hover items to see exact time
+ - specific-blockers (optionally, middle-click a blocker, can project blocked info onto un-gotten triforce/item boxes)
+ - z1m1 help
+    - color & label overworld circles (shift-left-click/shift-right-click)
+    - DrawingLayer (draw button)
+since 1.2.1m...
+ - fix drag-paint dungeon rooms
+ - crash-detection-popup to help folks with recovery
+ - clickable recorder destination (note where you are whistled to)
+ - timeline ow progress graph; auto-timeline-screenshot on completion, for sharing
+ - door repair count reminders
+ - hide certain overworld icons (but still track them)
+ - overworld randomizers/romhacks (blank map or user-specified-overworld-map file.png)
+     - shin zelda densetsu, infinite hyrule, zelda reloaded, ...
+ - User Custom Checklist - an extensibility feature that enables z1m1 tracking & timelining major items
+since 1.2.1q...
+ - if any OFF rooms marked, blue-bars hover shows inverse off-map too (to see if painted 9 right)
+ - new dungeon map paint-drag stuff
+since 1.2.1r...
+ - scroll OW circle color
+since 1.2.2...
+ - label timeline hearts with their origin (e.g. '3' from dungeon 3, 'sword icon' from white sword cave...)
+ - "S/B" is now shield/book icons instead
+ - can attempt to load saves from older versions (1.2.3 can load 1.2.2 saves)
+ - FQ/SQ vanilla dungeon shapes now have a 'hatch' pattern off-the-map (to make 2Q7 and 2Q8 more visually distinct)
+ - while painting dungeon map, popup the blue-bars-hover-thingy
+ - Options Menu ability to hide no-longer-relevant shop items on overworld map (under "More settings...", final checkbox)
+ - Options Menu new dungeon option "Left-drag auto-inverts" causes first left-click-drag to auto-click OffTheMap/Unmarked button in bottom right, for immediately painting rooms back onto the map
+ - Options Menu new dungeon option "Default to NonDescript" if you want left clicking a room to be NonDescript rather than MaybePushBlock
+ - fix a couple timeline OW graph draw bugs
+ - fix a couple crash bugs
+ - fix bug: in 2Q, voice says 10/10 door repair, but visual reminder says 10/9
+ - fix bug: 2nd quest map has yellow dot on A9 rather than A7
+ - fix bug: The "SQ" button to pre-highlight the dungeons with vanilla 1Q/2Q shapes only works correctly if "S" is selected; if any dungeon 1-9 is being displayed, "SQ" acts exactly like "FQ"
+ - fix bug: toggling "Second quest dungeons" does not update old man counts
+since 1.2.3...
+- shorter app window option, also 4/3 size option (TODO add to docs, top-bar option like 2/3 size)
+- mouse magnifier window (TODO get feedback, it kinda sucks)
+- hotkeys can have shift/alt/ctrl modifiers (TODO doc)
+- keyboard nav (arrow most grids, 'tab' OW/Dung) and simulated mouse clicks&scrolls (TODO docs)
+- FQ/SQ buttons now update front half (1-6) and back half (7-9) vanilla maps all at once, rather than per-dungeon (TODO update docs)
+- dungeon summary tab improvements - each dungeon shows if have map, shows monsters marked in each dungeon, highlights dungeons on overworld while mouse inside (TODO update docs)
+- dungeons have a checkbox to mark you got the map, top right tracker has checkbox for book=atlas (TODO update docs)
+- dungeon room MonsterDetails have 4 new monster icon choices (TODO update docs)
+- add vanilla dungeon items reference diagram to the '...' starting/extra items popup
+- reset tracker button for routers/groundhog/4+4 (TODO document it)
+- restart the application button (TODO document it)
+- recorder to unbeaten/new options (TODO document it)
+- FQ/SQ... button to permanently mark off HFQ/HSQ stuff, or to mark vanilla FQ/SQ dungeon locations (TODO update docs)
+- remove 'Second quest dungeons' from options menu, move it to 3rd item box of dungeon 1 or 4 (hover/click) (TODO update docs)
+- remove 'Mirror overworld' from options menu, move it to a mirror icon button toggle near upper right of tracker (TODO update docs)
+- after finishing and clicking zelda, dungeon 9 appears on the summary tab for most-recent-completion-full-screenshot.png to see everything
+- can choose a different voice for reminders, if installed (US windows usually has 2)
+- hovering Hint Decoder button shows locations of hint shops marked on overworld map (TODO update MouseHoverExplainer screenshot in docs)
+- added OptionsMenu thingy to hide the timer
+- added an option to hide meat shops, deep in the overworld OptionsMenu
+- the clickable stuff now gives hover feedback to make it clearer it's clickable
+- hovering 4/9 found shows locations of all dungeons, like hovering 'S' summary tab
+- Blockers numerals turn white when the corresponding dungeon is located on the overworld
+- (fix) can highlight multiple boomstick book ships on hover
+- (fix) shield/boomstick checkbox now preserved in save/reload
+- (fix) resetting timer won't ask to place Start Spot if you have already placed it (e.g. groundhog day, known start location, etc.)
+- (fix) can scrollwheel to change circle color of overworld middle-click circles, even on unmarkable never-has-a-location tiles
+- (document that can bind more than on hotkey to an action, e.g. Foo=x, Foo=y; only first shows up in tooltips)
+since 1.3.0k...
+- "show open caves" now has checkbox: unmarked open caves have Cyan GYR highlights to locate wood sword cave and armos while relevant (TODO doc it)
+- new rupee icon in upper right, hovering it (or money blocker in blockers) shows all MMGs, Unknown Secrets, or un-taken Secrets (TODO docs)
+- dungeon summary tab blacks out dungeons that are unlocated-and-unmarked, or completed, for 'big picture' (TODO general docs about purpose/value of the tab (decide what next))
+- dungeon room MonsterDetails have 16 new monster icon choices relative to 1.2 (TODO update docs)
+- new recorder destination icon (white oval), map legend; no more green dungeons or shaded dungeons (TODO update docs)
+since 1.3.0l...
+- dungeon summary tab has 3 modes; hovering upper left previews dungeon 9
+- new reminder for Overworld Overwrites (if you make a mark, and then change it)
+- reminder log - click log button at upper right of timeline to see past reminders (can mouseover each for description) (TODO docs)
+- performance improvements
+- fixed name display when selecting MonsterDetail
+- upper right boxes turn yellow if shop/location found, but item (or better) not yet obtained: mags, wood sword, blue ring, boom book, blue candle, wood arrow, bomb (TODO docs)
+since 1.3.0m...
+- minor layout fixes
+- added HotKeys_BlankSampleTemplate.txt; you can copy over HotKeys.txt from your prior install, but still have this reference to see if/what new HotKeys exist
+- added Custom Waypoint, basically like a second start spot icon, you only get one, and you can place/move it how you like, click button in legend (TODO docs)
+- improved BLOCKERS hover feedback and explanation of 'possible dungeon continuations' (TODO docs)
+- improve reminders & reminder log (better respect for 'disable all' Options Menu button, and graying out disabled reminders in the log)
+- fix: tweaked combat reminder, even with prior wand, upgrading to white sword makes combat-blocked dungeons worthy of reminding
+since 1.3.0p...
+- fix an egregious bug with Hidden Dungeon Numbers
+- fix gettable computation when loading a save
+- fix PreferredVoice not being loaded, dungeon summary tab mode not being preserved
+- hidden setting UseBlurEffect, set it to false if e.g. using the coords checkbox causes the whole app to get super laggy (due to BlurEffect rendering in software rather than hardware)
+- darken completed dungeons on the map again
+- second shop item discoverable via description in popup
+- add hover eyeball icon to hide overworld map icons (TODO docs)
+since 1.3.0q...
+- make recorder destination circles become diamonds, and be a little less bright; make exact locator "crosshairs" cyan
+- hovering blockers behaves like hovering the corresponding dungeon tab
+- reset timer button (inside the pause/reset menu) can be clicked via keyboard-left-click hotkey
+- rename 'any key' to 'magic key'
+- {wood sword, wood arrow, blue ring, blue candle} boxes in upper tracker now get displayed "Don't want" if you get a better version first
+- red dungeon boxes get brighter red as you get more items, so that one item you forgot to dig in 3 will be screaming at you near the end of the run
+- 2Q dungeons and Mirror overworld are now seed-save persisted, not user-preference persisted
+- zones/coords/gettables/open caves checkboxes are now user-preference-settings, persisted across tracker sessions
+- remember position of mouse magnifier window between sessions
+since 1.3.0s...
+- fix crash when click Heart Shuffle (oops)
+- fix Level9 hint halo not working in Hidden Dungeon Numbers
+- fix: floor drops in groundhog/routers-reset should rebrighten
+- fix: Select Voice options should work even if reminders are disabled or Volume is 0
+since 1.3.0t...
+- dungeon rooms: make unpaired transport numerals light up
+- improve Door Inference option
+- found bomb shops give yellow outline to bomb icon even if have marked you have bombs
+- display if potion letter obtained (based on overworld map markup, displays right of bomb icon)
+- change Broadcast Window layout a little, in order to...
+- ...fix Mouse Magnifier Window cursor not being quite right
+- New hint tracking UI (TODO document it)
+   - old Hint Decoder button and UI still exists, with improvememnts, but
+   - new faster version available (in non-Hidden-Dungeon-Numbers), if player knows e.g. Aquamentus Awaits means Level 1
+      - scroll (or click) blank area above a triforce (or 9 numeral) to select hint for that dungeon location
+      - scroll the white sword icon or magical sword icon (or blank area above) to select hint for those locations
+      - can see two-letter hinted zone locations on-screen without having to hover to see the map region
+      - can also setup hotkeys
+- swap "OW Completion" and "Draw" on timeline, so OW Completion look more like the y-axis label that it is
+- animate the Custom Waypoint
+- fix vanilla 1Q dungeon location marking 9 in wrong spot
+- fix clicks possibly getting missed when 'falling between the cracks' of the popup grids
+- fix a significant number of latent potential crash bugs
+- fix LinkRouting to now show cyan open cave highlights
+- fix so you can always mark combat blocker, even if have mags and red ring
+- fix so left-clicking an OffTheMap dungeon room now paints it back onto the map
+- don't animate tile change when you don't actually change it
+- a lot of performance improvements (for best performance on very low-end machines, use Tall window layout and turn off both "Draw Routes" and "Highlight Nearby")
+since 1.3.0u...
+- add explainer to 2nd-quest-dungeon-toggle-thingy when you hover dungeon 4's third box
+- add hover explainers to checkboxes and start buttons on the startup screen
+- monster marked in lobby gets top precedence in monster list on dungeon summary detail 
+- make ALL OF TIPS prettier
+- change showLocatorExactLocation display color
+- new basement stair icon for dungeon item boxes
+- much, much more performance improvements
+- fix 2/3 size app looking blurry in many places
+- fix crash bugs on the startup screen
+- fix Timeline hover-tooltips should draw atop "Options..." button
+- fix: "Hide Timer" option now also applies to Broadcast Window
+- fix: bad hotkeys should leave diagnostic info onscreen
+- fix: cyan box highlighting mouse-hover-target not moving smoothly 
+since 1.3.0v...
+ - fix Notes box height
+ - after async locator (like 'consider magical sword'), warp mouse away and back to restore prior hover locator
+ - fix crashes during startup error handling
+since 1.3.0w...
+ - fixes to make 2/3 preview hovering in summmary tab look better (without breaking 2/3 overall app view)
+ - fix high DPI Bitmap scaling
+ - new option to turn off Dungeon 'sunglasses' for those who want bright high contrast (TODO doc)
+since 1.3.0x...
+ - two-maps-popup during map-painting adds an explanation, also is now less blurry in 2/3 version
+ - fix: fast hint areas above 9, WS, MS get blue box mouseover highlight, just like 1-8 do
+ - fix: a bunch of other UI bugs related to FastHintSelector
+ - update '?' dungeon stair icon to match unpaired number stairs (yellow numeral)
+ - make larger blue&red dots in dungeon tab header (for bomb upgrade/old man hint)
+ - four more MonsterDetail marks for dungeon rooms (Moldorm, RupeeBoss, Traps, and Other2)  (TODO doc)
+ - blue-ish middle click overworld circle color changed, to maybe make less confused with start spot circle
+ - fix: end the BLOCKERS dungeon continuations animation if you switch tabs
+ - fix: right clicking recorder destination steals keyboard focus
+ - Show/Run Custom now comes with useful defaults (TODO doc)
+ - added another tip
+ - hover 'Item Progress' text in legend now shows remaining items to locate (TODO doc)
+ - change display of have-bombs-and-know-where-shop-is
+ - reminder log displays category of reminder in tooltip
+ - in Hidden Dungeon Numbers, if you mark bottom of 3 items, then turns out to be 2-item dungeon, if middle box is empty, will auto-swap bottom item up to middle box
+ - make column highlight in dungeon a little brighter
+ - left-clicking a dungeon mark on overworld map switches to that dungeon tab and behaves like ToggleCursorOverworldOrDungeon hotkey (TODO doc)
+ - ToggleCursorOverworldOrDungeon shows a brief animation to help locate the mouse cursor (in default Tall application layout only)
+since 1.3.0y...
+ - fix: when mirror overworld, left/right hotkeys swap meaning
+ - add "WS/MS replaced by BU" toggle button in upper right of app, just changes WS/MS icons to bomb upgrade icons (TODO doc)
+ - fix a showLocator bug
+ - hovering 'Max Hearts' shows your inventory and hearts display just like game does (useful if you pick up item, but not sure what got) (TODO doc)
+since 1.3.0z...
+ - fix glow-red-brighter logic for empty item boxes, and also special case 3rd box of 1/4/8 in non-HDN to glow brighter when 2nd box non-empty
+ - add ladder-ful coast-to-forest-interior screen scrolls
+    - tracker now shows all useful scrolls except: desert to forest fairy (fairy not 'interesting'), A1-to-start-screen (hard to compute/draw), and mirror-OW-to-coast-island (breaks logic)
+ - fix to display the console window if app crashes
+ - fix items boxes: scroll-to-activate a grid-popup automatically moves mouse to center of tile, to avoid case where activate on edge where a subsequent click is outside the menu
+ - if mouse not over a grid that reacts to arrow hotkeys, then arrow hotkeys 'nudge' the mouse 20 pixels (TODO doc)
+ - upper-left tri/item area allow arrow hotkeys to let mouse 'escape' downward/rightward using above mechanism
+ - blockers area allows arrow hotkeys to let mouse 'escape' upward/leftward using above mechanism
+since 1.3.0A...
+ - fix issue with app Left/Top coordinates getting saved as -32000 (minimized, or a DPI-scaled version thereof) preventing app from reopening
+ - fix: when "WS/MS replaced by BU" logic (TODO doc)
+    - appropriate sword level now displayed in item progress
+    - BUs are not sword upgrades that trigger combat blocker reminders
+    - Wood Sword box does not get 'X'ed out if get a BU
+    - cyan highlights to help find open cave with wood sword do not go away if get BU
+ - in Hidden Dungeon Numbers, selecting a vanilla map outline on A-H will
+    - if the dungeon number label is unknown, will mark it based on the selected map label
+    - if 2Q1 or 2Q4 map is selected on any tab, will switch to Second Quest Dungeons mode (where 4, rather than 1, has a third item)
+ - fix perceptible latency in mouse warps
+ - make darkened tiles somewhat brighter when hover eyeball to see icon-less overworld map
+ - fix arrow HotKeys letting mouse escape from dungeon triforce/item inset
+ - 'Spot Summary', 'Item Progress', and 'Max Hearts' can be left-clicked to 'pop out' a window of their corresponding displays (TODO doc)
+    - window location and visibility is remembered for next session; click the 'X' to close any window to get rid of it; left-click text again to restore to same location
+    - right-clicking will place in a fresh location on-screen (useful if window gets 'lost' off-screen)
+since 1.3.0B...
+ - fix Preferred Voice option not being loaded correctly
+since 1.3.0C...
+ - fix volume not being applied to shwoop/clink noises at startup
+ - Unmark-Remark HotKey behavior (TODO doc)
+    - when mouse-hovering a dungeon room that has specific marks, if you successively unmark and remark certain rooms/monsters/floordrops via hotkeys, then specific behaviors are triggered:
+       Simple behaviors
+       - FloorDropDetail.Triforce: toggle has-triforce
+       - FloorDropDetail.Map: toggle has-map
+       Item box accelerators
+       - RoomType.ItemBasement: activate the bottommost empty basement box (or the bottommost if none are empty)
+       - FloorDropDetail.Heart: replace topmost empty (or DontHaveIt-Heart) box with a (HaveIt) Heart
+       - FloorDropDetail.OtherKeyItem: activate the topmost empty non-basement box (or the topmost if none are empty)
+       Blocker accelerators
+       - RoomType.(Any Moat): do blocker(Ladder) logic
+       - RoomType.HungryGoriyaMeatBlock: do blocker(Bait) logic
+       - RoomType.LifeOrMoney: do blocker(Money) logic
+       - MonsterDetail.Bow: (Gohma) do blocker(BowAndArrow) logic
+       - MonsterDetail.Digdogger: do blocker(Recorder) logic
+       - MonsterDetail.Dodongo: do blocker(Bomb) logic
+       where Blocker(X) logic means: if there is already an X blocker, do nothing, else if there is a Maybe-X blocker, promote it to an X, else if there is an empty blocker box, fill it with Maybe-X
+since 1.3.0D...
+ - all error beeps now come with a Reminder Log, so you can see exactly what Z-Tracker was unhappy about
+ - Reminder Log now displays full text (no need to hover it to read it)
+ - Unmark-Remark now error-beeps if you try to set a bad Blocker (e.g. try to mark Ladder blocker when you already have the Ladder)
+ - put an 'all files' option in the 'load previous save' dialog, in case people rename their save files
+ - fix Hide Timer option not being respected at startup
+
+
+
+
+More contextual popout ideas:
+ - imagine a window that is 'rooms that dont drop' that updates based on dungeon you are in
+ - or vanilla drop rooms if you have 1Q/2Q maps selected
+ - map puzzle-piecing - just show the player-marked room map outlines of 1-6 or 7-9, and let the player 'do it in their head'
+
+
+
+
+
+SpecialK: wants yellow% https://discord.com/channels/368763663986982912/920498784142774332/1137693935435784234
+
+
+fun side project: no enemies: https://discord.com/channels/368763663986982912/576879458552643594/1137607507192332368
+
+
+
+panulphe:
+ - sent seed to count potion shops (maybe get rid of hard bound for pot/DR/MMG/TAH/hint? would need to adjust spot summary)
+    - if you do mismark, when you get to e.g. the 8th of 7 potion shops, it's like, ok, maybe I mismarked the 3rd one, but I'm standing here now 
+        in front of the 8th and it'd be nice to mark it but you wont let me... 
+
+
+press ctrl or something does eyeball show-map toggle thingy?  or experiment with it like 'blinking away' all the tiles every 2s or something
+ - i tried both of these and didn't love either... still looking for a way for me not to confuse e.g. 1Q3 and river cave when walking to them and obscured by icons
+
+
+mouseover OW tile, maybe there's a statusbar that says coords, what the mark is (in case hidden), etc?
+
+
+
+BT: display how many bomb spots left in this region
+
+
+consider cheap and expensive keys and meats as separate marks? 
+
+
+lots of new icons that could appear in Draw menu
+
+
+
+new armos reminder: 5 mins after you have marked at least 3 armos spots, if the armos item box is still empty, remind once
+
+possible new reminder category - item obtained in first 5 mins, remind 7 mins later? bow, silvers, akey, ladder
+ - "dont forget you got an early X"
+ - could trigger early if get arrow/silver after bow, or bow after arrow... or maybe 'now that you have a bow an arrow' maybe just have an auto-reminder for that combo? hm
+     - can hook into ""if not priorBowArrow"" logic
+ - if mark any moat room, with ladder, one-time extra ladder reminder? (one-time for e.g. routing scenario, where may mark moats with ladder)
+ - if recorder-to-unbeaten is on, reminder about it when you first get recorder
+ - could have a whole sub-pop-up menu of extra reminders and individual categories
+ - possibly a reminder when all dungeons have been found _or_hinted_, so you don't look everywhere when you have a hint? hm
+ - possible reminder: 'there is only 1 remaining location that XXX can be, hover its hint-halo to see it'
+ - possible reminder: if bow/silvers/ladder are marked red on tracker for more than N minutes, remind they exist in tracker box XXX
+ - possible reminder: mark some dungeon N, get atlas book outside dungeon, return to dungeon tab N, remind 'you have a new map'?
+Related: possible easteregg/configurable random speech, like motivationals or something? (kibitz.txt) would need option to turn it off, when you want to get serious
+
+
+UCC may need testing of popup menus (since DoModalCore now throws if not popupIsActive)
+
+
+feature to paint your map of 7/8 as a 'vanilla map outline' onto 8/7, with user-chosen offset? that is, entirely manual process?
+ - or BeefSupremeTV, just an option to see 8 while in 7, or vice versa (like summary hover, shows over Notes maybe)
+ (see also idea as popout window of maps)
+
+
+
+some kind of on-map better viz of the dungeons, e.g. you're standing next to 3 yellow numerals, but what are blockers? which still has items? gotta look all over
+ - could be nice to project a monster there maybe too, maybe select something to project, ... ? the monster on the lobby could take priority!
+ - there really isn't room to display everything; a single 16x16 icon is about right to put off to the side, but is monster, or remain items, or blocker most important?
+ - maybe could be a mouse-hover, like hover the dungeon and it pops up the full detail?  or something puts the details of all dungeons on map near them?
+ - basically, there is a ton of info player need to consider to decide stuff, and not easy to find way to group it all in small field of view...
+
+
+if e.g. hover recorder, and all recorderable spots are marked, no feedback ('None found' reuse? it's more like 'none left', hm)
+ - or maybe subscript on item progress of how many each left? not obvious what means, though, and also no way to see remain bomb spot count
+
+
+consider moving the tooltips in-window so they can get video captured, as their absence does make e.g. explainer videos more challenging
+- could also have some tooltips with icons etc
+
+
+routing lines are hard to see on light areas (lack of contrast), would be nice to give them dark framing (thicker black transparent line behind it), 
+but also they are expensive garbage so would need to cache them all probably... i experimented a little, and really would need some advanced shaders i think
+
+
+
+Broadcast option: always focus overworld ? bighead scenario - see what he thinks of 'square' window
+
+
+
+
+in quick-start docs, maybe prioritize what people should track, so noobs can bite off smaller piece (maybe intersperse 'if you are new to z1r' advice in red/indent-italic text throughout, or something)
+ - overworld: click 'dont care' all done things, except mark things to come back to: dungeons, any roads, white/magical sword caves, possibly some shops
+ - dungeon items: tri & items as you get them, to know when dungeon is 'done'
+ - dungeon maps: can do nothing... marking all stairs in 9... could mark blocker room in prior dungeon, and blocker type in blockers... eventually all of 9...
+ - dungeon rooms: default maybe-pushblock room complete/uncomplete (maybe ? and X mapping from zhelper) is most common, after that transports, only occasionally other marks
+ - key hook is "every time you leave something you'll come back to later, leave self some reminder", and leaving an incomplete dungeon is the commonest/most crucial one
+
+
+
+
+
+
+
+
+
+mouse thumb button mapping? (again, macros)
+
+
+more hotkeys: reset timer?  only if can place start spot with arrows (DONE), else need hand on mouse already anyway
+macros? e.g. one hotkey means press these keys in sequence (could be zelda room to mark 3 no-doors, or tri room to mark room and tri drop)
+ - note that zelda-room would 'play' 3-no-doors keys, if you already marked one side as a red wall, then it would cycle that door down 2 more to purple, hm.
+        a consequence of door marks being non-idempotent. another reason 'cycle' keys can be problematic. if there was a 'mark left door unmarked' key, could work around it
+ - stevie-o also made a thingy so you can have a hotkey mean one of each part of room/monsters/drop and one hotkey can mark all 3, similar idea
+ - stevie-o also did a thing where 1 hotkey can cycle thru like N selections in various contexts (which I didn't like because e.g. secrets toggle bright)
+ - conditional hotkeys? your 'Z' room hotkey in dungeons could behave differently in 1-8 versus 9 I guess that's kinda of what contexts are already, 
+        it's like sub-context for dungeons.  but more conditional logic context (if current value is this then...) makes it possible to author 'cycle' logic
+
+homer suggests: hotkey for mark-a-set-of-no-bomb-wall (for e.g. zelda room, or coming out into a single-room segment in the middle of 9)
+ - actually, a hotkey that is 'mark all unmarked adjacent doors to this room as umbombable' has good value
+
+
+
+
+Way to export&import labeled circled on overworld, for e.g. 1Q/2Q dungeons, shops, 100-secrets, etc... like save&load, but just a subset - generalize? (vanilla drops e.g. banana in 1)
+ - would these overwrite user data? or live in a different layer? i'm thinking overwrite-if-no-data-there
+
+beware, many buttons are Focusable, which can alter how hotkeys get routed
+
+vincent bug: if you GRAB and drag a stair-pair room off the map, it's 'lost' and you can't mark 
+
+
+
+also, doc all OptionsMenu
+probably more description/screenshot of options menu, say initial defaults tailored to new folks
+maybe also have an advanced/clean set of options, like I did for GM, hm
+
+
+
+
+(separate)
+consider 'dungeon time' computer, based on: download VOD, use ffmpeg to grab thumbnail even N seconds, trim to race boundary, have human choose where in image the '8' in LEVEL-8 is, 
+    extract all those regions, average them all to cleanly get the crisp contour, and then best-match to 123456789?_, then graph time in dungeons
+possibly consider broadcast-for-speedgaming if can link two of them
+
+
+
+
+put some kind of screenshot on the TOC page, so it can be a first landing page like the master frontpage
+maybe slightly more in quickstart guide? or somewhere a pic of overworld popup?
+
+
+
+
+z1m1: fact that 'triforce' can be some other item is hard to track (I was drawing icons over tris in top-tracker)
+ - If you get a triforce in a basement, draw a triforce-triangle over that item box where you found it (and mark the numbered triforce gotten in 'extra items')
+ - Whatever the triforce item is, draw its icon in the empty space above the triforce
+ - then a dungeon is 'complete' when the spot above the triforce, and all the item boxes, are filled (e.g. you got the Q/E/U items out of 5, only Ms can remain)
+z1m1 note: there are 4 'free stuff' old men, that are letter/sword1/sword2/sword3.  you can't always distinguish, so mark next free one if you pick it up, or s2/s3 if cant (may need to swap)
+z1m1 note: when take-any has non-hyrule equipment i take, just mark 'take potion' to check off the cave and not update another equipment
+z1m1: I dont have a way to mark hyrule portals or extra doors within-Zebes (out of scope)
+TODO doc the UserCustomChecklist stuff
+TODO consider adding z1 complete, m1 complete to UCC, so can timeline either finish first
+
+
+
+possibly a 'blank quest' alongside 1st/2nd/mixed for randomized overworlds, just 16x8 of blank tiles you can mark all of (DONE-ish)
+ - TODO maybe remove choicedomain limits, e.g. TrackerModel's overworldTiles(isFirstQuestOverworld) code
+TODO documentation of '...' options from startup screen and brief docs about DrawingLayer
+
+
+
+
+speech: "tracker where is bomb shop" or "tracker where is level five" ? "link route to XXX" ? (non-marking queries have less reliability issues)
+ - make an icon next to MHE which is speech explainer which is basically all the same targets with voice
+ - also be able to change tab via voice? toggle show-gettables? (hotkey show gettables?)
+
+"link show me"   <---- seems like best option maybe
+ - "sword" {1/2/3}
+ - "level" {1-9, or A-H or 9}
+ - {arrow, blue ring, boomstick, bomb, candle, potion(or takeany), meat/bait, key, shield} shop
+ - "arm owes", "open caves", "dungeons"
+need to factor RouteIntention apart from RouteDestination
+type RouteIntention =
+    | SHOP of int            // shop types or potion   -- should also refactor into set of known map locations dest
+    | LEVEL_INDEX of int     // -> OW_MAP or HINT_ZONE or none
+    | SWORD of int           // -> OW_MAP or HINT_ZONE or none
+    | ARMOS
+    | OPEN CAVES
+need like a failure icon to appear next to link for e.g. hover ring but no ring shop, or speak it
+
+or how about a single hotkey that will
+ - warp mouse to center 'choose a route dest' popup, with all the choices (except overworld tiles, which it partially obscures and does not offer alternative)
+ - warp back after selection
+and maybe double-clicking Link also does that hotkey-like popup.
+The list of choices is
+ - shops (incl. potions)
+ - dungeons (known or hinted)
+ - sword caves (known or hinted)
+ - open caves
+ - (not map tiles)
+
+
+
+August40th: I've been playing with minor drops shuffled & there's no good way to mark minor items fron Armos, coast, or WS cave. 
+ - just doc a strategy (white-click basements at start, Notes dungeons 'all done')
+
+
+
+===========================================================================
+distributing version process
+ - for a full release, change the version number in OverworldData.fs (e.g. v1.0.0)
+ - edit README.txt to point to upcoming branch URL
+ - commit to master
+ - make a branch e.g. "v1.0" in git which is a spur for the release (and bugfix updates to app/docs)
+ - make a tag on the branch with the full version number e.g. "v1.0.0"
+ - commit the branch
+ALSO
+ - put a zip in UserCustomAssets per the docs at install.md
+ - update install.md direct link to discord message
+ABOVE IS DONE
+ - delete entire Relase directory
+     - get rid of hotkeys/settings/crash log
+ - run the program once
+     - creates hotkeys/settings/crash log/ZTracker.lnk
+ - delete Magnifier/Overworld/ExtraIcons directory, if started an overworld session
+ - delete ZTracker.lnk (has my machine's paths hardcoded)
+ - delete the .pdb file, it is huge
+ - If used program, then maybe also do these:
+     - delete LT numbers from settings (my screen window position)
+     - delete ShowRunCustom.txt
+ - zip up directory
+ - publish Release in the branch on the tag, and add the zip as a resource
+then users can
+ - unzip folder somewhere
+ - run Z1R_WPF.exe
+ - that will start the program. it will also create a ZTracker.lnk shortcut in the folder, which you can copy wherever you like (e.g. place on desktop)
+
+if flagged as virus, this may help
+https://www.thewindowsclub.com/manage-quarantined-exclusions-windows-defender-security-center
+===========================================================================
+
+
+
+
+
+SMALL
+
+link probably doesn't route to rupees, might be easy to add
+
+voice feedback saying what mark, so less need to watch what you clicked?
+
+
+ad-hoc counters? e.g. for whatever folks may want to track? hotkey'd?
+
+> optional boxes or places to note consecutive/global
+
+thinking about this again (especially now that I know how global works, and how to use it)
+I was kinda imagining a "+1 hotkey" would be the easiest interaction, but +1/-1 buttons near the counter could also work, or even a way to 'set' the current one by clicking on a row of 0-9 buttons
+
+still hard for me to imagine anyone tracking consecutive kills in a way other than counting aloud (edited)
+[1:20 PM] homerjsmash: for me i wouldn't increment it with each kill, more like i'm building a count on death mountain and then i have three screens of boulders and peahats, ok good enemies I can kill again.. was i on 5 or 6? lol
+[1:27 PM] Lorgon111: I see, oh interesting, ok
+
+(from bogie's discord)
+I presume you mean e.g. https://www.orderoftheate.com/zelda-1-randomizer/general-tips/drop-table and highlighting the current (next) row?
+Would you map keyboard keys or controller buttons?  Is '+1' the only one you'd map?
+Does the global do anything funky on a 16-fairy? (If so I guess players just manually reset it?)
+I've been asked about this for Z-Tracker as well, but have only very recently learned how globals work to even think of implementing it.
+[12:54 PM] Lorgon111: Was thinking it might make sense to just make a standalone app for this, with a few display options like:
+ - show enemy groups (or not)
+ - show all drop columns (or just the bomb-droppers one)
+ - just show the counter 0-9 (and nothing else)
+ - always on top (yes/no) (in case you want to place it over the edge of some other window)
+
+
+homer: wants middle click in cyan and pink varieties, not just yellow, in dungeons too? (existing mark-shape, 2-corner-ellipse, is sufficient
+ - try to be consistent with overworld? hm.... shift-right-click is already used for floordrop... i guess no-mouse means can't circle dungeon rooms today? hm
+ - there is no good UI scheme for dungeons, rooms are already too overloaded.  if i ever make hotkeys substituable for mouse clicks, then could map it
+
+
+clyceer: wants to drag in grab mode, rather than click-click
+
+
+
+clicking the kitty should meow or purr or something
+
+
+
+my modal elements violate MouseEnter/MouseLeave parity, so e.g.,
+ - mouse into dungeon 3 map, L3 is showLocator highlighted on overworld
+ - invoke room popup
+ - move mouse into overworld map, click to dismiss popup
+ - L3 is still showLocator()ed because dungeon map never got a MouseLeave event
+I could not worry about that, or apply some ad-hoc fixes for the common case, but in general it seems non-trivial
+
+
+consider controller-button push-to-talk to explicitly activate speech recognition, to compensate for streaming-speech accuracy
+ - option to play a sound when voice makes a mark
+ - maybe want a quick 'unmark' gesture, to undo accidents?
+ - if ship PTT feature, need a gamepad button chooser binding thingy, even if e.g. ask them to go to gamepad-tester.com and then select a number 0-9
+     - and probably also want keyboard bind like left shift, if can figure out
+
+Speech recogn – can multiple be running at once? Different grammars, context based on mouse location/popups etc
+select item box via voice?  select dungeon room via voice?
+
+broadcast window doesnt capture drag-drop mouse movement
+
+if HUDs were legal, visual-reminder-HUD would be nice
+
+MEDIUM
+
+possibly an 'any road' single hotkey that works like voice, and auto-selects next road? same for HDN for 'next dungeon'
+ - Stevie-O hacked this with a new overworldTiles() state NextAnyRoad or whatever
+ - there's AnyRoad and HDN dungeon, where a single hotkey for 'next' is nice
+ - and then there's related idea of single hotkey to cycle thru many choices, e.g. C for chute (|| -> = -> none -> ||), 
+       secrets (medium -> large -> small -> none -> medium, or whatever), etc, and user-configability
+       but the issue is already existing mechanics there (e.g. 'S', 'S' toggles secret brightness, so conflict with cycling secret size)
+
+
+
+If I want to put chosen color on backgrounds with text foreground (e.g. LEVEL-A) then see e.g.
+https://stackoverflow.com/questions/3942878/how-to-decide-font-color-in-white-or-black-depending-on-background-color
+https://stackoverflow.com/questions/9733288/how-to-programmatically-calculate-the-contrast-ratio-between-two-colors
+https://gamedev.stackexchange.com/questions/38536/given-a-rgb-color-x-how-to-find-the-most-contrasting-color-y
+for text contrast info
+also https://lospec.com/palette-list/nintendo-entertainment-system
+
+
+
+regarding overworld magnifier:
+jkoper: An interesting application of this zoomed grid, Lorgon, might be if you're playing with shuffle secret spots on and you can mark off spots you tried bombing or burning.
+
+
+
+"seed replay", if log overworld marks, could 'replay' a 1 min summary of seed in tracker, might be fun.
+ - or the simple implementation is 1 screenshot every minute, saved to a folder, then stitch together into video
+     - each screeshot is like 150k, so 120 of those (2 hours) is 18M of disk space
+     - people recording/streaming already have it implicitly
+
+
+
+check for memory leaks
+startup performance
+https://github.com/microsoft/perfview
+-OR- turn off tail calls IN BOTH PROJECTS and use VS profiler
+prior work showed that 'routing' (computing accessible, drawing paths) is a big one; wonder if some kind of cache would be faster, but is a lot of work
+PERF:
+- scenario focused, e.g. right click overworld tile response speed (WPF is hard to measure)
+- DONE: WPFUI:activatePopup(), maybe cache images and Canvases
+- CustomComboBoxes:doModalGridSelect(), DONE: cache MakePrettyDashes? TODO: could rewrite a bit to cache borders etc
+- https://kynosarges.org/WpfPerformance.html turn off anti-aliasing, DONE: freeze all immutable brushes and transforms
+- DONE: hideLocator() is probably getting called due to implicit MouseLeave() when popup draws atop map, i should definitely exclude some work while the popup is active
+- DONE: mapStateSummary.OwGettableLocations is a list of coords, should be array of bools, so Contains() calls can just be array lookup
+- DONE: ensureRespecting...() when not drawing route marks should just iterate over the map tiles rather than doing the whole BFS each time
+- WPFUI: let rect = ... for mouse highlight OW could reuse rect better
+- DONE: cache some other Images and hotkey strings for perf based on profiling
+- testing on my surface is useful
+- for best performance on very low-end machines, use Tall window layout (Square draws about twice as much stuff) and turn off both "Draw Routes" and "Highlight Nearby" (most expensive stuff)
+
+
+
+
+
+BIG
+
+'undo'
+if i had two auto saves (most recent, slightly older), then 'undo' could effectively be done by quitting and reloading an auto-save, if you oops...
+
+
+
+
+ESOTERIC
+
+
+always a candle shop blocked by at most bombs
+always an arrow shop blocked by at most candle
+
+
+stabbing an NPC in a dungeon increments the consecutive kill counter, but not the global
+
+
+'step over the water'
+It means a path exists where you have to walk across the water, which might mean the dungeon is at one of the river spots by the waterfall (but not in RR flags, since 
+those river spots are 2Q overworld only) or that you you can cross a moat in a dungeon to get to the item.  But there might a different path through the dungeon where 
+you do not need to cross the moat.  
+
+fred: The gist is:  if you walk in with the bare minimum stuff (sword, bombs if I recall), you can't get to the room.  If you walk in with the bare minimum plus ladder, you can get to the room.
+That doesn't guarantee that's the ONLY way to get there.  Sometimes, one path is blocked by ladder, and another blocked by recorder, for instance.  Then you could get 
+both hints, but may find you don't need a ladder to get there.
+
+
+
+
+The game (vanilla Z1) has 8 possible room states that can be set for the rooms (unless at some point I decide to do custom assembly):   KILL->DROP KILL->SHUTTER PUSH->STAIR PUSH->SHUTTER   STAND
+0 - Nothing happens.  Drop stands in the room, doors stay shut on room clear.                                                               .          .             .           .             X
+1 - Drop stands in the room, shutters open on room clear.                                                                                   .          X             .           .             X
+2 - "Master" enemy room.  Killing the enemy in slot 0 kills all enemies in the room.  Shutter doors do not open.                            .          .             .           .             .
+3 - No drop, doors only open if you hold the Triforce of Power.                                                                             .          .             .           .             .
+4 - Drop standing if present, push a block to open shutter doors when all cleared.                                                          .          .             .           X             X
+5 - Drop standing if present, push a block to open a stair when all cleared (doors permanently stay shut, see 2nd quest level 8)            .          .             X           .             X   (2Q only)
+6 - Open shutter doors if the enemy in the first slot is killed (used only for Life/Money rooms currently, as Fire is an enemy)             .          .             .           .             .
+7 - Drop item hidden.  Kill all enemies to make shutters open and drop item appear.                                                         X          X             .           .             .
+
+Thus, in shapes, 
+ - Standing item implies no push-stair (unless RMOS in a no-shutter room, which uses state 5 above)
+ - Shutter implies no push-stair
+ - Kill->Drop implies no push-stair
+
+
+
+
+
+
+NEVER drop
+    Gannon (only standing drop, or drop map)
+    Zelda           Bomb droppers: BrCrhBrBhh
+    3 Rows                         1234567890
+    Circle Wall                    * .  * *
+    Single Block            Other: .....C....
+    <spike trap angles>
+    Lava Moat
+               Never drops in   Can drop in
+Five Pair      2 3 4 5 6 7 8 9  1
+Maze           1 2 3 5 6 7 8 9  4
+Pointless Moat 2 3 6 7 8 9      1 4 5
+Diamond Stair  1 4 5            2 3 6 7 8 9
+Single 6       1 4 5            2 3 6 7 8 9
+Spiral Stair   1 4 5            2 3 6 7 8 9
+Gleeok         1 5              2 3 4 6 7 8 9
+Grid           4 5              1 2 3 6 7 8 9
+T              1                2 3 4 5 6 7 8 9
+Vertical Rows  2 3 4 5 6 7 8 9  1
+
+
+
+These 6 rooms NEVER drop in ANY Shapes dungeon
+    Zelda           
+    3 Rows                Bomb droppers: BrCrhBrBhh
+    Circle Wall                          1234567890
+    Single Block                         * .  * *
+    <spike trap angles>
+    *Lava Moat
+
+Note: Triforce/Gannon (only standing drop, or drop map)
+
+These 10 rooms NEVER drop in CERTAIN Shapes dungeons
+               Never drops in   Can drop in
+*Vertical Rows 2 3 4 5 6 7 8 9  1
+Five Pair      2 3 4 5 6 7 8 9  1
+Maze           1 2 3 5 6 7 8 9  4
+Pointless Moat 2 3 6 7 8 9      1 4 5
+Diamond Stair  1 4 5            2 3 6 7 8 9
+Single 6       1 4 5            2 3 6 7 8 9
+Spiral Stair   1 4 5            2 3 6 7 8 9
+Gleeok         1 5              2 3 4 6 7 8 9
+Grid           4 5              1 2 3 6 7 8 9
+T              1                2 3 4 5 6 7 8 9
+
+*only if second quest rooms enabled
+(whole table assumes 'Remove Most Open Stairs' not on)
+
+
+within-dungeon pirouette: 
+Short answer: depends on the room you up+a in. It will open any door in the start room that has been opened (not open from the start) at the time you up+a
+[11:04 AM] fcoughlin: So a key door, bomb wall, or open shutter in the room you’re in will carry over to the start room of the dungeon
+
+
+Enemy Groups:
+
+I heard someone say that, of (wizzrobe, darknut, lynel, goriya), exactly 2 will be in overworld and exactly 2 in dungeons, is that true?  Any other rules of monster-bucketing I should know?  
+(What was the thing with dungeons? Are there 3 different sets of dungeons monsters, and each set appears in 2 or 3 or 4 dungeons each, or something?)
+
+jkoper: I would guess the actual group is wizzrobe, darknut, lynel, goriya, and moblin, with two of those being on the overworld and three in dungeons.  
+The stalfos, gibdos, tektites, and pols voice probably fill the other slots.  I'm definitely doing a little guessing here, but it really depends on the number of sprite slots each enemy needs.
+
+fcoughlin: There are four “groups”: overworld, the group in vanilla 1/2/7, group in vanilla 3/5/8, and group in vanilla 4/6/9.
+
+When I shuffle groups, there will still be four groups. One is overworld, for the three dungeons, each group will be in at least two dungeons (remaining three dungeons are random, 
+so in theory you could have 5 dungeons in one group).    (my math: 5/2/2 has 1/9 chance; 3/3/3 has 2/9 chance; 4/3/2 has 6/9 chance)
+
+What enemies end in which groups comes 100% from sprite limits. There’s a fixed number of bytes per enemy group, and as a result, only some things can work together.
+
+AdirondackRick: Now with all this being said, it’s worth notice there’s one enemy that shares two dungeon groups in each seed. In vanilla, it’s the Zols, but it could be 
+gibdos, pols voices, staffols, ropes — anything that doesn’t have a red/blue pairing.  So it’s realistic for one enemy in particular to be seen in as many as seven of the nine dungeons.
+
+
+Vanilla Enemy Sets:
+GORIYA
+Red and Blue Goriya
+Ropes
+Staffols
+Wallmasters
+Gels (not Zols)
+Keese
+
+DARKNUT
+Red and Blue Darknuts
+Pols Voice
+Gibdos
+Zols
+Gels
+Keese
+
+WIZZROBES
+Red and Blue Wizzrobes
+Like Likes
+Vires
+Zols
+Gels
+Keese
+
+
+
+Lorgon111: Semi-related: are (1Q) bubbles part of the enemy groups?  Are 'spike traps' part of the enemy groups?  Moldorm?  Is lanmola a 'boss'? 
+(I presume beamos are not part of enemy groups, but part of dungeon room geometry.) 
+AdirondackRick: Bubbles and spikes are not a part of an enemy group.  You can find them in any of the three. Moldorm and Lanmola are considered “bosses”, along with that dreaded rupee boss.  
+The one I don’t know about is what causes lanmola to respawn after a couple room passes.
+jkoper: Due to the number of sprites they use, there are only limited permutations for how boss groups can be reconstructed, and it might be kind of nice if Fred (or someone with 
+sufficient knowledge of the code) took a look and laid those out. I feel like moldorm could be in any dungeon since it just uses the fireball sprite. My expectation is that the boss 
+group tied to a dungeon is unrelated to the enemy group for that dungeon, but that might not be the case when they get shuffled I guess. However, we know that if bosses and boss groups 
+aren't shuffled then patras can only be in 9 with Gannon and Zelda, but any monster group could be there.
+
+
+
+Rooms that can have push blocks open shutters:
+
+1Q rooms that can push are: Single Block, Double Block, Diamond Stair, Spiral Stair, Reverse C
+2Q has: Maze, Spike Trap, Grid, Three Rows, Five Pair, Gohma, Zigzag (Turnstile aka 4-way-block obviously pushes, too, but no stair)
+
+Thus, if 'Add 2Q rooms' is checked then almost every room with a 'block' in the middle row is a room that could have a push-block that opens 
+a shutter (only exceptions: Triforce, Vertical Chute, Vertical Rows, Single 6, Double 6, rooms with a gleeok boss). 
