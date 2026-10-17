@@ -10,7 +10,7 @@ let VersionString : string =
 let ProgramNameString = sprintf "ZORA Tracker v%s" VersionString
 let Website = "https://github.com/TheGobOne/ZoraTracker"
 let OriginalWebsite = "https://github.com/Neononane/Zelda1RandoTools"
-let AboutBody = sprintf "ZORA Tracker v%s\nby TheGobOne\n\nBased on Z-Tracker, originally by Dr. Brian Lorgon111 with updates by Neononane\n(%s)\n\nThis build adds:\n- Custom Level Name for dungeon maps\n- Adaptive Triforce placement in dungeons\n- ZORA Hints (Dead Woods / Lost Hills sequences)\n- Expanded overworld menu\n- Expanded dungeon menu\n- Numerous visual adjustments\n\nLearn more at\n%s\n" VersionString OriginalWebsite Website
+let AboutBody = sprintf "ZORA Tracker v%s\nby TheGobOne\n\nBased on Z-Tracker, originally by Dr. Brian Lorgon111 with updates by Neononane\n(%s)\n\nLearn more at\n%s\n" VersionString OriginalWebsite Website
 
 
 

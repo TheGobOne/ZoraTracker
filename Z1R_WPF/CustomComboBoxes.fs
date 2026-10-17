@@ -832,9 +832,11 @@ let startupUpdateCheck() =
             | None -> ())
 
 let makeVersionButtonWithBehavior(cm:CanvasManager) =
-    let vb = Graphics.makeButton(sprintf "v%s" OverworldData.VersionString, Some(12.), Some(Brushes.Orange))
+    // shows the current release (e.g. "v2.2-b3" for 2.2.0-beta3), so it only needs updating via CurrentReleaseLabel
+    let shortLabel = CurrentReleaseLabel.Replace(".0-","-").Replace("-beta","-b")
+    let vb = Graphics.makeButton(sprintf "v%s" shortLabel, Some(12.), Some(Brushes.Orange))
     // rainbow glow until the user has opened the notes for this version
-    if TrackerModelOptions.LastSeenVersionNotes <> OverworldData.VersionString then
+    if TrackerModelOptions.LastSeenVersionNotes <> CurrentReleaseLabel then
         let glow = new System.Windows.Media.Effects.DropShadowEffect(ShadowDepth=0., BlurRadius=16., Opacity=1., Color=Colors.Red)
         let anim = new System.Windows.Media.Animation.ColorAnimationUsingKeyFrames()
         let rainbow = [ Colors.Red; Colors.Yellow; Colors.Lime; Colors.Cyan; Colors.Blue; Colors.Magenta; Colors.Red ]
@@ -856,8 +858,8 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
     | None -> ()
     startupUpdateCheck()
     vb.Click.Add(fun _ ->
-        if TrackerModelOptions.LastSeenVersionNotes <> OverworldData.VersionString then
-            TrackerModelOptions.LastSeenVersionNotes <- OverworldData.VersionString
+        if TrackerModelOptions.LastSeenVersionNotes <> CurrentReleaseLabel then
+            TrackerModelOptions.LastSeenVersionNotes <- CurrentReleaseLabel
             TrackerModelOptions.writeSettings()
             for f in versionGlowClearers do f()
             versionGlowClearers.Clear()
@@ -866,12 +868,15 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
             async {
                 let body, buttons = 
                     match updateAvailable with
-                    | Some(tag,_) -> sprintf "%s\n*** A newer version is available: %s (you have v%s) ***\n" OverworldData.AboutBody tag CurrentReleaseLabel, ["Download update"; "Go to website"; "Ok"]
-                    | None -> OverworldData.AboutBody, ["Check for updates"; "Go to website"; "Ok"]
+                    | Some(tag,_) -> sprintf "%s\n*** A newer version is available: %s (you have v%s) ***\n" OverworldData.AboutBody tag CurrentReleaseLabel, ["Download update"; "Open folder"; "Go to website"; "Ok"]
+                    | None -> OverworldData.AboutBody, ["Check for updates"; "Open folder"; "Go to website"; "Ok"]
                 let! r = DoModalMessageBox(cm, System.Drawing.SystemIcons.Information, body, buttons)
                 popupIsActive <- false
                 if r = "Go to website" then
                     System.Diagnostics.Process.Start(OverworldData.Website) |> ignore
+                elif r = "Open folder" then
+                    // open the folder the tracker is running from (where HotKeys.txt, the settings and the crash log live)
+                    try System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("Explorer.exe", sprintf "\"%s\"" (System.AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\')))) |> ignore with _ -> ()
                 elif r = "Download update" then
                     match updateAvailable with
                     | Some(_,url) -> 
