@@ -44,6 +44,8 @@ type Items() =
     member val WhiteSwordBox : Box = null with get,set
     member val LadderBox : Box = null with get,set
     member val ArmosBox : Box = null with get,set
+    member val Level2StairBoxEnabled = false with get,set
+    member val Level2StairBox : Box = null with get,set
     member val Dungeons : Dungeon[] = null with get,set
 
 [<AllowNullLiteral>]
@@ -225,6 +227,8 @@ let SaveItems(prefix) =
     SaveBox("    ", TrackerModel.ladderBox)
     lines.Add(sprintf """    }, "ArmosBox": {""")
     SaveBox("    ", TrackerModel.armosBox)
+    lines.Add(sprintf """    }, "Level2StairBoxEnabled": %b, "Level2StairBox": {""" TrackerModel.level2StairBoxEnabled)
+    SaveBox("    ", TrackerModel.level2StairBox)
     lines.Add(sprintf """    }, "Dungeons": [""")
     for i = 0 to 8 do
         let d = TrackerModel.GetDungeon(i)

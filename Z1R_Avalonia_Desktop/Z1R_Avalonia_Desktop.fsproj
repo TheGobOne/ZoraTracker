@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Desktop host: Windows / macOS / Linux -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ZoraTracker.CrossPlatform</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup><Compile Include="Program.fs" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Z1R_Avalonia\Z1R_Avalonia.fsproj" />
+  </ItemGroup>
+</Project>

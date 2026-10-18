@@ -745,6 +745,15 @@ type Box(stair:StairKind, owner) =
 let ladderBox = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
 let armosBox  = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
 let sword2Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
+// optional extra staircase item slot under level 2 (DEFAULT dungeons only); invisible and not required for completion until the user clicks to add it
+let level2StairBox = Box(StairKind.Always, BoxOwner.None)
+let mutable level2StairBoxEnabled = false
+let level2StairBoxEnabledChanged = new Event<unit>()
+let SetLevel2StairBoxEnabled(enabled:bool) =
+    if level2StairBoxEnabled <> enabled then
+        level2StairBoxEnabled <- enabled
+        dungeonsAndBoxesLastChangedTime.SetNow()
+        level2StairBoxEnabledChanged.Trigger()
 
 [<RequireQualifiedAccess>]
 type DungeonTrackerInstanceKind =
@@ -791,6 +800,7 @@ type DungeonTrackerInstance(kind) =
                 yield ladderBox
                 yield armosBox
                 yield sword2Box
+                yield level2StairBox
                 |]
         allBoxes
     let allBoxProgress = 
@@ -903,6 +913,7 @@ and Dungeon(id,numBoxes) =
                         false
                 | DungeonTrackerInstanceKind.DEFAULT ->
                     playerHasTriforce && this.Boxes |> Array.forall (fun b -> b.IsDone()) && (not(this.TriforceIsInItemSlot) || extraFloorBox.IsDone())
+                        && (not(id=1 && level2StairBoxEnabled) || level2StairBox.IsDone())
             let needToNotify = priorComplete <> r
             priorComplete <- r
             if needToNotify then
@@ -2048,6 +2059,7 @@ type TimelineItemModel(desc: TimelineItemDescription) =
                         all.Add(TimelineItemDescription.ItemBox(sprintf "Level%dBox%d" (i+1) (j+1), GetDungeon(i).Boxes.[j]))
         else
             all.Add(TimelineItemDescription.ItemBox("Level1or4Box3", DungeonTrackerInstance.TheDungeonTrackerInstance.FinalBoxOf1Or4))
+            all.Add(TimelineItemDescription.ItemBox("Level2Box3", level2StairBox))
             for i = 0 to 8 do
                 for j = 0 to 2 do
                     if j=0 || j=1 || i=7 then

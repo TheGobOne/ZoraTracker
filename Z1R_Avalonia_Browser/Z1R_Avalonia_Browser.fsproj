@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!-- WebAssembly host. One-time setup:  dotnet workload install wasm-tools
+       Run:  dotnet run -c Release   (serves on http://localhost:5000-ish; the console prints the URL)
+       Publish static site:  dotnet publish -c Release  -> bin/Release/net10.0/browser-wasm/AppBundle -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <WasmMainJSPath>AppBundle\main.js</WasmMainJSPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <WasmExtraFilesToDeploy Include="AppBundle\**" />
+  </ItemGroup>
+  <ItemGroup><Compile Include="Program.fs" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Browser" Version="11.3.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Z1R_Avalonia\Z1R_Avalonia.fsproj" />
+  </ItemGroup>
+</Project>

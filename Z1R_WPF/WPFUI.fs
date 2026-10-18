@@ -1167,9 +1167,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         canvasAdd(legendCanvas, fqsqLegendButton, UIComponents.legendAfterStartX, 0.)
         // ZORA Hints: Lost Woods / Lost Hills direction sequences, in the open legend space right of the 1Q/2Q button
         let makeHintButton(name:string, prefix:string) =
-            let tb = new TextBox(Text=name, FontSize=10., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
-                                    BorderThickness=Thickness(0.), Padding=Thickness(0.), VerticalContentAlignment=VerticalAlignment.Center)
-            let btn = new Button(Content=tb, Height=17., Padding=Thickness(3.,0.,3.,0.), Margin=Thickness(0.,0.,3.,0.))
+            // same construction as the version button (borderless dark TextBox stretched to fill the Button), so the border looks identical
+            let tb = new TextBox(Text=name, FontSize=10., Foreground=Brushes.Orange, Background=Graphics.almostBlack, IsReadOnly=true, IsHitTestVisible=false, 
+                                    BorderThickness=Thickness(0.), Padding=Thickness(3.,0.,3.,0.), TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center)
+            let btn = new Button(Content=tb, Height=17., Margin=Thickness(0.,0.,3.,0.), HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch)
             let hint = ref ""
             let refreshLabel() = tb.Text <- (if hint.Value = "" then name else prefix + ": " + hint.Value)
             btn.Click.Add(fun _ ->
@@ -1975,6 +1976,13 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         if not(anyFound) then
             showLocatorNoneFound()
         )
+    showBombMarkerLocator <- (fun () ->
+        // no Clear() here: this runs right after the bomb-shop locator, and adds the tiles where you placed a bomb marker icon
+        for i = 0 to 15 do
+            for j = 0 to 7 do
+                if TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.DECOR_BOMB then
+                    owLocatorTileRectangles.[i,j].MakeGreenWithBriefAnimation()
+        )
     showShopLocatorInstanceFunc <- (fun item ->
         OverworldRouteDrawing.routeDrawingLayer.Clear()
         let mutable anyFound = false
@@ -2331,6 +2339,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         if not(data.Items.WhiteSwordBox.TryApply(TrackerModel.sword2Box)) then anySetProblems <- true
         if not(data.Items.LadderBox.TryApply(TrackerModel.ladderBox)) then anySetProblems <- true
         if not(data.Items.ArmosBox.TryApply(TrackerModel.armosBox)) then anySetProblems <- true
+        if data.Items.Level2StairBox <> null then   // (older saves do not have the optional level 2 staircase slot)
+            if not(data.Items.Level2StairBox.TryApply(TrackerModel.level2StairBox)) then anySetProblems <- true
+            TrackerModel.SetLevel2StairBoxEnabled(data.Items.Level2StairBoxEnabled)
         for i = 0 to 8 do
             let ds = data.Items.Dungeons.[i]
             let dd = TrackerModel.GetDungeon(i)

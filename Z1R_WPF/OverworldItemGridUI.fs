@@ -70,6 +70,7 @@ let mutable showLocatorInstanceFunc = fun(_f:int*int->bool) -> ()
 let mutable showHintShopLocator = fun() -> ()
 let mutable showArrowLocator = fun() -> ()   // highlights every tile you put a wood/silver arrow marker icon on
 let mutable showMeatLocator = fun() -> ()   // highlights every tile you put a meat marker icon on
+let mutable showBombMarkerLocator = fun() -> ()   // highlights every tile you put a bomb marker icon on (adds to whatever the bomb-shop locator already shows)
 let mutable showKeyLocator = fun() -> ()   // highlights every tile you put a key marker icon on
 let mutable showLocatorPotionAndTakeAny = fun() -> ()
 let mutable showLocatorRupees = fun() -> ()
@@ -445,7 +446,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
         )
     // mark whether player currently has bombs, for overworld routing
     let bombIcon = veryBasicBoxImpl(Graphics.bomb_bmp, None, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBombs, TrackerModel.foundBombShop, TrackerModel.FALSE)
-    bombIcon.MouseEnter.Add(fun _ -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BOMB))
+    bombIcon.MouseEnter.Add(fun _ -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BOMB); showBombMarkerLocator())
     bombIcon.MouseLeave.Add(fun _ -> hideLocator())
     bombIcon.ToolTip <- "Player currently has bombs (affects gettables and routing)"
     gridAddTuple(owItemGrid, bombIcon, OW_ITEM_GRID_LOCATIONS.BOMB_BOX)
@@ -454,6 +455,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
     let rupeeIcon = new Canvas(Width=30., Height=30., Background=Brushes.Black)   // red box around the icon, same look as the item boxes
     canvasAdd(rupeeIcon, new System.Windows.Shapes.Rectangle(Width=30., Height=30., StrokeThickness=3.0, Stroke=CustomComboBoxes.no), 0., 0.)
     canvasAdd(rupeeIcon, Graphics.BMPtoImage Graphics.rupee_bmp, 4., 4.)
+    Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(rupeeIcon)   // same turquoise hover box as the bomb and the other boxes
     rupeeIcon.MouseEnter.Add(fun _ -> showLocatorRupees())
     rupeeIcon.MouseLeave.Add(fun _ -> hideLocator())
     rupeeIcon.ToolTip <- "When hovered, highlights locations of Money Making Game,\nUnknown Secret, and not-yet-taken-Secret overworld spots"

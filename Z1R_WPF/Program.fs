@@ -1026,10 +1026,10 @@ type MyWindow() as this =
             dp.Children.Add(vb) |> ignore
             startupOptionsCanvas.Children.Add(dp) |> ignore
 
-        let tb = new TextBox(Text="Startup Options:",IsReadOnly=true, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.))
+        let tb = new TextBox(Text="Startup Options:",IsReadOnly=true, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), Margin=Thickness(0.,16.,0.,0.))   // centered in the gap between the top bar and the checkbox row
         stackPanel.Children.Add(tb) |> ignore
 
-        let hsPanel = new StackPanel(Margin=spacing, MaxWidth=WIDTH/2., Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+        let hsPanel = new StackPanel(Margin=spacing, Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
         let hsGrid = Graphics.makeGrid(3, 3, 30, 30)
         hsGrid.Background <- Brushes.Black
         let triforcesNumbered = ResizeArray()
@@ -1089,7 +1089,7 @@ type MyWindow() as this =
             explainerBorder.Opacity <- 0.
             explainerLine.Opacity <- 0.
 
-        let checkboxSP = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(0.,0.,20.,0.))
+        let checkboxSP = new WrapPanel(Orientation=Orientation.Horizontal, VerticalAlignment=VerticalAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, MaxWidth=WIDTH, Margin=Thickness(0.,9.,0.,0.))   // the three startup options sit side by side
         let hscb = new CheckBox(Content=new TextBox(Text="Full Shuffle",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
         Graphics.scaleUpCheckBoxBox(hscb, 1.66)
         hscb.IsChecked <- System.Nullable.op_Implicit true
@@ -1100,7 +1100,7 @@ type MyWindow() as this =
         hsArea.MouseLeave.Add(fun _ -> explainHide())
         checkboxSP.Children.Add(hsArea) |> ignore
 
-        checkboxSP.Children.Add(new DockPanel(Height=10.)) |> ignore
+        checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
 
         let hdcb = new CheckBox(Content=new TextBox(Text="Hide Dungeon Numbers",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
         Graphics.scaleUpCheckBoxBox(hdcb, 1.66)
@@ -1113,7 +1113,7 @@ type MyWindow() as this =
         checkboxSP.Children.Add(hdnArea) |> ignore
 
         // custom level name (replaces 'LEVEL-n' at the top of each dungeon map)
-        let clnTextBox = new TextBox(Width=110., MaxLength=6, CharacterCasing=CharacterCasing.Upper, IsEnabled=false, Margin=Thickness(2.,4.,2.,2.), HorizontalAlignment=HorizontalAlignment.Center)
+        let clnTextBox = new TextBox(Width=110., MaxLength=6, CharacterCasing=CharacterCasing.Upper, IsEnabled=false, Margin=Thickness(6.,2.,2.,2.), VerticalAlignment=VerticalAlignment.Center)
         let clncb = new CheckBox(Content=new TextBox(Text="Custom LEVEL Name",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
         Graphics.scaleUpCheckBoxBox(clncb, 1.66)
         clncb.IsChecked <- System.Nullable.op_Implicit false
@@ -1122,12 +1122,12 @@ type MyWindow() as this =
         let clnArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=clncb)
         clnArea.MouseEnter.Add(fun _ -> hoverExplain(clnArea,"Type up to 6 letters/numbers to use in place of\n'LEVEL-1' at the top of each dungeon map."))
         clnArea.MouseLeave.Add(fun _ -> explainHide())
-        checkboxSP.Children.Add(new DockPanel(Height=10.)) |> ignore   // same gap as between Heart Shuffle and Hide Dungeon Numbers
+        checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
         checkboxSP.Children.Add(clnArea) |> ignore
         checkboxSP.Children.Add(clnTextBox) |> ignore
 
         hsPanel.Children.Add(checkboxSP) |> ignore
-        hsPanel.Children.Add(border) |> ignore
+        // (the little dungeon preview graphic is no longer shown; its hidden state is still driven by the checkboxes)
         stackPanel.Children.Add(hsPanel) |> ignore
 
         let topSpacer = new DockPanel(Height=10.)   // height adjusted after first layout, to vertically center the Start buttons in the open space above the Settings line
@@ -1210,6 +1210,25 @@ type MyWindow() as this =
             if settingsWereSuccessfullyRead then      // don't overwrite an unreadable file, the user may have been intentionally hand-editing it and needs feedback
                 TrackerModelOptions.writeSettings()  // save any settings changes they made before closing the startup window
             )
+        // recently loaded save files (most recent first), remembered next to the program so they can be re-opened with one click
+        let recentLoadsFile = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_recent_loads.txt")
+        let maxRecentLoads = 5
+        let readRecentLoads() : string list =
+            try
+                if System.IO.File.Exists(recentLoadsFile) then
+                    System.IO.File.ReadAllLines(recentLoadsFile)
+                    |> Array.filter (fun p -> p.Trim() <> "" && System.IO.File.Exists(p))
+                    |> Array.distinct
+                    |> Array.truncate maxRecentLoads
+                    |> List.ofArray
+                else []
+            with _ -> []
+        let recordRecentLoad(path:string) =
+            try
+                let updated = path :: (readRecentLoads() |> List.filter (fun p -> not(System.String.Equals(p, path, System.StringComparison.OrdinalIgnoreCase)))) |> List.truncate maxRecentLoads
+                System.IO.File.WriteAllLines(recentLoadsFile, updated)
+            with _ -> ()
+        let pendingLoadPath : string option ref = ref None   // set when the user clicks an entry in the recent-saves box (skips the file dialog)
         let startButtonBehavior(n) = 
             if startButtonHasBeenClicked then () else
             startButtonHasBeenClicked <- true
@@ -1224,13 +1243,19 @@ type MyWindow() as this =
 
                 let mutable loadData = None
                 if n = 999 then
-                    let ofd = new Microsoft.Win32.OpenFileDialog()
-                    ofd.InitialDirectory <- System.AppDomain.CurrentDomain.BaseDirectory
-                    ofd.Filter <- "ZTracker saves|zt-save-*.json|All JSON files|*.json|All Files|*.*"
-                    let r = ofd.ShowDialog(this)
-                    if r.HasValue && r.Value then
+                    let pickedPath =
+                        match pendingLoadPath.Value with
+                        | Some p -> Some p
+                        | None ->
+                            let ofd = new Microsoft.Win32.OpenFileDialog()
+                            ofd.InitialDirectory <- System.AppDomain.CurrentDomain.BaseDirectory
+                            ofd.Filter <- "All JSON files|*.json|ZTracker saves|zt-save-*.json|All Files|*.*"
+                            let r = ofd.ShowDialog(this)
+                            if r.HasValue && r.Value then Some ofd.FileName else None
+                    if pickedPath.IsSome then
+                        let pickedFile = pickedPath.Value
                         try
-                            let json = System.IO.File.ReadAllText(ofd.FileName)
+                            let json = System.IO.File.ReadAllText(pickedFile)
                             let ver = System.Text.Json.JsonSerializer.Deserialize<DungeonSaveAndLoad.JustVersion>(json, new System.Text.Json.JsonSerializerOptions(AllowTrailingCommas=true))
                             if ver.Version <> OverworldData.VersionString then
                                 let msg = 
@@ -1246,8 +1271,9 @@ type MyWindow() as this =
                                 popupIsActive <- false
                                 ignore r
                             loadData <- Some(DungeonSaveAndLoad.LoadAll(json))
+                            recordRecentLoad(pickedFile)
                         with e ->
-                            let msg = sprintf "Loading the save file\n%s\nfailed with error:\n%s"  ofd.FileName e.Message
+                            let msg = sprintf "Loading the save file\n%s\nfailed with error:\n%s"  pickedFile e.Message
                             popupIsActive <- true
                             let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, msg, ["Restart"])
                             popupIsActive <- false
@@ -1274,9 +1300,6 @@ type MyWindow() as this =
             startButton.MouseLeave.Add(fun _ -> explainHide())
         for n,q in quests do
             let startButton = Graphics.makeButton(sprintf "Start: %s" q, None, None)
-            if n=999 then
-                let tb = new TextBox(Text="- OR -",IsReadOnly=true, Margin=smallSpacing, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.))
-                stackPanel.Children.Add(tb) |> ignore
             if n=0 then
                 startButton.Margin <-Thickness(0.)
             elif n=999 then
@@ -1375,6 +1398,32 @@ type MyWindow() as this =
                 if n<=3 then addQuestExplainer(startButton)
             startButton.Click.Add(fun _ -> startButtonBehavior(n))
 
+        // box listing the save files loaded before, for fast re-selection
+        do
+            let recents = readRecentLoads()
+            let listSP = new StackPanel(Orientation=Orientation.Vertical)
+            let header = new TextBox(Text="Recently loaded saves:", IsReadOnly=true, BorderThickness=Thickness(0.), HorizontalAlignment=HorizontalAlignment.Center, FontSize=14., Margin=Thickness(0.,0.,0.,3.))
+            listSP.Children.Add(header) |> ignore
+            if recents.IsEmpty then
+                listSP.Children.Add(new TextBox(Text="(none yet - files you load will show up here)", IsReadOnly=true, BorderThickness=Thickness(0.), Foreground=Brushes.Gray, HorizontalAlignment=HorizontalAlignment.Center, FontSize=13.)) |> ignore
+            for p in recents do
+                let when_ = try System.IO.File.GetLastWriteTime(p).ToString("yyyy-MM-dd HH:mm") with _ -> ""
+                let b = Graphics.makeButton(System.IO.Path.GetFileNameWithoutExtension(p), None, None)
+                b.Margin <- Thickness(0.,1.,0.,1.)
+                b.FontSize <- 14.
+                b.ToolTip <- sprintf "%s\nlast modified %s" p when_
+                b.Click.Add(fun _ ->
+                    if not(System.IO.File.Exists(p)) then
+                        b.IsEnabled <- false
+                        b.ToolTip <- "This file no longer exists"
+                    else
+                        pendingLoadPath.Value <- Some p
+                        startButtonBehavior(999))
+                listSP.Children.Add(b) |> ignore
+            let scroll = new ScrollViewer(Content=listSP, VerticalScrollBarVisibility=ScrollBarVisibility.Auto, MaxHeight=150.)
+            let recentBox = new Border(Child=scroll, BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Padding=Thickness(4.), Width=WIDTH/2., HorizontalAlignment=HorizontalAlignment.Center, Margin=smallSpacing)
+            stackPanel.Children.Add(recentBox) |> ignore
+
         stackPanel.Children.Add(finalChildTipArea) |> ignore  // finalChildTipArea still used for explainer arrows on startup options
 
         // Tip lives inside bottomSP so it's in proper layout flow — can never overlap the Settings header
@@ -1399,7 +1448,7 @@ type MyWindow() as this =
 
         mainDock.Children.Add(mainStackPanel) |> ignore
         // vertically center the block of Start buttons between the startup-options checkboxes above and the Settings line below
-        let centeredOnce = ref false
+        let centeredOnce = ref true   // (no longer vertically centering the Start buttons; they sit right under the options row)
         mainDock.LayoutUpdated.Add(fun _ ->
             if not centeredOnce.Value && mainDock.IsLoaded && bottomSP.ActualHeight > 0. && finalChildTipArea.IsLoaded && hsPanel.ActualHeight > 0. then
                 centeredOnce.Value <- true

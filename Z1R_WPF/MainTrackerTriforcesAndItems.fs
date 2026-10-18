@@ -99,23 +99,29 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
             )
         c.MouseLeave.Add(fun _ -> hideLocator())
         // putting a triforce piece in a dungeon's item box also checks off that dungeon's triforce, same as clicking its numbered triforce above
-        let dungeonIndexOpt =
+        // (the 1-or-4 third box is re-evaluated on every change, since toggling the dungeon quest moves it between dungeon 1 and dungeon 4)
+        let dungeonIndexFnOpt : (unit -> int) option =
             match tid with
-            | Timeline.TimelineID.LevelBox(level,_) when level <= 8 -> Some(level-1)
-            | Timeline.TimelineID.Level1or4Box3 -> Some(if TrackerModel.IsSecondQuestDungeons then 3 else 0)
+            | Timeline.TimelineID.LevelBox(level,_) when level <= 8 -> Some(fun () -> level-1)
+            | Timeline.TimelineID.Level1or4Box3 -> Some(fun () -> if TrackerModel.IsSecondQuestDungeons then 3 else 0)
             | _ -> None
-        match dungeonIndexOpt with
-        | Some(d) ->
+        match dungeonIndexFnOpt with
+        | Some(dungeonIndexFn) ->
             // a triforce piece that is marked as obtained (green) checks the dungeon's triforce; changing/removing that item, or marking it not-obtained, unchecks it again
             let isObtainedTriforcePiece() = box.CellCurrent() = TrackerModel.ITEMS.TRIFORCE && box.PlayerHas() = TrackerModel.PlayerHas.YES
             let wasObtainedTriforcePiece = ref (isObtainedTriforcePiece())   // ref cell, since closures can't capture mutable locals
+            let dungeonIndexWhenMarked = ref (dungeonIndexFn())                // which dungeon we checked off, so un-marking unchecks that same one
             box.Changed.Add(fun _ -> 
                 let now = isObtainedTriforcePiece()
-                let dungeon = TrackerModel.GetDungeon(d)
-                if now && not(dungeon.PlayerHasTriforce()) then
-                    dungeon.ToggleTriforce()
-                elif wasObtainedTriforcePiece.Value && not now && dungeon.PlayerHasTriforce() then
-                    dungeon.ToggleTriforce()
+                if now && not wasObtainedTriforcePiece.Value then
+                    dungeonIndexWhenMarked.Value <- dungeonIndexFn()
+                    let dungeon = TrackerModel.GetDungeon(dungeonIndexWhenMarked.Value)
+                    if not(dungeon.PlayerHasTriforce()) then
+                        dungeon.ToggleTriforce()
+                elif wasObtainedTriforcePiece.Value && not now then
+                    let dungeon = TrackerModel.GetDungeon(dungeonIndexWhenMarked.Value)
+                    if dungeon.PlayerHasTriforce() then
+                        dungeon.ToggleTriforce()
                 wasObtainedTriforcePiece.Value <- now)
         | None -> ()
         timelineItems.Add(new Timeline.TimelineItem(tid, fun()->CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), Some(tid))))
@@ -138,6 +144,32 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 if j=0 || j=1 || i=7 then
                     canvasAdd(c, boxItemImpl(Timeline.TimelineID.LevelBox(i+1, j+1), TrackerModel.GetDungeon(i).Boxes.[j], false), 0., 0.)
                 mainTrackerCanvases.[i,j+2] <- c
+    // optional staircase item slot under level 2: starts as a gray box (like the dungeon-quest toggle under level 4); click to turn it into a staircase item slot,
+    // middle-click the slot to hide it again (which also clears whatever item was in it)
+    if not(TrackerModel.IsHiddenDungeonNumbers()) then
+        let l2c = mainTrackerCanvases.[1,4]
+        let placeholder = new Canvas(Width=30., Height=30., Background=Graphics.freeze(new SolidColorBrush(Color.FromRgb(55uy,55uy,85uy))))
+        placeholder.ToolTip <- "Optional extra staircase item slot for level 2 (click to add it; middle-click it afterwards to remove it)"
+        Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(placeholder)
+        let slot = boxItemImpl(Timeline.TimelineID.LevelBox(2,3), TrackerModel.level2StairBox, false)
+        slot.ToolTip <- "Optional extra staircase item slot (middle-click to remove it and clear its item)"
+        let refreshL2Slot() =
+            l2c.Children.Remove(placeholder)
+            l2c.Children.Remove(slot)
+            if TrackerModel.level2StairBoxEnabled then l2c.Children.Insert(0, slot) else l2c.Children.Insert(0, placeholder)
+        placeholder.MouseDown.Add(fun ea ->
+            if ea.ChangedButton = Input.MouseButton.Left then
+                ea.Handled <- true
+                TrackerModel.SetLevel2StairBoxEnabled(true))
+        // tunneling handler on the container so it wins over the box's own middle-click behavior (which sets 'skipped')
+        l2c.PreviewMouseDown.Add(fun ea ->
+            if TrackerModel.level2StairBoxEnabled && ea.ChangedButton = Input.MouseButton.Middle && ea.ButtonState = Input.MouseButtonState.Pressed && not popupIsActive then
+                ea.Handled <- true
+                TrackerModel.level2StairBox.Set(-1, TrackerModel.PlayerHas.NO)
+                TrackerModel.SetLevel2StairBoxEnabled(false)
+                TrackerModel.forceUpdate())
+        TrackerModel.level2StairBoxEnabledChanged.Publish.Add(fun _ -> refreshL2Slot())
+        refreshL2Slot()
     let extrasImage = Graphics.BMPtoImage Graphics.iconExtras_bmp
     extrasImage.ToolTip <- "Starting items and extra drops"
     ToolTipService.SetPlacement(extrasImage, System.Windows.Controls.Primitives.PlacementMode.Top)
