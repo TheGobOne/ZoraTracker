@@ -228,6 +228,8 @@ TrackerModel.IsWSMSReplacedByBUChanged.Add(fun _ ->
     for f in redrawBoxes do
         f()
     )
+// boxes whose empty outline is always drawn red (never the white 'skipped and empty' look), e.g. the four item boxes in the top right
+let redBorderBoxes = new System.Collections.Generic.HashSet<TrackerModel.Box>()
 let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, box:TrackerModel.Box, accelerateIntoComboBox, computeExtraDecorationsWhenPopupActivatedOrMouseOverOpt) = 
     let c = new Canvas(Width=30., Height=30., Background=Brushes.Black)
     if box.Stair <> TrackerModel.StairKind.Never then
@@ -302,6 +304,8 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
             else 
                 rect.Stroke <- CustomComboBoxes.skipped
                 Graphics.placeSkippedItemXDecoration(innerc)
+        if redBorderBoxes.Contains(box) && bmp=null && box.PlayerHas() <> TrackerModel.PlayerHas.YES then
+            rect.Stroke <- CustomComboBoxes.no
         // redraw specific-blockers
         match box.PlayerHas() with
         | TrackerModel.PlayerHas.YES -> ()

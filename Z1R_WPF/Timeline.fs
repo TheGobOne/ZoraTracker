@@ -36,6 +36,7 @@ type TimelineID =
     // box locations
     | LadderBox
     | ArmosBox
+    | MagicalSwordCaveBox
     | WhiteSwordBox
     | Level1or4Box3
     | LevelBox of int * int
@@ -93,6 +94,7 @@ type TimelineID =
         | Ladder -> "Ladder"
         | LadderBox -> "LadderBox"
         | ArmosBox -> "ArmosBox"
+        | MagicalSwordCaveBox -> "MagicalSwordCaveBox"
         | WhiteSwordBox -> "WhiteSwordBox"
         | Level1or4Box3 -> "Level1or4Box3"
         | LevelBox(i,j) -> sprintf "Level%dBox%d" i j

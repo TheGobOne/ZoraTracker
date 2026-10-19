@@ -1337,7 +1337,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             popupIsActive <- false
                             } |> Async.StartImmediate
                     )
-        // header text: 'LEVEL-n' / 'BOARD-n', or the custom name (up to 6 chars, then a dash, then the dungeon number); redrawn whenever the name or option changes
+        // header text: 'LEVEL-n' / 'BOARD-n', or the custom name (up to 7 chars; if fewer than 7, a dash follows, then the dungeon number); redrawn whenever the name or option changes
         let headerElems = ResizeArray<UIElement>()
         let drawHeader() =
             for e in headerElems do dungeonHeaderCanvas.Children.Remove(e)
@@ -1346,10 +1346,10 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
             headerButtons.Clear()
             let customName = 
                 let n = TrackerModel.CustomLevelName
-                if n = "" then "" else ((if n.Length > 6 then n.Substring(0,6) else n) + "-").PadRight(7, ' ')
+                if n = "" then "" elif n.Length >= 7 then n.Substring(0,7) else (n + "-").PadRight(7, ' ')   // 7 chars: the 7th replaces the dash; otherwise name, dash, then blank
             let customNumberSlot = 
                 let n = TrackerModel.CustomLevelName
-                (min n.Length 6) + 1
+                if n.Length >= 7 then 7 else n.Length + 1
             for i = 0 to 7 do
                 if i<>7 then
                     let makeLetter(bmpFunc) =
@@ -1409,7 +1409,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                 Owner=Application.Current.MainWindow, ShowInTaskbar=false)
             let sp = new StackPanel(Margin=Thickness(12.))
             sp.Children.Add(new TextBlock(Text="Name to show instead of LEVEL / BOARD (up to 6 characters).\nLeave blank to go back to the default.", Margin=Thickness(0.,0.,0.,8.))) |> ignore
-            let tb = new TextBox(Text=TrackerModel.CustomLevelName, MaxLength=6, Width=140., HorizontalAlignment=HorizontalAlignment.Left, CharacterCasing=CharacterCasing.Upper)
+            let tb = new TextBox(Text=TrackerModel.CustomLevelName, MaxLength=7, Width=140., HorizontalAlignment=HorizontalAlignment.Left, CharacterCasing=CharacterCasing.Upper)
             sp.Children.Add(tb) |> ignore
             let buttons = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Right, Margin=Thickness(0.,10.,0.,0.))
             let ok = new Button(Content=" OK ", IsDefault=true, Margin=Thickness(0.,0.,6.,0.))

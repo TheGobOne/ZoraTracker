@@ -46,9 +46,9 @@ let boxCurrentBMP(boxCellCurrent, timelineOrigin) =
     | 11 -> Graphics.silver_arrow_bmp
     | 12 -> Graphics.wand_bmp
     | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then Graphics.ws_ms_bomb_upgrade_bmp else Graphics.ow_sword2_item_bmp)
-    | 15 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_potion_split_bmp else Graphics.potion_split_bmp)
-    | 16 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_red_potion_bmp else Graphics.red_potion_bmp)
-    | 17 -> (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_letter_bmp else Graphics.letter_bmp)
+    | 15 -> Graphics.old_potion_split_bmp
+    | 16 -> Graphics.old_red_potion_bmp
+    | 17 -> Graphics.old_letter_bmp
     | 18 -> Graphics.ow_progressive_item_bmp
     | 19 -> Graphics.ow_sword1_item_bmp
     | 20 -> Graphics.ow_sword3_item_bmp
@@ -412,17 +412,26 @@ let DoModalGridSelect<'State,'Result>
     if firstRowExtra > 0 then grid.RowDefinitions.[0].Height <- GridLength(float (ROWH + firstRowExtra))
     grid.Background <- Brushes.Black
     // the dungeon-room monster and floor-item menus are shown 2x larger (the grid scales from its top-left corner; cell hit-testing and arrow-key navigation follow the transform)
-    let gridScale = if uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail" then 2.0 else 1.0
+    let gridScale = if uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail" then 2.0 elif uniqueName = "ItemBox" || uniqueName = "OWGridTile" then 1.25 else 1.0
     let gridBorder = new Border(BorderThickness=Thickness(ST), BorderBrush=brushes.BorderBrush, Child=grid)
     if gridScale <> 1.0 then
         gridBorder.RenderTransform <- new ScaleTransform(gridScale, gridScale)
         RenderOptions.SetBitmapScalingMode(gridBorder, BitmapScalingMode.NearestNeighbor)
+    // keep the (enlarged) overworld-tile menu inside the app window: slide it up if it would run off the bottom, and put the tip box on the left if it would run off the right
+    let gridPixW, gridPixH = (float(gnc*COLW) + 2.*ST)*gridScale, (float(gnr*ROWH + firstRowExtra) + 2.*ST)*gridScale
+    let gy = 
+        if uniqueName = "OWGridTile" then
+            let overflow = tileY + gy + gridPixH - cm.AppMainCanvas.Height
+            if overflow > 0. then gy - System.Math.Ceiling(overflow) else gy
+        else gy
     canvasAdd(popupCanvas, gridBorder, gx, gy)
     let noteBox = 
         if isReorderable then
             let tb = new TextBlock(Text="Tip: hold Shift and\ndrag an icon to move it\nto your preferred spot.\n(Saved for next time.)", Foreground=Brushes.Gainsboro, FontSize=12., TextWrapping=TextWrapping.Wrap, Width=120.)
             let b = new Border(Child=tb, Background=Brushes.Black, BorderBrush=brushes.BorderBrush, BorderThickness=Thickness(1.), Padding=Thickness(6.), IsHitTestVisible=false)
-            canvasAdd(popupCanvas, b, gx + float(gnc*COLW) + 2.*ST + 6., gy)
+            let rightX = gx + gridPixW + 6.
+            let noteX = if tileX + rightX + 132. > cm.AppMainCanvas.Width then gx - 132. - 6. else rightX
+            canvasAdd(popupCanvas, b, noteX, gy)
             Some b
         else None
     let mutable currentState = origIdx   // the only bit of local mutable state during the modal - it ranges from 0..gridElements.Length-1
@@ -749,8 +758,9 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
     let extraRowHeight = 60.   // two extra rows of 21 (cell) + 2*3 (border) above the original 4-row grid, plus 6 for the taller top (sword) row
     let wantedGridY = -3. - extraRowHeight   // the grid is 2 rows taller than the original 4-row grid, so it starts 2 rows higher
     let gridY = max wantedGridY (-(boxY+3.))
-    let gridX = if decorationsShouldGoToTheLeft then -144. else 27.
-    let decoX,decoY = if decorationsShouldGoToTheLeft then -179., 108.+(gridY-wantedGridY) else 27., 108.+(gridY-wantedGridY)
+    let gridX = if decorationsShouldGoToTheLeft then -179. else 27.   // (the item menu is drawn 1.25x bigger, so the left-hand version starts further left to keep its right edge in place)
+    let menuExtraH = 44.   // the 1.25x bigger menu is about 44px taller, so the things below it move down
+    let decoX,decoY = if decorationsShouldGoToTheLeft then -179., 108.+menuExtraH+(gridY-wantedGridY) else 27., 108.+menuExtraH+(gridY-wantedGridY)
     let redrawTile(ident) =
         // the user has changed the current selection via mousing or scrolling, redraw the preview tile appropriately to display ident
         let innerc = redraw(ident)

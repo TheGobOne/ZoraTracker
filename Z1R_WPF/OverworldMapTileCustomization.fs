@@ -19,22 +19,24 @@ open CustomComboBoxes.GlobalFlag
 module OW_ITEM_GRID_LOCATIONS =
     let OFFSET = 280.  // the x coordinate of grid; the y is always 30. (just below the numbered triforces in HDN)
     // there is a 6x4 grid of icons, each 30x30, here are their 0-based grid coords
-    let WHITE_SWORD_ICON = 0,0
-    let WHITE_SWORD_ITEM_BOX = 1,0
-    let MAGS_BOX = 2,0
+    // the white sword / ladder / armos item boxes run across the top row, with their icons directly underneath
+    let WHITE_SWORD_ICON = 0,1
+    let WHITE_SWORD_ITEM_BOX = 0,0
+    let MAGS_BOX = 3,1   // magical sword icon (icon only), right of the armos icon
+    let MAGS_ITEM_BOX = 3,0   // its item box, above it
     let WOOD_SWORD_BOX = 3,0
     let BOOMSTICK_BOX = 5,0
-    let BOMB_BOX = 6,0   // right next to the (boomstick) book box
-    let RUPEE_ICON = 7,0   // right next to the bomb box
+    let BOMB_BOX = 0,2   // bomb and money icons, left of the Ganon box
+    let RUPEE_ICON = 1,2
 
-    let LADDER_ICON = 0,1
-    let LADDER_ITEM_BOX = 1,1
+    let LADDER_ICON = 1,1
+    let LADDER_ITEM_BOX = 1,0
     let BLUE_CANDLE_BOX = 2,1
     let WOOD_ARROW_BOX = 3,1
     let BLUE_RING_BOX = 4,0
 
-    let ARMOS_ICON = 0,2
-    let ARMOS_ITEM_BOX = 1,2
+    let ARMOS_ICON = 2,1
+    let ARMOS_ITEM_BOX = 2,0
     let GANON_BOX = 2,2
     let ZELDA_BOX = 3,2
 
@@ -76,11 +78,23 @@ let computeExtraDecorationArrow(topX, topY, pos:Point) =
         |]
     extraDecorations
 
+let (sword3x, sword3y) = OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.MAGS_ITEM_BOX)
 let (armosX, armosY), (sword2x,sword2y) = OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.ARMOS_ITEM_BOX), OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.WHITE_SWORD_ITEM_BOX)
 
 let DoRemoteItemComboBox(cm:CustomComboBoxes.CanvasManager, activationDelta, trackerModelBoxToUpdate:TrackerModel.Box,
                             topX,topY,pos:Point) = async {  // topX,topY,pos are relative to appMainCanvas; top is for tracker box, pos is for mouse-local box
     let extraDecorations = computeExtraDecorationArrow(topX, topY, pos)
+    let! r = CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, trackerModelBoxToUpdate.CellCurrent(), activationDelta, trackerModelBoxToUpdate.PlayerHas(), extraDecorations, CustomComboBoxes.WarpToCenter)
+    match r with
+    | Some(newBoxCellValue, newPlayerHas) ->
+        trackerModelBoxToUpdate.Set(newBoxCellValue, newPlayerHas)
+        TrackerModel.forceUpdate()
+    | None -> ()
+    }
+
+// like DoRemoteItemComboBox, but there is no matching box on the overworld item grid, so no arrow/highlight
+let DoLocalItemComboBox(cm:CustomComboBoxes.CanvasManager, activationDelta, trackerModelBoxToUpdate:TrackerModel.Box, pos:Point) = async {
+    let extraDecorations : (FrameworkElement*float*float)[] = [||]
     let! r = CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, trackerModelBoxToUpdate.CellCurrent(), activationDelta, trackerModelBoxToUpdate.PlayerHas(), extraDecorations, CustomComboBoxes.WarpToCenter)
     match r with
     | Some(newBoxCellValue, newPlayerHas) ->
@@ -106,9 +120,13 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD2, (
     let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
     do! DoRemoteItemComboBox(cm, 0, TrackerModel.sword2Box, sword2x, sword2y, pos)
     }))
+overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD3, (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,_i,_j) -> async {
+    let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
+    do! DoRemoteItemComboBox(cm, 0, TrackerModel.sword3Box, sword3x, sword3y, pos)
+    }))
 
-let sword2LeftSideFullTileBmp =
-    let interiorBmp = Graphics.theInteriorBmpTable.[TrackerModel.MapSquareChoiceDomainHelper.SWORD2].[0]
+let makeSwordLeftSideFullTileBmp(swordState) =
+    let interiorBmp = Graphics.theInteriorBmpTable.[swordState].[0]
     let fullTileBmp = new System.Drawing.Bitmap(16*3,11*3)
     let BG = System.Drawing.Color.FromArgb(int Graphics.TRANS_BG.A, int Graphics.TRANS_BG.R, int Graphics.TRANS_BG.G, int Graphics.TRANS_BG.B)   // the compiler is being stupid, clone this color to workaround
     for px = 0 to 16*3-1 do
@@ -118,6 +136,8 @@ let sword2LeftSideFullTileBmp =
             else
                 fullTileBmp.SetPixel(px, py, BG)
     fullTileBmp
+let sword2LeftSideFullTileBmp = makeSwordLeftSideFullTileBmp(TrackerModel.MapSquareChoiceDomainHelper.SWORD2)
+let sword3LeftSideFullTileBmp = makeSwordLeftSideFullTileBmp(TrackerModel.MapSquareChoiceDomainHelper.SWORD3)
 
 let twoItemShopBmpCache   = new System.Collections.Generic.Dictionary<_,_>()
 let threeItemShopBmpCache = new System.Collections.Generic.Dictionary<_,_>()
@@ -297,7 +317,12 @@ let GetIconBMPAndExtraDecorations(cm, ms:MapStateProxy,i,j) =   // returns: (sho
         else
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
     elif ms.State = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 then
-        if TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value() then
+        if not(TrackerModel.sword3Box.IsDone()) then
+            let extraDecorationsF(boxPos:Point) =
+                let extraDecorations = computeExtraDecorationArrow(sword3x, sword3y, boxPos)
+                seq extraDecorations
+            false, sword3LeftSideFullTileBmp, [fst(Views.MakeBoxItemWithExtraDecorations(Some(cm), TrackerModel.sword3Box, false, Some extraDecorationsF)), OMTW-30., 1.]
+        elif TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value() then
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
         else
             false, Graphics.theFullTileBmpTable.[ms.State].[0], []

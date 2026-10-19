@@ -42,13 +42,18 @@ let START_TIMELINE_H = THRU_DUNGEON_AND_NOTES_AREA_H
 let THRU_TIMELINE_H = START_TIMELINE_H + float TCH
 let LEFT_OFFSET = 78.0
 let BLOCKERS_AND_NOTES_OFFSET = 408. + 42.  // dungeon area and side-tracker-panel
-let ITEM_PROGRESS_FIRST_ITEM = 129.
+let ITEM_PROGRESS_FIRST_ITEM = 93.   // the item progress row starts right after the 'Item Progress' button (which is at x=0); the 3-dot box and the view rects follow this value
 let hmsTimeTextBox = new TextBox(Width=148.,Height=56.,Text="timer",FontSize=42.0,Background=Brushes.Transparent,Foreground=Brushes.LightGreen,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false)
+// shown in the timer's spot (same font, scaled down to fit) while the timer is hidden
+let niceTimerBox =
+    let tb = new TextBlock(Text="Nice timer bro", FontSize=42.0, FontFamily=hmsTimeTextBox.FontFamily, Foreground=Brushes.LightGreen, VerticalAlignment=VerticalAlignment.Center)
+    new Viewbox(Width=140., Height=46., Stretch=Stretch.Uniform, IsHitTestVisible=false, Child=tb, Visibility=Visibility.Hidden)
 let broadcastTimeTextBox = 
     let r = new TextBox(Text="timer",FontSize=42.0,Background=Brushes.Black,Foreground=Brushes.LightGreen,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false)
     let timerOpacity() = 
         r.Opacity <- if TrackerModelOptions.HideTimer.Value then 0.0 else 1.0
         hmsTimeTextBox.Opacity <- if TrackerModelOptions.HideTimer.Value then 0.0 else 1.0
+        niceTimerBox.Visibility <- if TrackerModelOptions.HideTimer.Value then Visibility.Visible else Visibility.Hidden
     OptionsMenu.hideTimerChanged.Publish.Add(timerOpacity)
     r
 
@@ -86,6 +91,13 @@ let HintZoneDisplayTextBox(s) : FrameworkElement =
                              FontSize=12., FontWeight=FontWeights.Bold, HorizontalContentAlignment=HorizontalAlignment.Center, TextAlignment=TextAlignment.Center,
                              HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center) 
         upcast Graphics.center(tb, 24, 24)
+// redraws a 30x30 location-hint canvas: the hinted zone's two letters, or (when there is no hint yet) a faint white box to show that it can be clicked to pick one
+let RedrawHintCanvas(c:Canvas, hz:TrackerModel.HintZone) =
+    c.Children.Clear()
+    if hz = TrackerModel.HintZone.UNKNOWN then
+        canvasAdd(c, new System.Windows.Shapes.Rectangle(Width=30., Height=30., Stroke=Brushes.White, StrokeThickness=3.0, Opacity=0.25, IsHitTestVisible=false), 0., 0.)
+    else
+        canvasAdd(c, HintZoneDisplayTextBox(hz.AsDisplayTwoChars()), 3., 3.)
 let hintyBrush = 
     let HHS,HHE = Views.HHS, Views.HHE
     let c = Color.FromRgb(HHS.R/2uy + HHE.R/2uy, HHS.G/2uy + HHE.G/2uy, HHS.B/2uy + HHE.B/2uy)
@@ -139,7 +151,7 @@ let FastHintSelector(cm, levelHintIndex, px, py, activationDelta, shouldDescript
     let redrawTile(hz:TrackerModel.HintZone) = 
         tile.Children.Clear()
         tile.Children.Add(HintZoneDisplayTextBox(hz.AsDisplayTwoChars())) |> ignore
-        levelHintDescription.Text <- OverworldData.hintMeaningsDecriptionTextForUI.[levelHintIndex]
+        levelHintDescription.Text <- (if levelHintIndex < OverworldData.hintMeaningsDecriptionTextForUI.Length then OverworldData.hintMeaningsDecriptionTextForUI.[levelHintIndex] elif levelHintIndex = 11 then "Ladder item location hint" else "Armos item location hint")
         levelHintLocation.Text <- HotKeys.HintZoneHotKeyProcessor.AppendHotKeyToDescription(hz.ToString(), hz)
         hideLocator()
         showLocatorHintedZone(hz, false)
@@ -223,6 +235,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
                                                     | _ -> failwith "bad take any #"
                                                     , fun()->Graphics.heartFromTakeAny_bmp))
     // ladder, armos, white sword items
+    for b in [TrackerModel.ladderBox; TrackerModel.armosBox; TrackerModel.sword2Box; TrackerModel.sword3Box] do Views.redBorderBoxes.Add(b) |> ignore   // these four boxes always have a red outline when empty
     let ladderBoxImpl = boxItemImpl(Timeline.TimelineID.LadderBox, TrackerModel.ladderBox, true)
     let armosBoxImpl  = boxItemImpl(Timeline.TimelineID.ArmosBox, TrackerModel.armosBox, false)
     let sword2BoxImpl = boxItemImpl(Timeline.TimelineID.WhiteSwordBox, TrackerModel.sword2Box, true)
@@ -238,6 +251,12 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
     armos.MouseLeave.Add(fun _ -> hideLocator())
     gridAddTuple(owItemGrid, rerouteClick(armos, armosBoxImpl), OW_ITEM_GRID_LOCATIONS.ARMOS_ICON)
     armos.ToolTip <- "The item box to the right is for the item found under an Armos robot on the overworld."
+    // magical sword: the item box (holds the item found in the magical sword cave) with a plain, non-interactive magical sword icon below it
+    let sword3BoxImpl = boxItemImpl(Timeline.TimelineID.MagicalSwordCaveBox, TrackerModel.sword3Box, true)
+    gridAddTuple(owItemGrid, sword3BoxImpl, OW_ITEM_GRID_LOCATIONS.MAGS_ITEM_BOX)
+    let magsIconOnly = new Canvas(Width=30., Height=30., IsHitTestVisible=false)
+    canvasAdd(magsIconOnly, Graphics.BMPtoImage Graphics.magical_sword_bmp, 4., 4.)
+    gridAddTuple(owItemGrid, magsIconOnly, OW_ITEM_GRID_LOCATIONS.MAGS_BOX)
     let white_sword_canvas = new Canvas(Width=30., Height=30.)
     let wsHintCanvas = new Canvas(Width=30., Height=30., Background=Brushes.Transparent)  // Background to accept mouse input
     let redrawWhiteSwordCanvas(c:Canvas) =
@@ -250,15 +269,24 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
         Views.drawTinyIconIfLocationIsOverworldBlock(c, Some(owInstance), TrackerModel.mapStateSummary.Sword2Location)
     redrawWhiteSwordCanvas(white_sword_canvas)
     if not(TrackerModel.IsHiddenDungeonNumbers()) then
-        let px,py = OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.WHITE_SWORD_ICON)
-        canvasAdd(cm.AppMainCanvas, wsHintCanvas, px, py-30.)   // this is kinda gross, poking this onto appMainCanvas, but it doesn't fit into normal layout rules easily
-        TrackerModel.LevelHintChanged(9).Add(fun hz -> 
-            wsHintCanvas.Children.Clear()
-            canvasAdd(wsHintCanvas, HintZoneDisplayTextBox(if hz=TrackerModel.HintZone.UNKNOWN then "" else hz.AsDisplayTwoChars()), 3., 3.)
-            redrawWhiteSwordCanvas(white_sword_canvas))
-        ApplyFastHintSelectorBehavior(cm, (px,py-30.), white_sword_canvas, 9, false, None, true)
-        ApplyFastHintSelectorBehavior(cm, (px,py-30.), wsHintCanvas, 9, true, Some(ShowLocatorDescriptor.Sword2), true)
-        Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(wsHintCanvas)
+        // location hint boxes in the row above the four item boxes: white sword (9), ladder (11), armos (12), magical sword (10)
+        // (this is kinda gross, poking these onto appMainCanvas, but it doesn't fit into normal layout rules easily)
+        let hintSpecs = [ OW_ITEM_GRID_LOCATIONS.WHITE_SWORD_ITEM_BOX, 9, Some(ShowLocatorDescriptor.Sword2)
+                          OW_ITEM_GRID_LOCATIONS.LADDER_ITEM_BOX, 11, None
+                          OW_ITEM_GRID_LOCATIONS.ARMOS_ITEM_BOX, 12, None
+                          OW_ITEM_GRID_LOCATIONS.MAGS_ITEM_BOX, 10, Some(ShowLocatorDescriptor.Sword3) ]
+        for (loc, idx, desc) in hintSpecs do
+            let bx,_ = OW_ITEM_GRID_LOCATIONS.Locate(loc)
+            let hc = if idx=9 then wsHintCanvas else new Canvas(Width=30., Height=30., Background=Brushes.Transparent)
+            canvasAdd(cm.AppMainCanvas, hc, bx, 0.)
+            RedrawHintCanvas(hc, TrackerModel.GetLevelHint(idx))
+            TrackerModel.LevelHintChanged(idx).Add(fun hz -> 
+                RedrawHintCanvas(hc, hz)
+                if idx=9 then redrawWhiteSwordCanvas(white_sword_canvas))
+            ApplyFastHintSelectorBehavior(cm, (bx,0.), hc, idx, true, desc, true)
+            Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(hc)
+        let wsx,_ = OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.WHITE_SWORD_ITEM_BOX)
+        ApplyFastHintSelectorBehavior(cm, (wsx,0.), white_sword_canvas, 9, false, None, true)
     (*  don't need to do this, as redrawWhiteSwordCanvas() is currently called every doUIUpdate, heh
     // redraw after we can look up its new location coordinates
     let newLocation = Views.SynthesizeANewLocationKnownEvent(TrackerModel.mapSquareChoiceDomain.Changed |> Event.filter (fun (_,key) -> key=TrackerModel.MapSquareChoiceDomainHelper.SWORD2))
@@ -334,29 +362,29 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
     let wood_sword_box = basicBoxImpl("Acquired wood sword (mark timeline)", Timeline.TimelineID.WoodSword, Graphics.brown_sword_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword, yellowWoodSwordLogic, woodSwordSuperseded)    
     wood_sword_box.MouseEnter.Add(fun _ -> showLocator(ShowLocatorDescriptor.Sword1))
     wood_sword_box.MouseLeave.Add(fun _ -> hideLocator())
-    gridAddTuple(owItemGrid, wood_sword_box, OW_ITEM_GRID_LOCATIONS.WOOD_SWORD_BOX)
+    // (removed from the grid: wood_sword_box)
     let yellowArrowLogic = new TrackerModel.SyntheticEventingBool((fun() -> TrackerModel.playerArrowLevel.Value=0 && TrackerModel.foundArrowShop.Value), [TrackerModel.foundArrowShop.Changed; TrackerModel.playerArrowLevel.Changed])
     let woodArrowSuperseded = new TrackerModel.SyntheticEventingBool((fun() -> TrackerModel.playerArrowLevel.Value>=2), [TrackerModel.playerArrowLevel.Changed])
     let wood_arrow_box = basicBoxImpl("Acquired wood arrow (mark timeline)", Timeline.TimelineID.WoodArrow, Graphics.wood_arrow_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodArrow, yellowArrowLogic, woodArrowSuperseded)
     wood_arrow_box.MouseEnter.Add(fun _ -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.ARROW))
     wood_arrow_box.MouseLeave.Add(fun _ -> hideLocator())
-    gridAddTuple(owItemGrid, wood_arrow_box, OW_ITEM_GRID_LOCATIONS.WOOD_ARROW_BOX)
+    // (wood arrow box removed from the grid)
     let yellowCandleLogic = new TrackerModel.SyntheticEventingBool((fun() -> TrackerModel.playerCandleLevel.Value=0 && TrackerModel.foundCandleShop.Value), [TrackerModel.foundCandleShop.Changed; TrackerModel.playerCandleLevel.Changed])
     let blueCandleSuperseded = new TrackerModel.SyntheticEventingBool((fun() -> TrackerModel.playerCandleLevel.Value>=2), [TrackerModel.playerCandleLevel.Changed])
     let blue_candle_box = basicBoxImpl("Acquired blue candle (mark timeline, affects gettables and routing)", Timeline.TimelineID.BlueCandle, Graphics.blue_candle_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueCandle, yellowCandleLogic, blueCandleSuperseded)
     blue_candle_box.MouseEnter.Add(fun _ -> if TrackerModel.playerComputedStateSummary.CandleLevel=0 then showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BLUE_CANDLE) else showLocatorInstanceFunc(owInstance.Burnable))
     blue_candle_box.MouseLeave.Add(fun _ -> hideLocator())
-    gridAddTuple(owItemGrid, blue_candle_box, OW_ITEM_GRID_LOCATIONS.BLUE_CANDLE_BOX)
+    // (removed from the grid: blue_candle_box)
     let yellowRingLogic = new TrackerModel.SyntheticEventingBool((fun() -> TrackerModel.playerRingLevel.Value=0 && TrackerModel.foundBlueRingShop.Value), [TrackerModel.foundBlueRingShop.Changed; TrackerModel.playerRingLevel.Changed])
     let blueRingSuperseded = new TrackerModel.SyntheticEventingBool((fun() -> TrackerModel.playerRingLevel.Value>=2), [TrackerModel.playerRingLevel.Changed])
     let blue_ring_box = basicBoxImpl("Acquired blue ring (mark timeline)", Timeline.TimelineID.BlueRing, Graphics.blue_ring_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueRing, yellowRingLogic, blueRingSuperseded)
     blue_ring_box.MouseEnter.Add(fun _ -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BLUE_RING))
     blue_ring_box.MouseLeave.Add(fun _ -> hideLocator())
-    gridAddTuple(owItemGrid, blue_ring_box, OW_ITEM_GRID_LOCATIONS.BLUE_RING_BOX)
+    // (removed from the grid: blue_ring_box)
     let mags_box = basicBoxImpl("Acquired magical sword (mark timeline)\n(10-14 hearts to lift)", Timeline.TimelineID.MagicalSword, Graphics.magical_sword_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword, TrackerModel.magsCaveFound, 
                                     new TrackerModel.SyntheticEventingBool((fun() -> TrackerModel.playerHasSword4.Value = 1), [TrackerModel.playerHasSword4.Changed]))
     let mags_canvas = mags_box.Children.[1] :?> Canvas // a tiny bit fragile
-    let magsHintCanvas = new Canvas(Width=30., Height=30., Background=Brushes.Transparent)  // Background to accept mouse input
+    let _magsHintCanvas = new Canvas(Width=30., Height=30., Background=Brushes.Transparent)  // Background to accept mouse input
     let redrawMagicalSwordCanvas(c:Canvas) =
         c.Children.Clear()
         if not(TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value()) &&   // dont have sword
@@ -366,25 +394,16 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
         let bmp = if TrackerModel.IsWSMSReplacedByBU() then Graphics.ws_ms_bomb_upgrade_bmp else Graphics.magical_sword_bmp
         canvasAdd(c, Graphics.BMPtoImage bmp, 4., 4.)
     redrawMagicalSwordCanvas(mags_canvas)
-    gridAddTuple(owItemGrid, mags_box, OW_ITEM_GRID_LOCATIONS.MAGS_BOX)
+    // (magical sword box removed from the grid)
     TrackerModel.IsWSMSReplacedByBUChanged.Add(fun _ -> redrawMagicalSwordCanvas(mags_canvas))
-    if not(TrackerModel.IsHiddenDungeonNumbers()) then
-        let px,py = OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.MAGS_BOX)
-        canvasAdd(cm.AppMainCanvas, magsHintCanvas, px, py-30.)   // this is kinda gross, poking this onto appMainCanvas, but it doesn't fit into normal layout rules easily
-        TrackerModel.LevelHintChanged(10).Add(fun hz -> 
-            magsHintCanvas.Children.Clear()
-            canvasAdd(magsHintCanvas, HintZoneDisplayTextBox(if hz=TrackerModel.HintZone.UNKNOWN then "" else hz.AsDisplayTwoChars()), 3., 3.)
-            redrawMagicalSwordCanvas(mags_canvas))
-        ApplyFastHintSelectorBehavior(cm, (px,py-30.), mags_canvas, 10, false, None, true)
-        ApplyFastHintSelectorBehavior(cm, (px,py-30.), magsHintCanvas, 10, true, Some(ShowLocatorDescriptor.Sword3), true)
-        Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(magsHintCanvas)
+    // (the magical sword box and its hint selector are no longer on the grid)
     mags_box.MouseEnter.Add(fun _ -> showLocator(ShowLocatorDescriptor.Sword3))
     mags_box.MouseLeave.Add(fun _ -> hideLocator())
     // boomstick book, to mark when purchase in boomstick seed (normal book will become shield found in dungeon)
     let boom_book_box = basicBoxImpl("Purchased boomstick book (mark timeline)", Timeline.TimelineID.BoomstickBook, Graphics.boom_book_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBoomBook, TrackerModel.foundBookShop, FALSE)
     boom_book_box.MouseEnter.Add(fun _ -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BOOK))
     boom_book_box.MouseLeave.Add(fun _ -> hideLocator())
-    gridAddTuple(owItemGrid, boom_book_box, OW_ITEM_GRID_LOCATIONS.BOOMSTICK_BOX)
+    // (removed from the grid: boom_book_box)
     // mark the dungeon wins on timeline via ganon/zelda boxes
     gridAddTuple(owItemGrid, basicBoxImpl("Killed Gannon (mark timeline)", Timeline.TimelineID.Gannon, Graphics.ganon_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasDefeatedGanon, FALSE, FALSE), OW_ITEM_GRID_LOCATIONS.GANON_BOX)
     let zelda_box = basicBoxImpl("Rescued Zelda (mark timeline)", Timeline.TimelineID.Zelda,  Graphics.zelda_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasRescuedZelda, FALSE, FALSE)
@@ -487,19 +506,20 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
     weaponsRowPanel.Children.Add(basicBoxImplNoTimeline("4th sword", Graphics.white_sword4_bmp, TrackerModel.startingItemsAndExtras.PlayerHasSword4, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImplNoTimeline("Wood arrow", Graphics.wood_arrow_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodArrow, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Silver arrow", Timeline.TimelineID.SilverArrow, Graphics.silver_arrow_bmp, TrackerModel.startingItemsAndExtras.PlayerHasSilverArrow, FALSE, FALSE)) |> ignore
-    weaponsRowPanel.Children.Add(basicBoxImpl("Bow", Timeline.TimelineID.Bow, Graphics.bow_bmp, TrackerModel.startingItemsAndExtras.PlayerHasBow, FALSE, FALSE)) |> ignore
+    weaponsRowPanel.Children.Add(basicBoxImpl("Wand", Timeline.TimelineID.Wand, Graphics.wand_bmp, TrackerModel.startingItemsAndExtras.PlayerHasWand, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImplNoTimeline("Blue candle", Graphics.blue_candle_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueCandle, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Red candle", Timeline.TimelineID.RedCandle, Graphics.red_candle_bmp, TrackerModel.startingItemsAndExtras.PlayerHasRedCandle, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Boomerang", Timeline.TimelineID.Boomerang, Graphics.boomerang_bmp, TrackerModel.startingItemsAndExtras.PlayerHasBoomerang, FALSE, FALSE)) |> ignore
     weaponsRowPanel.Children.Add(basicBoxImpl("Magic boomerang", Timeline.TimelineID.MagicBoomerang, Graphics.magic_boomerang_bmp, TrackerModel.startingItemsAndExtras.PlayerHasMagicBoomerang, FALSE, FALSE)) |> ignore
+    let importantRowPanel = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+    importantRowPanel.Children.Add(basicBoxImpl("Bow", Timeline.TimelineID.Bow, Graphics.bow_bmp, TrackerModel.startingItemsAndExtras.PlayerHasBow, FALSE, FALSE)) |> ignore
+    importantRowPanel.Children.Add(basicBoxImpl("Ladder", Timeline.TimelineID.Ladder, Graphics.ladder_bmp, TrackerModel.startingItemsAndExtras.PlayerHasLadder, FALSE, FALSE)) |> ignore
+    importantRowPanel.Children.Add(basicBoxImpl("Power bracelet", Timeline.TimelineID.PowerBracelet, Graphics.power_bracelet_bmp, TrackerModel.startingItemsAndExtras.PlayerHasPowerBracelet, FALSE, FALSE)) |> ignore
+    importantRowPanel.Children.Add(basicBoxImpl("Raft", Timeline.TimelineID.Raft, Graphics.raft_bmp, TrackerModel.startingItemsAndExtras.PlayerHasRaft, FALSE, FALSE)) |> ignore
+    importantRowPanel.Children.Add(basicBoxImpl("Recorder", Timeline.TimelineID.Recorder, Graphics.recorder_bmp, TrackerModel.startingItemsAndExtras.PlayerHasRecorder, FALSE, FALSE)) |> ignore
     let utilityRowPanel = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
-    utilityRowPanel.Children.Add(basicBoxImpl("Wand", Timeline.TimelineID.Wand, Graphics.wand_bmp, TrackerModel.startingItemsAndExtras.PlayerHasWand, FALSE, FALSE)) |> ignore
     utilityRowPanel.Children.Add(basicBoxImplNoTimeline("Blue ring", Graphics.blue_ring_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueRing, FALSE, FALSE)) |> ignore
     utilityRowPanel.Children.Add(basicBoxImpl("Red ring", Timeline.TimelineID.RedRing, Graphics.red_ring_bmp, TrackerModel.startingItemsAndExtras.PlayerHasRedRing, FALSE, FALSE)) |> ignore
-    utilityRowPanel.Children.Add(basicBoxImpl("Power bracelet", Timeline.TimelineID.PowerBracelet, Graphics.power_bracelet_bmp, TrackerModel.startingItemsAndExtras.PlayerHasPowerBracelet, FALSE, FALSE)) |> ignore
-    utilityRowPanel.Children.Add(basicBoxImpl("Ladder", Timeline.TimelineID.Ladder, Graphics.ladder_bmp, TrackerModel.startingItemsAndExtras.PlayerHasLadder, FALSE, FALSE)) |> ignore
-    utilityRowPanel.Children.Add(basicBoxImpl("Raft", Timeline.TimelineID.Raft, Graphics.raft_bmp, TrackerModel.startingItemsAndExtras.PlayerHasRaft, FALSE, FALSE)) |> ignore
-    utilityRowPanel.Children.Add(basicBoxImpl("Recorder", Timeline.TimelineID.Recorder, Graphics.recorder_bmp, TrackerModel.startingItemsAndExtras.PlayerHasRecorder, FALSE, FALSE)) |> ignore
     utilityRowPanel.Children.Add(basicBoxImpl("Magic key", Timeline.TimelineID.AnyKey, Graphics.magic_key_bmp, TrackerModel.startingItemsAndExtras.PlayerHasAnyKey, FALSE, FALSE)) |> ignore
     utilityRowPanel.Children.Add(basicBoxImpl("Book", Timeline.TimelineID.Book, Graphics.book_bmp, TrackerModel.startingItemsAndExtras.PlayerHasBook, FALSE, FALSE)) |> ignore
     utilityRowPanel.Children.Add(basicBoxImplNoTimeline("Meat", Graphics.bait_bmp, TrackerModel.startingItemsAndExtras.PlayerHasMeat, FALSE, FALSE)) |> ignore
@@ -514,9 +534,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
         let iconedHeader = new StackPanel(Orientation=Orientation.Horizontal)
         iconedHeader.Children.Add(Graphics.BMPtoImage Graphics.iconExtras_bmp) |> ignore
         iconedHeader.Children.Add(headerDescription1) |> ignore
-        let headerDescription2 = mkTxt(16., "Mark any items you start the game with\nor get as monster drops/extra dungeon drops\nin this section")
         leftPanel.Children.Add(iconedHeader) |> ignore
-        leftPanel.Children.Add(headerDescription2) |> ignore
         leftPanel.Children.Add(new DockPanel(Height=10.)) |> ignore
         let triforcePanel = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
         for i = 0 to 7 do
@@ -548,26 +566,14 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
         leftPanel.Children.Add(weaponsRowPanel) |> ignore
         leftPanel.Children.Add(new DockPanel(Height=10.)) |> ignore
         leftPanel.Children.Add(utilityRowPanel) |> ignore
+        leftPanel.Children.Add(new DockPanel(Height=10.)) |> ignore
+        leftPanel.Children.Add(mkTxt(16., "Important items")) |> ignore
+        leftPanel.Children.Add(importantRowPanel) |> ignore
         let b = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(4.), Background=Brushes.Black, Child=leftPanel)
         b.MouseDown.Add(fun ea -> ea.Handled <- true)
         let bp = new StackPanel(Orientation=Orientation.Vertical)
         bp.Children.Add(b) |> ignore
         
-        let refText = mkTxt(12., "Vanilla dungeon item reference\nDon't click here")
-        let bottomPanel = new StackPanel(Orientation=Orientation.Vertical, Opacity=0.6)
-        bottomPanel.Children.Add(refText) |> ignore
-        let q1 = new StackPanel(Orientation=Orientation.Horizontal)
-        q1.Children.Add(mkTxt(20., "1Q")) |> ignore
-        q1.Children.Add(Graphics.BMPtoImage Graphics.firstQuestItemReferenceBMP) |> ignore
-        bottomPanel.Children.Add(q1) |> ignore
-        let q2 = new StackPanel(Orientation=Orientation.Horizontal)
-        q2.Children.Add(mkTxt(20., "2Q")) |> ignore
-        q2.Children.Add(Graphics.BMPtoImage Graphics.secondQuestItemReferenceBMP) |> ignore
-        bottomPanel.Children.Add(q2) |> ignore
-        bp.Children.Add(new DockPanel(Height=12.)) |> ignore
-        let rb = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(4.), Background=Brushes.Black, Child=bottomPanel)
-        rb.MouseDown.Add(fun ea -> ea.Handled <- true)
-        bp.Children.Add(rb) |> ignore
         
         let panel = new StackPanel(Orientation=Orientation.Horizontal)
         panel.Children.Add(bp) |> ignore
@@ -753,7 +759,9 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
 let mutable hideFirstQuestFromMixed = fun _b -> ()
 let mutable hideSecondQuestFromMixed = fun _b -> ()
 
-let MakeFQSQStuff(cm, isMixed, owLocatorTilesZone:Graphics.TileHighlightRectangle[,], redrawOWCircle) =
+// set by WPFUI: turns the mirrored overworld on/off and refreshes the UI (what the old mirror icon did)
+let mutable setMirroredOverworld : bool -> unit = fun _ -> ()
+let MakeFQSQStuff(cm, _isMixed, owLocatorTilesZone:Graphics.TileHighlightRectangle[,], redrawOWCircle) =
     let thereAreMarks(questOnly:string[]) =
         let mutable r = false
         for x = 0 to 15 do 
@@ -931,13 +939,6 @@ let MakeFQSQStuff(cm, isMixed, owLocatorTilesZone:Graphics.TileHighlightRectangl
                 let shopLeft = new StackPanel(Orientation=Orientation.Vertical)
                 shopRow.Children.Add(shopLeft) |> ignore
                 sp.Children.Add(shopRow) |> ignore
-                shopLeft.Children.Add(shopPricesTxt) |> ignore
-                let shopPricesBtn = Graphics.makeButton("Open Shop Prices Window", Some(14.), Some(Brushes.Orange))
-                shopPricesBtn.HorizontalAlignment <- HorizontalAlignment.Left
-                shopPricesBtn.Margin <- Thickness(2.)
-                shopPricesBtn.ToolTip <- "Opens a window listing all marked shops on the OW map so you can record the prices you saw."
-                shopPricesBtn.Click.Add(fun _ -> Popouts.showShopPricesWindow(); wh.Set() |> ignore)
-                shopLeft.Children.Add(shopPricesBtn) |> ignore
                 let b = new Border(Child=sp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(5.), Background=Brushes.Black)
                 clearOW()
                 do! CustomComboBoxes.DoModalCore(cm, wh, (fun (c,e) -> canvasAdd(c, e, 10., 10.)), (fun (c,e) -> c.Children.Remove(e)), b, 0.25)

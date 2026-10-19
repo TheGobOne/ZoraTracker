@@ -337,11 +337,16 @@ type MyWindow() as this =
         Graphics.theWindow <- this
         // full window
         this.Title <- "Z-Tracker for Zelda 1 Randomizer"
-        this.ResizeMode <- ResizeMode.CanMinimize
+        this.ResizeMode <- ResizeMode.CanResize   // resizable: the whole UI scales to fit (see the SizeChanged handler below)
+        this.MinWidth <- round(WIDTH_SANS_CHROME*0.4 + CHROME_WIDTH)
+        this.MinHeight <- round(HEIGHT_SANS_CHROME*0.4 + CHROME_HEIGHT)
         this.SizeToContent <- SizeToContent.Manual
         this.WindowStartupLocation <- WindowStartupLocation.Manual
         let APP_WIDTH, APP_HEIGHT = 
-            if TrackerModelOptions.SmallerAppWindow.Value then 
+            if TrackerModelOptions.MainWindowScale > 0. then   // the user resized the window last time; the size is remembered as the scale
+                Graphics.dynamicAppScale <- TrackerModelOptions.MainWindowScale
+                round(WIDTH_SANS_CHROME*TrackerModelOptions.MainWindowScale + CHROME_WIDTH), round(HEIGHT_SANS_CHROME*TrackerModelOptions.MainWindowScale + CHROME_HEIGHT)
+            elif TrackerModelOptions.SmallerAppWindow.Value then 
                 round(WIDTH_SANS_CHROME*TrackerModelOptions.SmallerAppWindowScaleFactor + CHROME_WIDTH), round(HEIGHT_SANS_CHROME*TrackerModelOptions.SmallerAppWindowScaleFactor + CHROME_HEIGHT)
             else 
                 WIDTH, HEIGHT
@@ -526,6 +531,7 @@ type MyWindow() as this =
                                         TrackerModel.startingItemsAndExtras.PlayerHasAnyKey.Set(data.PlayerHasAnyKey)
                                         TrackerModel.startingItemsAndExtras.PlayerHasBook.Set(data.PlayerHasBook)
                                         TrackerModel.startingItemsAndExtras.PlayerHasMeat.Set(data.PlayerHasMeat)
+                                        TrackerModel.startingItemsAndExtras.PlayerHasLetter.Set(data.PlayerHasLetter)
                                         TrackerModel.startingItemsAndExtras.MaxHeartsDifferential <- data.MaxHeartsDifferential
 
                                         TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Applied StartingItems update from %s" senderId)
@@ -840,6 +846,28 @@ type MyWindow() as this =
             if trans.CanFreeze then
                 trans.Freeze()
             wholeCanvas.RenderTransform <- trans
+        // Resizable window: scale the whole UI uniformly to fit the window (letterboxed if the shape differs; top-left anchored).
+        // The scale is based on the size of the 'world' that the canvas manager currently reports, which changes when the timeline area appears.
+        RenderOptions.SetBitmapScalingMode(wholeCanvas, BitmapScalingMode.NearestNeighbor)   // keep the pixel-art icons crisp
+        let saveScaleTimer = new System.Windows.Threading.DispatcherTimer(Interval=System.TimeSpan.FromMilliseconds(600.))
+        saveScaleTimer.Tick.Add(fun _ ->
+            saveScaleTimer.Stop()
+            if this.WindowState = WindowState.Normal && Graphics.dynamicAppScale > 0. then
+                TrackerModelOptions.MainWindowScale <- Graphics.dynamicAppScale
+                TrackerModelOptions.writeSettings())
+        let applyWindowScale() =
+            let w = this.ActualWidth - CHROME_WIDTH
+            let h = this.ActualHeight - CHROME_HEIGHT
+            if w > 50. && h > 50. && cm.Height > 0. then
+                let s = min (w / WIDTH_SANS_CHROME) (h / cm.Height)
+                let s = max 0.4 (min 4.0 s)
+                if abs(s - Graphics.dynamicAppScale) > 0.0005 then
+                    Graphics.dynamicAppScale <- s
+                    wholeCanvas.RenderTransform <- new ScaleTransform(s, s)
+                    saveScaleTimer.Stop()   // remember the new size (as a scale) shortly after the user stops dragging
+                    saveScaleTimer.Start()
+        this.SizeChanged.Add(fun _ -> applyWindowScale())
+        this.Loaded.Add(fun _ -> applyWindowScale())
         wholeCanvas.Children.Add(cm.RootCanvas) |> ignore
         wholeCanvas.Children.Add(hmsTimerCanvas) |> ignore
         wholeCanvas.Children.Add(drawingCanvasHolder) |> ignore
@@ -976,6 +1004,7 @@ type MyWindow() as this =
                 sb.Click.Add(fun _ ->
                     TrackerModelOptions.SmallerAppWindow.Value <- desireSmaller
                     TrackerModelOptions.SmallerAppWindowScaleFactor <- desireScale
+                    TrackerModelOptions.MainWindowScale <- 0.0   // an explicit choice of window size on the start screen replaces the remembered resized size
                     TrackerModelOptions.ShorterAppWindow.Value <- desireShort
                     TrackerModelOptions.writeSettings()
                     Graphics.RestartTheApplication()
@@ -989,7 +1018,7 @@ type MyWindow() as this =
 
             let fs = if TrackerModelOptions.SmallerAppWindow.Value then 16. else 12.
             let topBar = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
-            let tb = new TextBox(Text="Z-Tracker window too large/small?", Margin=Thickness(0.,0.,10.,0.),
+            let tb = new TextBox(Text="You can now resize the window!", Margin=Thickness(0.),
                                     IsReadOnly=true, BorderThickness=Thickness(0.), FontSize=fs, VerticalAlignment=VerticalAlignment.Center)
             topBar.Children.Add(tb) |> ignore
             let b = Graphics.makeButton("Click here for options", Some(fs), None)
@@ -1001,7 +1030,7 @@ type MyWindow() as this =
                     CustomComboBoxes.DoModal(cm, wh, 20., 60., menu(wh)) |> Async.StartImmediate
                     popupIsActive <- false
                 )
-            topBar.Children.Add(b) |> ignore
+            ignore b   // (the 'Click here for options' button is no longer shown; the window can simply be resized)
             let curFactor = if TrackerModelOptions.SmallerAppWindow.Value then TrackerModelOptions.SmallerAppWindowScaleFactor else 1.0
             let workingAreaTooSmallForCurrentHeight = SystemParameters.WorkArea.Height < (1000.0 * curFactor)
             let likelyDoesntFit = workingAreaTooSmallForCurrentHeight  // 'smaller' now might mean larger    && not(TrackerModelOptions.SmallerAppWindow.Value)
@@ -1061,7 +1090,7 @@ type MyWindow() as this =
         turnHeartShuffleOn()
         let cutoffCanvas = new Canvas(Width=85., Height=85., ClipToBounds=true, IsHitTestVisible=false)
         cutoffCanvas.Children.Add(hsGrid) |> ignore
-        let border = new Border(BorderBrush=Brushes.DarkGray, BorderThickness=Thickness(8.,8.,0.,0.), Child=cutoffCanvas)
+        let _border = new Border(BorderBrush=Brushes.DarkGray, BorderThickness=Thickness(8.,8.,0.,0.), Child=cutoffCanvas)
 
         let finalChildTipArea = new Canvas()
         let explainerGrid = new Grid(Width=WIDTH*5./6., Height=160.)
@@ -1098,7 +1127,19 @@ type MyWindow() as this =
         let hsArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=hscb)
         hsArea.MouseEnter.Add(fun _ -> hoverExplain(hsArea,"This checkbox corresponds to the randomizer setting:\n\nDungeon Items (tab)\n - Shuffle Dungeon Hearts (checkbox)"))
         hsArea.MouseLeave.Add(fun _ -> explainHide())
-        checkboxSP.Children.Add(hsArea) |> ignore
+        // Mirrored Overworld checkbox, directly under Full Shuffle (same look); sets the same flag the old mirror icon toggled
+        let mocb = new CheckBox(Content=new TextBox(Text="Mirrored Overworld",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
+        Graphics.scaleUpCheckBoxBox(mocb, 1.66)
+        mocb.IsChecked <- System.Nullable.op_Implicit false
+        mocb.Checked.Add(fun _ -> TrackerModel.MirrorOverworld <- true)
+        mocb.Unchecked.Add(fun _ -> TrackerModel.MirrorOverworld <- false)
+        let moArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=mocb, Margin=Thickness(0.,3.,0.,0.))
+        moArea.MouseEnter.Add(fun _ -> hoverExplain(moArea,"Flip the overworld map East<->West."))
+        moArea.MouseLeave.Add(fun _ -> explainHide())
+        let hsAndMirror = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Top)
+        hsAndMirror.Children.Add(hsArea) |> ignore
+        hsAndMirror.Children.Add(moArea) |> ignore
+        checkboxSP.Children.Add(hsAndMirror) |> ignore
 
         checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
 
@@ -1107,24 +1148,44 @@ type MyWindow() as this =
         hdcb.IsChecked <- System.Nullable.op_Implicit false
         hdcb.Checked.Add(fun _ -> turnHideDungeonNumbersOn())
         hdcb.Unchecked.Add(fun _ -> turnHideDungeonNumbersOff())
-        let hdnArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=hdcb)
+        let hdnArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=hdcb, VerticalAlignment=VerticalAlignment.Top)   // top-aligned so it doesn't stretch to the height of the stacked columns
         hdnArea.MouseEnter.Add(fun _ -> hoverExplain(hdnArea,"This checkbox corresponds to the randomizer setting:\n\nDungeons (tab)\n - Hide Dungeon Numbers (checkbox)"))
         hdnArea.MouseLeave.Add(fun _ -> explainHide())
-        checkboxSP.Children.Add(hdnArea) |> ignore
+        // '4th Sword' option, directly under Hide Dungeon Numbers: checked = the 4th sword is the max sword level and the level 2 staircase box is enabled
+        let fscb = new CheckBox(Content=new TextBox(Text="4th Sword",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
+        Graphics.scaleUpCheckBoxBox(fscb, 1.66)
+        fscb.IsChecked <- System.Nullable.op_Implicit false
+        let fsArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=fscb, Margin=Thickness(0.,3.,0.,0.))
+        fsArea.MouseEnter.Add(fun _ -> hoverExplain(fsArea,"Checked: the 4th sword is the highest sword level, and the level 2 staircase item box is enabled.\nUnchecked: the magical sword is the highest sword level, and the staircase box starts greyed out."))
+        fsArea.MouseLeave.Add(fun _ -> explainHide())
+        let hdnAndSword4 = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Top)
+        hdnAndSword4.Children.Add(hdnArea) |> ignore
+        hdnAndSword4.Children.Add(fsArea) |> ignore
+        checkboxSP.Children.Add(hdnAndSword4) |> ignore
 
         // custom level name (replaces 'LEVEL-n' at the top of each dungeon map)
-        let clnTextBox = new TextBox(Width=110., MaxLength=6, CharacterCasing=CharacterCasing.Upper, IsEnabled=false, Margin=Thickness(6.,2.,2.,2.), VerticalAlignment=VerticalAlignment.Center)
+        let clnTextBox = new TextBox(MaxLength=7, CharacterCasing=CharacterCasing.Upper, IsEnabled=false, Margin=Thickness(6.,2.,2.,2.), VerticalAlignment=VerticalAlignment.Center)
         let clncb = new CheckBox(Content=new TextBox(Text="Custom LEVEL Name",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
         Graphics.scaleUpCheckBoxBox(clncb, 1.66)
         clncb.IsChecked <- System.Nullable.op_Implicit false
-        clncb.Checked.Add(fun _ -> clnTextBox.IsEnabled <- true; clnTextBox.Focus() |> ignore)
-        clncb.Unchecked.Add(fun _ -> clnTextBox.IsEnabled <- false)
+        clncb.Checked.Add(fun _ -> clnTextBox.IsEnabled <- true; clnTextBox.Visibility <- Visibility.Visible; clnTextBox.Focus() |> ignore)
+        clncb.Unchecked.Add(fun _ -> clnTextBox.IsEnabled <- false; clnTextBox.Visibility <- Visibility.Collapsed)
         let clnArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=clncb)
-        clnArea.MouseEnter.Add(fun _ -> hoverExplain(clnArea,"Type up to 6 letters/numbers to use in place of\n'LEVEL-1' at the top of each dungeon map."))
+        clnArea.MouseEnter.Add(fun _ -> hoverExplain(clnArea,"Type up to 7 letters/numbers to use in place of\n'LEVEL-1' at the top of each dungeon map.\n(Fewer than 7 keeps the dash; a 7th character replaces it.)"))
         clnArea.MouseLeave.Add(fun _ -> explainHide())
         checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
-        checkboxSP.Children.Add(clnArea) |> ignore
-        checkboxSP.Children.Add(clnTextBox) |> ignore
+        clnTextBox.Margin <- Thickness(30.,2.,2.,2.)   // leaves the check box itself visible and covers the words 'Custom LEVEL Name'
+        clnTextBox.Width <- System.Double.NaN
+        clnTextBox.HorizontalAlignment <- HorizontalAlignment.Stretch
+        clnTextBox.VerticalAlignment <- VerticalAlignment.Stretch
+        clnTextBox.Visibility <- Visibility.Collapsed
+        clnTextBox.HorizontalContentAlignment <- HorizontalAlignment.Center   // text starts from the middle of the box
+        clnTextBox.VerticalContentAlignment <- VerticalAlignment.Center
+        clnTextBox.FontSize <- 18.
+        let clnAndBox = new Grid(VerticalAlignment=VerticalAlignment.Top)   // the name box sits on top of the checkbox's words
+        clnAndBox.Children.Add(clnArea) |> ignore
+        clnAndBox.Children.Add(clnTextBox) |> ignore
+        checkboxSP.Children.Add(clnAndBox) |> ignore
 
         hsPanel.Children.Add(checkboxSP) |> ignore
         // (the little dungeon preview graphic is no longer shown; its hidden state is still driven by the checkboxes)
@@ -1151,6 +1212,10 @@ type MyWindow() as this =
             if loadData.IsSome then
                 TrackerModel.IsSecondQuestDungeons <- loadData.Value.Items.SecondQuestDungeons
 
+            if loadData.IsNone then   // (a loaded save restores its own 4th-sword/staircase state)
+                let fourth = fscb.IsChecked.HasValue && fscb.IsChecked.Value
+                TrackerModelOptions.FourthSwordEnabled <- fourth
+                TrackerModel.SetLevel2StairBoxEnabled(fourth)
             TrackerModel.CustomLevelName <- 
                 if clncb.IsChecked.HasValue && clncb.IsChecked.Value then clnTextBox.Text.Trim().ToUpperInvariant() else ""
             let mutable speechRecognitionInstance = null
@@ -1200,6 +1265,8 @@ type MyWindow() as this =
             if loadData.IsNone then
                 WPFUI.resetTimerEvent.Trigger()  // takes a few seconds to load everything, reset timer at start
             Graphics.canvasAdd(hmsTimerCanvas, OverworldItemGridUI.hmsTimeTextBox, Layout.RIGHT_COL+190., 0.)
+            Graphics.canvasAdd(hmsTimerCanvas, OverworldItemGridUI.niceTimerBox, 12.8*Graphics.OMTW + 3., 0.)   // 'Nice timer bro' shows here while the timer is hidden
+            OverworldItemGridUI.niceTimerBox.Visibility <- (if TrackerModelOptions.HideTimer.Value then Visibility.Visible else Visibility.Hidden)
             gotThruStartup <- true
             if promptedCrashRecovery then
                 finishCrashInfoImpl("prompted for crash recovery, user chose not to, successfully started")
@@ -1242,13 +1309,15 @@ type MyWindow() as this =
                     OptionsMenu.gamepadFailedToInitialize <- not(Gamepad.Initialize())
 
                 let mutable loadData = None
+                let mutable abortStartup = false   // a failed/cancelled load just returns to the start screen (no restart needed)
                 if n = 999 then
                     let pickedPath =
                         match pendingLoadPath.Value with
                         | Some p -> Some p
                         | None ->
                             let ofd = new Microsoft.Win32.OpenFileDialog()
-                            ofd.InitialDirectory <- System.AppDomain.CurrentDomain.BaseDirectory
+                            SaveAndLoad.EnsureSavesDirectory()
+                            ofd.InitialDirectory <- SaveAndLoad.SavesDirectory
                             ofd.Filter <- "All JSON files|*.json|ZTracker saves|zt-save-*.json|All Files|*.*"
                             let r = ofd.ShowDialog(this)
                             if r.HasValue && r.Value then Some ofd.FileName else None
@@ -1275,29 +1344,31 @@ type MyWindow() as this =
                         with e ->
                             let msg = sprintf "Loading the save file\n%s\nfailed with error:\n%s"  pickedFile e.Message
                             popupIsActive <- true
-                            let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, msg, ["Restart"])
+                            let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, msg, ["Ok"])
                             popupIsActive <- false
                             ignore r
-                            Graphics.RestartTheApplication()
+                            abortStartup <- true
                     else
-                        let msg = sprintf "Failed to load a save file."
-                        popupIsActive <- true
-                        let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, msg, ["Restart"])
-                        popupIsActive <- false
-                        ignore r
-                        Graphics.RestartTheApplication()
-                do! doStartup(n,loadData)
+                        abortStartup <- true   // they cancelled the file dialog: just go back to the start screen
+                if abortStartup then
+                    // back to the start screen so they can pick again
+                    pendingLoadPath.Value <- None
+                    startButtonHasBeenClicked <- false
+                else
+                    do! doStartup(n,loadData)
             } |> Async.StartImmediate
         let quests = [|
             0, "1st Quest Overworld"
             1, "2nd Quest Overworld"
             2, "Mixed - 1st Quest Overworld"
-            3, "Mixed - 2nd Quest Overworld\n(or randomized quest)"
+            3, "Mixed - 2nd Quest Overworld"
             999, "from a previously saved state"
             |]
         let addQuestExplainer(startButton:FrameworkElement) =
             startButton.MouseEnter.Add(fun _ -> hoverExplain(startButton,"Choose the start button that matches the randomizer setting:\n\nOverworld Quest (dropdown)"))
             startButton.MouseLeave.Add(fun _ -> explainHide())
+        let startButtons = System.Collections.Generic.Dictionary<int,Button>()
+        let mutable moreOptionsButton : Button = null
         for n,q in quests do
             let startButton = Graphics.makeButton(sprintf "Start: %s" q, None, None)
             if n=0 then
@@ -1307,8 +1378,7 @@ type MyWindow() as this =
             else
                 startButton.Margin <- spacing
             if n=0 then
-                let dp = new DockPanel(LastChildFill=true, Width=WIDTH/2.)
-                let otherButton = Graphics.makeButton(". . .", None, None)
+                let otherButton = Graphics.makeButton("More options...", None, None)
                 let tb = new TextBox(Text="See more\noptions",IsReadOnly=true, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(2.), Opacity=0.)
                 appMainCanvas.Children.Add(tb) |> ignore
                 otherButton.MouseEnter.Add(fun _ ->
@@ -1318,8 +1388,7 @@ type MyWindow() as this =
                     tb.Opacity <- 1.0
                     )
                 otherButton.MouseLeave.Add(fun _ -> tb.Opacity <- 0.0)
-                otherButton.Margin <-Thickness(6.,0.,0.,0.)
-                dp.Children.Add(otherButton) |> ignore
+                otherButton.Margin <- Thickness(0.)
                 otherButton.Click.Add(fun _ -> 
                     if popupIsActive then () else
                     popupIsActive <- true
@@ -1388,22 +1457,42 @@ type MyWindow() as this =
                         popupIsActive <- false
                     } |> Async.StartImmediate
                     )
-                DockPanel.SetDock(otherButton, Dock.Right)
-                dp.Children.Add(startButton) |> ignore
-                addQuestExplainer(startButton)
-                stackPanel.Children.Add(dp) |> ignore
-            else
-                startButton.Width <- WIDTH/2.
-                stackPanel.Children.Add(startButton) |> ignore
-                if n<=3 then addQuestExplainer(startButton)
+                moreOptionsButton <- otherButton
+            startButtons.[n] <- startButton
+            if n<=3 then addQuestExplainer(startButton)
             startButton.Click.Add(fun _ -> startButtonBehavior(n))
+
+        // layout: [1st Quest | Mixed 1st]  ---  [2nd Quest | Mixed 2nd]  ---  [More options]  ---  [saved state]
+        let divider() = new Border(Height=1., Background=Brushes.SaddleBrown, Width=WIDTH*0.8, Margin=Thickness(0.,7.,0.,7.), HorizontalAlignment=HorizontalAlignment.Center)
+        let pairRow(a:Button, b:Button) =
+            let g = new Grid(Width=WIDTH*0.9, HorizontalAlignment=HorizontalAlignment.Center)
+            g.ColumnDefinitions.Add(new ColumnDefinition(Width=GridLength(1., GridUnitType.Star)))
+            g.ColumnDefinitions.Add(new ColumnDefinition(Width=GridLength(1., GridUnitType.Star)))
+            a.Margin <- Thickness(0.,0.,3.,0.)
+            b.Margin <- Thickness(3.,0.,0.,0.)
+            Grid.SetColumn(a, 0)
+            Grid.SetColumn(b, 1)
+            g.Children.Add(a) |> ignore
+            g.Children.Add(b) |> ignore
+            g
+        stackPanel.Children.Add(pairRow(startButtons.[0], startButtons.[2])) |> ignore
+        stackPanel.Children.Add(divider()) |> ignore
+        stackPanel.Children.Add(pairRow(startButtons.[1], startButtons.[3])) |> ignore
+        stackPanel.Children.Add(divider()) |> ignore
+        // 'Randomized quest' does exactly what 'Mixed - 2nd Quest Overworld' does; it's just its own button, next to 'More options...'
+        let randomizedQuestButton = Graphics.makeButton("Start: Randomized quest", None, None)
+        randomizedQuestButton.Click.Add(fun _ -> startButtonBehavior(3))
+        addQuestExplainer(randomizedQuestButton)
+        stackPanel.Children.Add(pairRow(randomizedQuestButton, moreOptionsButton)) |> ignore
+        stackPanel.Children.Add(divider()) |> ignore
+        startButtons.[999].Width <- WIDTH/2.
+        stackPanel.Children.Add(startButtons.[999]) |> ignore
 
         // box listing the save files loaded before, for fast re-selection
         do
             let recents = readRecentLoads()
             let listSP = new StackPanel(Orientation=Orientation.Vertical)
             let header = new TextBox(Text="Recently loaded saves:", IsReadOnly=true, BorderThickness=Thickness(0.), HorizontalAlignment=HorizontalAlignment.Center, FontSize=14., Margin=Thickness(0.,0.,0.,3.))
-            listSP.Children.Add(header) |> ignore
             if recents.IsEmpty then
                 listSP.Children.Add(new TextBox(Text="(none yet - files you load will show up here)", IsReadOnly=true, BorderThickness=Thickness(0.), Foreground=Brushes.Gray, HorizontalAlignment=HorizontalAlignment.Center, FontSize=13.)) |> ignore
             for p in recents do
@@ -1421,7 +1510,9 @@ type MyWindow() as this =
                         startButtonBehavior(999))
                 listSP.Children.Add(b) |> ignore
             let scroll = new ScrollViewer(Content=listSP, VerticalScrollBarVisibility=ScrollBarVisibility.Auto, MaxHeight=150.)
-            let recentBox = new Border(Child=scroll, BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Padding=Thickness(4.), Width=WIDTH/2., HorizontalAlignment=HorizontalAlignment.Center, Margin=smallSpacing)
+            // collapsed by default behind an arrow (Expander); the list inside is still newest-loaded first
+            let expander = new Expander(Header=header, Content=scroll, IsExpanded=false)
+            let recentBox = new Border(Child=expander, BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Padding=Thickness(4.), Width=WIDTH/2., HorizontalAlignment=HorizontalAlignment.Center, Margin=smallSpacing)
             stackPanel.Children.Add(recentBox) |> ignore
 
         stackPanel.Children.Add(finalChildTipArea) |> ignore  // finalChildTipArea still used for explainer arrows on startup options
@@ -1448,7 +1539,7 @@ type MyWindow() as this =
 
         mainDock.Children.Add(mainStackPanel) |> ignore
         // vertically center the block of Start buttons between the startup-options checkboxes above and the Settings line below
-        let centeredOnce = ref true   // (no longer vertically centering the Start buttons; they sit right under the options row)
+        let centeredOnce = ref false   // center the whole block of Start buttons in the open space (once, after first layout)
         mainDock.LayoutUpdated.Add(fun _ ->
             if not centeredOnce.Value && mainDock.IsLoaded && bottomSP.ActualHeight > 0. && finalChildTipArea.IsLoaded && hsPanel.ActualHeight > 0. then
                 centeredOnce.Value <- true

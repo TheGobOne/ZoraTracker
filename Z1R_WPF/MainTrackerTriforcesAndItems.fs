@@ -325,10 +325,8 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
             colorButton.MouseLeave.Add(fun _ -> hideLocator())
         else
             let hintCanvas = new Canvas(Width=30., Height=30., Background=Brushes.Transparent)  // Background to accept mouse input
-            TrackerModel.LevelHintChanged(i).Add(fun hz -> 
-                hintCanvas.Children.Clear()
-                canvasAdd(hintCanvas, OverworldItemGridUI.HintZoneDisplayTextBox(if hz=TrackerModel.HintZone.UNKNOWN then "" else hz.AsDisplayTwoChars()), 3., 3.)
-                )
+            OverworldItemGridUI.RedrawHintCanvas(hintCanvas, TrackerModel.GetLevelHint(i))
+            TrackerModel.LevelHintChanged(i).Add(fun hz -> OverworldItemGridUI.RedrawHintCanvas(hintCanvas, hz))
             OverworldItemGridUI.ApplyFastHintSelectorBehavior(cm, (float(30*i),0.), hintCanvas, i, true, Some(ShowLocatorDescriptor.DungeonIndex i), false)
             addHintZoomOnHover(hintCanvas, i)
             mainTrackerCanvases.[i,0] <- hintCanvas
@@ -361,10 +359,8 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
     // dungeon 9 doesn't need a color, we display a 'found summary' here instead (except we don't any more)
     let level9ColorCanvas = new Canvas(Width=30., Height=30., Background=Brushes.Black)  
     if not(TrackerModel.IsHiddenDungeonNumbers()) then
-        TrackerModel.LevelHintChanged(8).Add(fun hz -> 
-            level9ColorCanvas.Children.Clear()
-            canvasAdd(level9ColorCanvas, OverworldItemGridUI.HintZoneDisplayTextBox(if hz=TrackerModel.HintZone.UNKNOWN then "" else hz.AsDisplayTwoChars()), 3., 3.)
-            )
+        OverworldItemGridUI.RedrawHintCanvas(level9ColorCanvas, TrackerModel.GetLevelHint(8))
+        TrackerModel.LevelHintChanged(8).Add(fun hz -> OverworldItemGridUI.RedrawHintCanvas(level9ColorCanvas, hz))
         OverworldItemGridUI.ApplyFastHintSelectorBehavior(cm, (float(30*8), 0.), level9ColorCanvas, 8, true, Some(ShowLocatorDescriptor.DungeonIndex 8), false)
         addHintZoomOnHover(level9ColorCanvas, 8)
         Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(level9ColorCanvas)

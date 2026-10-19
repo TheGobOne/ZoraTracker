@@ -390,6 +390,7 @@ let MaxRemainUQ = 128
 let dummyOverworldTiles = overworldTiles(true,false)  // some bits need to read the hotkey names or array length, before the 1Q/2Q choice has been made by the user, this gives them that info
 
 let mutable mapSquareChoiceDomain = null : ChoiceDomain
+let mapSquareChangedStable = new Event<ChoiceDomain*int>()   // forwards Changed from whichever ChoiceDomain is current (reinitializeOverworld replaces the domain)
 // Note: if you make changes to above/below, also check: recomputeMapStateSummary(), Graphics.theInteriorBmpTable, SpeechRecognition, OverworldMapTileCustomization, ui's isLegalHere()
 type MapSquareChoiceDomainHelper = 
     static member DUNGEON_1 = 0
@@ -628,6 +629,7 @@ type StartingItemsAndExtras() =
     let anyKey = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
     let book = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
     let meat = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
+    let letter = BoolProperty(false,fun()->extrasLastChangedTime.SetNow())
     let mutable maxHeartsDiff = 0
     member _this.HDNStartingTriforcePieces = triforces
     member _this.PlayerHasWhiteSword = whiteSword         // Note that unlike the item box / cave versions of these items, the starting item
@@ -647,6 +649,7 @@ type StartingItemsAndExtras() =
     member _this.PlayerHasAnyKey = anyKey
     member _this.PlayerHasBook = book
     member _this.PlayerHasMeat = meat
+    member _this.PlayerHasLetter = letter
     member _this.MaxHeartsDifferential with get() = maxHeartsDiff and set(x) = maxHeartsDiff <- x
 let startingItemsAndExtras = StartingItemsAndExtras()
 
@@ -745,14 +748,14 @@ type Box(stair:StairKind, owner) =
 let ladderBox = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
 let armosBox  = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
 let sword2Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
-// optional extra staircase item slot under level 2 (DEFAULT dungeons only); invisible and not required for completion until the user clicks to add it
-let level2StairBox = Box(StairKind.Always, BoxOwner.None)
+let sword3Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in the magical sword cave (this session only, not saved)
+// the optional extra 'level 2 staircase' item box (disabled/greyed out until enabled)
+let level2StairBox = Box(StairKind.Always, BoxOwner.None)   // shows the basement staircase icon like the other basement item slots
 let mutable level2StairBoxEnabled = false
 let level2StairBoxEnabledChanged = new Event<unit>()
 let SetLevel2StairBoxEnabled(enabled:bool) =
     if level2StairBoxEnabled <> enabled then
         level2StairBoxEnabled <- enabled
-        dungeonsAndBoxesLastChangedTime.SetNow()
         level2StairBoxEnabledChanged.Trigger()
 
 [<RequireQualifiedAccess>]
@@ -800,7 +803,7 @@ type DungeonTrackerInstance(kind) =
                 yield ladderBox
                 yield armosBox
                 yield sword2Box
-                yield level2StairBox
+                yield sword3Box
                 |]
         allBoxes
     let allBoxProgress = 
@@ -869,7 +872,7 @@ and Dungeon(id,numBoxes) =
     let mutable priorComplete = false
     let mutable currentlyReentrant = false
     do
-        mapSquareChoiceDomain.Changed.Add(fun (_,key) -> if key=id then hasBeenLocatedChangeEvent.Trigger())
+        mapSquareChangedStable.Publish.Add(fun (_,key) -> if key=id then hasBeenLocatedChangeEvent.Trigger())
         // atlas watching
         IsCurrentlyBookChanged.Add(fun _ -> playerCanSeeMapOfThisDungeonChangeEvent.Trigger())
         IsBookAnAtlasChanged.Add(fun _ -> playerCanSeeMapOfThisDungeonChangeEvent.Trigger())
@@ -913,7 +916,6 @@ and Dungeon(id,numBoxes) =
                         false
                 | DungeonTrackerInstanceKind.DEFAULT ->
                     playerHasTriforce && this.Boxes |> Array.forall (fun b -> b.IsDone()) && (not(this.TriforceIsInItemSlot) || extraFloorBox.IsDone())
-                        && (not(id=1 && level2StairBoxEnabled) || level2StairBox.IsDone())
             let needToNotify = priorComplete <> r
             priorComplete <- r
             if needToNotify then
@@ -981,6 +983,7 @@ let recomputePlayerStateSummary() =
     let mutable haveRecorder,haveLadder,haveAnyKey,haveCoastItem,haveWhiteSwordItem,havePowerBracelet,haveRaft,playerHearts = false,false,false,false,false,false,false,3
     let mutable swordLevel,candleLevel,ringLevel,haveBow,arrowLevel,haveWand,haveBookOrShield,boomerangLevel = 0,0,0,false,0,false,false,0
     let mutable haveSword4 = false
+    let mutable progressiveSwords = 0   // each progressive sword marked as obtained bumps the sword level by 1
     for b in DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() do
         if b.PlayerHas() = PlayerHas.YES then
             if b.CellCurrent() = ITEMS.RECORDER then
@@ -1022,6 +1025,8 @@ let recomputePlayerStateSummary() =
                 arrowLevel <- max arrowLevel 1
             elif b.CellCurrent() = ITEMS.WOODSWORD then
                 swordLevel <- max swordLevel 1
+            elif b.CellCurrent() = ITEMS.PROGRESSIVESWORD then
+                progressiveSwords <- progressiveSwords + 1
             elif b.CellCurrent() = ITEMS.WHITESWORD4 then
                 swordLevel <- max swordLevel 2
                 haveSword4 <- true
@@ -1077,7 +1082,11 @@ let recomputePlayerStateSummary() =
     if mapHas ITEMS.WHITESWORD || mapHas ITEMS.WHITESWORD4 then swordLevel <- max swordLevel 2
     if mapHas ITEMS.WHITESWORD4 then haveSword4 <- true
     if mapHas ITEMS.MAGICALSWORD then swordLevel <- 3
-    if mapHas ITEMS.PROGRESSIVESWORD then swordLevel <- min 3 (swordLevel + 1)
+    progressiveSwords <- progressiveSwords + mapCollectedCount.[ITEMS.PROGRESSIVESWORD]
+    for _ in 1 .. progressiveSwords do   // each one is the next sword up: wood > white > magical > 4th sword (the max)
+        if not haveSword4 then
+            if swordLevel >= 3 then (if TrackerModelOptions.FourthSwordEnabled then haveSword4 <- true)   // the 4th sword is only reachable if that option is on
+            else swordLevel <- swordLevel + 1
     if mapHas ITEMS.BLUECANDLE then candleLevel <- max candleLevel 1
     if mapHas ITEMS.REDCANDLE then candleLevel <- 2
     if mapHas ITEMS.BLUERING then ringLevel <- max ringLevel 1
@@ -1231,6 +1240,7 @@ type MapStateSummary(dungeonLocations,anyRoadLocations,armosLocation,sword3Locat
     member _this.FirstQuestOnlyInterestingMarks = firstQuestOnlyInterestingMarks
     member _this.SecondQuestOnlyInterestingMarks = secondQuestOnlyInterestingMarks
 let mutable mapStateSummary = MapStateSummary(null,null,NOTFOUND,NOTFOUND,NOTFOUND,NOTFOUND,0,Array2D.zeroCreate 16 8,null,0,null,null,null)
+let owSpotTypeCounts : int[] = Array.zeroCreate 7   // remaining unmarked OW spots by type: burn, bomb, push, ladder, raft, whistle, open
 let mapStateSummaryComputedEvent = new Event<_>()
 let mapStateSummaryLastComputedTime = new LastChangedTime()
 let recomputeMapStateSummary() =
@@ -1597,8 +1607,8 @@ type HintZone =
         | NEAR_START -> 9
         | FOREST -> 10
 let GetLevelHint, SetLevelHint, LevelHintChanged = 
-    let levelHints = Array.create 11 HintZone.UNKNOWN   // 0-8 is L1-9, 9 is WS, 10 is MS
-    let levelHintChangeEvents = Array.init 11 (fun _ -> new Event<_>())
+    let levelHints = Array.create 13 HintZone.UNKNOWN   // 0-8 is L1-9, 9 is WS, 10 is MS, 11 is ladder item, 12 is armos item (the last two are not saved)
+    let levelHintChangeEvents = Array.init 13 (fun _ -> new Event<_>())
     let GetLevelHint(i) = levelHints.[i]
     let SetLevelHint(i,v) = levelHints.[i] <- v; levelHintChangeEvents.[i].Trigger(v)
     let LevelHintChanged(i) = levelHintChangeEvents.[i].Publish
@@ -1783,6 +1793,18 @@ let allUIEventingLogic(ite : ITrackerEvents) =
         for j = 0 to 7 do
             if mapStateSummary.OwGettableLocations.[i,j] then
                 remain <- remain + 1
+    // per-type breakdown of the remaining (unmarked) spots: burn, bomb, push, ladder, raft, whistle, open
+    for k in 0..6 do owSpotTypeCounts.[k] <- 0
+    for i = 0 to 15 do
+        for j = 0 to 7 do
+            if not(owInstance.AlwaysEmpty(i,j)) && overworldMapMarks.[i,j].Current() = -1 then
+                if owInstance.Burnable(i,j) then owSpotTypeCounts.[0] <- owSpotTypeCounts.[0] + 1
+                if owInstance.Bombable(i,j) then owSpotTypeCounts.[1] <- owSpotTypeCounts.[1] + 1
+                if owInstance.PowerBraceletable(i,j) || owInstance.GravePushable(i,j) then owSpotTypeCounts.[2] <- owSpotTypeCounts.[2] + 1
+                if owInstance.Ladderable(i,j) then owSpotTypeCounts.[3] <- owSpotTypeCounts.[3] + 1
+                if owInstance.Raftable(i,j) then owSpotTypeCounts.[4] <- owSpotTypeCounts.[4] + 1
+                if owInstance.Whistleable(i,j) then owSpotTypeCounts.[5] <- owSpotTypeCounts.[5] + 1
+                if owInstance.Nothingable(i,j) then owSpotTypeCounts.[6] <- owSpotTypeCounts.[6] + 1
     ite.OverworldSpotsRemaining(mapStateSummary.OwSpotsRemain, remain)
     if mapStateSummary.OwSpotsRemain <> priorOWSpotsRemain then
         priorOWSpotsRemain <- mapStateSummary.OwSpotsRemain
@@ -2051,6 +2073,7 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         // items
         all.Add(TimelineItemDescription.ItemBox("LadderBox", ladderBox))
         all.Add(TimelineItemDescription.ItemBox("ArmosBox", armosBox))
+        all.Add(TimelineItemDescription.ItemBox("MagicalSwordCaveBox", sword3Box))
         all.Add(TimelineItemDescription.ItemBox("WhiteSwordBox", sword2Box))
         if IsHiddenDungeonNumbers() then
             for i = 0 to 8 do
@@ -2059,7 +2082,7 @@ type TimelineItemModel(desc: TimelineItemDescription) =
                         all.Add(TimelineItemDescription.ItemBox(sprintf "Level%dBox%d" (i+1) (j+1), GetDungeon(i).Boxes.[j]))
         else
             all.Add(TimelineItemDescription.ItemBox("Level1or4Box3", DungeonTrackerInstance.TheDungeonTrackerInstance.FinalBoxOf1Or4))
-            all.Add(TimelineItemDescription.ItemBox("Level2Box3", level2StairBox))
+            all.Add(TimelineItemDescription.ItemBox("Level2Box3", level2StairBox))   // the optional extra level 2 staircase slot
             for i = 0 to 8 do
                 for j = 0 to 2 do
                     if j=0 || j=1 || i=7 then
@@ -2074,6 +2097,7 @@ let initializeAll(instance:OverworldData.OverworldInstance, kind) =
     if mapSquareChoiceDomain = null then
         mapSquareChoiceDomain <- ChoiceDomain("mapSquare", overworldTiles(instance.Quest.IsFirstQuestOW,false) |> Array.map (fun (_,x,_,_) -> x))
         mapSquareChoiceDomain.Changed.Add(fun _ -> mapLastChangedTime.SetNow())
+        mapSquareChoiceDomain.Changed.Add(fun x -> mapSquareChangedStable.Trigger(x))
         overworldMapMarks <- Array2D.init 16 8 (fun _ _ -> new Cell(mapSquareChoiceDomain))  
     else
         failwith "cannot initialize mapSquareChoiceDomain twice"
@@ -2100,6 +2124,7 @@ let reinitializeOverworld(newInstance: OverworldData.OverworldInstance) =
     // Replace ChoiceDomain (new quest may have different maxUses for a few tile types)
     mapSquareChoiceDomain <- ChoiceDomain("mapSquare", overworldTiles(newInstance.Quest.IsFirstQuestOW, false) |> Array.map (fun (_,x,_,_) -> x))
     mapSquareChoiceDomain.Changed.Add(fun _ -> mapLastChangedTime.SetNow())
+    mapSquareChoiceDomain.Changed.Add(fun x -> mapSquareChangedStable.Trigger(x))
 
     // Replace Cell array (all reads of overworldMapMarks.[i,j] will now use new cells)
     overworldMapMarks <- Array2D.init 16 8 (fun _ _ -> new Cell(mapSquareChoiceDomain))
@@ -2118,5 +2143,6 @@ let reinitializeOverworld(newInstance: OverworldData.OverworldInstance) =
                 // else: was AlwaysEmpty (DARK_X auto-set), was empty (-1), or mark already used elsewhere → leave at -1
 
     recomputeMapStateSummary()
+    for d in 0..8 do mapSquareChangedStable.Trigger((mapSquareChoiceDomain,d))   // refresh each dungeon's found/located display against the new domain
     overworldQuestChanged.Trigger()   // notify listeners (e.g. Reminders) to reset cached spot counts
 

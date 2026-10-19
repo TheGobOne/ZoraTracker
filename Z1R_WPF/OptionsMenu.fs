@@ -820,20 +820,6 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let rb3 = new RadioButton(Content=new TextBox(Text="Full size broadcast",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
-    let rb2 = new RadioButton(Content=new TextBox(Text="2/3 size broadcast",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
-    let rb1 = new RadioButton(Content=new TextBox(Text="1/3 size broadcast",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
-    match TrackerModelOptions.BroadcastWindowSize with
-    | 3 -> rb3.IsChecked <- System.Nullable.op_Implicit true
-    | 2 -> rb2.IsChecked <- System.Nullable.op_Implicit true
-    | 1 -> rb1.IsChecked <- System.Nullable.op_Implicit true
-    | _ -> failwith "impossible BroadcastWindowSize"
-    rb3.Checked.Add(fun _ -> TrackerModelOptions.BroadcastWindowSize <- 3; broadcastWindowOptionChanged.Trigger())
-    rb2.Checked.Add(fun _ -> TrackerModelOptions.BroadcastWindowSize <- 2; broadcastWindowOptionChanged.Trigger())
-    rb1.Checked.Add(fun _ -> TrackerModelOptions.BroadcastWindowSize <- 1; broadcastWindowOptionChanged.Trigger())
-    options3sp.Children.Add(rb3) |> ignore
-    options3sp.Children.Add(rb2) |> ignore
-    options3sp.Children.Add(rb1) |> ignore
 
     let cb = new CheckBox(Content=new TextBox(Text="Include overworld magnifier",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value

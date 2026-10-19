@@ -1,6 +1,10 @@
 ﻿module SaveAndLoad
 
-let AutoSaveFilename = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "zt-save-zz-autosave.json")
+// all save files (manual, completed and autosave) live in a 'Saves' folder next to the program
+let SavesDirectory = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Saves")
+let EnsureSavesDirectory() =
+    try System.IO.Directory.CreateDirectory(SavesDirectory) |> ignore with _ -> ()
+let AutoSaveFilename = System.IO.Path.Combine(SavesDirectory, "zt-save-zz-autosave.json")
 
 [<AllowNullLiteral>]
 type Overworld() =
@@ -120,6 +124,7 @@ type StartingItemsAndExtrasModel() =
     member val PlayerHasAnyKey = false with get,set
     member val PlayerHasBook = false with get,set
     member val PlayerHasMeat = false with get,set
+    member val PlayerHasLetter = false with get,set
     member val MaxHeartsDifferential = 0 with get,set
     static member Create() =
         let r = new StartingItemsAndExtrasModel()
@@ -140,6 +145,7 @@ type StartingItemsAndExtrasModel() =
         r.PlayerHasAnyKey <- TrackerModel.startingItemsAndExtras.PlayerHasAnyKey.Value()
         r.PlayerHasBook <- TrackerModel.startingItemsAndExtras.PlayerHasBook.Value()
         r.PlayerHasMeat <- TrackerModel.startingItemsAndExtras.PlayerHasMeat.Value()
+        r.PlayerHasLetter <- TrackerModel.startingItemsAndExtras.PlayerHasLetter.Value()
         r.MaxHeartsDifferential <- TrackerModel.startingItemsAndExtras.MaxHeartsDifferential
         r
     member this.Apply() =
@@ -161,6 +167,7 @@ type StartingItemsAndExtrasModel() =
         TrackerModel.startingItemsAndExtras.PlayerHasAnyKey.Set(this.PlayerHasAnyKey)
         TrackerModel.startingItemsAndExtras.PlayerHasBook.Set(this.PlayerHasBook)
         TrackerModel.startingItemsAndExtras.PlayerHasMeat.Set(this.PlayerHasMeat)
+        TrackerModel.startingItemsAndExtras.PlayerHasLetter.Set(this.PlayerHasLetter)
         TrackerModel.startingItemsAndExtras.MaxHeartsDifferential <- this.MaxHeartsDifferential
 
 [<AllowNullLiteral>]
@@ -283,6 +290,7 @@ let SaveStartingItemsAndExtras(prefix) =
     lines.Add(sprintf """    "PlayerHasAnyKey": %b,""" m.PlayerHasAnyKey)
     lines.Add(sprintf """    "PlayerHasBook": %b,""" m.PlayerHasBook)
     lines.Add(sprintf """    "PlayerHasMeat": %b,""" m.PlayerHasMeat)
+    lines.Add(sprintf """    "PlayerHasLetter": %b,""" m.PlayerHasLetter)
     lines.Add(sprintf """    "MaxHeartsDifferential": %d,""" m.MaxHeartsDifferential)
     lines.Add("""},""")
     lines |> Seq.map (fun s -> prefix+s) |> Seq.toArray
@@ -401,10 +409,11 @@ let SaveAll(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:str
         |]
     let filename = 
         match saveType with
-        | ManualSave -> System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "zt-save-manual-" + System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".json")
-        | FinishedSave -> System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "zt-save-completed-" + System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".json")
+        | ManualSave -> System.IO.Path.Combine(SavesDirectory, "zt-save-manual-" + System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".json")
+        | FinishedSave -> System.IO.Path.Combine(SavesDirectory, "zt-save-completed-" + System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".json")
         | AutoSave -> AutoSaveFilename
     //let filename = "J:\\-impossiblesdkgfjhsdg;kdahfskjgfdhsgfh;lahjds;ljfdhs;ljfhldashfldashlfadshgflhjdgflajdgfjkl"  // test errors
+    EnsureSavesDirectory()
     System.IO.File.WriteAllLines(filename, lines)
     match saveType with
     | AutoSave -> System.IO.File.SetCreationTime(filename, System.DateTime.Now)

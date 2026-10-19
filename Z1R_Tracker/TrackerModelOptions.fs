@@ -116,6 +116,7 @@ let mutable ListenForSpeech = Bool(false)
 let mutable RequirePTTForSpeech = Bool(false)
 let mutable PlaySoundWhenUseSpeech = Bool(true)
 let mutable BOARDInsteadOfLEVEL = Bool(false)
+let mutable FourthSwordEnabled = false   // per-game start-screen choice (not saved in settings): true = the 4th sword is the max sword level and the level 2 staircase box is enabled; false = magical sword is the max
 // custom item-menu layouts made by Shift+dragging icons in the item-box / overworld-tile menus: menu name -> item key in each cell order ('' = empty cell)
 let MenuLayouts = new System.Collections.Generic.Dictionary<string,string[]>()
 let mutable UseOldPotionLetterIcons = Bool(true)   // the old potion/letter icons are always used now (no longer an option)
@@ -146,6 +147,8 @@ let mutable ReminderIntervalMinutes = 5
 let mutable PreferredVoice = ""
 let mutable MainWindowLT = ""
 let mutable BroadcastWindowLT = ""
+let mutable MainWindowScale = 0.0     // the main window's content scale (0 = never resized); the window size is saved as this scale
+let mutable BroadcastWindowWH = ""    // the broadcast window's width,height
 let mutable HotKeyWindowLTWH = ""
 let mutable OverlayLocatorWindowLTWH = ""
 let mutable MouseMagnifierWindowLTWH = ""
@@ -260,6 +263,8 @@ type ReadWrite() =
     member val ReminderIntervalMinutes = 5 with get,set
     member val MainWindowLT = "" with get,set
     member val BroadcastWindowLT = "" with get,set
+    member val MainWindowScale = 0.0 with get,set
+    member val BroadcastWindowWH = "" with get,set
     member val HotKeyWindowLTWH = "" with get, set
     member val OverlayLocatorWindowLTWH = "" with get, set
     member val MouseMagnifierWindowLTWH = "" with get, set
@@ -383,6 +388,8 @@ let private writeImpl(filename) =
     data.ReminderIntervalMinutes <- ReminderIntervalMinutes
     data.MainWindowLT <- MainWindowLT
     data.BroadcastWindowLT <- BroadcastWindowLT
+    data.MainWindowScale <- MainWindowScale
+    data.BroadcastWindowWH <- BroadcastWindowWH
     data.HotKeyWindowLTWH <- HotKeyWindowLTWH
     data.OverlayLocatorWindowLTWH <- OverlayLocatorWindowLTWH
     data.MouseMagnifierWindowLTWH <- MouseMagnifierWindowLTWH
@@ -516,6 +523,8 @@ let private read(filename) =
         ReminderIntervalMinutes <- max 1 (min 60 data.ReminderIntervalMinutes)
         MainWindowLT <- data.MainWindowLT
         BroadcastWindowLT <- data.BroadcastWindowLT
+        MainWindowScale <- (if data.MainWindowScale >= 0.4 && data.MainWindowScale <= 4.0 then data.MainWindowScale else 0.0)
+        BroadcastWindowWH <- (if data.BroadcastWindowWH = null then "" else data.BroadcastWindowWH)
         HotKeyWindowLTWH <- data.HotKeyWindowLTWH
         OverlayLocatorWindowLTWH <- data.OverlayLocatorWindowLTWH
         MouseMagnifierWindowLTWH <- data.MouseMagnifierWindowLTWH

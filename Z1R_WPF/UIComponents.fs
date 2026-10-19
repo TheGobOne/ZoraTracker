@@ -21,7 +21,8 @@ let MakeMagnifier(mirrorOverworldFEs:ResizeArray<FrameworkElement>, owMapNum, ow
     let ENLARGE = 8.
     let POP = 1  // width of entrance border
     let BT = 2.  // border thickness of the interior 3x3 grid of tiles
-    let dungeonTabsOverlay = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(5.), Background=Brushes.Black, Opacity=0., IsHitTestVisible=false)
+    let dungeonTabsOverlay = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(5.), Background=Brushes.Black, Opacity=0., IsHitTestVisible=false,
+                                    Width=3.+39.*8.+12.*7.+3.+42., Height=float(2*DungeonUI.TH + 3 + 27*8 + 12*7 + 3 + 6 - DungeonUI.TH))  // exactly covers the dungeon tab area beneath it
     let DTOCW,DTOCH = 3.*16.*ENLARGE + 4.*BT, 3.*11.*ENLARGE + 4.*BT
     let dungeonTabsOverlayContent = new Canvas(Width=DTOCW, Height=DTOCH)
     if owMapNum=4 then  // disable magnifier on blank/custom map
@@ -47,6 +48,10 @@ let MakeMagnifier(mirrorOverworldFEs:ResizeArray<FrameworkElement>, owMapNum, ow
                                     FontSize=12., HorizontalContentAlignment=HorizontalAlignment.Center)
         dtocLegend.Children.Add(text) |> ignore
     dtocPlusLegend.Children.Add(dtocLegend) |> ignore
+    dtocPlusLegend.LayoutTransform <- new ScaleTransform(1.06, 1.06)   // grow the magnified map slightly, to halve the empty black margin around it
+    RenderOptions.SetBitmapScalingMode(dtocPlusLegend, BitmapScalingMode.NearestNeighbor)
+    dtocPlusLegend.HorizontalAlignment <- HorizontalAlignment.Center
+    dtocPlusLegend.VerticalAlignment <- VerticalAlignment.Center
     dungeonTabsOverlay.Child <- dtocPlusLegend
     let overlayTiles = Array2D.zeroCreate 16 8
     for i = 0 to 15 do
@@ -185,6 +190,8 @@ let RecorderEllipseColor() =
         recorderEllipseNewDungeonsColor
     else
         recorderEllipseVanillaColor
+let mutable legendStartX = 0.   // x of the Start Spot box
+let mutable legendStartButton : System.Windows.Controls.Button = null   // the Start Spot box (so neighbors can copy its gap to the 1Q/2Q button)
 let mutable legendAfterStartX = 0.   // x just right of the Start Spot box (plus the legend gap); the 1Q/2Q button is placed here
 let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
     let makeStartIcon() = 
@@ -239,48 +246,45 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
     let BG = Graphics.freeze(new SolidColorBrush(Color.FromArgb(255uy,0uy,0uy,0uy)))
     let legendCanvas = new Canvas(Width=586., Height=float(11*3), Background=BG)
     // everything after the "LEGEND - " label starts one space-width to the right of the dash (the same gap as between the D and the dash)
-    let legendShift =
-        let typeface = new Typeface(SystemFonts.MessageFontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal)
-        let measure(t:string) = (new FormattedText(t, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, typeface, 12., Brushes.Black, 1.0)).WidthIncludingTrailingWhitespace
-        let dashRight = 2. + measure "LEGEND -"   // 2px = TextBox inner left margin
-        (dashRight + measure " ") - 58. - 13.   // (extra -13: everything right of LEGEND moved 13px left on request)   // 58. is where the Any Road icon is placed below, before this adjustment
-    // Spacing of everything after the Any Road section: the same visible gap as between the dash in "LEGEND -" and the Any Road icon.
-    let legendXs =
-        let typeface = new Typeface(SystemFonts.MessageFontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal)
-        let measure(t:string) = (new FormattedText(t, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, typeface, 12., Brushes.Black, 1.0)).WidthIncludingTrailingWhitespace
-        let measureLines(t:string) = t.Split('\n') |> Array.map measure |> Array.max
-        let visibleLeft(bmp:System.Drawing.Bitmap) =
+    let visibleLeft(bmp:System.Drawing.Bitmap) =
             let mutable minX = bmp.Width
             for x = 0 to bmp.Width-1 do
                 for y = 0 to bmp.Height-1 do
                     let p = bmp.GetPixel(x,y)
                     if p.A > 0uy && (p.R > 12uy || p.G > 12uy || p.B > 12uy) && x < minX then minX <- x
             float(if minX = bmp.Width then 0 else minX)
-        let dashRight = 2. + measure "LEGEND -"
+    // the 'LEGEND -' label is gone: the Any Road icon's visible left edge sits at x=0, the left edge of the row
+    let legendShift = -(visibleLeft(Graphics.theFullTileBmpTable.[9].[0])) - 58.
+    // Spacing of everything after the Any Road section: the same visible gap as between the dash in "LEGEND -" and the Any Road icon.
+    let legendXs =
+        let typeface = new Typeface(SystemFonts.MessageFontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal)
+        let measure(t:string) = (new FormattedText(t, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, typeface, 12., Brushes.Black, 1.0)).WidthIncludingTrailingWhitespace
+        let measureLines(t:string) = t.Split('\n') |> Array.map measure |> Array.max
         let anyRoadX = 58. + legendShift
-        let g = max ((anyRoadX + visibleLeft(Graphics.theFullTileBmpTable.[9].[0])) - dashRight) (measure " ")
+        let g = measure " " + 14.   // a bit more room between Any Road, Dungeon (Completed) and Recorder Destination
         let tileLeft = visibleLeft(Graphics.theFullTileBmpTable.[0].[0])
         let anyRoadTextRight = anyRoadX + 33. + 2. + measureLines "Any Road\n(Warp)"
         let dungeonX = anyRoadTextRight + g - tileLeft
         let dungeonTextRight = dungeonX + 35. + 2. + measureLines "Dungeon\n(Completed)"
         let recorderX = dungeonTextRight + g - tileLeft
         let dotsX = recorderX + 100.   // original spot: right next to the word 'Recorder' (371 vs the recorder icon at 271)
-        let dotsRight = dotsX + measure "..." + 14.
-        let customWaypointX = dotsRight + g
-        let startX = customWaypointX + 29. + g
-        dungeonX, recorderX, dotsX, customWaypointX, startX, startX + OMTW*1.45 + g
+        let _dotsRight = dotsX + measure "..." + 14.
+        let customWaypointX = ITEM_PROGRESS_FIRST_ITEM + 7.*30. + visibleLeft(Graphics.red_candle_bmp)   // aligned with the left of the candle icon (item slot 7) in the item row below
+        let boxGap = 7.   // the circle, Start Spot, 1Q/2Q and hint boxes sit close together
+        let startX = customWaypointX + 29. + boxGap
+        dungeonX, recorderX, dotsX, customWaypointX, startX, startX + OMTW*1.45 + boxGap
     let dungeonLegendX, recorderLegendX, dotsLegendX, customWaypointLegendX, startLegendX, afterStartLegendX = legendXs
     legendAfterStartX <- afterStartLegendX
+    legendStartX <- startLegendX
     let dungeonLegendIconCanvas = new Canvas(Width=float(16*3), Height=float(11*3))
     let dungeonLegendIconArea = new Canvas(Width=15., Height=float(11*3), Background=Brushes.White, Opacity=0.0001)   // to respond to mouse hover
     canvasAdd(legendCanvas, dungeonLegendIconCanvas, dungeonLegendX, 0.)
-    let recorderDestinationButtonCanvas = new Canvas(Width=OMTW, Height=float(11*3), Background=BG, ClipToBounds=true)
+    let recorderDestinationButtonCanvas = new Canvas(Width=OMTW, Height=float(11*3), Background=Brushes.Transparent, ClipToBounds=true)   // transparent (still clickable) so it can't cover the end of the 'Dungeon (Completed)' text
     let recorderDestinationMouseHoverHighlight = new Shapes.Rectangle(Width=OMTW, Height=float(11*3), Stroke=Brushes.DarkCyan, StrokeThickness=1., Opacity=0.)
     //let recorderEllipse = new Shapes.Ellipse(Width=float(11*3)-2.+12.0, Height=float(11*3)-2.+6., Stroke=RecorderEllipseColor(), StrokeThickness=3.0, IsHitTestVisible=false)
     let recorderEllipse = new Shapes.Rectangle(Width=35., Height=35., Stroke=RecorderEllipseColor(), StrokeThickness=3.0, IsHitTestVisible=false, RenderTransform=DungeonUI.fortyFiveDegrees)
 
-    let legendTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), Text="LEGEND - ", Height=float(11*3), VerticalContentAlignment=VerticalAlignment.Center)
-    canvasAdd(legendCanvas, legendTB, 0., 0.)
+    let _legendTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), Text="LEGEND - ", Height=float(11*3), VerticalContentAlignment=VerticalAlignment.Center)
     let tb = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), Text="Dungeon\n(Completed)")
     canvasAdd(legendCanvas, tb, dungeonLegendX+35., 0.)
     canvasAdd(legendCanvas, recorderDestinationButtonCanvas, recorderLegendX, 0.)
@@ -378,6 +382,7 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
     canvasAdd(legendStartIconButtonCanvas, tb, 0.8*OMTW, 0.)
     let legendStartIconButton = new Button(Content=legendStartIconButtonCanvas)
     canvasAdd(legendCanvas, legendStartIconButton, startLegendX, 0.)
+    legendStartButton <- legendStartIconButton
     let makeIconButtonBehavior(prefix, name, makeIcon, iconOffsetX, iconOffsetY, setIconXY) = (fun () ->
         if not popupIsActive then
             popupIsActive <- true
@@ -463,6 +468,8 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
 
     recorderDestinationButtonCanvas, anyRoadLegendIcon, dungeonLegendIconArea, updateCurrentRecorderDestinationNumeral, legendCanvas, startIcon, theCustomWaypointIcon
 
+// set by WPFUI: refreshes the whole UI after the player manually changes an item in the item progress bar
+let mutable itemProgressChanged : unit -> unit = fun () -> ()
 let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     // item progress
     let itemProgressCanvas = new Canvas(Width=16.*OMTW, Height=30.)
@@ -470,23 +477,18 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     tb.IsHitTestVisible <- false
     itemProgressCanvas.MouseMove.Add(fun ea ->
         let pos = ea.GetPosition(itemProgressCanvas)
-        let x = pos.X - ITEM_PROGRESS_FIRST_ITEM
-        if x > 120. && x < 150. then
-            showArrowLocator()
-        if x >  30. && x <  60. then
-            showLocatorInstanceFunc(owInstance.Burnable)
-        if x > 240. && x < 270. then
-            showLocatorInstanceFunc(owInstance.Ladderable)
-        if x > 270. && x < 300. then
-            showLocatorInstanceFunc(owInstance.Whistleable)
-        if x > 300. && x < 330. then
-            showLocatorInstanceFunc(owInstance.PowerBraceletable)
-        if x > 330. && x < 360. then
-            showLocatorInstanceFunc(owInstance.Raftable)
-        if x > 360. && x < 390. then
-            showKeyLocator()
-        if x > 390. && x < 420. then
-            showMeatLocator()
+        let slot = int (floor ((pos.X - ITEM_PROGRESS_FIRST_ITEM) / 30.))
+        // slots are 30px wide, in this order: sword, arrow, bow, ladder, power bracelet, recorder, raft, candle, ring, wand, key, boomerang, meat, book, letter
+        match slot with
+        | 1 -> showArrowLocator()
+        | 3 -> showLocatorInstanceFunc(owInstance.Ladderable)
+        | 4 -> showLocatorInstanceFunc(owInstance.PowerBraceletable)
+        | 5 -> showLocatorInstanceFunc(owInstance.Whistleable)
+        | 6 -> showLocatorInstanceFunc(owInstance.Raftable)
+        | 7 -> showLocatorInstanceFunc(owInstance.Burnable)
+        | 10 -> showKeyLocator()
+        | 12 -> showMeatLocator()
+        | _ -> ()
         )
     itemProgressCanvas.MouseLeave.Add(fun _ -> hideLocator())
 
@@ -503,6 +505,48 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     sword4.Opacity <- 0.
     canvasAdd(itemProgressCanvas, sword4, x, y)
     x <- x + DX
+    let grey_arrow = Graphics.BMPtoImage(Graphics.greyscale Graphics.silver_arrow_bmp)
+    let wood_arrow = Graphics.BMPtoImage Graphics.wood_arrow_bmp
+    let silver_arrow = Graphics.BMPtoImage Graphics.silver_arrow_bmp
+    for arrow in [grey_arrow; wood_arrow; silver_arrow] do
+        arrow.Opacity <- 0.
+        canvasAdd(itemProgressCanvas, arrow, x, y)
+    x <- x + DX
+    let have_bow = Graphics.BMPtoImage Graphics.bow_bmp
+    let grey_bow = Graphics.BMPtoImage(Graphics.greyscale Graphics.bow_bmp)
+    have_bow.Opacity <- 0.
+    grey_bow.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, have_bow, x, y)
+    canvasAdd(itemProgressCanvas, grey_bow, x, y)
+    x <- x + DX
+    let grey_ladder = Graphics.BMPtoImage(Graphics.greyscale Graphics.ladder_bmp)
+    let have_ladder = Graphics.BMPtoImage Graphics.ladder_bmp
+    grey_ladder.Opacity <- 0.
+    have_ladder.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, grey_ladder, x, y)
+    canvasAdd(itemProgressCanvas, have_ladder, x, y)
+    x <- x + DX
+    let grey_power_bracelet = Graphics.BMPtoImage(Graphics.greyscale Graphics.power_bracelet_bmp)
+    let have_power_bracelet = Graphics.BMPtoImage Graphics.power_bracelet_bmp
+    grey_power_bracelet.Opacity <- 0.
+    have_power_bracelet.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, grey_power_bracelet, x, y)
+    canvasAdd(itemProgressCanvas, have_power_bracelet, x, y)
+    x <- x + DX
+    let grey_recorder = Graphics.BMPtoImage(Graphics.greyscale Graphics.recorder_bmp)
+    let have_recorder = Graphics.BMPtoImage Graphics.recorder_bmp
+    grey_recorder.Opacity <- 0.
+    have_recorder.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, grey_recorder, x, y)
+    canvasAdd(itemProgressCanvas, have_recorder, x, y)
+    x <- x + DX
+    let grey_raft = Graphics.BMPtoImage(Graphics.greyscale Graphics.raft_bmp)
+    let have_raft = Graphics.BMPtoImage Graphics.raft_bmp
+    grey_raft.Opacity <- 0.
+    have_raft.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, grey_raft, x, y)
+    canvasAdd(itemProgressCanvas, have_raft, x, y)
+    x <- x + DX
     let grey_candle = Graphics.BMPtoImage(Graphics.greyscale Graphics.red_candle_bmp)
     let blue_candle = Graphics.BMPtoImage Graphics.blue_candle_bmp
     let red_candle = Graphics.BMPtoImage Graphics.red_candle_bmp
@@ -517,26 +561,33 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
         ring
         )
     x <- x + DX
-    let have_bow = Graphics.BMPtoImage Graphics.bow_bmp
-    let grey_bow = Graphics.BMPtoImage(Graphics.greyscale Graphics.bow_bmp)
-    have_bow.Opacity <- 0.
-    grey_bow.Opacity <- 0.
-    canvasAdd(itemProgressCanvas, have_bow, x, y)
-    canvasAdd(itemProgressCanvas, grey_bow, x, y)
-    x <- x + DX
-    let grey_arrow = Graphics.BMPtoImage(Graphics.greyscale Graphics.silver_arrow_bmp)
-    let wood_arrow = Graphics.BMPtoImage Graphics.wood_arrow_bmp
-    let silver_arrow = Graphics.BMPtoImage Graphics.silver_arrow_bmp
-    for arrow in [grey_arrow; wood_arrow; silver_arrow] do
-        arrow.Opacity <- 0.
-        canvasAdd(itemProgressCanvas, arrow, x, y)
-    x <- x + DX
     let have_wand = Graphics.BMPtoImage Graphics.wand_bmp
     let grey_wand = Graphics.BMPtoImage(Graphics.greyscale Graphics.wand_bmp)
     have_wand.Opacity <- 0.
     grey_wand.Opacity <- 0.
     canvasAdd(itemProgressCanvas, have_wand, x, y)
     canvasAdd(itemProgressCanvas, grey_wand, x, y)
+    x <- x + DX
+    let grey_key = Graphics.BMPtoImage(Graphics.greyscale Graphics.magic_key_bmp)
+    let have_key = Graphics.BMPtoImage Graphics.magic_key_bmp
+    grey_key.Opacity <- 0.
+    have_key.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, grey_key, x, y)
+    canvasAdd(itemProgressCanvas, have_key, x, y)
+    x <- x + DX
+    let grey_boomer = Graphics.BMPtoImage(Graphics.greyscale Graphics.magic_boomerang_bmp)
+    let wood_boomer = Graphics.BMPtoImage Graphics.boomerang_bmp
+    let magi_boomer = Graphics.BMPtoImage Graphics.magic_boomerang_bmp
+    for boo in [grey_boomer; wood_boomer; magi_boomer] do
+        boo.Opacity <- 0.
+        canvasAdd(itemProgressCanvas, boo, x, y)
+    x <- x + DX
+    let grey_meat = Graphics.BMPtoImage(Graphics.greyscale Graphics.bait_bmp)
+    let have_meat = Graphics.BMPtoImage Graphics.bait_bmp
+    grey_meat.Opacity <- 0.
+    have_meat.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, grey_meat, x, y)
+    canvasAdd(itemProgressCanvas, have_meat, x, y)
     x <- x + DX
     let have_book = Graphics.BMPtoImage Graphics.book_bmp
     let grey_book = Graphics.BMPtoImage(Graphics.greyscale Graphics.book_bmp)
@@ -546,54 +597,12 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
         book.Opacity <- 0.
         canvasAdd(itemProgressCanvas, book, x, y)
     x <- x + DX
-    let grey_boomer = Graphics.BMPtoImage(Graphics.greyscale Graphics.magic_boomerang_bmp)
-    let wood_boomer = Graphics.BMPtoImage Graphics.boomerang_bmp
-    let magi_boomer = Graphics.BMPtoImage Graphics.magic_boomerang_bmp
-    for boo in [grey_boomer; wood_boomer; magi_boomer] do
-        boo.Opacity <- 0.
-        canvasAdd(itemProgressCanvas, boo, x, y)
-    x <- x + DX
-    let grey_ladder = Graphics.BMPtoImage(Graphics.greyscale Graphics.ladder_bmp)
-    let have_ladder = Graphics.BMPtoImage Graphics.ladder_bmp
-    grey_ladder.Opacity <- 0.
-    have_ladder.Opacity <- 0.
-    canvasAdd(itemProgressCanvas, grey_ladder, x, y)
-    canvasAdd(itemProgressCanvas, have_ladder, x, y)
-    x <- x + DX
-    let grey_recorder = Graphics.BMPtoImage(Graphics.greyscale Graphics.recorder_bmp)
-    let have_recorder = Graphics.BMPtoImage Graphics.recorder_bmp
-    grey_recorder.Opacity <- 0.
-    have_recorder.Opacity <- 0.
-    canvasAdd(itemProgressCanvas, grey_recorder, x, y)
-    canvasAdd(itemProgressCanvas, have_recorder, x, y)
-    x <- x + DX
-    let grey_power_bracelet = Graphics.BMPtoImage(Graphics.greyscale Graphics.power_bracelet_bmp)
-    let have_power_bracelet = Graphics.BMPtoImage Graphics.power_bracelet_bmp
-    grey_power_bracelet.Opacity <- 0.
-    have_power_bracelet.Opacity <- 0.
-    canvasAdd(itemProgressCanvas, grey_power_bracelet, x, y)
-    canvasAdd(itemProgressCanvas, have_power_bracelet, x, y)
-    x <- x + DX
-    let grey_raft = Graphics.BMPtoImage(Graphics.greyscale Graphics.raft_bmp)
-    let have_raft = Graphics.BMPtoImage Graphics.raft_bmp
-    grey_raft.Opacity <- 0.
-    have_raft.Opacity <- 0.
-    canvasAdd(itemProgressCanvas, grey_raft, x, y)
-    canvasAdd(itemProgressCanvas, have_raft, x, y)
-    x <- x + DX
-    let grey_key = Graphics.BMPtoImage(Graphics.greyscale Graphics.magic_key_bmp)
-    let have_key = Graphics.BMPtoImage Graphics.magic_key_bmp
-    grey_key.Opacity <- 0.
-    have_key.Opacity <- 0.
-    canvasAdd(itemProgressCanvas, grey_key, x, y)
-    canvasAdd(itemProgressCanvas, have_key, x, y)
-    x <- x + DX
-    let grey_meat = Graphics.BMPtoImage(Graphics.greyscale Graphics.bait_bmp)
-    let have_meat = Graphics.BMPtoImage Graphics.bait_bmp
-    grey_meat.Opacity <- 0.
-    have_meat.Opacity <- 0.
-    canvasAdd(itemProgressCanvas, grey_meat, x, y)
-    canvasAdd(itemProgressCanvas, have_meat, x, y)
+    let have_letter = Graphics.BMPtoImage Graphics.old_letter_bmp
+    let grey_letter = Graphics.BMPtoImage(Graphics.greyscale Graphics.old_letter_bmp)
+    have_letter.Opacity <- 0.
+    grey_letter.Opacity <- 0.
+    canvasAdd(itemProgressCanvas, have_letter, x, y)
+    canvasAdd(itemProgressCanvas, grey_letter, x, y)
 
     let redrawItemProgressBar() = 
         let hasSword4 = (TrackerModel.playerHasSword4.Value = 1)
@@ -655,6 +664,16 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
             have_key.Opacity <- 1.; grey_key.Opacity <- 0.
         else
             have_key.Opacity <- 0.; grey_key.Opacity <- 1.
+        // letter: lit when marked here, when the letter is marked on the overworld map, or when a Letter item has been obtained in a dungeon box / checked off on the map
+        let haveLetter =
+            TrackerModel.startingItemsAndExtras.PlayerHasLetter.Value() || TrackerModel.havePotionLetter.Value ||
+            TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.LETTER] > 0 ||
+            (TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() 
+             |> Seq.exists (fun b -> b.CellCurrent() = TrackerModel.ITEMS.LETTER && b.PlayerHas() = TrackerModel.PlayerHas.YES))
+        if haveLetter then
+            have_letter.Opacity <- 1.; grey_letter.Opacity <- 0.
+        else
+            have_letter.Opacity <- 0.; grey_letter.Opacity <- 1.
         // meat: lights up once a Meat item has been marked as obtained in any dungeon item box
         let haveMeat = 
             TrackerModel.startingItemsAndExtras.PlayerHasMeat.Value() ||
@@ -665,6 +684,58 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
             have_meat.Opacity <- 1.; grey_meat.Opacity <- 0.
         else
             have_meat.Opacity <- 0.; grey_meat.Opacity <- 1.
+    // manual tracking: left-click an item to cycle it forward (e.g. sword: none > wood > white > magical > 4th sword > none), right-click to cycle backward.
+    // These set the same 'starting items' flags the old Starting Items popup did, so the rest of the tracker (routing, timeline, saves) just works.
+    let stepItem(slot:int, dir:int) =
+        let s = TrackerModel.playerComputedStateSummary
+        let pp = TrackerModel.playerProgressAndTakeAnyHearts
+        let si = TrackerModel.startingItemsAndExtras
+        let cycleTo(cur:int, count:int, apply:int->unit) = apply(((cur + dir) % count + count) % count)
+        let flip(have:bool, p:TrackerModel.BoolProperty) = p.Set(not have)
+        match slot with
+        | 0 -> cycleTo((if TrackerModel.playerHasSword4.Value = 1 then 4 else s.SwordLevel), (if TrackerModelOptions.FourthSwordEnabled then 5 else 4), (fun n ->
+                    pp.PlayerHasWoodSword.Set(n>=1)
+                    si.PlayerHasWhiteSword.Set(n>=2)
+                    si.PlayerHasMagicalSword.Set(n>=3)
+                    si.PlayerHasSword4.Set(n>=4)))
+        | 1 -> cycleTo(s.ArrowLevel, 3, (fun n -> (pp.PlayerHasWoodArrow.Set(n>=1); si.PlayerHasSilverArrow.Set(n>=2))))
+        | 2 -> flip(s.HaveBow, si.PlayerHasBow)
+        | 3 -> flip(s.HaveLadder, si.PlayerHasLadder)
+        | 4 -> flip(s.HavePowerBracelet, si.PlayerHasPowerBracelet)
+        | 5 -> flip(s.HaveRecorder, si.PlayerHasRecorder)
+        | 6 -> flip(s.HaveRaft, si.PlayerHasRaft)
+        | 7 -> cycleTo(s.CandleLevel, 3, (fun n -> (pp.PlayerHasBlueCandle.Set(n>=1); si.PlayerHasRedCandle.Set(n>=2))))
+        | 8 -> cycleTo(s.RingLevel, 3, (fun n -> (pp.PlayerHasBlueRing.Set(n>=1); si.PlayerHasRedRing.Set(n>=2))))
+        | 9 -> flip(s.HaveWand, si.PlayerHasWand)
+        | 10 -> flip(s.HaveAnyKey, si.PlayerHasAnyKey)
+        | 11 -> cycleTo(s.BoomerangLevel, 3, (fun n -> (si.PlayerHasBoomerang.Set(n>=1); si.PlayerHasMagicBoomerang.Set(n>=2))))
+        | 12 -> 
+            let haveMeat = 
+                si.PlayerHasMeat.Value() || TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.MEAT] > 0 ||
+                (TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() 
+                 |> Seq.exists (fun b -> b.CellCurrent() = TrackerModel.ITEMS.MEAT && b.PlayerHas() = TrackerModel.PlayerHas.YES))
+            flip(haveMeat, si.PlayerHasMeat)
+        | 13 -> 
+            if TrackerModel.IsCurrentlyBook() then flip(s.HaveBookOrShield, si.PlayerHasBook)
+            else flip(pp.PlayerHasBoomBook.Value(), pp.PlayerHasBoomBook)
+        | 14 ->
+            let haveLetter =
+                si.PlayerHasLetter.Value() || TrackerModel.havePotionLetter.Value ||
+                TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.LETTER] > 0 ||
+                (TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() 
+                 |> Seq.exists (fun b -> b.CellCurrent() = TrackerModel.ITEMS.LETTER && b.PlayerHas() = TrackerModel.PlayerHas.YES))
+            flip(haveLetter, si.PlayerHasLetter)
+        | _ -> ()
+    let onItemClick(dir:int) =
+        fun (ea:Input.MouseButtonEventArgs) ->
+            if not popupIsActive then
+                let slot = int (floor ((ea.GetPosition(itemProgressCanvas).X - ITEM_PROGRESS_FIRST_ITEM) / 30.))
+                if slot >= 0 && slot <= 14 then
+                    stepItem(slot, dir)
+                    itemProgressChanged()
+                    ea.Handled <- true
+    itemProgressCanvas.MouseLeftButtonDown.Add(onItemClick(1))
+    itemProgressCanvas.MouseRightButtonDown.Add(onItemClick(-1))
     redrawItemProgressBar, itemProgressCanvas, tb
 
 let hintExplainer =

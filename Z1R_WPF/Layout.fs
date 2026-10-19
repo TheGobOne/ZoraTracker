@@ -13,9 +13,10 @@ let kittyWidth = THRU_MAIN_MAP_AND_ITEM_PROGRESS_H - THRU_MAIN_MAP_H
 
 // a small underlined 'Discord' text that opens the given url in the default browser when clicked
 let DiscordLinkWidth = 70.
-let MakeDiscordLink(url:string) : UIElement =
-    let tb = new TextBlock(Text="ZORA Discord", FontSize=10., Foreground=Brushes.Orange, TextDecorations=TextDecorations.Underline, TextAlignment=TextAlignment.Center,
-                            Width=DiscordLinkWidth, Background=Brushes.Transparent, Cursor=System.Windows.Input.Cursors.Hand, ToolTip=url)
+let RacingLinkWidth = 112.
+let MakeLinkText(text:string, url:string, width:float) : UIElement =
+    let tb = new TextBlock(Text=text, FontSize=10., Foreground=Brushes.Orange, TextDecorations=TextDecorations.Underline, TextAlignment=TextAlignment.Center,
+                            Width=width, Background=Brushes.Transparent, Cursor=System.Windows.Input.Cursors.Hand, ToolTip=url)
     tb.MouseEnter.Add(fun _ -> tb.Foreground <- Brushes.Yellow)
     tb.MouseLeave.Add(fun _ -> tb.Foreground <- Brushes.Orange)
     tb.MouseLeftButtonUp.Add(fun _ ->
@@ -25,6 +26,7 @@ let MakeDiscordLink(url:string) : UIElement =
             System.Diagnostics.Process.Start(psi) |> ignore
         with _ -> ())
     upcast tb
+let MakeDiscordLink(url:string) : UIElement = MakeLinkText("ZORA Discord", url, DiscordLinkWidth)
 
 // keep the 'Item Progress' label horizontally centered between the version button (left) and the first progress icon (right); needs real sizes, so done on SizeChanged
 let centerItemProgressLabel(ip:UIElement, vb:UIElement) =
@@ -66,6 +68,8 @@ let mutable iconMirror : UIElement = null
 let mutable zonesCheckBoxEl : UIElement = null
 let mutable coordsCheckBoxEl : UIElement = null
 let mutable topLeftIconsHooked = false
+let SMALL_BUTTON_W = 84.   // width of the Save / Hint Decoder / Hotkeys column (it has to fit between the OW stats and the Pause/Reset timer column)
+let mutable rightButtonForSizing : UIElement = null
 let mutable topLeftPlace : unit -> unit = fun () -> ()
 let hookTopLeftOnSizeChange(e:UIElement) =
     match e with
@@ -79,7 +83,7 @@ let tryLayoutTopLeftIcons() =
             let place() =
                 if m.ActualWidth > 0. && m.ActualHeight > 0. then
                     let w, h = m.ActualWidth, m.ActualHeight
-                    for e in [iconQuestion; iconEye; iconSave] do
+                    for e in [iconQuestion; iconEye] do
                         match e with
                         | :? FrameworkElement as f -> 
                             f.Width <- w
@@ -87,29 +91,44 @@ let tryLayoutTopLeftIcons() =
                         | _ -> ()
                     // everything above the Hint Decoder button is centered horizontally on that button
                     let hintLeft = WEBCAM_LINE-41.
-                    let hintCx = 
-                        match hintDecoderElementForCentering with
-                        | :? FrameworkElement as hd when hd.ActualWidth > 0. -> hintLeft + hd.ActualWidth / 2.
-                        | _ -> 562.   // (the middle of the 2x2 icon block's original spot, until the button has been measured)
+                    let hintCx = hintLeft + SMALL_BUTTON_W / 2.
                     let blockLeft = hintCx - (2.*w + 2.) / 2.
                     Canvas.SetLeft(iconQuestion, blockLeft)
                     Canvas.SetTop(iconQuestion, 0.)
                     Canvas.SetLeft(iconEye, blockLeft + w + 2.)
                     Canvas.SetTop(iconEye, 0.)
-                    Canvas.SetLeft(iconSave, blockLeft)
-                    Canvas.SetTop(iconSave, h + 2.)
+                    // the ? / eyeball / mirror icons are hidden (still laid out, so the measurements above keep working); only the Save button is shown
+                    for e in [iconQuestion; iconEye; iconMirror] do e.Visibility <- Visibility.Hidden
                     Canvas.SetLeft(iconMirror, blockLeft + w + 2.)
                     Canvas.SetTop(iconMirror, h + 2.)
-                    // stack zones above coords so coords ends just above the Hint Decoder button (top 108); never overlap the icon block above
+                    // zones and coords sit at the very top of the screen; Save goes right above the Hint Decoder button, and Hotkeys/Save/Hint Decoder are all the same size
                     match zonesCheckBoxEl, coordsCheckBoxEl with
                     | (:? FrameworkElement as z), (:? FrameworkElement as cc) when z.ActualHeight > 0. && cc.ActualHeight > 0. ->
-                        let coordsTop = 107. - cc.ActualHeight
-                        let zonesTop = max (2.*h + 4.) (coordsTop - z.ActualHeight)
-                        Canvas.SetTop(z, zonesTop)
+                        let top = max 0. ((58. - z.ActualHeight - cc.ActualHeight) / 2.)   // centered in the space above the Save button
+                        Canvas.SetTop(z, top)
                         Canvas.SetLeft(z, hintCx - z.ActualWidth / 2.)
                         Canvas.SetLeft(cc, hintCx - cc.ActualWidth / 2.)
-                        Canvas.SetTop(cc, max coordsTop (zonesTop + z.ActualHeight))
+                        Canvas.SetTop(cc, top + z.ActualHeight)
                     | _ -> ()
+                    // Save / Hint Decoder / Hotkeys line up row for row with the Pause/Reset timer, Spot Summary and Show/Run Custom buttons to their right, and match their height
+                    let rowH = 
+                        match rightButtonForSizing with
+                        | :? FrameworkElement as rb when rb.ActualHeight > 0. -> rb.ActualHeight
+                        | _ -> 28.
+                    for e, y in [iconSave, 60.; hintDecoderElementForCentering, 90.; hotkeysElementForCentering, 120.] do
+                        match e with
+                        | :? FrameworkElement as f ->
+                            match f with
+                            | :? Button as b ->
+                                b.BorderThickness <- Thickness(1.)   // slimmer border than the default button chrome
+                                b.Padding <- Thickness(0.)
+                                (match b.Content with | :? TextBox as t -> t.VerticalContentAlignment <- VerticalAlignment.Center; t.VerticalAlignment <- VerticalAlignment.Center | _ -> ())
+                            | _ -> ()
+                            if f.Width <> SMALL_BUTTON_W then f.Width <- SMALL_BUTTON_W
+                            if f.Height <> rowH then f.Height <- rowH
+                            Canvas.SetLeft(f, hintLeft)
+                            Canvas.SetTop(f, y)
+                        | _ -> ()
             m.SizeChanged.Add(fun _ -> place())
             topLeftPlace <- place
             place()
@@ -123,8 +142,12 @@ let centerVerticallyAt(e:UIElement, cy:float) =
     | _ -> ()
 // the item progress icons are drawn 3px into their 30px-high canvas, so the middle of the progress row is 15px below the canvas top
 let ITEM_PROGRESS_ROW_CENTER_Y = THRU_MAP_AND_LEGEND_H + 3. + 15.
+// the 'Item Progress' button is centered vertically on the sword icon (the first icon in the row, drawn 3px into the canvas)
+let SWORD_ICON_CENTER_Y = THRU_MAP_AND_LEGEND_H + 3. + 3. + float(Graphics.swordLevelToBmp(0).Height) / 2.
 // x center of the span between the inner left edge of the blue ring's red box and the inner right edge of the money hover icon's box (grid columns 4..7)
 let OW_STATS_CENTER_X = OW_ITEM_GRID_LOCATIONS.OFFSET + 180.
+// the 'OW spots left / gettable / cave highlight' block sits in the open space just right of the item grid (top, above the Zones/Coords checkboxes)
+let OW_STATS_BLOCK_CENTER_X = OW_ITEM_GRID_LOCATIONS.OFFSET + 294.
 
 type IApplicationLayoutBase =
     abstract member AddMainTracker : mainTracker:UIElement -> unit
@@ -139,7 +162,8 @@ type IApplicationLayoutBase =
     abstract member AddItemProgress : itemProgressCanvas:UIElement * itemProgressTB:UIElement -> unit
     abstract member AddVersionButton : vb:UIElement -> unit
     abstract member AddHintDecoderButton : tb:UIElement -> unit
-    abstract member AddKittyAndLogo : kitty:Image * logoBorder:UIElement * ztlogo:Image * discordLink:UIElement -> unit
+    abstract member AddExtraSiteLinks : zoraSiteLink:UIElement * racingSiteLink:UIElement -> unit
+    abstract member AddKittyAndLogo : kitty:Image * logoBorder:UIElement * ztlogo:Image * discordLink:UIElement * racingLink:UIElement -> unit
     abstract member AddShowHotKeysButton : showHotKeysButton:UIElement -> unit
     abstract member AddShowRunCustomButton : showRunCustomButton:UIElement -> unit
     abstract member AddSaveButton : saveButton:UIElement -> unit
@@ -186,8 +210,8 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddItemGridStuff(owItemGrid, _toggleBookShieldCheckBox, _bookIsAtlasCheckBox, highlightOpenCavesCheckBox, timerResetButton, spotSummaryTB, mirrorOW, 
                                         hideIconsEyeball, _moreFQSQoptionsButton, _ws_ms_bu_toggleButton) =
             canvasAdd(appMainCanvas, owItemGrid, OW_ITEM_GRID_LOCATIONS.OFFSET, 30.)
-            canvasAdd(appMainCanvas, highlightOpenCavesCheckBox, OW_STATS_CENTER_X-50., 100.)
-            centerHorizontallyAt(highlightOpenCavesCheckBox, OW_STATS_CENTER_X)
+            rightButtonForSizing <- timerResetButton
+            hookTopLeftOnSizeChange(timerResetButton)
             canvasAdd(appMainCanvas, timerResetButton, 12.8*OMTW, 60.)
             canvasAdd(appMainCanvas, spotSummaryTB, 12.8*OMTW, 90.)
             canvasAdd(appMainCanvas, hideIconsEyeball, WEBCAM_LINE+4.-10., 2.)
@@ -211,6 +235,7 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(appMainCanvas, currentTargetIcon, x - size - 2., y)
             Canvas.SetZIndex(linkIcon, 50)           // above the triforce chart (added later) so hovering/clicking Link always works
             Canvas.SetZIndex(currentTargetIcon, 50)
+            linkIcon.Visibility <- Visibility.Collapsed   // the Link routing icon is hidden too
             currentTargetIcon.Visibility <- Visibility.Collapsed   // routing still works; just don't show the destination box next to Link
         member this.AddWebcamLine() = () // the webcam area was always too small to be useful
         member this.AddOverworldCanvas(overworldCanvas) =
@@ -219,22 +244,22 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(appMainCanvas, legendCanvas, 0., THRU_MAIN_MAP_H)
         member this.AddItemProgress(itemProgressCanvas, itemProgressTB) = 
             canvasAdd(appMainCanvas, itemProgressCanvas, 0., THRU_MAP_AND_LEGEND_H + 3.)
-            canvasAdd(appMainCanvas, itemProgressTB, 50., THRU_MAP_AND_LEGEND_H + 10.)
+            canvasAdd(appMainCanvas, itemProgressTB, 0., THRU_MAP_AND_LEGEND_H + 10.)   // all the way left (the version button that used to share this space is gone)
             itemProgressLabelForCentering <- itemProgressTB
-            centerVerticallyAt(itemProgressTB, ITEM_PROGRESS_ROW_CENTER_Y)
-        member this.AddVersionButton(vb) = 
-            canvasAdd(appMainCanvas, vb, 0., THRU_MAP_AND_LEGEND_H + 7.)
-            centerItemProgressLabel(itemProgressLabelForCentering, vb)
-            centerVerticallyAt(vb, ITEM_PROGRESS_ROW_CENTER_Y)
+            centerVerticallyAt(itemProgressTB, SWORD_ICON_CENTER_Y)
+        member this.AddVersionButton(_vb) = ()   // the version button is no longer shown on the main screen
         member this.AddHintDecoderButton(tb) =
             canvasAdd(appMainCanvas, tb, WEBCAM_LINE-41., 108.)
             hintDecoderElementForCentering <- tb
             hookTopLeftOnSizeChange(tb)
             tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
-        member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement) =
-            let logoX = 16.*OMTW - kittyWidth - 12. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used
-            canvasAdd(appMainCanvas, kitty, logoX, THRU_MAIN_MAP_H + 3.)
+        member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, racingLink:UIElement) =
+            let logoX = 16.*OMTW - kittyWidth - 22. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used, nudged 10px left
             canvasAdd(appMainCanvas, discordLink, logoX - (DiscordLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2.)
+            canvasAdd(appMainCanvas, racingLink, logoX - (RacingLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2. - 15.)   // above the ZORA Discord link (the logo itself is no longer shown)
+        member this.AddExtraSiteLinks(zoraSiteLink, racingSiteLink) =
+            canvasAdd(appMainCanvas, zoraSiteLink, 0., 0.)   // (positioned together with the other links in WPFUI.placeLinkStack)
+            canvasAdd(appMainCanvas, racingSiteLink, 0., 0.)
         member this.AddShowHotKeysButton(showHotKeysButton) = 
             canvasAdd(appMainCanvas, showHotKeysButton, WEBCAM_LINE-41., 128.)
             hotkeysElementForCentering <- showHotKeysButton
@@ -263,11 +288,11 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(appMainCanvas, grabModeTextBlock, BLOCKERS_AND_NOTES_OFFSET, START_DUNGEON_AND_NOTES_AREA_H) // grab mode instructions
             canvasAdd(appMainCanvas, rightwardCanvas, BLOCKERS_AND_NOTES_OFFSET, START_DUNGEON_AND_NOTES_AREA_H)   // extra place for dungeonTabs to draw atop blockers/notes, e.g. hover minimaps
         member this.AddOWRemainingScreens(owRemainingScreensTextBox) =
-            canvasAdd(appMainCanvas, owRemainingScreensTextBox, OW_STATS_CENTER_X-55., 60.)
+            canvasAdd(appMainCanvas, owRemainingScreensTextBox, OW_STATS_CENTER_X-58., 0.)   // spots-left text with the per-type breakdown under it, all just above the Max Hearts box
             centerHorizontallyAt(owRemainingScreensTextBox, OW_STATS_CENTER_X)
         member this.AddOWGettableScreens(owGettableScreensCheckBox) =
-            canvasAdd(appMainCanvas, owGettableScreensCheckBox, OW_STATS_CENTER_X-50., 80.)
-            centerHorizontallyAt(owGettableScreensCheckBox, OW_STATS_CENTER_X)
+            canvasAdd(appMainCanvas, owGettableScreensCheckBox, OW_STATS_BLOCK_CENTER_X-50., 22.)
+            centerHorizontallyAt(owGettableScreensCheckBox, OW_STATS_BLOCK_CENTER_X)
         member this.AddCurrentMaxHearts(currentMaxHeartsTextBox) = 
             canvasAdd(appMainCanvas, currentMaxHeartsTextBox, OW_STATS_CENTER_X-56., 121.)
             centerHorizontallyAt(currentMaxHeartsTextBox, OW_STATS_CENTER_X)
@@ -412,8 +437,8 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddItemGridStuff(owItemGrid, _toggleBookShieldCheckBox, _bookIsAtlasCheckBox, highlightOpenCavesCheckBox, timerResetButton, spotSummaryTB, mirrorOW, 
                                         hideIconsEyeball, _moreFQSQoptionsButton, _ws_ms_bu_toggleButton) =
             canvasAdd(upper, owItemGrid, OW_ITEM_GRID_LOCATIONS.OFFSET, 30.)
-            canvasAdd(upper, highlightOpenCavesCheckBox, OW_STATS_CENTER_X-50., 100.)
-            centerHorizontallyAt(highlightOpenCavesCheckBox, OW_STATS_CENTER_X)
+            rightButtonForSizing <- timerResetButton
+            hookTopLeftOnSizeChange(timerResetButton)
             canvasAdd(upper, timerResetButton, 12.8*OMTW, 60.)
             canvasAdd(upper, spotSummaryTB, 12.8*OMTW, 90.)
             canvasAdd(upper, hideIconsEyeball, WEBCAM_LINE+4.-10., 2.)
@@ -444,11 +469,11 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(upper, legendCanvas, 0., THRU_MAIN_MAP_H)
         member this.AddItemProgress(itemProgressCanvas, itemProgressTB) = 
             canvasAdd(upper, itemProgressCanvas, 0., THRU_MAP_AND_LEGEND_H + 3.)
-            canvasAdd(upper, itemProgressTB, 50., THRU_MAP_AND_LEGEND_H + 10.)
+            canvasAdd(upper, itemProgressTB, 0., THRU_MAP_AND_LEGEND_H + 10.)   // all the way left (the version button that used to share this space is gone)
             itemProgressLabelForCentering <- itemProgressTB
-            centerVerticallyAt(itemProgressTB, ITEM_PROGRESS_ROW_CENTER_Y)
+            centerVerticallyAt(itemProgressTB, SWORD_ICON_CENTER_Y)
             let pro = Broadcast.makeViewRectImpl(Point(ITEM_PROGRESS_FIRST_ITEM,THRU_MAP_AND_LEGEND_H), 
-                                Point(ITEM_PROGRESS_FIRST_ITEM + 14.*30.-11.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H), upper)  // -11. because 'Hint decoder' button infringes into empty space by Magic Key 
+                                Point(ITEM_PROGRESS_FIRST_ITEM + 15.*30.-11.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H), upper)  // -11. because 'Hint decoder' button infringes into empty space by Magic Key 
             canvasAdd(lower, pro, 20., 150.+20.)
             let tb = new TextBox(Text="Move mouse above red line for overworld view", Foreground=Brushes.Orange, Background=Brushes.Black, 
                                             IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=16., VerticalAlignment=VerticalAlignment.Center)
@@ -456,10 +481,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             let lineCenter = dungeonStart - RED_LINE/2.
             let line = new Shapes.Line(X1=0., X2=W, Y1=lineCenter, Y2=lineCenter, Stroke=Brushes.Red, StrokeThickness=3.)
             canvasAdd(lower, line, 0., 0.)
-        member this.AddVersionButton(vb) = 
-            canvasAdd(upper, vb, 0., THRU_MAP_AND_LEGEND_H + 7.)
-            centerItemProgressLabel(itemProgressLabelForCentering, vb)
-            centerVerticallyAt(vb, ITEM_PROGRESS_ROW_CENTER_Y)
+        member this.AddVersionButton(_vb) =   // the version button is no longer shown on the main screen
             let v = Broadcast.makeViewRectImpl(Point(0.,THRU_MAP_AND_LEGEND_H), Point(50.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H), upper)
             canvasAdd(lower, v, 0., 180.+20.)
         member this.AddHintDecoderButton(tb) =
@@ -467,19 +489,21 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             hintDecoderElementForCentering <- tb
             hookTopLeftOnSizeChange(tb)
             tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
-        member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement) =
-            let logoX = 16.*OMTW - kittyWidth - 12. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used
-            canvasAdd(upper, kitty, logoX, THRU_MAIN_MAP_H + 3.)
+        member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, racingLink:UIElement) =
+            let logoX = 16.*OMTW - kittyWidth - 22. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used, nudged 10px left
             canvasAdd(upper, discordLink, logoX - (DiscordLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2.)
+            canvasAdd(upper, racingLink, logoX - (RacingLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2. - 15.)
             // WANT!
             let kitty = new Image()
             let imageStream = Graphics.GetResourceStream("CustomLogo.png")
             kitty.Source <- System.Windows.Media.Imaging.BitmapFrame.Create(imageStream)
             kitty.Width <- 45.
             kitty.Height <- 45.
-            canvasAdd(lower, kitty, afterSoldItemBoxesX+150. + 5., 48.)
             let lowerDiscordLink = MakeDiscordLink("https://discord.com/channels/723242830331510844/1431412013170688152")
             canvasAdd(lower, lowerDiscordLink, afterSoldItemBoxesX+150. + 5. - (DiscordLinkWidth - kitty.Width)/2., 48. + kitty.Height + 1.)
+        member this.AddExtraSiteLinks(zoraSiteLink, racingSiteLink) =
+            canvasAdd(upper, zoraSiteLink, 0., 0.)
+            canvasAdd(upper, racingSiteLink, 0., 0.)
         member this.AddShowHotKeysButton(showHotKeysButton) = 
             canvasAdd(upper, showHotKeysButton, WEBCAM_LINE-41., 128.)
             hotkeysElementForCentering <- showHotKeysButton
@@ -521,11 +545,11 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(lower, grabModeTextBlock, BLOCKERS_AND_NOTES_OFFSET, dungeonStart) // grab mode instructions
             canvasAdd(lower, rightwardCanvas, BLOCKERS_AND_NOTES_OFFSET, dungeonStart)   // extra place for dungeonTabs to draw atop blockers/notes, e.g. hover minimaps
         member this.AddOWRemainingScreens(owRemainingScreensTextBox) =
-            canvasAdd(upper, owRemainingScreensTextBox, OW_STATS_CENTER_X-55., 60.)
+            canvasAdd(upper, owRemainingScreensTextBox, OW_STATS_CENTER_X-58., 0.)   // spots-left text with the per-type breakdown under it, all just above the Max Hearts box
             centerHorizontallyAt(owRemainingScreensTextBox, OW_STATS_CENTER_X)
         member this.AddOWGettableScreens(owGettableScreensCheckBox) =
-            canvasAdd(upper, owGettableScreensCheckBox, OW_STATS_CENTER_X-50., 80.)
-            centerHorizontallyAt(owGettableScreensCheckBox, OW_STATS_CENTER_X)
+            canvasAdd(upper, owGettableScreensCheckBox, OW_STATS_BLOCK_CENTER_X-50., 22.)
+            centerHorizontallyAt(owGettableScreensCheckBox, OW_STATS_BLOCK_CENTER_X)
         member this.AddCurrentMaxHearts(currentMaxHeartsTextBox) = 
             canvasAdd(upper, currentMaxHeartsTextBox, OW_STATS_CENTER_X-56., 121.)
             centerHorizontallyAt(currentMaxHeartsTextBox, OW_STATS_CENTER_X)
@@ -570,11 +594,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(lower, diskIcon, OMTW*16.-40., timelineStart+60.)
             cm.SetHeight(H)  // canvas manager always knows the world as though SmallerAppWindowScaleFactor = 1.0
             // change the main app window height
-            let H = 
-                if TrackerModelOptions.SmallerAppWindow.Value then 
-                    H*TrackerModelOptions.SmallerAppWindowScaleFactor
-                else
-                    H
+            let H = H * Graphics.appScale()   // (the live scale of the resizable main window)
             let CHROME_HEIGHT = 39.  // Windows app border
             ((cm.RootCanvas.Parent :?> Canvas).Parent :?> Window).Height <- H + CHROME_HEIGHT // this is fragile, but don't know a better way right now
         member this.AllDone() =

@@ -116,8 +116,10 @@ let decorGreyBmp(item:int) : System.Drawing.Bitmap =
                         System.Drawing.Color.FromArgb(int c.A, v, v, v))   // collected items are shown in greyscale
         decorGreyCache.[cacheKey] <- g
         g
-let currentMaxHeartsTextBox = new TextBox(Width=112., Height=28., Padding=Thickness(0.), VerticalContentAlignment=VerticalAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center, FontSize=16., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
-                                            BorderBrush=Brushes.Gray, BorderThickness=Thickness(1.), Text=sprintf "Max Hearts: %d" TrackerModel.playerComputedStateSummary.PlayerHearts)
+let currentMaxHeartsTextBox = new TextBox(Padding=Thickness(0.), VerticalContentAlignment=VerticalAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center, FontSize=16., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
+                                            BorderThickness=Thickness(0.), Text=sprintf "Max Hearts: %d" TrackerModel.playerComputedStateSummary.PlayerHearts)
+// drawn inside a plain Button (not hit-testable; the wrapper border below handles the mouse) so its border has the same look as the Hint Decoder and the other main-screen buttons
+let currentMaxHeartsButton = new Button(Content=currentMaxHeartsTextBox, Width=112., Height=28., HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch, IsHitTestVisible=false, Focusable=false)   // 112x28 overall, so it ends right at the top of the map
 // heart containers marked 'collected' on the map count toward the player's max hearts; every change to a tile's icons goes through here
 let rebuildMapCollected() =
     System.Array.Clear(TrackerModel.mapCollectedCount, 0, TrackerModel.mapCollectedCount.Length)
@@ -126,6 +128,8 @@ let rebuildMapCollected() =
             for (ident, col) in TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j]) do
                 if col && ident >= 0 && ident < TrackerModel.mapCollectedCount.Length then
                     TrackerModel.mapCollectedCount.[ident] <- TrackerModel.mapCollectedCount.[ident] + 1
+let mutable copiedMarkerIdents : int list = []
+let mutable copiedMarkerPacked : int = -1   // same, including each icon's collected state   // shift+left-click on a tile that has only item markers copies them; shift+left-click on an unmarked tile pastes them
 let mutable decorStateChanged = fun () -> ()   // set once the main UI exists: refreshes the item progress bar etc.
 let setDecorIcons(i:int, j:int, newPacked:int) =
     // cave/shop items checked off on the map also check their box in the upper item area (and un-check it again if un-collected)
@@ -143,9 +147,38 @@ let setDecorIcons(i:int, j:int, newPacked:int) =
     TrackerModel.recomputePlayerStateSummary()
     currentMaxHeartsTextBox.Text <- sprintf "Max Hearts: %d" TrackerModel.playerComputedStateSummary.PlayerHearts
     decorStateChanged()
-let owRemainingScreensTextBox = new TextBox(Width=110., Height=20., FontSize=14., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
-                                            BorderThickness=Thickness(0.), Text=sprintf "%d OW spots left" TrackerModel.mapStateSummary.OwSpotsRemain)
-let owRemainingScreensTextBoxContainerPanelThatSeesMouseEvents = (let dp = new DockPanel(Background=Brushes.Black) in dp.Children.Add(owRemainingScreensTextBox) |> ignore; dp)
+let owRemainingScreensTextBox = new TextBox(Width=116., Height=18., FontSize=12., Margin=Thickness(0.,-5.,0.,0.), Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center,
+                                            BorderThickness=Thickness(0.), Text="OW Spots Left")
+// the gettable/total numbers, twice the size of the label under them
+let owRemainingNumbersTextBox = new TextBox(Width=116., Height=34., FontSize=24., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center,
+                                            VerticalContentAlignment=VerticalAlignment.Center, BorderThickness=Thickness(0.), Text=sprintf "0/%d" TrackerModel.mapStateSummary.OwSpotsRemain)
+// per-type counts of the remaining OW spots, each with its icon (burn, bomb, push, ladder, raft, whistle) plus 'open' for open caves
+let owSpotTypeCountTBs =
+    [| for _ in 0..6 -> new TextBlock(FontSize=14., Foreground=Brushes.Orange, VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(3.,0.,0.,0.), Text="0") |]
+let owSpotTypesPanel =
+    let wp = new WrapPanel(Width=116., Orientation=Orientation.Horizontal)
+    let bmps = [| Graphics.red_candle_bmp; Graphics.bomb_bmp; Graphics.power_bracelet_bmp; Graphics.ladder_bmp; Graphics.raft_bmp; Graphics.recorder_bmp; Graphics.openCaveIconBmp |]
+    let tips = [| "Burn"; "Bomb"; "Push"; "Ladder"; "Raft"; "Whistle"; "Open" |]
+    for k in 0..6 do
+        let cell = new Grid(Width=(if k=6 then 116. else 58.), Height=18.)
+        let sp = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, ToolTip=tips.[k])
+        cell.Children.Add(sp) |> ignore
+        let img = Graphics.BMPtoImage bmps.[k]
+        img.Width <- 16.
+        img.Height <- 16.
+        img.Stretch <- Stretch.Uniform
+        sp.Children.Add(img) |> ignore
+        sp.Children.Add(owSpotTypeCountTBs.[k]) |> ignore
+        if k=6 then
+            sp.Children.Add(new TextBlock(FontSize=14., Foreground=Brushes.Orange, VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(3.,0.,0.,0.), Text="open")) |> ignore
+        wp.Children.Add(cell) |> ignore
+    wp
+let owRemainingScreensTextBoxContainerPanelThatSeesMouseEvents = 
+    let dp = new StackPanel(Background=Brushes.Black, Orientation=Orientation.Vertical)
+    dp.Children.Add(owRemainingNumbersTextBox) |> ignore
+    dp.Children.Add(owRemainingScreensTextBox) |> ignore
+    dp.Children.Add(owSpotTypesPanel) |> ignore
+    dp
 let owGettableScreensTextBox = new TextBox(Width=80., Height=20., FontSize=14., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
                                             BorderThickness=Thickness(0.), Text="0 gettable")
 let owGettableScreensCheckBox = new CheckBox(Content = owGettableScreensTextBox, IsChecked=TrackerModelOptions.Overworld.Gettables.Value)
@@ -311,7 +344,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
 
     let owLocatorTileRectangles = Array2D.zeroCreate 16 8
     let redrawOWCircle = ref(fun (_x,_y) -> ())
-    let hideFirstQuestCheckBox, hideSecondQuestCheckBox, moreFQSQoptionsButton = MakeFQSQStuff(cm, isMixed, owLocatorTileRectangles, redrawOWCircle)
+    let _hideFirstQuestCheckBox, _hideSecondQuestCheckBox, moreFQSQoptionsButton = MakeFQSQStuff(cm, isMixed, owLocatorTileRectangles, redrawOWCircle)
     // (in mixed quest, the Hide 1st/2nd Quest checkboxes now live in the bottom right of the 1Q/2Q popup menu instead of on the main window)
 
     let mutable toggleBookShieldCheckBox : CheckBox = null
@@ -328,6 +361,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         doUIUpdateEvent.Trigger()
         )
     mirrorOW.ToolTip <- "Toggle mirrored overworld"
+    OverworldItemGridUI.setMirroredOverworld <- (fun v -> TrackerModel.MirrorOverworld <- v; doUIUpdateEvent.Trigger())
     ToolTipService.SetPlacement(mirrorOW, System.Windows.Controls.Primitives.PlacementMode.Top)
     let mutable temporarilyHideAllIconsWhileHoveringEyeball = false
     let hideIconsEyeball = new Border(Child=Graphics.BMPtoImage Graphics.eyeballBMP, BorderBrush=Brushes.Gray, BorderThickness=Thickness(1.))
@@ -335,9 +369,16 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     hideIconsEyeball.MouseLeave.Add(fun _ -> temporarilyHideAllIconsWhileHoveringEyeball <- false; OptionsMenu.requestRedrawOverworldEvent.Trigger())
     hideIconsEyeball.ToolTip <- "Hover to hide icons\n(peek at unobscured overworld map)"
     ToolTipService.SetPlacement(hideIconsEyeball, System.Windows.Controls.Primitives.PlacementMode.Bottom)
+    // the main-screen boxes made by Graphics.makeButton get the same pure-black face as the legend boxes (1Q/2Q, Start Spot, ...)
+    let blackenButton(b:obj) =
+        match b with
+        | :? Button as bt -> (match bt.Content with | :? TextBox as t -> t.Background <- Brushes.Black | _ -> ())
+        | _ -> ()
     let white_sword_canvas, mags_canvas, redrawWhiteSwordCanvas, redrawMagicalSwordCanvas, spotSummaryCanvas, invokeExtras,
         owItemGrid, toggleBookShieldCB, bookIsAtlasCB, highlightOpenCavesCB, timerResetButton, spotSummaryTB, ws_ms_bu_toggleButton = 
             MakeItemGrid(cm, boxItemImpl, timelineItems, owInstance, extrasImage, resetTimerEvent, isStandardHyrule, doUIUpdateEvent, MakeManualSave)
+    blackenButton(timerResetButton)
+    blackenButton(spotSummaryTB)
     toggleBookShieldCheckBox <- toggleBookShieldCB
     bookIsAtlasCheckBox <- bookIsAtlasCB
     highlightOpenCavesCheckBox <- highlightOpenCavesCB
@@ -573,6 +614,39 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         owMapDummyImages.[i,j].Source <- newBIs.[i,j]
             with _ -> ()
         )
+    // copied item markers follow the mouse cursor until pasted over / cancelled with a right click
+    let copyCursor = new Canvas(IsHitTestVisible=false, Width=70., Height=24.)
+    let copyCursorAdded = ref false
+    let refreshCopyCursor() =
+        if not copyCursorAdded.Value then
+            copyCursorAdded.Value <- true
+            canvasAdd(appMainCanvas, copyCursor, -1000., -1000.)
+            appMainCanvas.PreviewMouseMove.Add(fun ea ->
+                if not copiedMarkerIdents.IsEmpty then
+                    let p = ea.GetPosition(appMainCanvas)
+                    Canvas.SetLeft(copyCursor, p.X + 12.)
+                    Canvas.SetTop(copyCursor, p.Y + 12.))
+            appMainCanvas.PreviewMouseRightButtonDown.Add(fun ea ->
+                if not copiedMarkerIdents.IsEmpty then
+                    copiedMarkerIdents <- []
+                    copyCursor.Children.Clear()
+                    Canvas.SetLeft(copyCursor, -1000.)
+                    ea.Handled <- true)   // right click cancels the copy instead of doing its usual thing
+        copyCursor.Children.Clear()
+        TrackerModel.decorEntriesOf(copiedMarkerPacked) |> List.iteri (fun k (ident, col) ->
+            let bmp = 
+                if ident = TrackerModel.ITEMS.HEARTCONTAINER then (if col then decorIconBmp ident else decorGreyBmp ident)
+                elif col && ident <> TrackerModel.ITEMS.OLDKEY then decorGreyBmp ident else decorIconBmp ident
+            if bmp <> null then
+                let img = Graphics.BMPtoImage(bmp)
+                img.Stretch <- Stretch.Uniform
+                img.Width <- 22.
+                img.Height <- 22.
+                img.Opacity <- 0.85
+                canvasAdd(copyCursor, img, float k * 23., 0.))
+        let mp = Input.Mouse.GetPosition(appMainCanvas)
+        Canvas.SetLeft(copyCursor, mp.X + 12.)
+        Canvas.SetTop(copyCursor, mp.Y + 12.)
     for i = 0 to 15 do
         for j = 0 to 7 do
             let activateCircleLabelPopup() =
@@ -732,7 +806,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     decorList |> List.iteri (fun k ident ->
                         let collected = TrackerModel.decorIsCollected(packedNow, ident)
                         let justDim = collected && ident = TrackerModel.ITEMS.OLDKEY   // regular key: just dimmed, collects nothing
-                        let dbmp = if collected && not justDim then decorGreyBmp ident else decorIconBmp ident
+                        let dbmp = if ident = TrackerModel.ITEMS.HEARTCONTAINER then (if collected then decorIconBmp ident else decorGreyBmp ident) elif collected && not justDim then decorGreyBmp ident else decorIconBmp ident
                         if dbmp <> null then
                             let img = Graphics.BMPtoImage(dbmp)
                             img.Stretch <- Stretch.Uniform
@@ -819,7 +893,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             }
             let GCOL = 9
             let ST = CustomComboBoxes.borderThickness
-            let gridWidth = float(GCOL*(7*3+2*int ST)+int ST)   // cells are 21 wide so the item icons can be shown at full size
+            let gridWidth = float(GCOL*(7*3+2*int ST)+int ST) * 1.25   // cells are 21 wide so the item icons can be shown at full size; the menu is drawn 1.25x bigger (see gridScale in DoModalGridSelect)
             let tileImage = Graphics.BItoImage(owMapBIsRef.Value.[i,j])
             let activatePopup(activationDelta) =
                 // Recompute GROW/GCOUNT live on each popup call so they always match
@@ -940,7 +1014,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                             canvasAdd(tileCanvas, icon, 0., 0.)
                                     let s = 
                                         if isSwordIcon then decorDescription(currentState-1000) + "\n(marker icon only)"
-                                        elif isClearCell then "Clear this tile's marker icons\n(keeps the tile's mark)"
+                                        elif isClearCell then "Clear this tile\n(removes marker icons and sets it back to unmarked)"
                                         elif currentState = -1 then "Unmarked" 
                                         else let _,_,_,s = TrackerModel.dummyOverworldTiles.[currentState] in s
                                     let s = if isSwordIcon || isClearCell then s else HotKeys.OverworldHotKeyProcessor.AppendHotKeyToDescription(s,currentState)
@@ -970,11 +1044,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     match r with
                     | Some(currentState) -> 
                         if currentState = CLEAR_ICONS then
-                            // red X: removes every marker icon from this tile, the tile's real mark is left alone
+                            // red X: clears the tile completely - every marker icon is removed and the tile goes back to unmarked
                             setDecorIcons(i, j, -1)
-                            // ...and the tile goes back to 'unchecked' if putting an icon on it had marked it finished (Don't Care)
-                            if not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.overworldMapMarks.[i,j].Current() = TrackerModel.MapSquareChoiceDomainHelper.DARK_X then
-                                do! SetNewValue(-1, TrackerModel.MapSquareChoiceDomainHelper.DARK_X)
+                            if not(owInstance.AlwaysEmpty(i,j)) && originalState <> -1 then
+                                do! SetNewValue(-1, originalState)
                             redrawGridSpot()
                         elif currentState >= 1000 then
                             // decorative sword item icon: toggles on this tile, tile's real mark is left alone
@@ -999,8 +1072,26 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 if not popupIsActive then
                     if ea.ChangedButton = Input.MouseButton.Left then
                         if Input.Keyboard.IsKeyDown(Input.Key.LeftShift) || Input.Keyboard.IsKeyDown(Input.Key.RightShift) then
-                            // shift left click
-                            activateCircleLabelPopup()
+                            // shift left click: copy / paste item markers, otherwise the circle label popup
+                            let curMark = TrackerModel.overworldMapMarks.[i,j].Current()
+                            let hereIcons = TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j])
+                            let onlyItems = curMark = -1 || curMark = TrackerModel.MapSquareChoiceDomainHelper.DARK_X
+                            if not hereIcons.IsEmpty && onlyItems then
+                                copiedMarkerIdents <- hereIcons
+                                copiedMarkerPacked <- TrackerModel.owSwordIcons.[i,j]
+                                refreshCopyCursor()
+                                animateOverworldTileIfOptionIsChecked(i,j)   // brief flash = copied; shift+left-click an unmarked tile to paste
+                            elif hereIcons.IsEmpty && curMark = -1 && not copiedMarkerIdents.IsEmpty && not(owInstance.AlwaysEmpty(i,j)) then
+                                popupIsActive <- true
+                                async {
+                                    setDecorIcons(i, j, copiedMarkerPacked)
+                                    // like adding an icon from the popup: an unmarked tile with item markers counts as finished
+                                    do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1)
+                                    redrawGridSpot()
+                                    popupIsActive <- false
+                                } |> Async.StartImmediate
+                            else
+                                activateCircleLabelPopup()
                         elif not(visibleDecorIcons(TrackerModel.owSwordIcons.[i,j]).IsEmpty) then
                             // left click on a tile with marker icons checks them all off (or un-checks them all if they were already all checked)
                             setDecorIcons(i, j, TrackerModel.decorToggleCollected(TrackerModel.owSwordIcons.[i,j], None))
@@ -1167,10 +1258,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         canvasAdd(legendCanvas, fqsqLegendButton, UIComponents.legendAfterStartX, 0.)
         // ZORA Hints: Lost Woods / Lost Hills direction sequences, in the open legend space right of the 1Q/2Q button
         let makeHintButton(name:string, prefix:string) =
-            // same construction as the version button (borderless dark TextBox stretched to fill the Button), so the border looks identical
-            let tb = new TextBox(Text=name, FontSize=10., Foreground=Brushes.Orange, Background=Graphics.almostBlack, IsReadOnly=true, IsHitTestVisible=false, 
-                                    BorderThickness=Thickness(0.), Padding=Thickness(3.,0.,3.,0.), TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center)
-            let btn = new Button(Content=tb, Height=17., Margin=Thickness(0.,0.,3.,0.), HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch)
+            // built like the 1Q/2Q and Start Spot buttons (plain Button, pure-black borderless TextBox content that is not stretched), so the border looks identical
+            let tb = new TextBox(Text=name, FontSize=10., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
+                                    BorderThickness=Thickness(0.), Padding=Thickness(2.,0.,2.,0.), TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center)
+            let btn = new Button(Content=tb, Margin=Thickness(0.), Width=84., Height=16., HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch)   // two of these stacked (32px) fit inside the 33px legend row
             let hint = ref ""
             let refreshLabel() = tb.Text <- (if hint.Value = "" then name else prefix + ": " + hint.Value)
             btn.Click.Add(fun _ ->
@@ -1255,21 +1346,33 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 )
             btn.MouseLeave.Add(fun _ -> layout.ClearTopLayerHovers())
             btn
-        let hintsPanel = new StackPanel(Orientation=Orientation.Vertical)
-        hintsPanel.Children.Add(new TextBox(Text="ZORA Hints", FontSize=10., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
-                                            BorderThickness=Thickness(0.), Padding=Thickness(0.), Height=12., TextAlignment=TextAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center)) |> ignore
-        let hintButtons = new StackPanel(Orientation=Orientation.Horizontal)
+        // the two hint buttons are stacked, no heading
+        let hintButtons = new StackPanel(Orientation=Orientation.Vertical)
         hintButtons.Children.Add(makeHintButton("Dead Woods", "DW")) |> ignore
         hintButtons.Children.Add(makeHintButton("Lost Hills", "LH")) |> ignore
-        hintsPanel.Children.Add(hintButtons) |> ignore
-        canvasAdd(legendCanvas, hintsPanel, UIComponents.legendAfterStartX + 28. + 8., 0.)
+        canvasAdd(legendCanvas, hintButtons, UIComponents.legendAfterStartX + 28. + 8., 0.)
+        let placeHints() =
+            if hintButtons.ActualHeight > 0. && fqsqLegendButton.ActualHeight > 0. && fqsqLegendButton.ActualWidth > 0. then
+                Canvas.SetTop(hintButtons, 0.)   // stacked, top-aligned with the 1Q/2Q button
+                // same visible gap as between the Start Spot box and the 1Q/2Q box
+                let gap = if isNull UIComponents.legendStartButton || UIComponents.legendStartButton.ActualWidth <= 0. then 4. else UIComponents.legendAfterStartX - (UIComponents.legendStartX + UIComponents.legendStartButton.ActualWidth)
+                Canvas.SetLeft(hintButtons, UIComponents.legendAfterStartX + fqsqLegendButton.ActualWidth + gap)
+        hintButtons.SizeChanged.Add(fun _ -> placeHints())
+        fqsqLegendButton.SizeChanged.Add(fun _ -> placeHints())
     // 'Starting items and extra drops' icon: moved from the dungeon column grid to just right of the last item (meat) in the item progress row
     let extrasImageOldParent = extrasImage.Parent :?> Panel
     if extrasImageOldParent <> null then
         extrasImageOldParent.Children.Remove(extrasImage) |> ignore
     canvasAdd(legendCanvas, extrasImage, ITEM_PROGRESS_FIRST_ITEM + 14.*30. - 4., 36.)   // nudged 3px left
-    Layout.centerVerticallyAt(extrasImage, float(11*3) + 3. + 15. - 3.)   // ...and 3px up
+    extrasImage.Visibility <- Visibility.Collapsed   // the 'Starting items and extra drops' button is gone: starting items are now tracked by clicking the item progress bar
+    // the meat icon is the last item in the progress row: its top is 3px into the row's canvas, which is itself 3px below the legend row
+    let meatBottomY = THRU_MAP_AND_LEGEND_H + 3. + 3. + float Graphics.bait_bmp.Height   // absolute y of the bottom of the meat icon
     let redrawItemProgressBar, itemProgressCanvas, itemProgressTB = UIComponents.MakeItemProgressBar(owInstance)
+    UIComponents.itemProgressChanged <- (fun () ->
+        // recompute the player state right away (instead of waiting for the periodic poll) so the icon changes instantly, then do the full refresh
+        if not (TrackerModel.recomputeWhatIsNeeded()) then TrackerModel.recomputePlayerStateSummary()
+        redrawItemProgressBar()
+        doUIUpdateEvent.Trigger())
     let itemProgressHoverTarget =
         let dp = new DockPanel(Background=Brushes.Transparent)  // Background to get mouse events
         dp.Children.Add(itemProgressTB) |> ignore
@@ -1288,12 +1391,15 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     
     // Version
     let vb = CustomComboBoxes.makeVersionButtonWithBehavior(cm)
+    blackenButton(vb)
     // vb.Click.Add(fun _ -> failwith "crash")                     // Uncomment this for crash testing
     layout.AddVersionButton(vb)
 
     // hint decoder
     if isStandardHyrule then   // Hints only apply to z1r and standard map zones
-        layout.AddHintDecoderButton(UIComponents.MakeHintDecoderUI(cm))
+        let hintDecoderUI = UIComponents.MakeHintDecoderUI(cm)
+        blackenButton(hintDecoderUI)
+        layout.AddHintDecoderButton(hintDecoderUI)
 
     // WANT!
 #if NOT_RACE_LEGAL
@@ -1312,7 +1418,18 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     let logoBorder = new Border(BorderThickness=Thickness(1.), BorderBrush=Brushes.Gray, Child=ztlogo)
     let discordUrl = "https://discord.com/channels/723242830331510844/1431412013170688152"
     let discordLink = Layout.MakeDiscordLink(discordUrl)
-    layout.AddKittyAndLogo(kitty, logoBorder, ztlogo, discordLink)
+    let racingLink = Layout.MakeLinkText("Z1R Racing Discord", "https://discord.gg/z1rracing", Layout.RacingLinkWidth)
+    layout.AddKittyAndLogo(kitty, logoBorder, ztlogo, discordLink, racingLink)
+    let zoraSiteLink = Layout.MakeLinkText("ZORA Site", "https://zora.gg/", Layout.DiscordLinkWidth)
+    let racingSiteLink = Layout.MakeLinkText("Z1R Racing Site", "https://z1rracing.com/", Layout.RacingLinkWidth)
+    layout.AddExtraSiteLinks(zoraSiteLink, racingSiteLink)
+    (discordLink :?> FrameworkElement).SizeChanged.Add(fun _ -> 
+        let d = discordLink :?> FrameworkElement
+        if d.ActualHeight > 0. then 
+            Canvas.SetTop(d, meatBottomY - d.ActualHeight)   // bottom-align with the meat icon
+            let r = racingLink :?> FrameworkElement
+            Canvas.SetTop(r, meatBottomY - d.ActualHeight - (if r.ActualHeight > 0. then r.ActualHeight else 14.))   // the Z1R Racing Discord link sits directly above it
+            Canvas.SetLeft(r, Canvas.GetLeft(d) + (Layout.DiscordLinkWidth - Layout.RacingLinkWidth) / 2.))
 
     // triforce decoder chart, left of the ZORA logo: 1Q by default, 2Q for Second Quest / Mixed Second Quest overworlds
     // (follows the start screen choice and the 1Q/2Q button, since both go through TrackerModel.owInstance)
@@ -1321,7 +1438,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     let makeQuestRefChart() : UIElement =
         let haves = TrackerModel.GetTriforceHaves()
         if questRefIsSecond() then Dungeon.DrawTriforces2Q(haves) :> UIElement else Dungeon.DrawTriforces1Q(haves) :> UIElement
-    let questRefLogoX = 16.*OMTW - Layout.kittyWidth - 12. + (Layout.kittyWidth - kitty.Width)/2.
+    let _questRefLogoX = 16.*OMTW - Layout.kittyWidth - 12. + (Layout.kittyWidth - kitty.Width)/2.
     let questRefH = Layout.kittyWidth - 4.
     let questRefViewbox = new Viewbox(Stretch=Stretch.Uniform, Height=questRefH)
     let questRefBorder = new Border(BorderThickness=Thickness(0.), Background=Brushes.Transparent, Child=questRefViewbox)
@@ -1331,32 +1448,77 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         let chart = makeQuestRefChart()
         (chart :?> Canvas).Background <- Brushes.Transparent   // transparent outside the triforce shapes
         questRefViewbox.Child <- chart
-        questRefBorder.ToolTip <- (if questRefIsSecond() then "Triforce decoder - Second Quest dungeons" else "Triforce decoder - First Quest or Shapes dungeons")
     updateQuestRef()
+    // hovering the chart shows it at 2x size (current state), above the chart, kept inside the window
+    questRefBorder.MouseEnter.Add(fun _ ->
+        let bigH = questRefH * 2.
+        let bigViewbox = new Viewbox(Stretch=Stretch.Uniform, Height=bigH, Child=makeQuestRefChart())
+        let big = new Border(Child=bigViewbox, Background=Brushes.Black, BorderThickness=Thickness(3.), BorderBrush=Brushes.Gray, IsHitTestVisible=false)
+        let w, h = bigH * 340. / 180. + 6., bigH + 6.
+        let pos = questRefBorder.TranslatePoint(Point(0., 0.), cm.AppMainCanvas)
+        let x = max 0. (min pos.X (cm.AppMainCanvas.Width - w - 2.))
+        let y = max 0. (pos.Y - h - 4.)
+        layout.ClearTopLayerHovers()
+        layout.AddTopLayerHover(big, x, y))
+    questRefBorder.MouseLeave.Add(fun _ -> layout.ClearTopLayerHovers())
     TrackerModel.overworldQuestChanged.Publish.Add(fun _ -> updateQuestRef())
     for i = 0 to 7 do
         TrackerModel.GetDungeon(i).PlayerHasTriforceChanged.Add(fun _ -> updateQuestRef())
-    layout.AddQuestReferenceChart(questRefBorder, questRefLogoX - 6. - 10. + 3. + 1. - questRefBorder.Width, THRU_MAIN_MAP_H + 3. + 2. + 1.)   // +1px right and down
+    layout.AddQuestReferenceChart(questRefBorder, BLOCKERS_AND_NOTES_OFFSET + 108. + 12. - 20. - 9. * questRefH / 180., meatBottomY - questRefH + 3.)   // the chart's bottom-left corner (drawn 9/180 of its height in from its edge) lines up with the left side of the first blocker box (blocker column is 108 wide, then a 12px dungeon-number label)   // bottom-aligned with the meat icon
+    // the blue 3-dot box's bottom edge is lined up with the drawn base line of the triforce chart, measured from the real on-screen positions
+    // (the chart is a 340x180 drawing whose base line, 2px stroke included, is at y=171, scaled to fit questRefH)
+    let alignExtrasWithChart() =
+        try
+            if extrasImage.ActualHeight > 0. && questRefBorder.ActualHeight > 0. && questRefBorder.IsLoaded && extrasImage.IsLoaded then
+                let chartTopInLegend = questRefBorder.TranslatePoint(Point(0., 0.), legendCanvas).Y
+                Canvas.SetTop(extrasImage, chartTopInLegend + questRefH * 171. / 180. - extrasImage.ActualHeight + 3.)   // +3: the icon image has a little transparent margin below the visible blue box
+        with _ -> ()
+    extrasImage.SizeChanged.Add(fun _ -> alignExtrasWithChart())
+    questRefBorder.SizeChanged.Add(fun _ -> alignExtrasWithChart())
+    extrasImage.Loaded.Add(fun _ -> alignExtrasWithChart())
+    questRefBorder.Loaded.Add(fun _ -> alignExtrasWithChart())
     
 
     // show hotkeys button
-    let showHotKeysTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=Graphics.almostBlack, IsReadOnly=true, BorderThickness=Thickness(0.), Text="Hotkeys", IsHitTestVisible=false)
-    let showHotKeysButton = new Button(Content=showHotKeysTB)
+    let showHotKeysButton = Graphics.makeButton("Hotkeys", Some(12.), Some(Brushes.Orange))   // same style as the Save and Hint Decoder buttons
+    blackenButton(showHotKeysButton)
     layout.AddShowHotKeysButton(showHotKeysButton)
     showHotKeysButton.Click.Add(fun _ -> Popouts.showHotKeys(false))
     showHotKeysButton.MouseRightButtonDown.Add(fun _ -> Popouts.showHotKeys(true))
 
     // show/run custom button
     let showRunCustomButton = Graphics.makeButton("Show/Run Custom", Some(16.), Some(Brushes.Orange))   // same style/size as Spot Summary and Pause/Reset timer
+    blackenButton(showRunCustomButton)
     layout.AddShowRunCustomButton(showRunCustomButton)
     showRunCustomButton.Click.Add(fun _ -> ShowRunCustom.DoShowRunCustom(refocusMainWindow))
 
-    let saveDiskImage = Graphics.BMPtoImage(Graphics.iconDisk_bmp)
-    saveDiskImage.Stretch <- Stretch.Uniform
-    let saveIconHolder = new Border(Background=Brushes.Gray, Child=saveDiskImage, IsHitTestVisible=false)   // disk icon is dark, so it needs a light backing on the dark button
-    let saveButton = new Button(Content=saveIconHolder, Padding=Thickness(2.))
+    let saveButton = Graphics.makeButton("Save", Some(12.), Some(Brushes.Orange))
+    saveButton.Width <- 84.   // same style as the other main-screen buttons
+    blackenButton(saveButton)
     saveButton.ToolTip <- "Save the current tracker state to a file"
     layout.AddSaveButton(saveButton)
+    // stack (bottom to top): ZORA Discord link, Z1R Racing Discord link, centered on the discord links (Save now sits above the Hint Decoder button, placed in Layout)
+    let placeLinkStack() =
+        let d = discordLink :?> FrameworkElement
+        let r = racingLink :?> FrameworkElement
+        let zs = zoraSiteLink :?> FrameworkElement
+        let rs = racingSiteLink :?> FrameworkElement
+        if d.ActualHeight > 0. && r.ActualHeight > 0. && zs.ActualHeight > 0. && rs.ActualHeight > 0. && not (System.Double.IsNaN(Canvas.GetLeft(d))) then
+            let cx = Canvas.GetLeft(d) + Layout.DiscordLinkWidth / 2.
+            // top to bottom: ZORA Site, ZORA Discord, (small gap), Z1R Racing Site, Z1R Racing Discord
+            // centered vertically in the strip of space (the old logo area) to the right of the map: THRU_MAIN_MAP_H down through the item progress row
+            let gap = 4.
+            let totalH = zs.ActualHeight + d.ActualHeight + gap + rs.ActualHeight + r.ActualHeight
+            let top = THRU_MAIN_MAP_H + Layout.kittyWidth / 2. - totalH / 2.
+            let place(e:FrameworkElement, y:float) =
+                Canvas.SetTop(e, y)
+                Canvas.SetLeft(e, cx - e.ActualWidth / 2.)
+            place(zs, top)
+            place(d, top + zs.ActualHeight)
+            place(rs, top + zs.ActualHeight + d.ActualHeight + gap)
+            place(r, top + zs.ActualHeight + d.ActualHeight + gap + rs.ActualHeight)
+    for e in [discordLink :?> FrameworkElement; racingLink :?> FrameworkElement; zoraSiteLink :?> FrameworkElement; racingSiteLink :?> FrameworkElement] do
+        e.SizeChanged.Add(fun _ -> placeLinkStack())
     saveButton.Click.Add(fun _ -> 
         if not popupIsActive then
             popupIsActive <- true
@@ -1374,7 +1536,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             } |> Async.StartImmediate
         )
 
-    let uccTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=Graphics.almostBlack, IsReadOnly=true, BorderThickness=Thickness(0.), 
+    let uccTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, BorderThickness=Thickness(0.), 
                                         Text="UCC", IsHitTestVisible=false, TextAlignment=TextAlignment.Center)
     let uccButton = new Button(Content=uccTB)
     if System.IO.File.Exists(UserCustomLayer.checklistFilename) then
@@ -1390,7 +1552,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
 
 #if NOT_RACE_LEGAL
     // minimap overlay button
-    let minimapOverlayTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=Graphics.almostBlack, IsReadOnly=true, BorderThickness=Thickness(0.), Text="Minimap overlay", IsHitTestVisible=false)
+    let minimapOverlayTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, BorderThickness=Thickness(0.), Text="Minimap overlay", IsHitTestVisible=false)
     let minimapOverlayButton = new Button(Content=minimapOverlayTB)
     canvasAdd(appMainCanvas, minimapOverlayButton, 16.*OMTW - kittyBoxWidth - 115., THRU_MAIN_MAP_H + 22.)
     let mutable minimapOverlay = fun _irc -> ()
@@ -1398,7 +1560,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     minimapOverlayButton.MouseRightButtonDown.Add(fun _ -> minimapOverlay(true))
 
     // near-mouse HUD button
-    let nearMouseHUDTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=Graphics.almostBlack, IsReadOnly=true, BorderThickness=Thickness(0.), Text="Near-mouse HUD", IsHitTestVisible=false)
+    let nearMouseHUDTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, BorderThickness=Thickness(0.), Text="Near-mouse HUD", IsHitTestVisible=false)
     let nearMouseHUDButton = new Button(Content=nearMouseHUDTB)
     canvasAdd(appMainCanvas, nearMouseHUDButton, 16.*OMTW - kittyBoxWidth - 115., THRU_MAIN_MAP_H + 44.)
     let mutable nearMouseHUD = fun _irc -> ()
@@ -1447,8 +1609,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 SendReminderImpl(TrackerModel.ReminderCategory.SwordHearts, "Consider the magical sword", [upcb(Graphics.iconRightArrow_bmp); upcb(Graphics.magical_sword_bmp)],
                                     Some(AsyncBrieflyHighlightAnOverworldLocation(TrackerModel.mapStateSummary.Sword3Location)))
             member _this.OverworldSpotsRemaining(remain,gettable) = 
-                owRemainingScreensTextBox.Text <- sprintf "%d OW spots left" remain
+                owRemainingNumbersTextBox.Text <- sprintf "%d/%d" gettable remain   // gettable / total
                 owGettableScreensTextBox.Text <- sprintf "%d gettable" gettable
+                for k in 0..6 do
+                    owSpotTypeCountTBs.[k].Text <- string TrackerModel.owSpotTypeCounts.[k]
             member _this.DungeonLocation(i,x,y,hasTri,isCompleted) =
                 owUpdateFunctions.[x,y] 0 null
             member _this.AnyRoadLocation(i,x,y) = ()
@@ -1728,10 +1892,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     OverworldRouteDrawing.routeDrawingLayer.GetHighlightTile(i,j).MakePaleRed()
         )
     owRemainingScreensTextBoxContainerPanelThatSeesMouseEvents.MouseLeave.Add(fun _ -> ensureRespectingOwGettableScreensAndOpenCavesCheckBoxes())
-    if isStandardHyrule then   // Gettables only makes sense in standard map
-        layout.AddOWGettableScreens(owGettableScreensCheckBox)
-    else
-        owGettableScreensCheckBox.IsChecked <- false
+    // gettables are always shown on the standard map (the checkbox is no longer displayed; its text is folded into the "x/x OW spots left" line)
+    owGettableScreensCheckBox.IsChecked <- isStandardHyrule
     owGettableScreensCheckBox.Checked.Add(fun _ -> TrackerModel.forceUpdate(); TrackerModelOptions.Overworld.Gettables.Value <- true; TrackerModelOptions.writeSettings()) 
     owGettableScreensCheckBox.Unchecked.Add(fun _ -> TrackerModel.forceUpdate(); TrackerModelOptions.Overworld.Gettables.Value <- false; TrackerModelOptions.writeSettings())
     owGettableScreensCheckBox.MouseEnter.Add(fun _ -> 
@@ -1743,56 +1905,19 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     do! showProgress("coords/zone overlays")
 
     // current max hearts
-    let currentMaxHeartsTextBoxClickable = new Border(Background=Brushes.Black, Child=currentMaxHeartsTextBox, BorderThickness=Thickness(0.))
+    let currentMaxHeartsTextBoxClickable = new Border(Background=Brushes.Black, Child=currentMaxHeartsButton, BorderThickness=Thickness(0.))
     layout.AddCurrentMaxHearts(currentMaxHeartsTextBoxClickable)
-    currentMaxHeartsTextBoxClickable.MouseEnter.Add(fun _ -> 
-        currentMaxHeartsTextBox.BorderBrush <- Brushes.DarkTurquoise
-        let sp = Popouts.MakeInventoryAndHearts()
-        let b = new Border(BorderThickness=Thickness(3.), BorderBrush=Brushes.Black, Child=sp)
-        let b = new Border(BorderThickness=Thickness(3.), BorderBrush=Brushes.Gray, Child=b, Background=Brushes.Black)
-        spotSummaryCanvas.Children.Clear()
-        canvasAdd(spotSummaryCanvas, b, 270., 162.)
-        )
-    currentMaxHeartsTextBoxClickable.MouseLeave.Add(fun _ -> 
-        currentMaxHeartsTextBox.BorderBrush <- Brushes.Gray
-        spotSummaryCanvas.Children.Clear()
-        )
-    currentMaxHeartsTextBoxClickable.ToolTip <- "Left-click: pop out inventory and hearts\nRight-click: adjust max hearts (+1 / -1)"
-    currentMaxHeartsTextBoxClickable.MouseDown.Add(fun ea -> 
-        if ea.ChangedButton = Input.MouseButton.Right then
+    currentMaxHeartsTextBoxClickable.MouseEnter.Add(fun _ -> currentMaxHeartsButton.BorderBrush <- Brushes.DarkTurquoise)
+    currentMaxHeartsTextBoxClickable.MouseLeave.Add(fun _ -> currentMaxHeartsButton.ClearValue(Control.BorderBrushProperty))
+    currentMaxHeartsTextBoxClickable.ToolTip <- "Left-click: add a heart\nRight-click: remove a heart"
+    currentMaxHeartsTextBoxClickable.PreviewMouseDown.Add(fun ea -> 
+        let delta = if ea.ChangedButton = Input.MouseButton.Left then 1 elif ea.ChangedButton = Input.MouseButton.Right then -1 else 0
+        if delta <> 0 then
             ea.Handled <- true
-            if not popupIsActive then
-                popupIsActive <- true
-                let pos = currentMaxHeartsTextBoxClickable.TranslatePoint(Point(0., currentMaxHeartsTextBoxClickable.ActualHeight + 4.), cm.AppMainCanvas)
-                async {
-                    let wh = new System.Threading.ManualResetEvent(false)
-                    let sp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(3.))
-                    let mkTxt(size:float, txt) = new TextBox(IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=size, Margin=Thickness(3.), Text=txt, Foreground=Brushes.Orange, Background=Brushes.Black)
-                    let heartsText = mkTxt(16., sprintf "Max Hearts: %d" TrackerModel.playerComputedStateSummary.PlayerHearts)
-                    sp.Children.Add(heartsText) |> ignore
-                    sp.Children.Add(mkTxt(12., "Adjust your max hearts here\n(e.g. to account for hearts you start with)")) |> ignore
-                    let buttons = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,4.,0.,2.))
-                    let plusOne = new Button(Content=" +1 ", Margin=Thickness(4.,0.,4.,0.))
-                    let minusOne = new Button(Content=" -1 ", Margin=Thickness(4.,0.,4.,0.))
-                    let done_ = new Button(Content=" Done ", Margin=Thickness(12.,0.,4.,0.))
-                    let adjust(delta) =
-                        TrackerModel.startingItemsAndExtras.MaxHeartsDifferential <- TrackerModel.startingItemsAndExtras.MaxHeartsDifferential + delta
-                        TrackerModel.recomputePlayerStateSummary()
-                        heartsText.Text <- sprintf "Max Hearts: %d" TrackerModel.playerComputedStateSummary.PlayerHearts
-                        currentMaxHeartsTextBox.Text <- sprintf "Max Hearts: %d" TrackerModel.playerComputedStateSummary.PlayerHearts
-                    plusOne.Click.Add(fun _ -> adjust(1))
-                    minusOne.Click.Add(fun _ -> adjust(-1))
-                    done_.Click.Add(fun _ -> wh.Set() |> ignore)
-                    buttons.Children.Add(plusOne) |> ignore
-                    buttons.Children.Add(minusOne) |> ignore
-                    buttons.Children.Add(done_) |> ignore
-                    sp.Children.Add(buttons) |> ignore
-                    do! CustomComboBoxes.DoModal(cm, wh, pos.X, pos.Y, new Border(Child=sp, Background=Brushes.Black, BorderThickness=Thickness(4.), BorderBrush=Brushes.Gray))
-                    popupIsActive <- false
-                    doUIUpdateEvent.Trigger()
-                } |> Async.StartImmediate
-        else
-            Popouts.makePopout(Popouts.InventoryAndHeartsPopout, true, false, doUIUpdateEvent))
+            TrackerModel.startingItemsAndExtras.MaxHeartsDifferential <- TrackerModel.startingItemsAndExtras.MaxHeartsDifferential + delta
+            TrackerModel.recomputePlayerStateSummary()
+            currentMaxHeartsTextBox.Text <- sprintf "Max Hearts: %d" TrackerModel.playerComputedStateSummary.PlayerHearts
+            doUIUpdateEvent.Trigger())
     // coordinate grid
     let placeholderCanvas = new Canvas()  // for startup perf, only add in coords & zone overlays on demand
     let zoneCanvas = new Canvas()
@@ -2256,8 +2381,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                 let mutable rect = viewboxF()
                                 vb.Stretch <- Stretch.Uniform
                                 let factor = 
-                                    if TrackerModelOptions.SmallerAppWindow.Value then 
-                                        let r = TrackerModelOptions.SmallerAppWindowScaleFactor 
+                                    if Graphics.appScale() <> 1.0 then 
+                                        let r = Graphics.appScale() 
                                         rect.Location <- Point(rect.Left * r, rect.Top * r)
                                         rect.Size <- Size(rect.Width * r, rect.Height * r)
                                         r
@@ -2342,6 +2467,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         if data.Items.Level2StairBox <> null then   // (older saves do not have the optional level 2 staircase slot)
             if not(data.Items.Level2StairBox.TryApply(TrackerModel.level2StairBox)) then anySetProblems <- true
             TrackerModel.SetLevel2StairBoxEnabled(data.Items.Level2StairBoxEnabled)
+            TrackerModelOptions.FourthSwordEnabled <- data.Items.Level2StairBoxEnabled
+        else
+            TrackerModelOptions.FourthSwordEnabled <- true   // older saves predate this option: nothing is restricted
         for i = 0 to 8 do
             let ds = data.Items.Dungeons.[i]
             let dd = TrackerModel.GetDungeon(i)

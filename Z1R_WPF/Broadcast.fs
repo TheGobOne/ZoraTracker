@@ -47,7 +47,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         let scaleSize = if size=1 then 256. elif size=2 then 512. else 768.
         let broadcastWindow = new Window()
         broadcastWindow.Title <- "Z-Tracker broadcast"
-        broadcastWindow.ResizeMode <- ResizeMode.NoResize
+        broadcastWindow.ResizeMode <- ResizeMode.CanResize   // resizable: the content scales (via a Viewbox) to fit the window
         broadcastWindow.SizeToContent <- SizeToContent.Manual
         broadcastWindow.WindowStartupLocation <- WindowStartupLocation.Manual
 
@@ -129,7 +129,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         let dun = makeViewRect(Point(0.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H), Point(W,START_TIMELINE_H))
         let tri = makeViewRect(Point(0.,0.), Point(W,150.))
         let pro = makeViewRect(Point(ITEM_PROGRESS_FIRST_ITEM,THRU_MAP_AND_LEGEND_H), 
-                                Point(ITEM_PROGRESS_FIRST_ITEM + 14.*30.-11.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H))  // -11. because 'Hint decoder' button infringes into empty space by Magic Key 
+                                Point(ITEM_PROGRESS_FIRST_ITEM + 15.*30.-11.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H))  // -11. because 'Hint decoder' button infringes into empty space by Magic Key 
         pro.HorizontalAlignment <- HorizontalAlignment.Left
         pro.Margin <- Thickness(20.,0.,0.,0.)
         let owm = makeViewRect(Point(0.,150.), Point(W,THRU_MAIN_MAP_H))
@@ -148,19 +148,6 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         owm.RenderTransform <- scaleTrans
         canvasAdd(bottomc, owm, afterSoldItemBoxesX, 95.)
         // WANT!
-        let kitty = new Image()
-        let imageStream = Graphics.GetResourceStream("CustomLogo.png")
-        kitty.Source <- System.Windows.Media.Imaging.BitmapFrame.Create(imageStream)
-        kitty.Width <- 45.
-        kitty.Height <- 45.
-        canvasAdd(bottomc, kitty, 0., 180.)
-        let ztlogo = new Image()
-        let imageStream = Graphics.GetResourceStream("ZTlogo64x64.png")
-        ztlogo.Source <- System.Windows.Media.Imaging.BitmapFrame.Create(imageStream)
-        ztlogo.Width <- 30.
-        ztlogo.Height <- 30.
-        let logoBorder = new Border(BorderThickness=Thickness(1.), BorderBrush=Brushes.Gray, Child=ztlogo)
-        canvasAdd(bottomc, logoBorder, 25., 191.)
         canvasAdd(bottomc, drawingOverTop, 0., 0.)
         dealWithPopups(THRU_MAIN_MAP_AND_ITEM_PROGRESS_H, 230., bottomc)
 
@@ -180,25 +167,36 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         dp.Children.Add(timeline) |> ignore
         dp.Children.Add(topc) |> ignore
         
-        let mutable timerX = 600.
-        let factor = if size=1 then 0.333333 elif size=2 then 0.666666 else 1.0
+        let timerX = 600.
+        let factor = if size=1 then 0.333333 elif size=2 then 0.666666 else 1.0   // only the initial window size; the content is always laid out at full size and scaled by the Viewbox below
         if size=1 || size=2 then
-            let trans = new ScaleTransform(factor, factor)
-            if trans.CanFreeze then
-                trans.Freeze()
-            dp.LayoutTransform <- trans
-            OverworldItemGridUI.broadcastTimeTextBox.LayoutTransform <- trans
-            timerX <- timerX * factor
             broadcastWindow.Height <- H*factor + 40.
-        else
-            OverworldItemGridUI.broadcastTimeTextBox.LayoutTransform <- null
+        OverworldItemGridUI.broadcastTimeTextBox.LayoutTransform <- null
         let c = new Canvas(Width=W, Height=H)
         c.UseLayoutRounding <- true
         c.Children.Add(dp) |> ignore
         OverworldItemGridUI.broadcastTimeTextBox.Parent :?> Canvas |> (fun c -> if c <> null then c.Children.Remove(OverworldItemGridUI.broadcastTimeTextBox))  // deparent from prior window
-        canvasAdd(c, OverworldItemGridUI.broadcastTimeTextBox, timerX, -10. * factor)
+        canvasAdd(c, OverworldItemGridUI.broadcastTimeTextBox, timerX, -10.)
+        topBar.Width <- W
         c.Children.Add(topBar) |> ignore
-        broadcastWindow.Content <- c
+        broadcastWindow.Content <- new Viewbox(Stretch=Stretch.Uniform, StretchDirection=StretchDirection.Both, Child=c)
+        broadcastWindow.MinWidth <- 160.
+        broadcastWindow.MinHeight <- 100.
+        // remember the size the user gave this window
+        let wh = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.BroadcastWindowWH, """^(\d+),(\d+)$""")
+        if wh.Success then
+            broadcastWindow.Width <- float wh.Groups.[1].Value
+            broadcastWindow.Height <- float wh.Groups.[2].Value
+        let saveSizeTimer = new System.Windows.Threading.DispatcherTimer(Interval=System.TimeSpan.FromMilliseconds(600.))
+        saveSizeTimer.Tick.Add(fun _ ->
+            saveSizeTimer.Stop()
+            if broadcastWindow.WindowState = WindowState.Normal then
+                TrackerModelOptions.BroadcastWindowWH <- sprintf "%d,%d" (int broadcastWindow.Width) (int broadcastWindow.Height)
+                TrackerModelOptions.writeSettings())
+        broadcastWindow.SizeChanged.Add(fun _ -> 
+            updateTopBar()
+            saveSizeTimer.Stop()
+            saveSizeTimer.Start())
         
         let mutable isUpper = true
         cm.RootCanvas.MouseMove.Add(fun ea ->   // we need RootCanvas to see mouse moving in popups
@@ -223,7 +221,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         broadcastWindow
     let mutable broadcastWindow = null
     if TrackerModelOptions.ShowBroadcastWindow.Value then
-        broadcastWindow <- makeBroadcastWindow(TrackerModelOptions.BroadcastWindowSize, TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value)
+        broadcastWindow <- makeBroadcastWindow(3, TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value)
         broadcastWindow.Show()
         refocusMainWindow()
     OptionsMenu.broadcastWindowOptionChanged.Publish.Add(fun () ->
@@ -233,7 +231,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
             broadcastWindow <- null
         // maybe restart
         if TrackerModelOptions.ShowBroadcastWindow.Value then
-            broadcastWindow <- makeBroadcastWindow(TrackerModelOptions.BroadcastWindowSize, TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value)
+            broadcastWindow <- makeBroadcastWindow(3, TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value)
             broadcastWindow.Show()
             refocusMainWindow()
         )

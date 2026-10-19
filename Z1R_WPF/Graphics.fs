@@ -6,6 +6,13 @@ open System.Windows.Controls
 open System.Windows.Media
 
 let mutable theWindow : System.Windows.Window = null
+// The main window is resizable: its content scale follows the window size. dynamicAppScale is that live scale (0 until the window has computed one).
+// Everything that converts between app coordinates and screen/window pixels uses appScale() instead of the fixed 'smaller window' option.
+let mutable dynamicAppScale = 0.
+let appScale() = 
+    if dynamicAppScale > 0. then dynamicAppScale
+    elif TrackerModelOptions.SmallerAppWindow.Value then TrackerModelOptions.SmallerAppWindowScaleFactor
+    else 1.0
 
 let freeze(b:SolidColorBrush) = (if b.CanFreeze then b.Freeze()); b
 
@@ -119,10 +126,7 @@ type Win32() =
         mouse_event(MOUSEEVENTF_WHEEL, 0, 0, uint32 (-WHEEL_DELTA), 0)
     
     static member SetCursor(x,y) = 
-        let transformedPoint = 
-            if TrackerModelOptions.SmallerAppWindow.Value then 
-                Point(x*TrackerModelOptions.SmallerAppWindowScaleFactor,y*TrackerModelOptions.SmallerAppWindowScaleFactor) 
-            else Point(x,y)
+        let transformedPoint = Point(x*appScale(), y*appScale())
         let pos = theWindow.PointToScreen(transformedPoint)
         SetCursorPos(int pos.X, int pos.Y) |> ignore
 
@@ -809,25 +813,6 @@ let makeSprite7x7(rows:string[], palette:(char*System.Drawing.Color) list) =
             let color = match List.tryFind (fun (c,_) -> c = ch) palette with | Some(_,col) -> col | None -> System.Drawing.Color.Transparent
             r.SetPixel(px, py, color)
     r
-// NES-style bottle: white outline, cork on top, liquid in the lower half (liquid/cork colors taken from the NES sprites)
-let potionRows = [| "..aaa.."
-                    "..cLc.."
-                    "..c.c.."
-                    ".c...c."
-                    ".cLLLc."
-                    ".cLhLc."
-                    "..ccc.." |]
-let blue_potion_bmp =
-    makeSprite7x7(potionRows, ['a', System.Drawing.Color.FromArgb(155,142,255); 'c', System.Drawing.Color.White; 'L', System.Drawing.Color.FromArgb(40,0,165); 'h', System.Drawing.Color.FromArgb(155,142,255)])
-let red_potion_bmp =
-    makeSprite7x7(potionRows, ['a', System.Drawing.Color.FromArgb(231,156,33); 'c', System.Drawing.Color.White; 'L', System.Drawing.Color.FromArgb(181,49,33); 'h', System.Drawing.Color.FromArgb(231,156,33)])
-// one icon for both potions: left half blue potion, right half red potion (split vertically)
-let potion_split_bmp =
-    let r = new System.Drawing.Bitmap(21,21)
-    for x = 0 to 20 do
-        for y = 0 to 20 do
-            r.SetPixel(x, y, (if x <= 10 then blue_potion_bmp else red_potion_bmp).GetPixel(x, y))
-    r
 // triforce piece icon (the item-sheet triforce, centered in a 21x21 cell)
 let triforce_item_bmp =
     let r = new System.Drawing.Bitmap(21,21)
@@ -836,15 +821,6 @@ let triforce_item_bmp =
             let c = zi_triforce_bmp.GetPixel(px+1, py+1)
             if c.ToArgb() <> System.Drawing.Color.Black.ToArgb() then r.SetPixel(px+2, py+2, c)
     r
-// NES-style letter: blue note with a notched top edge, dark dots of 'writing', and a white diagonal fold
-let letter_bmp =
-    makeSprite7x7([| ".f.f.f."
-                     ".fjfjw."
-                     ".ffjww."
-                     ".fjwww."
-                     ".ffwww."
-                     ".fwww.."
-                     ".ffjfw." |], ['f', System.Drawing.Color.FromArgb(92,148,252); 'j', System.Drawing.Color.FromArgb(0,0,168); 'w', System.Drawing.Color.FromArgb(252,252,252)])
 // magical key (the NES magic key sprite: orange ring-head, red shading, short toothed shaft)
 let magic_key_bmp =
     makeSprite7x7([| "..ooo.."
