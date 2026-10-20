@@ -136,6 +136,8 @@ let mutable ShowBroadcastWindow = Bool(false)
 let mutable BroadcastWindowSize = 3
 let mutable BroadcastWindowIncludesOverworldMagnifier = Bool(false)
 let mutable SmallerAppWindow = Bool(false)
+let mutable RememberStartupSelection = Bool(false)   // start screen: remember the Startup Options / ZORA Extras checkboxes between runs
+let mutable SavedStartupSelection = ""               // (comma separated keys of the checked ones, written when a game is started)
 let mutable SmallerAppWindowScaleFactor = 2.0/3.0
 let mutable ShorterAppWindow = Bool(false)
 let mutable IsMuted = false
@@ -165,7 +167,7 @@ let mutable CoopHostSession = false
 let mutable RaceMode = Bool(false)
 let mutable AllowItemIconOnNonShopTile = Bool(false)
 let mutable PersonalPrefMarkersEnabled = Bool(false)
-let mutable AlphabetizeHintZones = Bool(false)
+let mutable AlphabetizeHintZones = Bool(true)
 module PerItemReminders =
     let mutable Recorder = Bool(true)
     let mutable PowerBracelet = Bool(true)
@@ -258,6 +260,8 @@ type ReadWrite() =
     member val BroadcastWindowSize = 3 with get,set
     member val BroadcastWindowIncludesOverworldMagnifier = false with get,set
     member val SmallerAppWindow = false with get,set
+    member val RememberStartupSelection = false with get,set
+    member val SavedStartupSelection = "" with get,set
     member val SmallerAppWindowScaleFactor = 2.0/3.0 with get,set
     member val ShorterAppWindow = false with get,set
 
@@ -294,7 +298,7 @@ type ReadWrite() =
     member val RaceMode = false with get,set
     member val AllowItemIconOnNonShopTile = false with get,set
     member val PersonalPrefMarkersEnabled = false with get,set
-    member val AlphabetizeHintZones = false with get,set
+    member val AlphabetizeHintZones = true with get,set
     member val PerItemRemind_Recorder = true with get,set
     member val PerItemRemind_PowerBracelet = true with get,set
     member val PerItemRemind_Boomstick = true with get,set
@@ -388,6 +392,8 @@ let private writeImpl(filename) =
     data.BroadcastWindowSize <- BroadcastWindowSize
     data.BroadcastWindowIncludesOverworldMagnifier <- BroadcastWindowIncludesOverworldMagnifier.Value
     data.SmallerAppWindow <- SmallerAppWindow.Value
+    data.RememberStartupSelection <- RememberStartupSelection.Value
+    data.SavedStartupSelection <- SavedStartupSelection
     data.SmallerAppWindowScaleFactor <- SmallerAppWindowScaleFactor
     data.ShorterAppWindow <- ShorterAppWindow.Value
     data.IsMuted <- IsMuted
@@ -527,6 +533,8 @@ let private read(filename) =
         BroadcastWindowSize <- max 1 (min 3 data.BroadcastWindowSize)
         BroadcastWindowIncludesOverworldMagnifier.Value <- data.BroadcastWindowIncludesOverworldMagnifier
         SmallerAppWindow.Value <- data.SmallerAppWindow
+        RememberStartupSelection.Value <- data.RememberStartupSelection
+        SavedStartupSelection <- (if data.SavedStartupSelection = null then "" else data.SavedStartupSelection)
         SmallerAppWindowScaleFactor <- data.SmallerAppWindowScaleFactor
         ShorterAppWindow.Value <- data.ShorterAppWindow
         IsMuted <- data.IsMuted

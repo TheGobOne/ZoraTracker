@@ -64,6 +64,7 @@ let tryCenterHotkeysUnderHintDecoder(hintLeft:float) =
 let mutable iconQuestion : UIElement = null
 let mutable iconEye : UIElement = null
 let mutable iconSave : UIElement = null
+let mutable iconItemLocations : UIElement = null   // the Item Locations button, the top button of the Save / Hint Decoder / Hotkeys column
 let mutable iconMirror : UIElement = null
 let mutable zonesCheckBoxEl : UIElement = null
 let mutable coordsCheckBoxEl : UIElement = null
@@ -111,17 +112,19 @@ let tryLayoutTopLeftIcons() =
                         Canvas.SetTop(cc, top + z.ActualHeight)
                     | _ -> ()
                     // Save / Hint Decoder / Hotkeys line up row for row with the Pause/Reset timer, Spot Summary and Show/Run Custom buttons to their right, and match their height
-                    let rowH = 
-                        match rightButtonForSizing with
-                        | :? FrameworkElement as rb when rb.ActualHeight > 0. -> rb.ActualHeight
-                        | _ -> 28.
-                    for e, y in [iconSave, 60.; hintDecoderElementForCentering, 90.; hotkeysElementForCentering, 120.] do
+                    // (four smaller buttons now: Item Locations on top, so they fit under the zones/coords checkboxes without clipping them)
+                    let rowH = 21.
+                    for e, y in [iconItemLocations, 60.; iconSave, 82.; hintDecoderElementForCentering, 104.; hotkeysElementForCentering, 126.] do
                         match e with
                         | :? FrameworkElement as f ->
                             match f with
                             | :? Button as b ->
                                 // fill the whole button (a shrunken text box would let the button's light background show through as an extra inner border line)
-                                (match b.Content with | :? TextBox as t -> t.VerticalContentAlignment <- VerticalAlignment.Center; t.VerticalAlignment <- VerticalAlignment.Stretch; t.HorizontalAlignment <- HorizontalAlignment.Stretch | _ -> ())
+                                (match b.Content with
+                                 | :? TextBox as t ->
+                                    t.VerticalContentAlignment <- VerticalAlignment.Center; t.VerticalAlignment <- VerticalAlignment.Stretch; t.HorizontalAlignment <- HorizontalAlignment.Stretch
+                                    t.FontSize <- (if obj.ReferenceEquals(e, iconItemLocations) then 10.5 else 13.); t.Padding <- Thickness(0.); t.RenderTransform <- (if obj.ReferenceEquals(e, hotkeysElementForCentering) then (new System.Windows.Media.TranslateTransform(0., -1.) :> System.Windows.Media.Transform) else null)   // (Hotkeys: nudged up a pixel to look vertically centered)   // (the longer Item Locations label gets a smaller font to fit the column)
+                                 | _ -> ())
                             | _ -> ()
                             // draw exactly like the buttons on the right: same border/padding/brushes, and pixel-snapped so the border doesn't blur or look thicker
                             (match f, rightButtonForSizing with
@@ -179,6 +182,7 @@ type IApplicationLayoutBase =
     abstract member AddShowHotKeysButton : showHotKeysButton:UIElement -> unit
     abstract member AddShowRunCustomButton : showRunCustomButton:UIElement -> unit
     abstract member AddSaveButton : saveButton:UIElement -> unit
+    abstract member AddItemLocationsButton : itemLocationsButton:UIElement -> unit
     abstract member AddQuestReferenceChart : chart:UIElement * x:float * y:float -> unit
     abstract member AddUserCustomContentButton : uccButton:UIElement -> unit
     abstract member AddDungeonTabsOverlay : dungeonTabsOverlay:UIElement -> unit
@@ -278,11 +282,16 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
         member this.AddShowRunCustomButton(showRunCustomButton) = 
             canvasAdd(appMainCanvas, showRunCustomButton, 12.8*OMTW, 120.)   // under Spot Summary
+            Canvas.SetZIndex(showRunCustomButton, 1000)   // always above the map tiles / their icons
         member this.AddQuestReferenceChart(chart, x, y) = canvasAdd(appMainCanvas, chart, x, y)
         member this.AddSaveButton(saveButton) = 
             canvasAdd(appMainCanvas, saveButton, 530., 28.)   // below the ? button
             iconSave <- saveButton
             tryLayoutTopLeftIcons()
+        member this.AddItemLocationsButton(itemLocationsButton) =
+            canvasAdd(appMainCanvas, itemLocationsButton, WEBCAM_LINE-41., 60.)   // (placed exactly by tryLayoutTopLeftIcons, above the Save button)
+            iconItemLocations <- itemLocationsButton
+            topLeftPlace()
         member this.AddUserCustomContentButton(uccButton) = 
             canvasAdd(appMainCanvas, uccButton, 16.*OMTW - kittyWidth - 50., THRU_MAIN_MAP_H + 42.)
         member this.AddDungeonTabsOverlay(dungeonTabsOverlay) =  // for magnifier
@@ -523,11 +532,16 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
         member this.AddShowRunCustomButton(showRunCustomButton) = 
             canvasAdd(upper, showRunCustomButton, 12.8*OMTW, 120.)   // under Spot Summary
+            Canvas.SetZIndex(showRunCustomButton, 1000)   // always above the map tiles / their icons
         member this.AddQuestReferenceChart(chart, x, y) = canvasAdd(upper, chart, x, y)
         member this.AddSaveButton(saveButton) = 
             canvasAdd(upper, saveButton, 530., 28.)   // below the ? button
             iconSave <- saveButton
             tryLayoutTopLeftIcons()
+        member this.AddItemLocationsButton(itemLocationsButton) =
+            canvasAdd(upper, itemLocationsButton, WEBCAM_LINE-41., 60.)   // (placed exactly by tryLayoutTopLeftIcons, above the Save button)
+            iconItemLocations <- itemLocationsButton
+            topLeftPlace()
         member this.AddUserCustomContentButton(uccButton) = 
             // canvasAdd(upper, uccButton, 16.*OMTW - kittyWidth - 50., THRU_MAIN_MAP_H + 42.)
             ignore uccButton // UCC is disabled in ShorterApplicationLayout

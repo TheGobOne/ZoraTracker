@@ -1100,8 +1100,8 @@ type MyWindow() as this =
 
         let finalChildTipArea = new Canvas()
         let explainerGrid = new Grid(Width=WIDTH*5./6., Height=160.)
-        let explainerBorder = new Border(Child=explainerGrid, BorderThickness=Thickness(1.), BorderBrush=Brushes.Orange, Opacity=0., Background=Brushes.Black)
-        let explainerLine = new Shapes.Line(Stroke=Brushes.Orange, StrokeThickness=1., Opacity=0.)
+        let explainerBorder = new Border(Child=explainerGrid, BorderThickness=Thickness(1.), BorderBrush=Brushes.Orange, Opacity=0., Background=Brushes.Black, IsHitTestVisible=false)   // (never intercepts the mouse: it overhangs the Settings area below)
+        let explainerLine = new Shapes.Line(Stroke=Brushes.Orange, StrokeThickness=1., Opacity=0., IsHitTestVisible=false)
         let hoverExplain(fe:FrameworkElement, desc) =
             if not startButtonHasBeenClicked then
                 let explanation = MakeTipTextBox(desc)
@@ -1226,6 +1226,29 @@ type MyWindow() as this =
         brArea.MouseLeave.Add(fun _ -> explainHide())
         extrasSP.Children.Add(new DockPanel(Width=10.)) |> ignore
         extrasSP.Children.Add(brArea) |> ignore
+        // 'Extra PB Blocks' / 'Extra Raft Blocks': more overworld tiles that count as blocked by the power bracelet / raft
+        let makeExtraBlocksCheckBox(label:string, explain:string) =
+            let cb = new CheckBox(Content=new TextBox(Text=label,IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
+            Graphics.scaleUpCheckBoxBox(cb, 1.66)
+            cb.IsChecked <- System.Nullable.op_Implicit false
+            let area = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=cb, VerticalAlignment=VerticalAlignment.Top)
+            area.MouseEnter.Add(fun _ -> hoverExplain(area, explain))
+            area.MouseLeave.Add(fun _ -> explainHide())
+            extrasSP.Children.Add(new DockPanel(Width=10.)) |> ignore
+            extrasSP.Children.Add(area) |> ignore
+            cb
+        let epbcb = makeExtraBlocksCheckBox("Extra PB Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4")
+        let erbcb = makeExtraBlocksCheckBox("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16")
+        // 'Remember startup selection' (Other options): bring back the checkboxes that were checked when the last game was started
+        let rememberedCheckBoxes : (string * CheckBox) list =
+            [ "full", hscb; "hdn", hdcb; "mirror", mocb; "bomb", mbcb; "4th", fscb; "cln", clncb; "boots", brcb; "epb", epbcb; "erb", erbcb ]
+        if TrackerModelOptions.RememberStartupSelection.Value then
+            let saved = TrackerModelOptions.SavedStartupSelection.Split([|','|], System.StringSplitOptions.RemoveEmptyEntries) |> Set.ofArray
+            if saved.Count > 0 then
+                for (key, cb) in rememberedCheckBoxes do
+                    cb.IsChecked <- System.Nullable.op_Implicit (saved.Contains key)
+                fsPopup.IsOpen <- false   // (checking '4th Sword' pops its menu up; not when it is only being restored)
+                fourthSwordLevel.Value <- (if saved.Contains "4th" && saved.Contains "4th9" then 9 else 2)
         let startupOptionsSP = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
         startupOptionsSP.Children.Add(checkboxSP) |> ignore
         startupOptionsSP.Children.Add(extrasHeader) |> ignore
@@ -1240,6 +1263,12 @@ type MyWindow() as this =
 
         let ctxt = System.Threading.SynchronizationContext.Current
         let doStartup(n, loadData : DungeonSaveAndLoad.AllData option) = async {
+            // remember which startup checkboxes were checked (if the user asked for that)
+            if loadData.IsNone && TrackerModelOptions.RememberStartupSelection.Value then
+                let keys = [ for (key, cb) in rememberedCheckBoxes do if cb.IsChecked.HasValue && cb.IsChecked.Value then yield key ]
+                let keys = if List.contains "4th" keys && fourthSwordLevel.Value = 9 then keys @ ["4th9"] else keys
+                TrackerModelOptions.SavedStartupSelection <- String.concat "," keys
+                TrackerModelOptions.writeSettings()
             // loadData takes precedence over user selections
             let heartShuffle = loadData.IsSome || (hscb.IsChecked.HasValue && hscb.IsChecked.Value)
             let kind = 
@@ -1263,6 +1292,9 @@ type MyWindow() as this =
                 TrackerModel.SetLevel2StairBoxEnabled(fourth && not inLevel9)   // Level 2: the staircase item slot is enabled; Level 9: it is not, and level 9 gets a floor item check instead
                 TrackerModel.SetLevel9FloorBoxEnabled(inLevel9)
             TrackerModel.BootsReplaceBoomerangs <- brcb.IsChecked.HasValue && brcb.IsChecked.Value
+            OverworldData.IsMirroredFunc <- (fun () -> TrackerModel.MirrorOverworld)
+            OverworldData.ExtraPBBlocks <- epbcb.IsChecked.HasValue && epbcb.IsChecked.Value
+            OverworldData.ExtraRaftBlocks <- erbcb.IsChecked.HasValue && erbcb.IsChecked.Value
             TrackerModel.MarkBombDroppers <- mbcb.IsChecked.HasValue && mbcb.IsChecked.Value
             TrackerModel.CustomLevelName <- 
                 if clncb.IsChecked.HasValue && clncb.IsChecked.Value then clnTextBox.Text.Trim().ToUpperInvariant() else ""
@@ -1468,6 +1500,16 @@ type MyWindow() as this =
                         dialogBorder.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
                         let areaW = if cm.AppMainCanvas.Width > 0. then cm.AppMainCanvas.Width else WIDTH
                         let areaH = if cm.AppMainCanvas.Height > 0. then cm.AppMainCanvas.Height else dialogBorder.DesiredSize.Height + 60.
+                        // (the real size of the dialog is only known after it is placed on the popup canvas, where it inherits the app's font sizes), so center it, and shrink it
+                        // if it is bigger than the window, from its SizeChanged handler using its actual size
+                        dialogBorder.RenderTransformOrigin <- Point(0., 0.)
+                        dialogBorder.SizeChanged.Add(fun _ ->
+                            let dw, dh = dialogBorder.ActualWidth, dialogBorder.ActualHeight
+                            if dw > 0. && dh > 0. then
+                                let sc = min 1.0 (min (0.95 * areaW / dw) (0.95 * areaH / dh))
+                                dialogBorder.RenderTransform <- new ScaleTransform(sc, sc)
+                                Canvas.SetLeft(dialogBorder, max 0. ((areaW - dw*sc) / 2.))
+                                Canvas.SetTop(dialogBorder, max 0. ((areaH - dh*sc) / 2.)))
                         do! CustomComboBoxes.DoModal(cm, wh, max 0. ((areaW - dialogBorder.DesiredSize.Width) / 2.), max 0. ((areaH - dialogBorder.DesiredSize.Height) / 2.), dialogBorder)
                         Graphics.alternativeOverworldMapFilename <- ""
                         match choice with

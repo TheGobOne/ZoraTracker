@@ -734,6 +734,14 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
+    let cb = new CheckBox(Content=new TextBox(Text="Remember startup selection",IsReadOnly=true))
+    cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.RememberStartupSelection.Value
+    cb.Checked.Add(fun _ -> TrackerModelOptions.RememberStartupSelection.Value <- true)
+    cb.Unchecked.Add(fun _ -> TrackerModelOptions.RememberStartupSelection.Value <- false)
+    cb.ToolTip <- "When checked, the boxes you check under Startup Options and ZORA Extras on the start screen are remembered\nand come back checked the next time the tracker starts"
+    ToolTipService.SetShowDuration(cb, 10000)
+    options3sp.Children.Add(cb) |> ignore
+
     let cb = new CheckBox(Content=new TextBox(Text="Save on completion",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.SaveOnCompletion.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.SaveOnCompletion.Value <- true)

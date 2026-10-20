@@ -219,6 +219,7 @@ type GrabHelper() =
     let mutable roomIsCircledIfGrabWereACut = null
     let mutable horizontalDoorsIfGrabWereACut = null
     let mutable verticalDoorsIfGrabWereACut = null
+    let selectedRooms : bool[,] = Array2D.zeroCreate 8 8   // rooms picked one by one (instead of a contiguous flood) to be cut out and moved
 
     member this.PreviewGrab(mouseX, mouseY, roomStates:DungeonRoomState.DungeonRoomState[,]) =
         if not this.IsGrabMode || this.HasGrab then
@@ -240,6 +241,20 @@ type GrabHelper() =
             attempt(roomX,roomY+1)
         // return them
         contiguous
+    member this.Selected = selectedRooms
+    member this.HasSelection = selectedRooms |> Array2D.map id |> Seq.cast<bool> |> Seq.exists id
+    member this.ToggleSelect(x:int, y:int) = selectedRooms.[x,y] <- not selectedRooms.[x,y]
+    // cut out exactly the rooms that were picked (mouseX/mouseY = the room the cut was started on, the anchor that the drop position is measured from)
+    member this.StartGrabFromSelection(mouseX, mouseY, roomStates:DungeonRoomState.DungeonRoomState[,], roomIsCircled:bool[,], horizontalDoors:Door[,], verticalDoors:Door[,]) =
+        let contigous = Array2D.init 8 8 (fun x y -> selectedRooms.[x,y])
+        grabMouseX <- mouseX
+        grabMouseY <- mouseY
+        contigous |> Array2D.iteri (fun x y v -> grabContiguousRooms.[x,y] <- v)
+        roomStatesIfGrabWereACut <- Array2D.init 8 8 (fun x y -> roomStates.[x,y].Clone())
+        roomIsCircledIfGrabWereACut <- Array2D.init 8 8 (fun x y -> if contigous.[x,y] then false else roomIsCircled.[x,y])
+        horizontalDoorsIfGrabWereACut <- Array2D.init 7 8 (fun x y -> if contigous.[x,y] || contigous.[x+1,y] then DoorState.UNKNOWN else horizontalDoors.[x,y].State)
+        verticalDoorsIfGrabWereACut <- Array2D.init 8 7 (fun x y -> if contigous.[x,y] || contigous.[x,y+1] then DoorState.UNKNOWN else verticalDoors.[x,y].State)
+        contigous
     member this.StartGrab(mouseX, mouseY, roomStates:DungeonRoomState.DungeonRoomState[,], roomIsCircled:bool[,], horizontalDoors:Door[,], verticalDoors:Door[,]) =
         let contigous = this.PreviewGrab(mouseX, mouseY, roomStates)
         // save them
@@ -343,6 +358,7 @@ type GrabHelper() =
         for x = 0 to 7 do
             for y = 0 to 7 do
                 grabContiguousRooms.[x,y] <- false
+                selectedRooms.[x,y] <- false
         roomStatesIfGrabWereACut <- null
         roomIsCircledIfGrabWereACut <- null
     member this.Log() =

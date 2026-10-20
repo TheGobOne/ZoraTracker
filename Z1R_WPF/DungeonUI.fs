@@ -17,6 +17,10 @@ let inline choice3 v : Choice<RoomType, MonsterDetail, FloorDropDetail, DoorHotK
 let inline choice4 v : Choice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse> = Choice4Of4 v
 
 
+// level 9: which quarter of the dungeon Ganon / Zelda are in (0=NW, 1=NE, 2=SE, 3=SW, -1=unknown); this session only
+let ganonQuadrant = ref -1
+let zeldaQuadrant = ref -1
+
 module AhhGlobalVariables =
     let mutable showShopLocatorInstanceFunc = fun(_item:int) -> ()
     let mutable hideLocator = fun() -> ()
@@ -518,7 +522,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
     let grabModeTextBlock = 
         new Border(BorderThickness=Thickness(2.), BorderBrush=Brushes.LightGray, 
                     Child=new TextBlock(TextWrapping=TextWrapping.Wrap, FontSize=16., Foreground=Brushes.Black, Background=Brushes.Gray, IsHitTestVisible=false,
-                                        Text="You are now in 'grab mode', which can be used to move an entire segment of dungeon rooms and doors at once.\n\nTo abort grab mode, click again on 'GRAB' in the upper right of the dungeon tracker.\n\nTo move a segment, first click any marked room, to pick up that room and all contiguous rooms.  Then click again on a new location to 'drop' the segment you grabbed.  After grabbing, hovering the mouse shows a preview of where you would drop.  This behaves like 'cut and paste', and adjacent doors will come along for the ride.\n\nUpon completion, you will be prompted to keep changes or undo them, so you can experiment.")
+                                        Text="You are now in 'move mode', which can be used to move any set of dungeon rooms and doors.\n\nTo abort move mode, click again on 'MOVE' in the dungeon tracker.\n\nLeft click each room you want to move (click again to un-pick it); picked rooms turn orange.  When you have picked them all, right click to 'cut' them out - they will follow your cursor, with a preview of where they would land.  Left click to 'drop' them on the map.  Adjacent doors come along for the ride.\n\nUpon completion, you will be prompted to keep changes or undo them, so you can experiment.")
         )
     let dungeonTabs = new TabControl(FontSize=12., Background=Brushes.Black)
     theDungeonTabControl <- dungeonTabs
@@ -562,7 +566,8 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
 
     if TrackerModel.IsHiddenDungeonNumbers() then
         let button = new Button(Content=new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=Brushes.Black, BorderThickness=Thickness(0.), 
-                                                    Text="FQ/SQ", IsReadOnly=true, IsHitTestVisible=false),
+                                                    Text="FQ/SQ", IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center),
+                                        HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch,
                                         BorderThickness=Thickness(1.), Margin=Thickness(0.), Padding=Thickness(0.))
         canvasAdd(dungeonTabsWholeCanvas, button, 405., 0.)
         
@@ -658,9 +663,9 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                     } |> Async.StartImmediate
             )
     else
-        let fqcb = new Button(Content=new TextBox(Text="1Q",FontSize=12.0,Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false))
+        let fqcb = new Button(Content=new TextBox(Text="1Q",FontSize=12.0,Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false,TextAlignment=TextAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center),HorizontalContentAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Stretch)
         fqcb.ToolTip <- "Show vanilla first quest dungeon outlines"
-        let sqcb = new Button(Content=new TextBox(Text="2Q",FontSize=12.0,Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false))
+        let sqcb = new Button(Content=new TextBox(Text="2Q",FontSize=12.0,Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false,TextAlignment=TextAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center),HorizontalContentAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Stretch)
         sqcb.ToolTip <- "Show vanilla second quest dungeon outlines"
         for button in [fqcb; sqcb] do
             button.MouseEnter.Add(fun _ -> isHoveringFQSQ.Value <- true)
@@ -882,6 +887,62 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
         canvasAdd(contentCanvas, dungeonCanvas, 3., 3.)
         canvasAdd(contentCanvas, dungeonSourceHighlightCanvas, 3., 3.)
         canvasAdd(contentCanvas, dungeonHighlightCanvas, 3., 3.)
+        // level 9 only: dashed borders around the 4x4-room quadrant that Ganon (light blue) and Zelda (pink) are in
+        let gzBorderCanvas = new Canvas(Width=float(39*8 + 12*7), Height=float(TH + 27*8 + 12*7), IsHitTestVisible=false)
+        canvasAdd(contentCanvas, gzBorderCanvas, 3., 3.)
+        let redrawGanonZeldaBorders() =
+            gzBorderCanvas.Children.Clear()
+            // quadrant: 0=NW, 1=NE, 2=SE, 3=SW
+            for (q, color, dashOffset) in [ ganonQuadrant.Value, Color.FromRgb(120uy,200uy,255uy), 0.; zeldaQuadrant.Value, Color.FromRgb(255uy,120uy,200uy), 3. ] do
+                if q >= 0 then
+                    let col0 = if q = 1 || q = 2 then 4 else 0
+                    let row0 = if q = 2 || q = 3 then 4 else 0
+                    let w, h = float(4*39 + 3*12), float(4*27 + 3*12)
+                    let r = new Shapes.Rectangle(Width=w+8., Height=h+8., Stroke=new SolidColorBrush(color), StrokeThickness=2.5, StrokeDashArray=new DoubleCollection([3.; 3.]), StrokeDashOffset=dashOffset, IsHitTestVisible=false)
+                    canvasAdd(gzBorderCanvas, r, float(col0*(39+12)) - 4., float(TH + row0*(27+12)) - 4.)
+        if level = 9 then
+            redrawGanonZeldaBorders()
+            // half Ganon, half Zelda icon above the MOVE button: click to say which quadrant each of them is in
+            let halfBmp = 
+                let r = new System.Drawing.Bitmap(21, 21)
+                for x = 0 to 20 do
+                    for y = 0 to 20 do
+                        r.SetPixel(x, y, (if x <= 10 then Graphics.ganon_bmp else Graphics.zelda_bmp).GetPixel(x, y))
+                r
+            // the button's border is dashed light blue on the Ganon (left) half and dashed pink on the Zelda (right) half
+            let bw, bh = float(13*3), float(TH+1)
+            let gzFace = new Canvas(Width=bw, Height=bh, Background=Brushes.Black)
+            let gzImg = Graphics.BMPtoImage(halfBmp)
+            canvasAdd(gzFace, gzImg, (bw - 21.)/2., (bh - 21.)/2.)
+            let halfBorder(color:Color, pts:(float*float) list) =
+                new Shapes.Polyline(Points=new PointCollection(pts |> List.map (fun (x,y) -> Point(x,y))), Stroke=new SolidColorBrush(color), StrokeThickness=2.,
+                                    StrokeDashArray=new DoubleCollection([3.; 2.]), IsHitTestVisible=false)
+            let m = 1.
+            gzFace.Children.Add(halfBorder(Color.FromRgb(120uy,200uy,255uy), [ (bw/2., m); (m, m); (m, bh-m); (bw/2., bh-m) ])) |> ignore
+            gzFace.Children.Add(halfBorder(Color.FromRgb(255uy,120uy,200uy), [ (bw/2., m); (bw-m, m); (bw-m, bh-m); (bw/2., bh-m) ])) |> ignore
+            let gzButton = new Button(Width=bw, Height=bh, Content=gzFace, Background=Brushes.Black, BorderThickness=Thickness(0.), Margin=Thickness(0.), Padding=Thickness(0.), Focusable=false)
+            let bigIcon(bmp:System.Drawing.Bitmap) : FrameworkElement = 
+                let im = Graphics.BMPtoImage(bmp)
+                im.Width <- 42.
+                im.Height <- 42.
+                im.Stretch <- Stretch.Uniform
+                upcast im
+            let dirText(t:string) : FrameworkElement = upcast new TextBlock(Text=t, Foreground=Brushes.Orange, FontSize=24., HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
+            gzButton.Click.Add(fun _ ->
+                if not popupIsActive then
+                    popupIsActive <- true
+                    async {
+                        let! who = PieMenus.IconChoiceBoxAsync(cm, "", [ "ganon", bigIcon Graphics.ganon_bmp; "zelda", bigIcon Graphics.zelda_bmp ])
+                        if not(isNull who) then
+                            let name = if who = "ganon" then "Ganon" else "Zelda"
+                            let! dir = PieMenus.IconChoiceBoxAsync(cm, "", [ "NW", dirText "NW"; "NE", dirText "NE"; "SE", dirText "SE"; "SW", dirText "SW"; "none", dirText "Clear" ])
+                            if not(isNull dir) then
+                                let q = match dir with | "NW" -> 0 | "NE" -> 1 | "SE" -> 2 | "SW" -> 3 | _ -> -1
+                                if who = "ganon" then ganonQuadrant.Value <- q else zeldaQuadrant.Value <- q
+                                redrawGanonZeldaBorders()
+                        popupIsActive <- false
+                    } |> Async.StartImmediate)
+            canvasAdd(contentCanvas, gzButton, LD_X+1.5, LD_Y+168.-float(TH+1)-1.)
 
         contentCanvasesWithBadYOffsets.[level-1] <- contentCanvasWithBadYOffset
         contentCanvases.[level-1] <- contentCanvas
@@ -1166,24 +1227,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
             redrawAllRooms()        // old man rooms might be complete or incomplete, re-color them to show actual backing state
             updateHeaderCanvases()  // and add/remove red dot as appropriate
             )  
-        // have map checkbox
-        do
-            let cbOrAtlasCanvas = new Canvas()
-            let c = new Canvas(Width=16., Height=16., ClipToBounds=true)
-            let haveMapCB = new CheckBox(Content=c)
-            let atlasImg = Graphics.BMPtoImage Graphics.zi_atlas
-            let update() = if TrackerModel.playerHasAtlas() then atlasImg.Opacity<-1.0; haveMapCB.Opacity<-0.0 else atlasImg.Opacity<-0.0; haveMapCB.Opacity<-1.0
-            update()
-            TrackerModel.playerHasAtlasChanged.Publish.Add(fun _ -> update())
-            canvasAdd(c, Graphics.BMPtoImage Graphics.zi_map_bmp, -1., -1.)
-            canvasAdd(cbOrAtlasCanvas, atlasImg, 10., -1.)
-            canvasAdd(cbOrAtlasCanvas, haveMapCB, 0., 0.)
-            haveMapCB.ToolTip <- "I have the map (display on summary tab)"
-            haveMapCB.IsChecked <- System.Nullable.op_Implicit false
-            haveMapCB.Checked.Add(fun _ -> TrackerModel.GetDungeon(level-1).PlayerHasMapOfThisDungeon <- true)
-            haveMapCB.Unchecked.Add(fun _ -> TrackerModel.GetDungeon(level-1).PlayerHasMapOfThisDungeon <- false)
-            canvasAdd(contentCanvas, cbOrAtlasCanvas, LD_X+5., LD_Y+171.)
-            TrackerModel.GetDungeon(level-1).PlayerHasMapOfThisDungeonChanged.Add(fun _ -> haveMapCB.IsChecked <- System.Nullable.op_Implicit (TrackerModel.GetDungeon(level-1).PlayerHasMapOfThisDungeon))
+        // (the "I have the map" checkbox that used to sit here is gone; the MOVE button below takes its place)
         // minimap-draw-er
         let hoverCanvas = new Canvas(Width=26., Height=26., Background=Brushes.Black, IsHitTestVisible=true)
         let minimini = Dungeon.MakeMiniMiniMapBmp() |> Graphics.BMPtoImage
@@ -1272,7 +1316,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
             canvasAdd(contentCanvas, b, LD_X+2., LD_Y+191.+32.)
         // grab button for this tab
         let grabTB = new TextBox(FontSize=float(TH-12), Foreground=Brushes.Gray, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false,
-                                Text="GRAB", BorderThickness=Thickness(0.), Margin=Thickness(0.), Padding=Thickness(0.),
+                                Text="MOVE", BorderThickness=Thickness(0.), Margin=Thickness(0.), Padding=Thickness(0.),
                                 HorizontalContentAlignment=HorizontalAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center)
         let grabButton = new Button(Width=float(13*3), Height=float(TH-3), Content=grabTB, Background=Brushes.Black, BorderThickness=Thickness(2.), 
                                     Margin=Thickness(0.), Padding=Thickness(0.), Focusable=false,
@@ -1280,7 +1324,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
         let grabRedraw() =
             if grabHelper.IsGrabMode then
                 grabTB.Foreground <- Brushes.White
-                grabTB.Background <- Brushes.Red
+                grabTB.Background <- Brushes.DarkOrange
                 dungeonTabs.Cursor <- System.Windows.Input.Cursors.Hand
                 grabModeTextBlock.Opacity <- 1.
             else
@@ -1291,7 +1335,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 grabTB.Background <- Brushes.Black
                 dungeonTabs.Cursor <- null
                 grabModeTextBlock.Opacity <- 0.
-        canvasAdd(contentCanvas, grabButton, LD_X+1.5, LD_Y+171.-float(TH-3)-1.-10.+4.)   // right-hand column, just above the map checkbox
+        canvasAdd(contentCanvas, grabButton, LD_X+1.5, LD_Y+168.)   // right-hand column, where the map checkbox used to be
         grabButton.Click.Add(fun _ ->
             grabHelper.ToggleGrabMode()
             grabRedraw()
@@ -1772,8 +1816,9 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             if not grabHelper.HasGrab then
                                 if not(roomStates.[i,j].IsEmpty) then
                                     dungeonHighlightCanvas.Children.Clear() // clear old preview
-                                    let contiguous = grabHelper.PreviewGrab(i,j,roomStates)
-                                    highlight(contiguous, Brushes.Lime)
+                                    let single : bool[,] = Array2D.zeroCreate 8 8   // just this one room (rooms are picked one at a time)
+                                    single.[i,j] <- true
+                                    highlight(single, Brushes.Orange)
                             else
                                 dungeonHighlightCanvas.Children.Clear() // clear old preview
                                 let ok,warn = grabHelper.PreviewDrop(i,j)
@@ -1872,11 +1917,11 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             if ea.ChangedButton = Input.MouseButton.Left then
                                 if grabHelper.IsGrabMode then
                                     if not grabHelper.HasGrab then
+                                        // left click picks (or un-picks) this one room; right click then cuts all the picked rooms out
                                         if not(roomStates.[i,j].IsEmpty) then
-                                            dungeonHighlightCanvas.Children.Clear() // clear preview
-                                            let contiguous = grabHelper.StartGrab(i,j,roomStates,roomIsCircled,horizontalDoors,verticalDoors)
-                                            highlightImpl(dungeonSourceHighlightCanvas, contiguous, Brushes.Pink)  // this highlight stays around until completed/aborted
-                                            highlight(contiguous, Brushes.Lime)
+                                            grabHelper.ToggleSelect(i,j)
+                                            dungeonSourceHighlightCanvas.Children.Clear()
+                                            highlightImpl(dungeonSourceHighlightCanvas, grabHelper.Selected, Brushes.Orange)   // the picked rooms stay orange until cut / aborted
                                     else
                                         //let backupRoomStates = roomStates |> Array2D.map (fun x -> x.Clone())
                                         let backupRoomValues =
@@ -1983,7 +2028,18 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                     // SetNewValue already calls redraw() internally; no second call needed.
                                     ea.Handled <- true
                             elif ea.ChangedButton = Input.MouseButton.Right then
-                                if not grabHelper.IsGrabMode then  // cannot right click rooms in grab mode
+                                if grabHelper.IsGrabMode then
+                                    // right click in move mode: cut out all the rooms that were picked, so they can be carried to a new spot (left click drops them)
+                                    if not grabHelper.HasGrab && grabHelper.HasSelection then
+                                        dungeonHighlightCanvas.Children.Clear()
+                                        grabHelper.StartGrabFromSelection(i,j,roomStates,roomIsCircled,horizontalDoors,verticalDoors) |> ignore
+                                        dungeonSourceHighlightCanvas.Children.Clear()
+                                        highlightImpl(dungeonSourceHighlightCanvas, grabHelper.Selected, Brushes.Pink)   // where they came from
+                                        let ok,warn = grabHelper.PreviewDrop(i,j)
+                                        highlight(ok, Brushes.Lime)
+                                        highlight(warn, Brushes.Yellow)
+                                    ea.Handled <- true
+                                else
                                     if Input.Keyboard.IsKeyDown(Input.Key.LeftShift) || Input.Keyboard.IsKeyDown(Input.Key.RightShift) then
                                         popupIsActive <- true
                                         doFloorDropDetailPopup()
@@ -2310,7 +2366,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
             makeMidiPreviewBehavior(i, mini)
             mini
         let summaryModeButton = 
-            let tb = new TextBox(Text="", IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, BorderThickness=Thickness(0.), Background=Graphics.almostBlack,
+            let tb = new TextBox(Text="", IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center, BorderThickness=Thickness(0.), Background=Graphics.almostBlack,
                                     FontSize=12., Foreground=Brushes.Orange)
             let button = new Button(Content=tb, HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch, Width=100.)
             let updateModeText() =

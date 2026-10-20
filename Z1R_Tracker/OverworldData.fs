@@ -277,6 +277,15 @@ let owMapSquaresFirstQuestOnly = [|
         yield s
     |]
 
+// ZORA Extras startup options: extra overworld tiles that also count as blocked by the power bracelet / raft (x = column 0-15 for 1-16, y = row 0-7 for A-H)
+let mutable ExtraPBBlocks = false       // a1 a2 a3 a4 b1 b2 b3 b4
+let mutable ExtraRaftBlocks = false     // d5 e5 a15 a16 b15 b16
+let mutable IsMirroredFunc : unit -> bool = fun () -> false
+// (the tile lists are in the game's own coordinates; when the map is flipped East<->West the whole map view is flipped, so these tiles flip along with it automatically)
+let isExtraTile(tiles:Set<int*int>, x, y) = tiles.Contains((x, y))
+let ladderBlockTilesAllQuests = set [ (15,5) ]   // F16 (the coast item) is always a ladder block
+let extraPBBlockTiles = set [ for x in 0..3 do for y in 0..1 -> (x,y) ]
+let extraRaftBlockTiles = set [ (4,3); (4,4); (14,0); (15,0); (14,1); (15,1) ]
 type OverworldInstance(quest) =
     member this.Quest = quest
     member this.AlwaysEmpty(x,y) =
@@ -287,6 +296,8 @@ type OverworldInstance(quest) =
         | OWQuest.MIXED_SECOND -> PrivateInternals.owMapSquaresMixedQuestAlwaysEmpty.[y].Chars(x) = 'X'
         | OWQuest.BLANK ->        false
     member this.Ladderable(x,y) =
+        (quest <> OWQuest.BLANK && isExtraTile(ladderBlockTilesAllQuests, x, y)) || this.LadderableBase(x,y)
+    member this.LadderableBase(x,y) =
         match quest with
         | OWQuest.FIRST ->        false
         | OWQuest.BLANK ->        false
@@ -298,7 +309,7 @@ type OverworldInstance(quest) =
     member this.Raftable(x,y) =
         match quest with
         | OWQuest.BLANK -> false
-        | _ -> PrivateInternals.owMapSquaresRaftable.[y].Chars(x) = 'X'
+        | _ -> PrivateInternals.owMapSquaresRaftable.[y].Chars(x) = 'X' || (ExtraRaftBlocks && isExtraTile(extraRaftBlockTiles, x, y))
     member this.Whistleable(x,y) =
         match quest with
         | OWQuest.FIRST ->        PrivateInternals.owMapSquaresFirstQuestWhistleable.[y].Chars(x) = 'X'
@@ -306,7 +317,9 @@ type OverworldInstance(quest) =
         | OWQuest.MIXED_FIRST ->  (PrivateInternals.owMapSquaresFirstQuestWhistleable.[y].Chars(x) = 'X' || PrivateInternals.owMapSquaresSecondQuestWhistleable.[y].Chars(x) = 'X')
         | OWQuest.MIXED_SECOND -> (PrivateInternals.owMapSquaresFirstQuestWhistleable.[y].Chars(x) = 'X' || PrivateInternals.owMapSquaresSecondQuestWhistleable.[y].Chars(x) = 'X')
         | OWQuest.BLANK ->        false
-    member this.PowerBraceletable(x,y) =
+    member this.PowerBraceletable(x,y) = 
+        this.PowerBraceletableBase(x,y) || (quest <> OWQuest.BLANK && ExtraPBBlocks && isExtraTile(extraPBBlockTiles, x, y))
+    member this.PowerBraceletableBase(x,y) =
         match quest with
         | OWQuest.FIRST ->        PrivateInternals.owMapSquaresFirstQuestPowerBraceletable.[y].Chars(x) = 'X'
         | OWQuest.SECOND ->       PrivateInternals.owMapSquaresSecondQuestPowerBraceletable.[y].Chars(x) = 'X'

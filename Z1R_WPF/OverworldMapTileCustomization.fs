@@ -81,6 +81,7 @@ let computeExtraDecorationArrow(topX, topY, pos:Point) =
     extraDecorations
 
 let (sword3x, sword3y) = OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.MAGS_ITEM_BOX)
+let (letterX, letterY) = OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.LETTER_ITEM_BOX)
 let (armosX, armosY), (sword2x,sword2y) = OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.ARMOS_ITEM_BOX), OW_ITEM_GRID_LOCATIONS.Locate(OW_ITEM_GRID_LOCATIONS.WHITE_SWORD_ITEM_BOX)
 
 let DoRemoteItemComboBox(cm:CustomComboBoxes.CanvasManager, activationDelta, trackerModelBoxToUpdate:TrackerModel.Box,
@@ -142,10 +143,18 @@ let clearOtherSwordCaveItems(i, j, state) =
     TrackerModel.setOverworldMapExtraData(i,j,state,0)
     TrackerModel.recomputePlayerStateSummary()
     TrackerModel.forceUpdate()
+// the letter cave gets the same treatment: took the letter, or a shuffled item
+let clearLetterCaveItems(i, j) =
+    let ex = TrackerModel.getOverworldMapExtraData(i,j,TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER)
+    if ex = SHUFFLED_ITEM then TrackerModel.letterBox.Set(-1, TrackerModel.PlayerHas.SKIPPED)   // the item found here is taken back
+    TrackerModel.setOverworldMapExtraData(i,j,TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER,0)
+    TrackerModel.recomputePlayerStateSummary()
+    TrackerModel.forceUpdate()
 let clearSwordCaveItemsForState(i, j, state) =
     if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 then clearWoodSwordCaveItems(i, j)
+    elif state = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER then clearLetterCaveItems(i, j)
     elif state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 then clearOtherSwordCaveItems(i, j, state)
-let isSwordCaveState(state) = state = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3
+let isSwordCaveState(state) = state = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3
 let overworldAcceleratorTable = new System.Collections.Generic.Dictionary<_,_>()
 overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY, (fun (cm:CustomComboBoxes.CanvasManager,_c:Canvas,i,j) -> async {
     let! shouldMarkTakeAnyAsComplete = PieMenus.TakeAnyPieMenuAsync(cm, 666.)
@@ -157,16 +166,8 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
     let s = TrackerModel.playerComputedStateSummary
     acceleratorCancelled <- false
     TrackerModel.shuffledWoodSwordTiles.Remove((i,j)) |> ignore
-    // the pie menu supports the Contextual_TakeThis_* hotkeys (sword / candle / none); its 4th option leads to the remaining choices
-    let! pie = PieMenus.TakeThisChoicePieMenuAsync(cm, 666.)
-    let! choice =
-        async {
-            match pie with
-            | 1 -> return "Took Sword"
-            | 2 -> return "Took Candle"
-            | 3 -> return! CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Question, "What is in this cave?", ["Shuffled Item"; "Sword Icon"])
-            | _ -> return "Leave"
-        }
+    // one box of 4 buttons; it also supports the Contextual_TakeThis_* hotkeys (sword / candle / none)
+    let! choice = PieMenus.TakeThisButtonBoxAsync(cm)
     let mutable doneValue = 0   // 0 = not taken yet, SWORD1 = took the sword, CANDLE_TAKEN = took the candle
     match choice with
     | "Took Sword" ->
@@ -202,7 +203,7 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.ARMOS, (f
 let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float, decorIdent:int, takeSword:unit->unit) =
     (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,i,j) -> async {
         acceleratorCancelled <- false
-        let! choice = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Question, "What is in this cave?", ["Took Sword"; "Shuffled Item"; "Sword Icon"])
+        let! choice = PieMenus.CaveChoiceBoxAsync(cm, ["Took Sword"; "Shuffled Item"; "Sword Icon"])
         let mutable doneValue = 0   // 0 = nothing yet, state = took the sword, SHUFFLED_ITEM = the cave holds a shuffled item
         match choice with
         | "Took Sword" ->
@@ -221,6 +222,21 @@ let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float
         if not acceleratorCancelled then
             TrackerModel.setOverworldMapExtraData(i, j, state, doneValue)
         })
+// the letter cave: took the letter, a shuffled item, or a letter icon (like the sword caves; the item is shown in a local box that points at the letter item box up top)
+overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER, (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,i,j) -> async {
+    acceleratorCancelled <- false
+    let! choice = PieMenus.CaveChoiceBoxAsync(cm, ["Took Letter"; "Shuffled Item"])
+    let mutable doneValue = 0   // 0 = nothing yet, THE_LETTER = took the letter, SHUFFLED_ITEM = the cave holds a shuffled item
+    match choice with
+    | "Took Letter" -> doneValue <- TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER
+    | "Shuffled Item" ->
+        doneValue <- SHUFFLED_ITEM
+        let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
+        do! DoRemoteItemComboBox(cm, 0, TrackerModel.letterBox, letterX, letterY, pos)
+    | _ -> acceleratorCancelled <- true
+    if not acceleratorCancelled then
+        TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER, doneValue)
+    }))
 overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD2,
     swordCaveAccelerator(TrackerModel.MapSquareChoiceDomainHelper.SWORD2, TrackerModel.sword2Box, sword2x, sword2y, TrackerModel.ITEMS.WHITESWORD, (fun () -> TrackerModel.startingItemsAndExtras.PlayerHasWhiteSword.Set(true))))
 overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD3,
@@ -243,22 +259,94 @@ let sword1LeftSideDarkFullTileBmp = makeSwordLeftSideFullTileBmpN(TrackerModel.M
 let sword2LeftSideFullTileBmp = makeSwordLeftSideFullTileBmp(TrackerModel.MapSquareChoiceDomainHelper.SWORD2)
 let sword2LeftSideDarkFullTileBmp = makeSwordLeftSideFullTileBmpN(TrackerModel.MapSquareChoiceDomainHelper.SWORD2, 1)
 let sword3LeftSideDarkFullTileBmp = makeSwordLeftSideFullTileBmpN(TrackerModel.MapSquareChoiceDomainHelper.SWORD3, 1)
-// a cave's shuffled item, drawn to the right of the (left-aligned) sword icon at the sword icon's height
+// the marker-icon look used for items placed on a tile by themselves: the icon with a thick black outline (see WPFUI.decorIconBmp)
+let withDecorOutline(src:System.Drawing.Bitmap) : System.Drawing.Bitmap =
+    let B = 3
+    let w, h = src.Width, src.Height
+    let dst = new System.Drawing.Bitmap(w + 2*B, h + 2*B)
+    let isInk(x, y) = let p = src.GetPixel(x, y) in p.A > 0uy && (int p.R + int p.G + int p.B) > 40
+    for x = 0 to w-1 do
+        for y = 0 to h-1 do
+            if isInk(x, y) then
+                for dx = 0 to 2*B do
+                    for dy = 0 to 2*B do
+                        dst.SetPixel(x+dx, y+dy, System.Drawing.Color.Black)
+    for x = 0 to w-1 do
+        for y = 0 to h-1 do
+            let p = src.GetPixel(x, y)
+            if p.A > 0uy then dst.SetPixel(x+B, y+B, p)
+    dst
+// the letter (not shuffled) on a tile: the same letter sprite as the item menus, outlined like a marker icon, centered on a plain tile (no brown cave background)
+let letterTileBmp(dark:bool, leftAligned:bool) : System.Drawing.Bitmap =
+    // the item-menu letter sprite; its own near-black background pixels are dropped so only the letter itself gets the outline (no black box)
+    let raw = CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.LETTER, None)
+    let cleaned = new System.Drawing.Bitmap(raw.Width, raw.Height)
+    for x = 0 to raw.Width-1 do
+        for y = 0 to raw.Height-1 do
+            let p = raw.GetPixel(x, y)
+            if p.A > 0uy && (int p.R + int p.G + int p.B) > 40 then cleaned.SetPixel(x, y, p)
+    let icon = withDecorOutline cleaned   // black outline hugging the letter
+    let BG = System.Drawing.Color.FromArgb(int Graphics.TRANS_BG.A, int Graphics.TRANS_BG.R, int Graphics.TRANS_BG.G, int Graphics.TRANS_BG.B)
+    let tile = new System.Drawing.Bitmap(16*3, 11*3)
+    for px = 0 to 16*3-1 do
+        for py = 0 to 11*3-1 do
+            tile.SetPixel(px, py, BG)
+    let ox = if leftAligned then 0 else (tile.Width - icon.Width)/2
+    let oy = (tile.Height - icon.Height)/2
+    for x = 0 to icon.Width-1 do
+        for y = 0 to icon.Height-1 do
+            let p = icon.GetPixel(x, y)
+            let p = if dark then System.Drawing.Color.FromArgb(int p.A, int p.R / 2, int p.G / 2, int p.B / 2) else p   // (darkened by hand so the transparent pixels stay transparent: no black box)
+            let tx, ty = x+ox, y+oy
+            if p.A > 0uy && tx >= 0 && ty >= 0 && tx < tile.Width && ty < tile.Height then tile.SetPixel(tx, ty, p)
+    tile
+let letterPlainTileBmp(dark:bool) = letterTileBmp(dark, false)
+let letterLeftSideFullTileBmp() = letterTileBmp(false, true)
+let letterLeftSideDarkFullTileBmp() = letterTileBmp(true, true)
+// the green check mark drawn on a collected marker icon (same as WPFUI.decorCheckmark)
+let caveCheckmark(iconSize:float) : FrameworkElement =
+    let s = max 8. (iconSize * 0.55)
+    let c = new Canvas(Width=s, Height=s, IsHitTestVisible=false)
+    let pts() = new PointCollection([ Point(s*0.08, s*0.55); Point(s*0.38, s*0.88); Point(s*0.94, s*0.12) ])
+    c.Children.Add(new System.Windows.Shapes.Polyline(Points=pts(), Stroke=Brushes.Black, StrokeThickness=max 3.5 (s*0.42), StrokeStartLineCap=PenLineCap.Round, StrokeEndLineCap=PenLineCap.Round, StrokeLineJoin=PenLineJoin.Round)) |> ignore
+    c.Children.Add(new System.Windows.Shapes.Polyline(Points=pts(), Stroke=Brushes.LimeGreen, StrokeThickness=max 2. (s*0.24), StrokeStartLineCap=PenLineCap.Round, StrokeEndLineCap=PenLineCap.Round, StrokeLineJoin=PenLineJoin.Round)) |> ignore
+    upcast c
+// a cave's shuffled item, drawn to the right of the (left-aligned) sword icon at the sword icon's height, in the same style as an item placed on a tile by itself
 let makeBmpBesideSword(bmp:System.Drawing.Bitmap) : Canvas =
-    // the item sits on a black backing (one pixel bigger all round) so it reads clearly against the tile
     let swordIconHeight = 27.
-    let w = if bmp <> null then min 27. (swordIconHeight * float bmp.Width / float bmp.Height) else 0.
-    let iconCanvas = new Canvas(Width=w+2., Height=swordIconHeight+2., Background=Brushes.Black)
-    if bmp <> null then
-        let icon = Graphics.BMPtoImage(bmp)
+    let ob = if bmp <> null then withDecorOutline bmp else null
+    let w = if ob <> null then min 27. (swordIconHeight * float ob.Width / float ob.Height) else 0.
+    let iconCanvas = new Canvas(Width=w+2., Height=swordIconHeight+2.)
+    if ob <> null then
+        let icon = Graphics.BMPtoImage(ob)
         icon.Stretch <- Stretch.Uniform
         icon.Height <- swordIconHeight
         icon.Width <- w
         canvasAdd(iconCanvas, icon, 1., 1.)
     iconCanvas
-let makeCaveItemBesideSword(box:TrackerModel.Box) : Canvas = makeBmpBesideSword(CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), None))
+let makeCaveItemBesideSword(box:TrackerModel.Box) : Canvas =
+    let c = makeBmpBesideSword(CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), None))
+    if box.PlayerHas() = TrackerModel.PlayerHas.YES && box.CellCurrent() <> -1 then
+        let ck = caveCheckmark(27.)
+        canvasAdd(c, ck, 1. + (c.Width - 2. - ck.Width)/2., 1. + (27. - ck.Height)/2.)
+    c.Background <- Brushes.Transparent   // so the whole icon area gets mouse events
+    c.ToolTip <- "Left click: item collected / right click: not collected\n(click the same one again to un-check)"
+    c.MouseDown.Add(fun ea ->
+        if ea.ButtonState = System.Windows.Input.MouseButtonState.Pressed &&
+                (ea.ChangedButton = System.Windows.Input.MouseButton.Left || ea.ChangedButton = System.Windows.Input.MouseButton.Right) then
+            ea.Handled <- true
+            let desire = CustomComboBoxes.MouseButtonEventArgsToPlayerHas ea
+            box.SetPlayerHas(if desire = box.PlayerHas() then TrackerModel.PlayerHas.NO else desire)
+            TrackerModel.forceUpdate())
+    c
 let sword3LeftSideFullTileBmp = makeSwordLeftSideFullTileBmp(TrackerModel.MapSquareChoiceDomainHelper.SWORD3)
 
+// in a shop tile, the bomb (item 1) is drawn as the real bomb icon fitted to its slot rather than from the thin 3x7 item strip
+let paintBombInSlot(tile:System.Drawing.Bitmap, x0:int, y0:int) =
+    let b = Graphics.bombFitBmp(9, 21, Graphics.itemBackgroundColor)
+    for x = 0 to 8 do
+        for y = 0 to 20 do
+            tile.SetPixel(x0+x, y0+y, b.GetPixel(x,y))
 let twoItemShopBmpCache   = new System.Collections.Generic.Dictionary<_,_>()
 let threeItemShopBmpCache = new System.Collections.Generic.Dictionary<_,_>()
 let makeTwoItemShopBmp(item1, item2) =  // 0-based, -1 for blank
@@ -290,6 +378,8 @@ let makeTwoItemShopBmp(item1, item2) =  // 0-based, -1 for blank
                             let c = Graphics.itemsBMP.GetPixel(item2*3 + px/3-8, py/3-2)
                             if c.ToArgb() <> System.Drawing.Color.Black.ToArgb() then
                                 tile.SetPixel(px, py, c)
+            if item1 = 1 then paintBombInSlot(tile, 12, 6)
+            if item2 = 1 then paintBombInSlot(tile, 24, 6)
             twoItemShopBmpCache.Add((item1,item2), tile)
             tile
 
@@ -319,6 +409,9 @@ let makeThreeItemShopBmp(item1, item2, item3) =  // 0-based, -1 for blank
                         let c = Graphics.itemsBMP.GetPixel(item3*3 + px/3-9, py/3-2)
                         if c.ToArgb() <> System.Drawing.Color.Black.ToArgb() then
                             tile.SetPixel(px, py, c)
+        if item1 = 1 then paintBombInSlot(tile, 9, 6)
+        if item2 = 1 then paintBombInSlot(tile, 18, 6)
+        if item3 = 1 then paintBombInSlot(tile, 27, 6)
         threeItemShopBmpCache.Add((item1,item2,item3), tile)
         tile
 
@@ -394,10 +487,18 @@ let GetIconBMPAndExtraDecorations(cm, ms:MapStateProxy,i,j) =   // returns: (sho
         else
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
     elif ms.State = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER then
-        if TrackerModel.getOverworldMapExtraData(i,j,ms.State)=TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER then
-            false, Graphics.theFullTileBmpTable.[ms.State].[0], []
+        let ex = TrackerModel.getOverworldMapExtraData(i,j,ms.State)
+        if ex = SHUFFLED_ITEM && not(TrackerModel.letterBox.IsDone()) then
+            let extraDecorationsF(boxPos:Point) =
+                let extraDecorations = computeExtraDecorationArrow(letterX, letterY, boxPos)
+                seq extraDecorations
+            false, letterLeftSideFullTileBmp(), [fst(Views.MakeBoxItemWithExtraDecorations(Some(cm), TrackerModel.letterBox, false, Some extraDecorationsF)), OMTW-30., 1.]
+        elif ex = SHUFFLED_ITEM then
+            ShouldHide(ms.State,i,j), letterLeftSideDarkFullTileBmp(), [makeCaveItemBesideSword(TrackerModel.letterBox), 20., 2.]
+        elif ex = ms.State || TrackerModel.letterBox.IsDone() then   // took the letter: dark, like the white sword cave once taken
+            ShouldHide(ms.State,i,j), letterPlainTileBmp(true), []
         else
-            ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
+            false, letterPlainTileBmp(false), []   // not yet taken: bright
     // door repair always dark (but light in the grid selector)
     elif ms.State = TrackerModel.MapSquareChoiceDomainHelper.DOOR_REPAIR_CHARGE then
         ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
@@ -513,8 +614,7 @@ let toggleables = [|
     TrackerModel.MapSquareChoiceDomainHelper.LARGE_SECRET
     TrackerModel.MapSquareChoiceDomainHelper.MEDIUM_SECRET
     TrackerModel.MapSquareChoiceDomainHelper.SMALL_SECRET
-    TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER
-    |]
+    |]   // (the letter cave is no longer a simple toggle: see its accelerator)
 let ToggleOverworldTileIfItIsToggleable(i, j, state) =
     if toggleables |> Array.contains state then
         // left click to toggle it 'used'
@@ -865,12 +965,12 @@ let MakeRemainderSummaryDisplay() =   // Spot Summary
     for multi in [28; 29; 32; 33; 34] do
         let leftrow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Right, Height=HEIGHT)
         let rightrow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Left, Height=HEIGHT)
-        // potions: show the potion item icon, and grey one out for each potion spot marked on the map
+        // potions: grey one out for each potion spot marked on the map
         let isPotion = (multi = 34)
         // (potions placed in item boxes do not count towards the potion spots shown here)
         let usedCount = TrackerModel.mapSquareChoiceDomain.NumUses(multi)
         for i = 0 to TrackerModel.mapSquareChoiceDomain.MaxUses(multi)-1 do
-            let icon = if isPotion then Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.BLUEPOTION, None)) else Graphics.BMPtoImage(MapStateProxy(multi).DefaultInteriorBmp())
+            let icon = Graphics.BMPtoImage(MapStateProxy(multi).DefaultInteriorBmp())   // (the original tile artwork, including for potions)
             if not(i >= usedCount) then
                 icon.Opacity <- OPA
                 rightrow.Children.Add(b icon) |> ignore

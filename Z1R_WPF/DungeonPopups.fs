@@ -267,7 +267,7 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
         tb
 
     let SCALE = 2.
-    let tileX, tileY = 555., 768. + 120.   // (moved down 120 now that the room preview is gone, so the enlarged menu clears the UI-reminder overlay at the top)
+    let tileX, tileY = 555., 768. + 60.   // (moved down 60 now that the room preview is gone: low enough to clear the UI-reminder overlay at the top, without a big gap above the menu)
     let ST = CustomComboBoxes.borderThickness
     let tileCanvas = new Canvas(Width=1., Height=1.)   // (no room preview is shown any more; this just hosts the captions)
     let G = 4./3.   // the room type menu is shown 33% larger

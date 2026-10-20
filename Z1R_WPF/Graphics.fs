@@ -216,7 +216,7 @@ let scaleUpCheckBoxBox(cb:CheckBox, scale) =
 let almostBlack = freeze(new SolidColorBrush(Color.FromRgb(30uy, 30uy, 30uy)))
 let almostBlackHoverFeedback = freeze(new SolidColorBrush(Color.FromRgb(30uy, 50uy, 50uy)))
 let makeButton(text, fontSizeOpt, fgOpt) =
-    let tb = new TextBox(Text=text, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, BorderThickness=Thickness(0.), Background=almostBlack)
+    let tb = new TextBox(Text=text, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center, BorderThickness=Thickness(0.), Background=almostBlack)   // text vertically centered in every tracker button
     match fontSizeOpt with | None -> () | Some x -> tb.FontSize <- x
     match fgOpt with | None -> () | Some x -> tb.Foreground <- x
     let button = new Button(Content=tb, HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch)
@@ -832,35 +832,15 @@ let triforce_item_bmp =
             let c = zi_triforce_bmp.GetPixel(px+1, py+1)
             if c.ToArgb() <> System.Drawing.Color.Black.ToArgb() then r.SetPixel(px+2, py+2, c)
     r
-// magical key: a tall 8x16 sprite, scaled (nearest-neighbor) to fill the 21-pixel height of an item icon, centered in a 21x21 cell
+// magical key (the NES magic key sprite: orange ring-head, red shading, short toothed shaft)
 let magic_key_bmp =
-    let rows = [| ".....o.."
-                  "...ooorr"
-                  "..okorr."
-                  "..okooor"
-                  "rooooorr"
-                  "ooo.oror"
-                  "....oorr"
-                  ".oooorr."
-                  "....or.."
-                  "....or.."
-                  "....or.."
-                  "....or.."
-                  ".oooor.."
-                  "...oor.."
-                  ".oooor.."
-                  "....or.." |]
-    let palette = [ 'o', System.Drawing.Color.FromArgb(232,160,32); 'r', System.Drawing.Color.FromArgb(161,23,20); 'k', System.Drawing.Color.Black ]
-    let r = new System.Drawing.Bitmap(21,21)
-    let W, H = 11, 21   // 8x16 -> 11x21
-    let offX = (21 - W) / 2
-    for px = 0 to W-1 do
-        for py = 0 to H-1 do
-            let ch = rows.[py*16/H].[px*8/W]
-            match List.tryFind (fun (c,_) -> c = ch) palette with
-            | Some(_,col) -> r.SetPixel(px+offX, py, col)
-            | None -> ()
-    r
+    makeSprite7x7([| "..ooo.."
+                     ".oo.orr"
+                     ".ooorr."
+                     "...or.."
+                     "...or.."
+                     "...oo.."
+                     "...or.." |], ['o', System.Drawing.Color.FromArgb(252,152,56); 'r', System.Drawing.Color.FromArgb(216,40,0)])
 let readCacheFileOrCreateBmp(filename, createF : unit -> System.Drawing.Bitmap) =
     // always treat the tiles as 96dpi, whatever the cache file (or this machine's display scaling) says; a tile with another dpi gets drawn smaller than 48x33, leaving dark lines between map tiles
     if System.IO.File.Exists(filename) then
@@ -918,6 +898,36 @@ let itemBackgroundColor = System.Drawing.Color.FromArgb(0xEF,0x83,0)
 let itemsBMP = 
     let imageStream = GetResourceStream("icons3x7.png")
     new System.Drawing.Bitmap(imageStream)
+
+// a full tile with nothing drawn on it (used under marker icons when the tile's own icon is shown as one of those marker slots)
+let emptyTileBmp =
+    let b = new System.Drawing.Bitmap(16*3,11*3)
+    for px = 0 to 16*3-1 do
+        for py = 0 to 11*3-1 do
+            b.SetPixel(px, py, TRANS_BG)
+    b
+// the bomb (as at the top of the tracker), scaled to fit inside a w x h area and centered in it, on bg
+let bombFitBmp(w:int, h:int, bg:System.Drawing.Color) =
+    let r = new System.Drawing.Bitmap(w, h)
+    for x = 0 to w-1 do
+        for y = 0 to h-1 do
+            r.SetPixel(x, y, bg)
+    let isArt(x,y) = bomb_bmp.GetPixel(x,y).A > 128uy
+    let pts = [ for x = 0 to bomb_bmp.Width-1 do for y = 0 to bomb_bmp.Height-1 do if isArt(x,y) then yield (x,y) ]
+    if not pts.IsEmpty then
+        let minX, maxX = (pts |> List.map fst |> List.min), (pts |> List.map fst |> List.max)
+        let minY, maxY = (pts |> List.map snd |> List.min), (pts |> List.map snd |> List.max)
+        let bw, bh = float (maxX-minX+1), float (maxY-minY+1)
+        let scale = min (float w / bw) (float h / bh)
+        let dw, dh = max 1 (int (bw*scale + 0.5)), max 1 (int (bh*scale + 0.5))
+        let dw, dh = min w dw, min h dh
+        let offX, offY = (w-dw)/2, (h-dh)/2
+        for x = 0 to dw-1 do
+            for y = 0 to dh-1 do
+                let sx = minX + min (int bw - 1) (int (float x / scale))
+                let sy = minY + min (int bh - 1) (int (float y / scale))
+                if isArt(sx,sy) then r.SetPixel(offX + x, offY + y, bomb_bmp.GetPixel(sx,sy))
+    r
 
 let genericDungeonInterior_bmp =
     let bmp = new System.Drawing.Bitmap(5*3,9*3)
@@ -997,6 +1007,17 @@ do
                     let c = itemsBMP.GetPixel(i*3 + px/3-1, py/3-1)
                     if c.ToArgb() <> System.Drawing.Color.Black.ToArgb() then
                         bmp.SetPixel(px, py, c)
+        if i = TrackerModel.MapSquareChoiceDomainHelper.BOMB - 16 then
+            // the bomb shop is just the bomb icon (no orange background), like the one at the top of the tracker
+            let b = bombFitBmp(13, 13, System.Drawing.Color.Transparent)
+            for px = 0 to 14 do
+                for py = 0 to 26 do
+                    bmp.SetPixel(px, py, TRANS_BG)
+            let artAt(x,y) = x >= 1 && x <= 13 && y >= 7 && y <= 19 && b.GetPixel(x-1, y-7).A > 128uy
+            for px = 0 to 14 do
+                for py = 0 to 26 do
+                    if artAt(px,py) then bmp.SetPixel(px, py, b.GetPixel(px-1, py-7))
+                    elif [ for dx in -1..1 do for dy in -1..1 -> artAt(px+dx, py+dy) ] |> List.contains true then bmp.SetPixel(px, py, System.Drawing.Color.Black)   // black outline, like the Bomb marker icon
         theInteriorBmpTable.[i+16].Add(bmp)
     // 24  unknown money secret
     theInteriorBmpTable.[24].Add(getInteriorIconFromStrip(11))
@@ -1092,11 +1113,59 @@ let oldTileIconAsItem(interior:System.Drawing.Bitmap) =
                 if isArt(ux,uy) then
                     r.SetPixel(offX + x, offY + y, art(ux,uy))
     r
-let old_potion_bmp = oldTileIconAsItem(theInteriorBmpTable.[34].[0])   // the old potion-shop icon, used for both potions
-let old_blue_potion_bmp = old_potion_bmp
-let old_red_potion_bmp = old_potion_bmp
-let old_potion_split_bmp = old_potion_bmp
+// the old potion-shop icon exactly as it looked on the overworld tile (tall, with its brown background), scaled to the 21-pixel item height
+let oldTileIconWithBackgroundAsItem(interior:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(21,21)
+    for px = 0 to 20 do
+        for py = 0 to 20 do
+            r.SetPixel(px, py, System.Drawing.Color.Transparent)
+    let scale = 21. / float interior.Height
+    let dw, dh = max 1 (int (float interior.Width * scale)), 21
+    let offX = (21-dw)/2
+    for x = 0 to dw-1 do
+        for y = 0 to dh-1 do
+            let sx = min (interior.Width-1) (int (float x / scale))
+            let sy = min (interior.Height-1) (int (float y / scale))
+            r.SetPixel(offX + x, y, interior.GetPixel(sx, sy))
+    r
+// NES-style bottle: white outline, cork on top, liquid in the lower half (liquid/cork colors taken from the NES sprites)
+let potionRows = [| "..aaa.."
+                    "..cLc.."
+                    "..c.c.."
+                    ".c...c."
+                    ".cLLLc."
+                    ".cLhLc."
+                    "..ccc.." |]
+let blue_potion_bmp =
+    makeSprite7x7(potionRows, ['a', System.Drawing.Color.FromArgb(155,142,255); 'c', System.Drawing.Color.White; 'L', System.Drawing.Color.FromArgb(40,0,165); 'h', System.Drawing.Color.FromArgb(155,142,255)])
+let red_potion_bmp =
+    makeSprite7x7(potionRows, ['a', System.Drawing.Color.FromArgb(231,156,33); 'c', System.Drawing.Color.White; 'L', System.Drawing.Color.FromArgb(181,49,33); 'h', System.Drawing.Color.FromArgb(231,156,33)])
+// one icon for both potions: left half blue potion, right half red potion (split vertically)
+let potion_split_bmp =
+    let r = new System.Drawing.Bitmap(21,21)
+    for x = 0 to 20 do
+        for y = 0 to 20 do
+            r.SetPixel(x, y, (if x <= 10 then blue_potion_bmp else red_potion_bmp).GetPixel(x, y))
+    r
+// (the old brown-background potion sprite is gone for good: the "old" potion icons are the same potion sprites as the dungeon item menu)
+let old_potion_bmp = potion_split_bmp
+let old_blue_potion_bmp = blue_potion_bmp
+let old_red_potion_bmp = red_potion_bmp
+let old_potion_split_bmp = potion_split_bmp
 let old_letter_bmp = oldTileIconAsItem(theInteriorBmpTable.[30].[0])   // the old (blue) letter icon
+// the potion shop's overworld icon (menu cell and placed tile): the split potion sprite (blue half on the left, red half on the right) on a plain background, no brown cave color
+do
+    let BG = System.Drawing.Color.FromArgb(int TRANS_BG.A, int TRANS_BG.R, int TRANS_BG.G, int TRANS_BG.B)
+    let r = new System.Drawing.Bitmap(5*3, 9*3)
+    for x = 0 to r.Width-1 do
+        for y = 0 to r.Height-1 do
+            r.SetPixel(x, y, BG)
+    let sz = r.Width   // 15: the 21x21 split sprite scaled down (nearest neighbor), centered vertically
+    for x = 0 to sz-1 do
+        for y = 0 to sz-1 do
+            let p = potion_split_bmp.GetPixel(x*21/sz, y*21/sz)
+            if p.A > 0uy && (int p.R + int p.G + int p.B) > 40 then r.SetPixel(x, y + (r.Height - sz)/2, p)
+    theInteriorBmpTable.[34].[0] <- r
 // the overworld sword tile icons (1/2/3), used for the swords in the dungeon item menus
 // the thin, tall overworld cave icon (15x27) scaled to fit the 21-tall item cell: a 12x21 icon centered in the cell, no brown fill around it
 let private swordMenuPixel(c:System.Drawing.Color) = c   // sword icons keep their brown cave background and black number

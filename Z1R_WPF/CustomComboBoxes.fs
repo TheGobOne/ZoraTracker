@@ -46,8 +46,8 @@ let boxCurrentBMP(boxCellCurrent, timelineOrigin) =
     | 11 -> Graphics.silver_arrow_bmp
     | 12 -> Graphics.wand_bmp
     | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then Graphics.ws_ms_bomb_upgrade_bmp else Graphics.ow_sword2_item_bmp)
-    | 15 -> Graphics.old_potion_split_bmp
-    | 16 -> Graphics.old_red_potion_bmp
+    | 15 -> Graphics.blue_potion_bmp
+    | 16 -> Graphics.red_potion_bmp
     | 17 -> Graphics.old_letter_bmp
     | 18 -> Graphics.ow_progressive_item_bmp
     | 19 -> Graphics.ow_sword1_item_bmp
@@ -273,6 +273,10 @@ let DoModalMessageBoxCore(cm:CanvasManager, icon:System.Drawing.Icon, mainText, 
     let areaW, areaH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
     let cx = if areaW > 0. then max 0. ((areaW - b.DesiredSize.Width) / 2.) else x
     let cy = if areaH > 0. then max 0. ((areaH - b.DesiredSize.Height) / 2.) else y
+    // the box was measured before it was in the window (where inherited fonts can make it bigger), so re-center it once it has its real size
+    b.SizeChanged.Add(fun _ ->
+        if areaW > 0. then Canvas.SetLeft(b, max 0. ((areaW - b.ActualWidth) / 2.))
+        if areaH > 0. then Canvas.SetTop(b, max 0. ((areaH - b.ActualHeight) / 2.)))
     do! DoModal(cm, wh, cx, cy, b)
     return result
     }
@@ -799,7 +803,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta7"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta8"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))
@@ -852,6 +856,65 @@ let startupUpdateCheck() =
                 for l in updateListeners do l n
             | None -> ())
 
+// ---- in-app update install ----
+// the release's .zip asset url (only ever a download from this project's own GitHub releases), or None
+let fetchReleaseZipUrl(tag:string) : string option =
+    try
+        System.Net.ServicePointManager.SecurityProtocol <- System.Net.ServicePointManager.SecurityProtocol ||| System.Net.SecurityProtocolType.Tls12
+        use wc = new System.Net.WebClient()
+        wc.Headers.Add("User-Agent", "ZoraTracker-update-check")
+        let json = wc.DownloadString(sprintf "https://api.github.com/repos/TheGobOne/ZoraTracker/releases/tags/%s" (System.Uri.EscapeDataString tag))
+        use doc = System.Text.Json.JsonDocument.Parse(json)
+        let mutable found : string option = None
+        for a in doc.RootElement.GetProperty("assets").EnumerateArray() do
+            let name = a.GetProperty("name").GetString()
+            let url = a.GetProperty("browser_download_url").GetString()
+            if found.IsNone && not (isNull name) && name.EndsWith(".zip", System.StringComparison.OrdinalIgnoreCase)
+               && not (isNull url) && url.StartsWith("https://github.com/TheGobOne/ZoraTracker/releases/download/") then
+                found <- Some url
+        found
+    with _ -> None
+// downloads the release zip, then hands over to a small PowerShell script that waits for this app to exit, unpacks the zip over the app folder (leaving the user's
+// HotKeys.txt, settings file and custom images alone) and starts the new version. Returns an error message on failure, or None once the script is running (the caller then closes the app).
+let downloadAndStageUpdate(zipUrl:string, onProgress:int -> unit) : string option =
+    try
+        let work = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ZoraTrackerUpdate")
+        if System.IO.Directory.Exists(work) then System.IO.Directory.Delete(work, true)
+        System.IO.Directory.CreateDirectory(work) |> ignore
+        let zipPath = System.IO.Path.Combine(work, "update.zip")
+        System.Net.ServicePointManager.SecurityProtocol <- System.Net.ServicePointManager.SecurityProtocol ||| System.Net.SecurityProtocolType.Tls12
+        use wc = new System.Net.WebClient()
+        wc.Headers.Add("User-Agent", "ZoraTracker-update-check")
+        wc.DownloadProgressChanged.Add(fun ea -> onProgress ea.ProgressPercentage)
+        wc.DownloadFileTaskAsync(new System.Uri(zipUrl), zipPath).Wait()
+        let appDir = System.AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\')
+        let exe = System.IO.Path.Combine(appDir, "Z1R_WPF.exe")
+        let q(p:string) = "'" + p.Replace("'", "''") + "'"
+        let stage = System.IO.Path.Combine(work, "stage")
+        let log = System.IO.Path.Combine(work, "update-log.txt")
+        let script =
+            String.concat "\r\n" [
+                "$ErrorActionPreference = 'Stop'"
+                sprintf "try {"
+                sprintf "  Wait-Process -Id %d -ErrorAction SilentlyContinue" (System.Diagnostics.Process.GetCurrentProcess().Id)
+                sprintf "  Start-Sleep -Seconds 1"
+                sprintf "  Expand-Archive -LiteralPath %s -DestinationPath %s -Force" (q zipPath) (q stage)
+                sprintf "  $src = %s" (q stage)
+                sprintf "  $d = @(Get-ChildItem -LiteralPath $src)"
+                sprintf "  if ($d.Count -eq 1 -and $d[0].PSIsContainer) { $src = $d[0].FullName }"
+                sprintf "  robocopy $src %s /E /R:30 /W:1 /XF HotKeys.txt Z1R_Tracker_settings.json /XD ShowRunCustomImages | Out-Null" (q appDir)
+                sprintf "  Start-Process -FilePath %s -WorkingDirectory %s" (q exe) (q appDir)
+                sprintf "} catch { $_ | Out-File -LiteralPath %s }" (q log)
+            ]
+        let scriptPath = System.IO.Path.Combine(work, "update.ps1")
+        System.IO.File.WriteAllText(scriptPath, script)
+        let psi = new System.Diagnostics.ProcessStartInfo("powershell.exe", sprintf "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"" scriptPath)
+        psi.UseShellExecute <- false
+        psi.CreateNoWindow <- true
+        System.Diagnostics.Process.Start(psi) |> ignore
+        None
+    with e -> Some e.Message
+
 let makeVersionButtonWithBehavior(cm:CanvasManager) =
     // shows the current release (e.g. "v2.2-b3" for 2.2.0-beta3), so it only needs updating via CurrentReleaseLabel
     let shortLabel = CurrentReleaseLabel.Replace(".0-","-").Replace("-beta","-b")
@@ -889,7 +952,7 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
             async {
                 let body, buttons = 
                     match updateAvailable with
-                    | Some(tag,_) -> sprintf "%s\n*** A newer version is available: %s (you have v%s) ***\n" OverworldData.AboutBody tag CurrentReleaseLabel, ["Download update"; "Open folder"; "Go to website"; "Ok"]
+                    | Some(tag,_) -> sprintf "%s\n*** A newer version is available: %s (you have v%s) ***\n" OverworldData.AboutBody tag CurrentReleaseLabel, ["Install update"; "Open folder"; "Go to website"; "Ok"]
                     | None -> OverworldData.AboutBody, ["Check for updates"; "Open folder"; "Go to website"; "Ok"]
                 let! r = DoModalMessageBox(cm, System.Drawing.SystemIcons.Information, body, buttons)
                 popupIsActive <- false
@@ -898,11 +961,39 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
                 elif r = "Open folder" then
                     // open the folder the tracker is running from (where HotKeys.txt, the settings and the crash log live)
                     try System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("Explorer.exe", sprintf "\"%s\"" (System.AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\')))) |> ignore with _ -> ()
-                elif r = "Download update" then
+                elif r = "Install update" then
                     match updateAvailable with
-                    | Some(_,url) -> 
-                        // only ever open a page on this project's GitHub repo
-                        System.Diagnostics.Process.Start(if not (isNull url) && url.StartsWith(OverworldData.Website) then url else OverworldData.Website) |> ignore
+                    | Some(tag,url) -> 
+                        popupIsActive <- true
+                        let! ok = DoModalMessageBoxCore(cm, System.Drawing.SystemIcons.Question, 
+                                                        sprintf "Download %s and install it over this copy?\n\nThis OVERWRITES your current version of ZORA Tracker with the new one.\nIf you want to keep your current version and have a separate install,\ndownload the release from GitHub instead (Go to website).\n\nThe tracker will close and reopen on the new version.\nYour hotkeys, settings and custom images will NOT be touched.\nAny game in progress is discarded (save it first)." tag,
+                                                        ["Install and restart"; "Cancel"], 100., 300.)
+                        if ok = "Install and restart" then
+                            // a small progress popup while the zip downloads
+                            let progressWh = new System.Threading.ManualResetEvent(false)
+                            let bar = new System.Windows.Controls.ProgressBar(Width=320., Height=22., Minimum=0., Maximum=100., Value=0., Foreground=Brushes.Orange, Background=Brushes.Black, BorderBrush=Brushes.Orange)
+                            let label = new TextBlock(Text="Downloading update...  0%", Foreground=Brushes.Orange, FontSize=18., Margin=Thickness(0.,0.,0.,8.))
+                            let panel = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(14.))
+                            panel.Children.Add(label) |> ignore
+                            panel.Children.Add(bar) |> ignore
+                            let progressBorder = new Border(Child=panel, BorderBrush=Brushes.Orange, BorderThickness=Thickness(3.), Background=Brushes.Black)
+                            DoModal(cm, progressWh, 100., 300., progressBorder) |> Async.StartImmediate
+                            let onProgress(pct:int) =
+                                Application.Current.Dispatcher.BeginInvoke(new System.Action(fun () ->
+                                    bar.Value <- float pct
+                                    label.Text <- sprintf "Downloading update...  %d%%" pct)) |> ignore
+                            let ctx = System.Threading.SynchronizationContext.Current
+                            do! Async.SwitchToThreadPool()
+                            let zip = fetchReleaseZipUrl tag
+                            let result = match zip with | Some z -> downloadAndStageUpdate(z, onProgress) | None -> Some "no downloadable zip was found on that release"
+                            do! Async.SwitchToContext ctx
+                            progressWh.Set() |> ignore
+                            match result with
+                            | None -> Application.Current.MainWindow.Close()   // (the update script waits for this to exit, then copies the files and relaunches)
+                            | Some err ->
+                                let! _ = DoModalMessageBox(cm, System.Drawing.SystemIcons.Warning, sprintf "The update could not be installed automatically:\n%s\n\nThe release page will be opened instead." err, ["Ok"])
+                                System.Diagnostics.Process.Start(if not (isNull url) && url.StartsWith(OverworldData.Website) then url else OverworldData.Website) |> ignore
+                        popupIsActive <- false
                     | None -> ()
                 elif r = "Check for updates" then
                     checkForUpdatesAsync (fun latest newer ->

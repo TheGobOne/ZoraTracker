@@ -139,8 +139,10 @@ let DoShowRunCustom(refocusMainWindow) =
                     raise <| new HotKeys.UserError(sprintf "The file to SHOW does not exist:\n%s" imgFile)
                 let bmp = new System.Drawing.Bitmap(imgFile)
                 let img = Graphics.BMPtoImage(bmp)
-                let b = new System.Windows.Controls.Border(Background=new System.Windows.Media.ImageBrush(img.Source), Width=float bmp.Width, Height=float bmp.Height)
-                let window = new Window(Title="ZORA Tracker SHOW", Owner=Application.Current.MainWindow, Content=b)
+                // the image scales (keeping its aspect ratio) as the window is resized; it opens at its natural size
+                let image = new System.Windows.Controls.Image(Source=img.Source, Width=float bmp.Width, Height=float bmp.Height)
+                let b = new System.Windows.Controls.Viewbox(Child=image, Stretch=System.Windows.Media.Stretch.Uniform, StretchDirection=System.Windows.Controls.StretchDirection.Both)
+                let window = new Window(Title="ZORA Tracker SHOW", Owner=Application.Current.MainWindow, Content=b, Background=System.Windows.Media.Brushes.Black)
                 match ltwho with
                 | Some(l,t,w,h) ->
                     window.Left <- l

@@ -370,3 +370,110 @@ let TakeThisChoicePieMenuAsync(cm,h) =
         do! FourWayPieMenu(cm, h, bordersDocksBehaviors, hkp)
         return r.Value
     }
+
+// the wood sword cave's chooser: one box of buttons that also answers the Contextual_TakeThis_* hotkeys (sword / candle / none).
+// returns "Took Sword", "Took Candle", "Shuffled Item", "Sword Icon", "Leave" (the 'none' hotkey), or null if dismissed (clicked outside)
+let TakeThisButtonBoxAsync(cm:CustomComboBoxes.CanvasManager) = async {
+    let hkp = HotKeys.TakeThisHotKeyProcessor
+    let wh = new System.Threading.ManualResetEvent(false)
+    let result : string ref = ref null
+    let col = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, Margin=Thickness(16.))
+    col.Children.Add(new TextBlock(Text="What is in this cave?", Foreground=Brushes.Orange, FontSize=20., HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,0.,0.,8.))) |> ignore
+    let addButton(text:string, keyOpt:string option, value:string) =
+        let label = match keyOpt with | Some(k) -> sprintf "%s   [%s]" text k | None -> text
+        let b = new Button(Height=34., MinWidth=280., Margin=Thickness(0.,4.,0.,4.), Focusable=false, Background=Graphics.almostBlack, BorderBrush=Brushes.Orange)
+        b.Content <- new TextBox(Text=label, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center, BorderThickness=Thickness(0.), FontSize=18., Foreground=Brushes.Orange, Background=Graphics.almostBlack)
+        b.HorizontalContentAlignment <- HorizontalAlignment.Stretch
+        b.VerticalContentAlignment <- VerticalAlignment.Stretch
+        b.Click.Add(fun _ -> result.Value <- value; wh.Set() |> ignore)
+        col.Children.Add(b) |> ignore
+    addButton("Took Sword", hkp.AsPrettyHotKeyOpt(2), "Took Sword")
+    addButton("Took Candle", hkp.AsPrettyHotKeyOpt(1), "Took Candle")
+    addButton("Shuffled Item", None, "Shuffled Item")
+    addButton("Sword Icon", None, "Sword Icon")
+    let b = new Border(Child=col, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray)
+    b.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let c = new Canvas(Width=b.DesiredSize.Width, Height=b.DesiredSize.Height)
+    c.Children.Add(b) |> ignore
+    // hotkeys: 'sword' / 'candle' pick those, 'none' leaves the cave marked as not taken
+    c.MyKeyAdd(fun ea ->
+        ea.Handled <- true
+        match hkp.TryGetValue(ea.Key) with
+        | Some(which) ->
+            if which=2 then result.Value <- "Took Sword"
+            elif which=1 then result.Value <- "Took Candle"
+            elif which=0 then result.Value <- "Leave"
+            if not(isNull result.Value) then wh.Set() |> ignore
+        | None -> ()
+        )
+    let areaW, areaH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+    let cx = if areaW > 0. then max 0. ((areaW - c.Width) / 2.) else 150.
+    let cy = if areaH > 0. then max 0. ((areaH - c.Height) / 2.) else 200.
+    // measured before it was in the window, so re-center it once it has its real size
+    b.SizeChanged.Add(fun _ ->
+        c.Width <- b.ActualWidth
+        c.Height <- b.ActualHeight
+        if areaW > 0. then Canvas.SetLeft(c, max 0. ((areaW - b.ActualWidth) / 2.))
+        if areaH > 0. then Canvas.SetTop(c, max 0. ((areaH - b.ActualHeight) / 2.)))
+    do! CustomComboBoxes.DoModal(cm, wh, cx, cy, c)
+    return result.Value
+    }
+
+// the other sword caves and the letter cave use the same style of choice box as the wood sword cave (without the hotkeys); returns the chosen label, or null if dismissed
+let CaveChoiceBoxAsync(cm:CustomComboBoxes.CanvasManager, labels:string list) = async {
+    let wh = new System.Threading.ManualResetEvent(false)
+    let result : string ref = ref null
+    let col = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, Margin=Thickness(16.))
+    col.Children.Add(new TextBlock(Text="What is in this cave?", Foreground=Brushes.Orange, FontSize=20., HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,0.,0.,8.))) |> ignore
+    for label in labels do
+        let b = new Button(Height=34., MinWidth=280., Margin=Thickness(0.,4.,0.,4.), Focusable=false, Background=Graphics.almostBlack, BorderBrush=Brushes.Orange)
+        b.Content <- new TextBox(Text=label, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center, BorderThickness=Thickness(0.), FontSize=18., Foreground=Brushes.Orange, Background=Graphics.almostBlack)
+        b.HorizontalContentAlignment <- HorizontalAlignment.Stretch
+        b.VerticalContentAlignment <- VerticalAlignment.Stretch
+        b.Click.Add(fun _ -> result.Value <- label; wh.Set() |> ignore)
+        col.Children.Add(b) |> ignore
+    let b = new Border(Child=col, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray)
+    b.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let c = new Canvas(Width=b.DesiredSize.Width, Height=b.DesiredSize.Height)
+    c.Children.Add(b) |> ignore
+    let areaW, areaH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+    let cx = if areaW > 0. then max 0. ((areaW - c.Width) / 2.) else 150.
+    let cy = if areaH > 0. then max 0. ((areaH - c.Height) / 2.) else 200.
+    // measured before it was in the window, so re-center it once it has its real size
+    b.SizeChanged.Add(fun _ ->
+        c.Width <- b.ActualWidth
+        c.Height <- b.ActualHeight
+        if areaW > 0. then Canvas.SetLeft(c, max 0. ((areaW - b.ActualWidth) / 2.))
+        if areaH > 0. then Canvas.SetTop(c, max 0. ((areaH - b.ActualHeight) / 2.)))
+    do! CustomComboBoxes.DoModal(cm, wh, cx, cy, c)
+    return result.Value
+    }
+
+// a small centered box with a title and a row of icon/text buttons; returns the key of the one clicked (null if dismissed)
+let IconChoiceBoxAsync(cm:CustomComboBoxes.CanvasManager, title:string, items:(string*FrameworkElement) list) = async {
+    let wh = new System.Threading.ManualResetEvent(false)
+    let result : string ref = ref null
+    let col = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, Margin=Thickness(0.))
+    if title <> "" then col.Children.Add(new TextBlock(Text=title, Foreground=Brushes.Orange, FontSize=20., HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,8.,0.,0.))) |> ignore
+    let row = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+    for (key, content) in items do
+        let b = new Button(MinWidth=80., MinHeight=60., Margin=Thickness(6.), Padding=Thickness(8.), Focusable=false, Background=Graphics.almostBlack, BorderBrush=Brushes.Orange, Content=content)
+        b.Click.Add(fun _ -> result.Value <- key; wh.Set() |> ignore)
+        row.Children.Add(b) |> ignore
+    col.Children.Add(row) |> ignore
+    let b = new Border(Child=col, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray)
+    b.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let c = new Canvas(Width=b.DesiredSize.Width, Height=b.DesiredSize.Height)
+    c.Children.Add(b) |> ignore
+    let areaW, areaH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+    let cx = if areaW > 0. then max 0. ((areaW - c.Width) / 2.) else 150.
+    let cy = if areaH > 0. then max 0. ((areaH - c.Height) / 2.) else 200.
+    // measured before it was in the window, so re-center it once it has its real size
+    b.SizeChanged.Add(fun _ ->
+        c.Width <- b.ActualWidth
+        c.Height <- b.ActualHeight
+        if areaW > 0. then Canvas.SetLeft(c, max 0. ((areaW - b.ActualWidth) / 2.))
+        if areaH > 0. then Canvas.SetTop(c, max 0. ((areaH - b.ActualHeight) / 2.)))
+    do! CustomComboBoxes.DoModal(cm, wh, cx, cy, c)
+    return result.Value
+    }

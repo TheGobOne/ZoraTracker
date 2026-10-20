@@ -2030,6 +2030,8 @@ type TimelineItemDescription =   // a way to identify which unique timeline item
         | TimelineItemDescription.ItemBox(i,_) -> i
         | TimelineItemDescription.UserCustom(s,_) -> s
         | TimelineItemDescription.MapCollected s -> s
+// item boxes whose timeline entry is not stamped, because the item they hold was already collected on its own (the overworld item grid box has the timeline entry); see boxItemImpl
+let timelineSuppressedBoxes = System.Collections.Generic.HashSet<Box>(HashIdentity.Reference)
 type TimelineItemModel(desc: TimelineItemDescription) =
     // TODO keep history of all changes maybe
     static let all = new System.Collections.Generic.Dictionary<_,_>()
@@ -2052,13 +2054,14 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         | TimelineItemDescription.ExtrasOrShopping(_,bp) -> bp.Changed.Add(fun _ -> stamp(bp.Value(), PlayerHas.YES))
         | TimelineItemDescription.TakeAnyHeart(i) -> playerProgressAndTakeAnyHearts.TakeAnyHeartChanged.Add(fun x -> if x=i then stamp(playerProgressAndTakeAnyHearts.GetTakeAnyHeart(i)=1, PlayerHas.YES))
         | TimelineItemDescription.Triforce(i) -> GetDungeon(i).PlayerHasTriforceChanged.Add(fun _ -> stamp(GetDungeon(i).PlayerHasTriforce(), PlayerHas.YES))
-        | TimelineItemDescription.ItemBox(_,b) -> b.Changed.Add(fun _ -> stamp(b.CellCurrent() <> -1 && b.PlayerHas()<>PlayerHas.NO, b.PlayerHas()))
+        | TimelineItemDescription.ItemBox(_,b) -> b.Changed.Add(fun _ -> stamp(b.CellCurrent() <> -1 && b.PlayerHas()<>PlayerHas.NO && not(timelineSuppressedBoxes.Contains(b)), b.PlayerHas()))
         | TimelineItemDescription.UserCustom(_,e) -> e.Publish.Add(fun b -> stamp(b,PlayerHas.YES))
         | TimelineItemDescription.MapCollected _ -> ()
     static member TriggerTimelineChanged() =  // used when Loading a Save file
         let span = System.DateTime.Now - theStartTime.Time
         timelineChanged.Trigger(int span.TotalMinutes)
     member this.SetCollectedFromMap(b:bool) = stamp(b, PlayerHas.YES)   // used for items checked off on the overworld map
+    member this.Unstamp() = if finishedTotalSeconds <> -1 then stamp(false, itemPlayerHas)   // take this entry off the timeline (used to avoid two entries for one item)
     member this.ResetTotalSeconds() = if finishedTotalSeconds <> -1 then finishedTotalSeconds <- 0    // used when user presses Reset Timer
     member this.StampTotalSeconds(s,ph) =  // used when Loading a Save file
         match desc with
@@ -2081,6 +2084,10 @@ type TimelineItemModel(desc: TimelineItemDescription) =
 
     static member TimelineChanged = timelineChanged.Publish
     static member All = all
+    static member UnstampByIdentifier(identifier:string) =
+        match all.TryGetValue(identifier) with
+        | true, (m:TimelineItemModel) -> m.Unstamp()
+        | _ -> ()
     static member MakeAll() =
         // descriptions
         let all = ResizeArray()

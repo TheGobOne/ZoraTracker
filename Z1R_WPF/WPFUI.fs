@@ -63,6 +63,19 @@ let decorSlot(big:bool, n:int, k:int) : float*float*float =
         match n with
         | 1 -> 18., OMTW - 20., 0.
         | _ -> 14., OMTW - 15. * float n + 15. * float k, 0.
+// like decorSlot, but 'centered' (a bomb shop tile whose bomb is one of the slots) puts the row of icons in the middle of the tile instead of the top right
+let decorSlotC(centered:bool, big:bool, n:int, k:int) : float*float*float =
+    let size, x, y = decorSlot(big, n, k)
+    if centered && not big then size, x - (OMTW - 15. * float n) / 2., (33. - size) / 2. else size, x, y
+// a potion marker is drawn as two icons, the blue potion and the red potion; any other marker icons on the tile go in the middle between them.
+// Returns (icon to draw, index of the marker it belongs to in the original list)
+let decorDisplayList(idents:int list) : (int*int) list =
+    let indexed = idents |> List.indexed
+    match indexed |> List.tryFind (fun (_, id) -> id = TrackerModel.ITEMS.BLUEPOTION) with
+    | None -> indexed |> List.map (fun (k, id) -> id, k)
+    | Some(pk, _) ->
+        let others = indexed |> List.filter (fun (k, _) -> k <> pk) |> List.map (fun (k, id) -> id, k)
+        [ (TrackerModel.ITEMS.BLUEPOTION, pk) ] @ others @ [ (TrackerModel.ITEMS.REDPOTION, pk) ]
 let private decorGreyCache = System.Collections.Generic.Dictionary<int, System.Drawing.Bitmap>()
 // the bomb icon with a red 'drops' badge in the corner: a screen whose enemies drop bombs when killed
 let bombDropperBmp : System.Drawing.Bitmap =
@@ -80,6 +93,8 @@ let bombDropperBmp : System.Drawing.Bitmap =
 let decorSourceBmp(item:int) : System.Drawing.Bitmap =
     if item = TrackerModel.DECOR_BOMB then Graphics.bomb_bmp
     elif item = TrackerModel.DECOR_BOMB_DROPPER then bombDropperBmp
+    elif item = TrackerModel.ITEMS.BLUEPOTION then (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_blue_potion_bmp else Graphics.blue_potion_bmp)
+    elif item = TrackerModel.ITEMS.REDPOTION then (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_red_potion_bmp else Graphics.red_potion_bmp)
     elif item = TrackerModel.ITEMS.WOODSWORD then Graphics.swordLevelToBmp(1)   // the same sword icon the item progress bar uses
     elif item = TrackerModel.ITEMS.WHITESWORD then Graphics.swordLevelToBmp(2)
     elif item = TrackerModel.ITEMS.MAGICALSWORD then Graphics.swordLevelToBmp(3)
@@ -99,7 +114,7 @@ let decorIconBmp(item:int) : System.Drawing.Bitmap =
                 let w, h = src.Width, src.Height
                 let dst = new System.Drawing.Bitmap(w + 2*B, h + 2*B)
                 // the old potion/letter icons have a transparent background, so every opaque pixel (even a dark one) gets the black outline
-                let isOldIcon = TrackerModelOptions.UseOldPotionLetterIcons.Value && (item = 15 || item = 16 || item = 17)
+                let isOldIcon = TrackerModelOptions.UseOldPotionLetterIcons.Value && (item = 17)
                 let isInk(x, y) = 
                     let p = src.GetPixel(x, y)
                     p.A > 0uy && (isOldIcon || (int p.R + int p.G + int p.B) > 40)
@@ -208,6 +223,14 @@ let owSpotTypesPanel =
         let cell = new Grid(Width=(if k=6 then 116. else 58.), Height=18.)
         let sp = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, ToolTip=tips.[k])
         cell.Background <- Brushes.Transparent   // so the whole cell gets mouse events
+        // the left column (burn, push, raft) is pushed against the center line and the right column (bomb, ladder, whistle) starts at it, each a little inward from the edge
+        if k < 6 then
+            if k % 2 = 0 then
+                sp.HorizontalAlignment <- HorizontalAlignment.Right
+                sp.Margin <- Thickness(0.,0.,6.,0.)
+            else
+                sp.HorizontalAlignment <- HorizontalAlignment.Left
+                sp.Margin <- Thickness(6.,0.,0.,0.)
         // hovering a type highlights its unmarked spots on the map, like hovering the matching item in the Item Progress bar
         cell.MouseEnter.Add(fun _ ->
             let inst = TrackerModel.owInstance
@@ -225,8 +248,14 @@ let owSpotTypesPanel =
         img.Width <- 16.
         img.Height <- 16.
         img.Stretch <- Stretch.Uniform
-        sp.Children.Add(img) |> ignore
-        sp.Children.Add(owSpotTypeCountTBs.[k]) |> ignore
+        if k < 6 && k % 2 = 0 then
+            // left column: the number first, then the icon (next to the center line)
+            owSpotTypeCountTBs.[k].Margin <- Thickness(0.,0.,3.,0.)
+            sp.Children.Add(owSpotTypeCountTBs.[k]) |> ignore
+            sp.Children.Add(img) |> ignore
+        else
+            sp.Children.Add(img) |> ignore
+            sp.Children.Add(owSpotTypeCountTBs.[k]) |> ignore
         if k=6 then
             sp.Children.Add(new TextBlock(FontSize=14., Foreground=Brushes.Orange, VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(3.,0.,0.,0.), Text="open")) |> ignore
         wp.Children.Add(cell) |> ignore
@@ -821,6 +850,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 ]
             for fe,x,y in permanentDecorations do
                 canvasAdd(c, fe, x, y)
+            let bombSlotActive = ref false   // a bomb shop tile that also has marker icons: the bomb is drawn as one of the icon slots instead of big in the middle
             let redrawGridSpot() =
                 // cant remove-by-identity because of non-uniques; remake whole canvas
                 owDarkeningMapGridCanvases.[i,j].Children.Clear()
@@ -831,6 +861,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     canvasAdd(c, fe, x, y)
                 let ms = MapStateProxy(TrackerModel.overworldMapMarks.[i,j].Current())
                 let shouldAppearLikeDarkX,iconBMP,extraDecorations = GetIconBMPAndExtraDecorations(cm,ms,i,j)
+                let bombAsSlot = 
+                    iconBMP <> null && obj.ReferenceEquals(iconBMP, Graphics.theFullTileBmpTable.[TrackerModel.MapSquareChoiceDomainHelper.BOMB].[0]) 
+                bombSlotActive.Value <- bombAsSlot
+                let iconBMP = if bombAsSlot then Graphics.emptyTileBmp else iconBMP
                 // be sure to draw in appropriate layer
                 if iconBMP <> null then 
                     if temporarilyHideAllIconsWhileHoveringEyeball then
@@ -861,10 +895,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         for fe,x,y in extraDecorations do
                             canvasAdd(c, fe, x, y)
                 // marker icon (sword / dungeon item) chosen from the menu; drawn on top of the tile
-                let decorList = visibleDecorIcons(TrackerModel.owSwordIcons.[i,j])
+                let decorList = (if bombAsSlot then [TrackerModel.DECOR_BOMB] else []) @ visibleDecorIcons(TrackerModel.owSwordIcons.[i,j]) |> decorDisplayList |> List.map fst
                 if not decorList.IsEmpty then
-                    let big = ms.State = -1 || ms.IsX
                     let n = decorList.Length
+                    let big = ms.State = -1 || ms.IsX || (bombAsSlot && n = 1)   // a bomb shop on its own gets the big bomb
                     let packedNow = TrackerModel.owSwordIcons.[i,j]
                     let allEntries = TrackerModel.decorEntriesOf packedNow
                     decorList |> List.iteri (fun k ident ->
@@ -878,7 +912,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             let img = Graphics.BMPtoImage(dbmp)
                             img.Stretch <- Stretch.Uniform
                             // 1 icon: as before; 2-3 icons: smaller, side by side so they all fit on the tile
-                            let size, x, y = decorSlot(big, n, k)
+                            let size, x, y = decorSlotC(bombAsSlot, big, n, k)
                             if justDim then img.Opacity <- 0.35
                             img.Width <- size
                             img.Height <- size
@@ -1128,6 +1162,19 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             if not(owInstance.AlwaysEmpty(i,j)) && originalState <> -1 then
                                 do! SetNewValue(-1, originalState)
                             redrawGridSpot()
+                        elif currentState = 1000 + TrackerModel.ITEMS.LETTER
+                                && (originalState = -1 || originalState = TrackerModel.MapSquareChoiceDomainHelper.DARK_X)
+                                && not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.ITEMS.LETTER)
+                                && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.mapSquareChoiceDomain.CanAddUse(TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER) then
+                            // the letter works like the sword caves: it places the letter cave, and the popup asks Took Letter / Shuffled Item / Letter Icon
+                            do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER, originalState)
+                            redrawGridSpot()
+                        elif currentState = 1000 + TrackerModel.DECOR_BOMB
+                                && (originalState = -1 || originalState = TrackerModel.MapSquareChoiceDomainHelper.DARK_X)
+                                && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.mapSquareChoiceDomain.CanAddUse(TrackerModel.MapSquareChoiceDomainHelper.BOMB) then
+                            // a bomb marker means a bomb shop: place the bomb shop tile
+                            do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.BOMB, originalState)
+                            redrawGridSpot()
                         elif currentState >= 1000 then
                             // decorative sword item icon: toggles on this tile, tile's real mark is left alone
                             let ident = currentState - 1000
@@ -1150,42 +1197,50 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     tileCanvas.Children.Clear()   // deparent tileImage
                     popupIsActive <- false
                     } |> Async.StartImmediate
+            // copy / paste item markers (shift+left click, or mouse button 4); false if there was nothing to copy or paste here
+            let copyOrPasteMarkers() : bool =
+                let curMark = TrackerModel.overworldMapMarks.[i,j].Current()
+                let hereIcons = TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j])
+                let onlyItems = curMark = -1 || curMark = TrackerModel.MapSquareChoiceDomainHelper.DARK_X
+                if not hereIcons.IsEmpty && onlyItems then
+                    copiedMarkerIdents <- hereIcons
+                    copiedMarkerPacked <- TrackerModel.owSwordIcons.[i,j]
+                    refreshCopyCursor()
+                    animateOverworldTileIfOptionIsChecked(i,j)   // brief flash = copied; shift+left-click (or mouse button 4 on) an unmarked tile to paste
+                    true
+                elif hereIcons.IsEmpty && curMark = -1 && not copiedMarkerIdents.IsEmpty && not(owInstance.AlwaysEmpty(i,j)) then
+                    popupIsActive <- true
+                    async {
+                        setDecorIcons(i, j, copiedMarkerPacked)
+                        // like adding an icon from the popup: an unmarked tile with item markers counts as finished
+                        do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1)
+                        redrawGridSpot()
+                        copiedMarkerIdents <- []   // one paste per copy: clear the cursor
+                        refreshCopyCursor()
+                        popupIsActive <- false
+                    } |> Async.StartImmediate
+                    true
+                else false
             c.MouseDown.Add(fun ea -> 
                 if not popupIsActive then
                     if ea.ChangedButton = Input.MouseButton.Left then
                         if Input.Keyboard.IsKeyDown(Input.Key.LeftShift) || Input.Keyboard.IsKeyDown(Input.Key.RightShift) then
                             // shift left click: copy / paste item markers, otherwise the circle label popup
-                            let curMark = TrackerModel.overworldMapMarks.[i,j].Current()
-                            let hereIcons = TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j])
-                            let onlyItems = curMark = -1 || curMark = TrackerModel.MapSquareChoiceDomainHelper.DARK_X
-                            if not hereIcons.IsEmpty && onlyItems then
-                                copiedMarkerIdents <- hereIcons
-                                copiedMarkerPacked <- TrackerModel.owSwordIcons.[i,j]
-                                refreshCopyCursor()
-                                animateOverworldTileIfOptionIsChecked(i,j)   // brief flash = copied; shift+left-click an unmarked tile to paste
-                            elif hereIcons.IsEmpty && curMark = -1 && not copiedMarkerIdents.IsEmpty && not(owInstance.AlwaysEmpty(i,j)) then
-                                popupIsActive <- true
-                                async {
-                                    setDecorIcons(i, j, copiedMarkerPacked)
-                                    // like adding an icon from the popup: an unmarked tile with item markers counts as finished
-                                    do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1)
-                                    redrawGridSpot()
-                                    copiedMarkerIdents <- []   // one paste per copy: clear the cursor
-                                    refreshCopyCursor()
-                                    popupIsActive <- false
-                                } |> Async.StartImmediate
-                            else
+                            if not(copyOrPasteMarkers()) then
                                 activateCircleLabelPopup()
-                        elif not(visibleDecorIcons(TrackerModel.owSwordIcons.[i,j]).IsEmpty) then
+                        elif visibleDecorIcons(TrackerModel.owSwordIcons.[i,j]) |> List.exists (fun id -> id <> TrackerModel.DECOR_BOMB_DROPPER) then   // (a bomb dropper marker is not a checkable item: left click on it falls through to the normal tile click)
                             // left click on a tile with marker icons checks off (or un-checks) just the icon nearest the mouse
                             let vis = visibleDecorIcons(TrackerModel.owSwordIcons.[i,j])
                             let px = ea.GetPosition(c).X
                             let ms = MapStateProxy(TrackerModel.overworldMapMarks.[i,j].Current())
                             let big = ms.State = -1 || ms.IsX
                             let nearest =
-                                vis |> List.indexed |> List.minBy (fun (k,_) ->
-                                    let size,x,_y = decorSlot(big, vis.Length, k)
+                                let disp = decorDisplayList vis
+                                disp |> List.indexed |> List.filter (fun (_,(id,_)) -> id <> TrackerModel.DECOR_BOMB_DROPPER) |> List.minBy (fun (dk,_) ->
+                                    let off = if bombSlotActive.Value then 1 else 0
+                                    let size,x,_y = decorSlotC(bombSlotActive.Value, big, disp.Length + off, dk + off)
                                     abs (px - (x + size/2.)))
+                                |> fun (_,(_,origK)) -> origK, vis.[origK]
                             // (the same item can appear more than once, e.g. several heart containers: act on just the nearest copy)
                             let nearestIdx = fst nearest
                             let nearestIdent = snd nearest
@@ -1255,6 +1310,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         else
                             // right click activates the popup selector on every tile
                             activatePopup(0)
+                    elif ea.ChangedButton = Input.MouseButton.XButton1 then
+                        copyOrPasteMarkers() |> ignore   // mouse button 4 does the same copy / paste as shift+left click
                     elif ea.ChangedButton = Input.MouseButton.Middle then
                         if TrackerModel.MarkBombDroppers && Input.Keyboard.Modifiers <> Input.ModifierKeys.Shift then
                             // 'Mark Bomb Droppers' startup option: the first middle click puts the bomb dropper icon on the tile; the scroll wheel then cycles bomb dropper > blue > yellow > red circle and around;
@@ -1727,9 +1784,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             displayIsCurrentlyMirrored <- not displayIsCurrentlyMirrored
             if displayIsCurrentlyMirrored then
                 for fe in mirrorOverworldFEs do
-                    let scaleTrans = new ScaleTransform(-1., 1., fe.ActualWidth/2., fe.ActualHeight/2.)
+                    // (flip about the element's own center: elements not yet measured, like the lazily-built coords grid, have ActualWidth 0 here)
+                    let scaleTrans = new ScaleTransform(-1., 1.)
                     if scaleTrans.CanFreeze then
                         scaleTrans.Freeze()
+                    fe.RenderTransformOrigin <- Point(0.5, 0.5)
                     fe.RenderTransform <- scaleTrans
             else
                 for fe in mirrorOverworldFEs do
@@ -2002,7 +2061,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     do! showProgress("notes, gettables")
     // notes    
     notesTextBox <- new TextBox(Width=appMainCanvas.Width-BLOCKERS_AND_NOTES_OFFSET, Height=dungeonTabs.Height - blockerGrid.Height,
-                            FontSize=TrackerModelOptions.NotesFontSize, Foreground=Brushes.LimeGreen , Background=Brushes.Black, AcceptsReturn=true)
+                            FontSize=TrackerModelOptions.NotesFontSize, Foreground=Brushes.LimeGreen , Background=Brushes.Black, AcceptsReturn=true, TextWrapping=TextWrapping.Wrap, VerticalScrollBarVisibility=ScrollBarVisibility.Auto)   // long lines wrap instead of running off the box
     let notesFilename = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Notes.txt")
     if not(System.IO.File.Exists(notesFilename)) then
         notesTextBox.Text <- "Notes\n"

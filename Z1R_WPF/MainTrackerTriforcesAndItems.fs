@@ -150,7 +150,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
 
     // items (we draw these before drawing triforces, as triforce display can draw slightly atop the item boxes, when there's a triforce-specific-blocker drawn)
     let boxActivators = new System.Collections.Generic.Dictionary<TrackerModel.Box, (unit -> unit)>(HashIdentity.Reference)
-    let boxItemImpl(tid, box:TrackerModel.Box, requiresForceUpdate) = 
+    let boxItemImpl(tid:Timeline.TimelineID, box:TrackerModel.Box, requiresForceUpdate) = 
         let c,activate = Views.MakeBoxItem(cm, box)
         boxActivators.[box] <- (fun () -> activate(0, CustomComboBoxes.WarpToCenter))
         box.Changed.Add(fun _ -> if requiresForceUpdate then TrackerModel.forceUpdate())
@@ -168,25 +168,39 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 | None -> -1
             else -1
         let wasLinkedItemId = ref (linkedItemId())
+        let weCheckedIt = ref false   // true only if this box itself checked the grid item (it was not already collected, e.g. by hand), so that is the only case we un-check it, and the timeline never gets a second stamp
         box.Changed.Add(fun _ ->
             let now = linkedItemId()
             let was = wasLinkedItemId.Value
             if now <> was then
                 wasLinkedItemId.Value <- now
-                if was >= 0 && TrackerModel.mapCollectedCount.[was] = 0 then
+                if was >= 0 && weCheckedIt.Value && TrackerModel.mapCollectedCount.[was] = 0 then
                     for (id,prop) in gridLinks do
                         if id = was then prop.Set(false)
+                if was >= 0 then weCheckedIt.Value <- false
+                // one timeline entry per item: if the item was already collected on its own, this box adds none; if this box collected it, the grid item adds none
+                let linkedTimelineName(id) = 
+                    if id = TrackerModel.ITEMS.WOODARROW then "WoodArrow" elif id = TrackerModel.ITEMS.BLUERING then "BlueRing" elif id = TrackerModel.ITEMS.BLUECANDLE then "BlueCandle"
+                    elif id = TrackerModel.ITEMS.WOODSWORD then "WoodSword" else "MagicalSword"
+                TrackerModel.timelineSuppressedBoxes.Remove(box) |> ignore
                 if now >= 0 then
                     for (id,prop) in gridLinks do
-                        if id = now then prop.Set(true)
+                        if id = now then
+                            if not(prop.Value()) then
+                                prop.Set(true)
+                                weCheckedIt.Value <- true
+                                TrackerModel.TimelineItemModel.UnstampByIdentifier(linkedTimelineName(id))   // (this box's own entry stays)
+                            else
+                                TrackerModel.timelineSuppressedBoxes.Add(box) |> ignore
+                                TrackerModel.TimelineItemModel.UnstampByIdentifier(tid.Identifier)   // (the item's own entry stays)
                 TrackerModel.recomputePlayerStateSummary())
         c.MouseEnter.Add(fun _ -> 
             match box.CellCurrent() with
-            | 3 -> showLocatorInstanceFunc(owInstance.PowerBraceletable)
-            | 4 -> showLocatorInstanceFunc(owInstance.Ladderable)
-            | 7 -> showLocatorInstanceFunc(owInstance.Raftable)
-            | 8 -> showLocatorInstanceFunc(owInstance.Whistleable)
-            | 9 -> showLocatorInstanceFunc(owInstance.Burnable)
+            | 3 -> showLocatorInstanceFunc(TrackerModel.owInstance.PowerBraceletable)
+            | 4 -> showLocatorInstanceFunc(TrackerModel.owInstance.Ladderable)
+            | 7 -> showLocatorInstanceFunc(TrackerModel.owInstance.Raftable)
+            | 8 -> showLocatorInstanceFunc(TrackerModel.owInstance.Whistleable)
+            | 9 -> showLocatorInstanceFunc(TrackerModel.owInstance.Burnable)
             | _ -> ()
             )
         c.MouseLeave.Add(fun _ -> hideLocator())
@@ -375,7 +389,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
             else
                 c.Children.Add(Graphics.BMPtoImage Graphics.fullNumberedFoundTriforce_bmps.[i]) |> ignore
     let updateNumberedTriforceDisplayIfItExists =
-        if TrackerModel.IsHiddenDungeonNumbers() then
+        if false && TrackerModel.IsHiddenDungeonNumbers() then   // (the extra row of numbered triforces above the armos/letter/etc. item boxes is no longer shown with Hide Dungeon Numbers)
             let numberedTriforceCanvases = Array.init 8 (fun _ -> new Canvas(Width=30., Height=30.))
             for i = 0 to 7 do
                 let c = numberedTriforceCanvases.[i]
@@ -431,6 +445,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
         mainTrackerCanvases.[i,1] <- c
         let innerc = Views.MakeTriforceDisplayView(Some(cm),i,Some(owInstance))
         triforceInnerCanvases.[i] <- innerc
+        Canvas.SetLeft(innerc, -1.)   // nudged 1px left
         c.Children.Add(innerc) |> ignore
         c.MouseEnter.Add(fun _ -> showLocator(ShowLocatorDescriptor.DungeonIndex i))
         c.MouseLeave.Add(fun _ -> hideLocator())
@@ -465,30 +480,33 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
     do
         let l9c = mainTrackerCanvases.[8,4]
         let l9slot = ref (null : Canvas)
+        let l9host = ref (null : Canvas)   // its own cell host, placed straight into the grid (row 4 of the level 9 column) on top of everything else there
         let refreshL9Slot() =
             let enabled = TrackerModel.level9FloorBoxEnabled
             if enabled then
                 if isNull l9slot.Value then
                     l9slot.Value <- boxItemImpl(Timeline.TimelineID.LevelBox(9,3), TrackerModel.GetDungeon(8).ExtraFloorBox, false)
-                if not(l9c.Children.Contains(l9slot.Value)) then
-                    l9c.Children.Add(l9slot.Value) |> ignore
-            elif not(isNull l9slot.Value) then
-                l9c.Children.Remove(l9slot.Value)
+                    l9host.Value <- new Canvas(Width=30., Height=30., Background=Brushes.Black)
+                    l9host.Value.Children.Add(l9slot.Value) |> ignore
+                    Panel.SetZIndex(l9host.Value, 50)
+                if not(mainTrackerGrid.Children.Contains(l9host.Value)) then
+                    gridAdd(mainTrackerGrid, l9host.Value, 8, 4)
+            elif not(isNull l9host.Value) then
+                mainTrackerGrid.Children.Remove(l9host.Value)
             mainTrackerGrid.Children.Remove(extrasImage)
             gridAdd(mainTrackerGrid, extrasImage, 8, (if enabled then 0 else 4))
             level9ColorCanvas.Visibility <- (if enabled then Visibility.Hidden else Visibility.Visible)
         TrackerModel.level9FloorBoxEnabledChanged.Publish.Add(fun _ -> refreshL9Slot())
         refreshL9Slot()
-    // 'Item Locations' button, in the blank cells under levels 5-7 (the default layout only; with hidden dungeon numbers those cells hold item boxes)
-    if not(TrackerModel.IsHiddenDungeonNumbers()) then
-        // (made with Graphics.makeButton, so it has the same look and border as the other tracker buttons, e.g. 'Options...' and 'Item Progress'; use that helper for new buttons)
+    // 'Item Locations' button: the top button of the Save / Hint Decoder / Hotkeys column (the layout sizes and places it)
+    do
+        // (made with Graphics.makeButton, so it has the same look and border as the other tracker buttons; use that helper for new buttons)
         let btn = Graphics.makeButton("Item Locations", Some(12.), Some(Brushes.Orange))
-        btn.Margin <- Thickness(3.)   // (same box size as before)
+        (match btn.Content with | :? TextBox as t -> t.Background <- Brushes.Black | _ -> ())   // same black as the Save / Hint Decoder / Hotkeys buttons
         btn.Focusable <- false
         btn.ToolTip <- "Open a window that shows where all the dungeon items and the armos/letter/ladder/white sword/magical sword items are"
         btn.Click.Add(fun _ -> openItemLocationsWindow())
-        gridAdd(mainTrackerGrid, btn, 4, 4)
-        Grid.SetColumnSpan(btn, 3)
+        layout.AddItemLocationsButton(btn)
 (*
     let foundDungeonsTB1 = new TextBox(Text="0/9", FontSize=20., Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false)
     let foundDungeonsTB2 = new TextBox(Text="found", FontSize=12., Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false)

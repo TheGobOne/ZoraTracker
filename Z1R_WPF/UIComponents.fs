@@ -483,14 +483,14 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
         // slots are 30px wide, in this order: sword, arrow, bow, ladder, power bracelet, recorder, raft, candle, ring, wand, key, boomerang, meat, book, letter
         match slot with
         | 0 -> showSwordLocator()
-        | 1 -> showArrowLocator()
-        | 3 -> showLocatorInstanceFunc(owInstance.Ladderable)
-        | 4 -> showLocatorInstanceFunc(owInstance.PowerBraceletable)
-        | 5 -> showLocatorInstanceFunc(owInstance.Whistleable)
-        | 6 -> showLocatorInstanceFunc(owInstance.Raftable)
-        | 7 -> showLocatorInstanceFunc(owInstance.Burnable)
-        | 10 -> showKeyLocator()
-        | 12 -> showMeatLocator()
+        | 1 -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.ARROW)   // arrow shops (the marker icons are added below)
+        | 3 -> showLocatorInstanceFunc(TrackerModel.owInstance.Ladderable)
+        | 4 -> showLocatorInstanceFunc(TrackerModel.owInstance.PowerBraceletable)
+        | 5 -> showLocatorInstanceFunc(TrackerModel.owInstance.Whistleable)
+        | 6 -> showLocatorInstanceFunc(TrackerModel.owInstance.Raftable)
+        | 7 -> showLocatorInstanceFunc(TrackerModel.owInstance.Burnable)
+        | 10 -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.KEY)
+        | 12 -> showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.MEAT)
         | _ -> ()
         // also highlight any tile where you've placed this item on the map (marker icons, cave item boxes)
         match slot with

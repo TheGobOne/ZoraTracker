@@ -284,7 +284,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
         canvasAdd(c, Graphics.BMPtoImage Graphics.white_sword_bmp, 4., 4.)
         Views.drawTinyIconIfLocationIsOverworldBlock(c, Some(owInstance), TrackerModel.mapStateSummary.Sword2Location)
     redrawWhiteSwordCanvas(white_sword_canvas)
-    if not(TrackerModel.IsHiddenDungeonNumbers()) then
+    do   // (also with Hide Dungeon Numbers: the numbered triforce row that used to occupy this space is gone)
         // location hint boxes in the row above the item boxes: white sword (9) and magical sword (10) only (the ladder and armos boxes need no hint)
         // (this is kinda gross, poking these onto appMainCanvas, but it doesn't fit into normal layout rules easily)
         let hintSpecs = [ OW_ITEM_GRID_LOCATIONS.WHITE_SWORD_ITEM_BOX, 9, Some(ShowLocatorDescriptor.Sword2)
