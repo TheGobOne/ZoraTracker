@@ -862,6 +862,10 @@ type MyWindow() as this =
             if w > 50. && h > 50. && cm.Height > 0. then
                 let s = min (w / WIDTH_SANS_CHROME) (h / cm.Height)
                 let s = max 0.4 (min 4.0 s)
+                // when the window is exactly the size derived from the remembered scale (e.g. at startup, before the tracker layout exists and while the start screen's
+                // world height may differ), use the remembered scale itself, so the content fills the window
+                let ms = TrackerModelOptions.MainWindowScale
+                let s = if ms > 0. && abs(this.ActualWidth - round(WIDTH_SANS_CHROME*ms + CHROME_WIDTH)) < 2. && abs(this.ActualHeight - round(HEIGHT_SANS_CHROME*ms + CHROME_HEIGHT)) < 2. then ms else s
                 if abs(s - appliedScale.Value) > 0.0005 then
                     appliedScale.Value <- s
                     Graphics.dynamicAppScale <- s
@@ -1156,8 +1160,23 @@ type MyWindow() as this =
         Graphics.scaleUpCheckBoxBox(fscb, 1.66)
         fscb.IsChecked <- System.Nullable.op_Implicit false
         let fsArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=fscb, VerticalAlignment=VerticalAlignment.Top)
-        fsArea.MouseEnter.Add(fun _ -> hoverExplain(fsArea,"Checked: the 4th sword is the highest sword level, and the level 2 staircase item box is enabled.\nUnchecked: the magical sword is the highest sword level, and the staircase box starts greyed out."))
+        fsArea.MouseEnter.Add(fun _ -> hoverExplain(fsArea,"Checked: the 4th sword is the highest sword level, and you choose whether its item is in level 2 (the staircase item box is enabled) or in level 9 (a new floor item check is added there).\nUnchecked: the magical sword is the highest sword level, and the staircase box starts greyed out."))
         fsArea.MouseLeave.Add(fun _ -> explainHide())
+        // checking '4th Sword' pops up a small menu (above the checkbox) to choose where the 4th sword's item lives: the level 2 staircase slot (default), or a new level 9 floor item check
+        let fourthSwordLevel = ref 2
+        let fsPopup = new System.Windows.Controls.Primitives.Popup(PlacementTarget=fsArea, Placement=System.Windows.Controls.Primitives.PlacementMode.Top, StaysOpen=false)
+        do
+            let sp = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black)
+            sp.Children.Add(new TextBlock(Text="4th sword item is in:", Foreground=Brushes.Gray, FontSize=14., Margin=Thickness(6.,3.,6.,0.))) |> ignore
+            let mkOpt(text:string, lvl:int) =
+                let b = new Button(Content=new TextBlock(Text=text, FontSize=18., Foreground=Brushes.Orange), Background=Brushes.Black, BorderBrush=Brushes.SaddleBrown, Margin=Thickness(3.), Padding=Thickness(12.,3.,12.,3.))
+                b.Click.Add(fun _ -> fourthSwordLevel.Value <- lvl; fsPopup.IsOpen <- false)
+                b
+            sp.Children.Add(mkOpt("Level 2", 2)) |> ignore
+            sp.Children.Add(mkOpt("Level 9", 9)) |> ignore
+            fsPopup.Child <- new Border(Child=sp, BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(2.), Background=Brushes.Black)
+        fscb.Checked.Add(fun _ -> fourthSwordLevel.Value <- 2; fsPopup.IsOpen <- true)
+        fscb.Unchecked.Add(fun _ -> fourthSwordLevel.Value <- 2; fsPopup.IsOpen <- false)
         checkboxSP.Children.Add(hdnArea) |> ignore
         checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
         checkboxSP.Children.Add(moArea) |> ignore   // Mirrored Overworld takes the third spot
@@ -1240,7 +1259,9 @@ type MyWindow() as this =
             if loadData.IsNone then   // (a loaded save restores its own 4th-sword/staircase state)
                 let fourth = fscb.IsChecked.HasValue && fscb.IsChecked.Value
                 TrackerModelOptions.FourthSwordEnabled <- fourth
-                TrackerModel.SetLevel2StairBoxEnabled(fourth)
+                let inLevel9 = fourth && fourthSwordLevel.Value = 9
+                TrackerModel.SetLevel2StairBoxEnabled(fourth && not inLevel9)   // Level 2: the staircase item slot is enabled; Level 9: it is not, and level 9 gets a floor item check instead
+                TrackerModel.SetLevel9FloorBoxEnabled(inLevel9)
             TrackerModel.BootsReplaceBoomerangs <- brcb.IsChecked.HasValue && brcb.IsChecked.Value
             TrackerModel.MarkBombDroppers <- mbcb.IsChecked.HasValue && mbcb.IsChecked.Value
             TrackerModel.CustomLevelName <- 
@@ -1293,7 +1314,7 @@ type MyWindow() as this =
                 WPFUI.resetTimerEvent.Trigger()  // takes a few seconds to load everything, reset timer at start
             Graphics.canvasAdd(hmsTimerCanvas, OverworldItemGridUI.hmsTimeTextBox, Layout.RIGHT_COL+190., 0.)
             Graphics.canvasAdd(hmsTimerCanvas, OverworldItemGridUI.niceTimerBox, 12.8*Graphics.OMTW + 3., 0.)   // 'Nice timer bro' shows here while the timer is hidden
-            OverworldItemGridUI.niceTimerBox.Visibility <- (if TrackerModelOptions.HideTimer.Value then Visibility.Visible else Visibility.Hidden)
+            OverworldItemGridUI.niceTimerBox.Visibility <- (if OverworldItemGridUI.SHOW_NICE_TIMER_BRO && TrackerModelOptions.HideTimer.Value then Visibility.Visible else Visibility.Hidden)
             gotThruStartup <- true
             if promptedCrashRecovery then
                 finishCrashInfoImpl("prompted for crash recovery, user chose not to, successfully started")

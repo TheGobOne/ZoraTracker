@@ -374,9 +374,9 @@ let overworldTiles(isFirstQuestOverworld, isHDN) = [|
     "KeyShop"          , 999                                                , "Key shop",             "Shop with\nKey\n(60-120 rupees)"
     "ShieldShop"       , 999                                                , "Shield shop",          "Shop with\nMagical Shield\n(70-180 rupees)"
     "UnknownSecret"    , 999                                                , "Unknown Secret",       "Unknown Secret"
-    "LargeSecret"      , 999 (*if isFirstQuestOverworld then 3 else 1*)     , "Large Secret",         "Large Secret\n(50-150 rupees)"
-    "MediumSecret"     , 999 (*if isFirstQuestOverworld then 7 else 7*)     , "Medium Secret",        "Medium Secret\n(25-40 rupees)"
-    "SmallSecret"      , 999 (*if isFirstQuestOverworld then 4 else 6*)     , "Small Secret",         "Small Secret\n(1-20 rupees)"
+    "LargeSecret"      , (if isFirstQuestOverworld then 3 else 1)           , "Large Secret",         "Large Secret\n(50-150 rupees)"
+    "MediumSecret"     , (if isFirstQuestOverworld then 7 else 7)           , "Medium Secret",        "Medium Secret\n(25-40 rupees)"
+    "SmallSecret"      , (if isFirstQuestOverworld then 4 else 6)           , "Small Secret",         "Small Secret\n(1-20 rupees)"
     "DoorRepairCharge" , (if isFirstQuestOverworld then 9 else 10)          , "Door Repair",          "Door Repair Charge\n(15-25 rupees)"
     "MoneyMakingGame"  , (if isFirstQuestOverworld then 5 else 6)           , "Money Making Game",    "Money Making Game\n(gambling)"
     "Letter"           , 1                                                  , "The Letter",           "The Letter\n(for buying potions)"
@@ -768,6 +768,13 @@ let SetLevel2StairBoxEnabled(enabled:bool) =
     if level2StairBoxEnabled <> enabled then
         level2StairBoxEnabled <- enabled
         level2StairBoxEnabledChanged.Trigger()
+// the other place the '4th Sword' start option can put the extra item: a floor item check in level 9 (it uses level 9's ExtraFloorBox)
+let mutable level9FloorBoxEnabled = false
+let level9FloorBoxEnabledChanged = new Event<unit>()
+let SetLevel9FloorBoxEnabled(enabled:bool) =
+    if level9FloorBoxEnabled <> enabled then
+        level9FloorBoxEnabled <- enabled
+        level9FloorBoxEnabledChanged.Trigger()
 
 [<RequireQualifiedAccess>]
 type DungeonTrackerInstanceKind =
@@ -2118,6 +2125,7 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         all.Add(TimelineItemDescription.ItemBox("MagicalSwordCaveBox", sword3Box))
         all.Add(TimelineItemDescription.ItemBox("LetterCaveBox", letterBox))
         all.Add(TimelineItemDescription.ItemBox("WhiteSwordBox", sword2Box))
+        all.Add(TimelineItemDescription.ItemBox("Level9Box3", GetDungeon(8).ExtraFloorBox))   // the optional level 9 floor item check (4th Sword start option)
         if IsHiddenDungeonNumbers() then
             for i = 0 to 8 do
                 for j = 0 to 2 do

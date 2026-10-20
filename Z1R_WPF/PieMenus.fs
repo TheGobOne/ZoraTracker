@@ -346,3 +346,27 @@ let TakeThisPieMenuAsync(cm,h) =
         do! FourWayPieMenu(cm, h, bordersDocksBehaviors, hkp)
         return r
     }
+
+// the wood sword cave's pie menu: the usual three hotkey-able choices, plus a 4th (right) for the less common 'Shuffled Item' / 'Sword Icon' choices.
+// returns 0 = leave/cancel, 1 = took sword, 2 = took candle, 3 = other (the caller asks which)
+let takeThisOtherPanel() =
+    let col = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, VerticalAlignment=VerticalAlignment.Center)
+    col.Children.Add(new TextBlock(Text="Shuffled item\nor Sword icon...", Foreground=Brushes.Orange, FontSize=20., TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
+    let b = new Border(Child=col, BorderBrush=Brushes.Gray, BorderThickness=Thickness(BT), Width=takeAnyW+6., Height=takeAnyH+2.*BT+30., HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
+    let c = new Canvas(Width=b.Width, Height=b.Height)
+    c.Children.Add(b) |> ignore
+    c, fun x -> b.BorderBrush <- x
+
+let TakeThisChoicePieMenuAsync(cm,h) =
+    let r = ref 0
+    let hkp = HotKeys.TakeThisHotKeyProcessor
+    let bordersDocksBehaviors = [|
+        takeThisWoodSwordPanel(hkp.AsPrettyHotKeyOpt(2)), Dock.Top,    (fun () -> r.Value <- 1)
+        takeThisCandlePanel(hkp.AsPrettyHotKeyOpt(1)),    Dock.Left,   (fun () -> r.Value <- 2)
+        takeThisOtherPanel(),                             Dock.Right,  (fun () -> r.Value <- 3)
+        takeThisLeavePanel(hkp.AsPrettyHotKeyOpt(0)),     Dock.Bottom, fun()->()
+        |]
+    async {
+        do! FourWayPieMenu(cm, h, bordersDocksBehaviors, hkp)
+        return r.Value
+    }

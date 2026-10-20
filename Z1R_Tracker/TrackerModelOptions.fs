@@ -158,6 +158,7 @@ let mutable MouseMagnifierWindowLTWH = ""
 let mutable SpotSummaryPopout_DisplayedLT = ""
 let mutable InventoryAndHeartsPopout_DisplayedLT = ""
 let mutable RemainingItemsPoput_DisplayedLT = ""
+let mutable ItemLocationsWindow_DisplayedLT = ""
 let mutable DungeonSummaryTabMode = 0
 let mutable PortNumber = "5000"
 let mutable CoopHostSession = false
@@ -277,6 +278,7 @@ type ReadWrite() =
     member val SpotSummaryPopout_DisplayedLT = "" with get,set
     member val InventoryAndHeartsPopout_DisplayedLT = "" with get,set
     member val RemainingItemsPoput_DisplayedLT = "" with get,set
+    member val ItemLocationsWindow_DisplayedLT = "" with get,set
     member val DungeonSummaryTabMode = 0 with get,set
 
     member val MyConsoleId = CoopSyncOptions.MyConsoleId with get,set
@@ -405,6 +407,7 @@ let private writeImpl(filename) =
     data.SpotSummaryPopout_DisplayedLT <- SpotSummaryPopout_DisplayedLT
     data.InventoryAndHeartsPopout_DisplayedLT <- InventoryAndHeartsPopout_DisplayedLT
     data.RemainingItemsPoput_DisplayedLT <- RemainingItemsPoput_DisplayedLT
+    data.ItemLocationsWindow_DisplayedLT <- ItemLocationsWindow_DisplayedLT
     data.DungeonSummaryTabMode <- DungeonSummaryTabMode
     data.MyConsoleId <- CoopSyncOptions.MyConsoleId
     data.TargetConsoleId <- CoopSyncOptions.TargetConsoleId
@@ -543,6 +546,7 @@ let private read(filename) =
         SpotSummaryPopout_DisplayedLT <- data.SpotSummaryPopout_DisplayedLT
         InventoryAndHeartsPopout_DisplayedLT <- data.InventoryAndHeartsPopout_DisplayedLT
         RemainingItemsPoput_DisplayedLT <- data.RemainingItemsPoput_DisplayedLT
+        ItemLocationsWindow_DisplayedLT <- (if isNull data.ItemLocationsWindow_DisplayedLT then "" else data.ItemLocationsWindow_DisplayedLT)
         DungeonSummaryTabMode <- data.DungeonSummaryTabMode
 
         AllowItemIconOnNonShopTile.Value <- data.AllowItemIconOnNonShopTile

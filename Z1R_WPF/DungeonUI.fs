@@ -357,13 +357,17 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
     // triforce
     let dungeonView = if dungeonIndex < 8 then Views.MakeTriforceDisplayView(Some(cm), dungeonIndex, None) else Views.MakeLevel9View(None)
     AddCursorBehaviorTo(dungeonView, true, false)
-    sp.Children.Add(dungeonView) |> ignore
+    let headerCell = new Canvas(Width=30., Height=30.)   // holds the numbered triforce, or (when a Triforce Piece is placed in an item slot) the extra floor item box
+    headerCell.Children.Add(dungeonView) |> ignore
+    sp.Children.Add(headerCell) |> ignore
     // item boxes
     let d = TrackerModel.GetDungeon(dungeonIndex)
+    let slotCells = ResizeArray<Canvas>()
     let boxViewsAndActivations =
         [|
             for box in d.Boxes do
                 let c = new Canvas(Width=30., Height=30.)
+                slotCells.Add(c)
                 let view,activate = Views.MakeBoxItem(cm, box)
                 AddCursorBehaviorTo(view, not(obj.ReferenceEquals(box, d.Boxes.[d.Boxes.Length-1])), true)
                 canvasAdd(c, view, 0., 0.)
@@ -373,6 +377,31 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
                     canvasAdd(c, r, 0., 0.)
                 yield view,activate
         |]
+    // mirror the main tracker: when a Triforce Piece is placed in a dungeon item slot, the numbered triforce moves into that slot and the header becomes an extra floor item box
+    if dungeonIndex < 8 then
+        let extraFloorView = fst (Views.MakeBoxItem(cm, d.ExtraFloorBox))
+        let refreshTriforceHeaderOrSlot() =
+            headerCell.Children.Clear()
+            for sc in slotCells do sc.Children.Remove(dungeonView)
+            match d.Boxes |> Array.tryFindIndex (fun b -> b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE) with
+            | Some(k) when k < 3 && k < slotCells.Count ->
+                headerCell.Children.Add(extraFloorView) |> ignore
+                slotCells.[k].Children.Add(dungeonView) |> ignore
+            | _ ->
+                headerCell.Children.Add(dungeonView) |> ignore
+        for b in d.Boxes do
+            b.Changed.Add(fun _ -> refreshTriforceHeaderOrSlot())
+        refreshTriforceHeaderOrSlot()
+    // the optional extra staircase item slot of level 2, as on the main tracker
+    if level = 2 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled then
+        let c = new Canvas(Width=30., Height=30.)
+        canvasAdd(c, fst (Views.MakeBoxItem(cm, TrackerModel.level2StairBox)), 0., 0.)
+        sp.Children.Add(c) |> ignore
+    // the optional level 9 floor item check (4th Sword start option), as on the main tracker
+    if level = 9 && TrackerModel.level9FloorBoxEnabled then
+        let c = new Canvas(Width=30., Height=30.)
+        canvasAdd(c, fst (Views.MakeBoxItem(cm, d.ExtraFloorBox)), 0., 0.)
+        sp.Children.Add(c) |> ignore
     sp.Margin <- Thickness(SPM)
     // dynamic highlight
     let line,triangle = Graphics.makeArrow(30.*float dungeonIndex+15., 36.+float(d.Boxes.Length+1)*30., pos.X+21., pos.Y-3., yellow)
@@ -810,6 +839,10 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 // don't remove the old 'unhighlight' event listener - this is technically a leak, but unless you toggle '2nd quest dungeons' button a million times in one session, it won't matter
                 dungeonTabs.SelectionChanged.Add(fun _ -> unhighlight())  // an extra safeguard, since the highlight is not a popup, but just a crazy mark over the main canvas
             OptionsMenu.secondQuestDungeonsOptionChanged.Publish.Add(fun _ -> PopulateLocalDungeonTrackerPanel())
+            if level = 2 then
+                TrackerModel.level2StairBoxEnabledChanged.Publish.Add(fun _ -> PopulateLocalDungeonTrackerPanel())
+            if level = 9 then
+                TrackerModel.level9FloorBoxEnabledChanged.Publish.Add(fun _ -> PopulateLocalDungeonTrackerPanel())
             PopulateLocalDungeonTrackerPanel()
         // main dungeon content
         contentCanvas.MouseEnter.Add(fun _ -> contentCanvasMouseEnterFunc(level))
@@ -1258,7 +1291,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 grabTB.Background <- Brushes.Black
                 dungeonTabs.Cursor <- null
                 grabModeTextBlock.Opacity <- 0.
-        canvasAdd(contentCanvas, grabButton, LD_X+1.5, LD_Y+171.-float(TH-3)-1.-10.)   // right-hand column, just above the map checkbox
+        canvasAdd(contentCanvas, grabButton, LD_X+1.5, LD_Y+171.-float(TH-3)-1.-10.+4.)   // right-hand column, just above the map checkbox
         grabButton.Click.Add(fun _ ->
             grabHelper.ToggleGrabMode()
             grabRedraw()

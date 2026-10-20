@@ -267,12 +267,10 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
         tb
 
     let SCALE = 2.
-    let tileX, tileY = 555., 768.
+    let tileX, tileY = 555., 768. + 120.   // (moved down 120 now that the room preview is gone, so the enlarged menu clears the UI-reminder overlay at the top)
     let ST = CustomComboBoxes.borderThickness
-    let tileCanvas = new Canvas(Width=float(13*3)*SCALE, Height=float(9*3)*SCALE)
-    let extra = 30.
-    let tileSurroundingCanvas = new Canvas(Width=float(13*3)*SCALE+extra, Height=float(9*3)*SCALE+extra, Background=Brushes.DarkOliveGreen)
-    canvasAdd(popupCanvas, tileSurroundingCanvas, tileX-extra/2., tileY-extra/2.)
+    let tileCanvas = new Canvas(Width=1., Height=1.)   // (no room preview is shown any more; this just hosts the captions)
+    let G = 4./3.   // the room type menu is shown 33% larger
 
     let grid = 
         [|
@@ -292,6 +290,7 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
                  | Some n -> usedTransports.[n] <> 2)
 
             if i = grid.Length-1 then null, false, rt
+            elif rt = RoomType.OldManHint then upcast (let im = Graphics.BMPtoImage(rt.UncompletedBI()) in im.Opacity <- 1.0; im), isLegal, rt   // this icon is naturally dark, so show it undimmed
             else upcast tweak(Graphics.BMPtoImage(rt.UncompletedBI())), isLegal, rt
         )
 
@@ -303,25 +302,16 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
 
     let activationDelta = 0
     let (gnc, gnr, gcw, grh) = 7, 5, 13*3, 9*3
-    let totalGridWidth = float gnc * (float gcw + 2. * ST)
-    let totalGridHeight = float gnr * (float grh + 2. * ST)
-    let gx, gy = -117., -78. - totalGridHeight
+    let totalGridWidth = float gnc * (float gcw + 2. * ST) * G
+    let totalGridHeight = float gnr * (float grh + 2. * ST) * G
+    let gx, gy = -117. - (totalGridWidth - totalGridWidth/G), -78. - totalGridHeight
 
     let fullRoom = originalRoomState.Clone()
     fullRoom.IsComplete <- false
 
     let redrawTile(curState:RoomType) =
         tileCanvas.Children.Clear()
-        fullRoom.RoomType <- curState
-        let fullRoomDisplay = fullRoom.CurrentDisplay()
-        let scaleTrans = new ScaleTransform(SCALE, SCALE)
-        if scaleTrans.CanFreeze then scaleTrans.Freeze()
-        fullRoomDisplay.RenderTransform <- scaleTrans
-        RenderOptions.SetBitmapScalingMode(fullRoomDisplay, BitmapScalingMode.NearestNeighbor)
-        fullRoomDisplay.Opacity <- tileSunglasses
-        canvasAdd(tileCanvas, fullRoomDisplay, 0., 0.)
-
-        let textWidth = 328.
+        let textWidth = totalGridWidth + 13.
         let topText = Graphics.center(makeCaption("Select a room type", true), int textWidth, 24)
         let s = HotKeys.DungeonRoomHotKeyProcessor.AppendHotKeyToDescription(Z1R_Tracker.Models.Z1R_TrackerInterop.RoomTypeExtensions.DisplayDescription(curState), Choice1Of4 curState)
         let bottomText = Graphics.center(makeCaption(s, true), int textWidth, 49)
@@ -346,11 +336,18 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
     setOpacity(0.5)
 
     if positionAtEntranceRoomIcons then
-        Graphics.WarpMouseCursorTo(Point(tileX+gx+5.5*(float gcw + ST*2.), tileY+gy+totalGridHeight/2.))
+        Graphics.WarpMouseCursorTo(Point(tileX+gx+5.5*(float gcw + ST*2.)*G, tileY+gy+totalGridHeight/2.))
     else
-        let x = originalStateIndex % gnc
-        let y = originalStateIndex / gnc
-        Graphics.WarpMouseCursorTo(Point(tileX+gx+(float x+0.5)*(float gcw + ST*2.), tileY+gy+(float y+0.5)*(float grh + ST*2.)-THE_DIFF))
+        // the grid may have been rearranged by the user (Shift+drag); find where the current room type is displayed
+        let shownIndex =
+            match TrackerModelOptions.MenuLayouts.TryGetValue("DungeonRoom") with
+            | true, saved when not (isNull saved) ->
+                let k = System.Array.IndexOf(saved, (originalRoomState.RoomType).ToString())
+                if k >= 0 && k < gnc*gnr then k else originalStateIndex
+            | _ -> originalStateIndex
+        let x = shownIndex % gnc
+        let y = shownIndex / gnc
+        Graphics.WarpMouseCursorTo(Point(tileX+gx+(float x+0.5)*(float gcw + ST*2.)*G, tileY+gy+(float y+0.5)*(float grh + ST*2.)*G-THE_DIFF))
 
     let! r = CustomComboBoxes.DoModalGridSelect(cm, tileX, tileY-THE_DIFF, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
                    float gcw/2., float grh/2., gx, gy, redrawTile, onClick, extraDecorations, brushes, gridClickDismissalWarpReturn, None, "DungeonRoom", None)

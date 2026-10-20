@@ -50,6 +50,98 @@ let mainTrackerCanvasShaders : Canvas[,] = Array2D.init 8 5 (fun _i j -> new Can
 let timelineItems = ResizeArray()
 let doUIUpdateEvent = new Event<unit>()
 
+// the 'Item Locations' window: a read-only mirror of the dungeon columns (triforce and item boxes of levels 1-9), and below them the armos / letter / ladder / white sword / magical sword boxes
+let mutable itemLocationsWindow : Window = null
+let ITEMLOC_MINIMIZED = ShowRunCustom.MINIMIZED_THRESHOLD
+let itemLocationsRegex = """^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$"""
+// userClick=true: the button was pressed; false: automatic reopen at startup (only if the window was left open last time)
+let openItemLocationsWindowImpl(userClick) =
+    let m = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ItemLocationsWindow_DisplayedLT, itemLocationsRegex)
+    let validPos = m.Success && not(float m.Groups.[2].Value < ITEMLOC_MINIMIZED)
+    if itemLocationsWindow <> null then
+        itemLocationsWindow.Activate() |> ignore
+    elif userClick || (validPos && m.Groups.[1].Value = "1") then
+        let w = new Window(Title="Item Locations", ResizeMode=ResizeMode.CanResizeWithGrip, SizeToContent=SizeToContent.WidthAndHeight, Background=Brushes.Black, ShowActivated=false)
+        let content = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, Margin=Thickness(6.))
+        let box30(view:UIElement) =
+            let c = new Canvas(Width=30., Height=30.)
+            c.Children.Add(view) |> ignore
+            c
+        let build() =
+            content.Children.Clear()
+            let row1 = new StackPanel(Orientation=Orientation.Horizontal)
+            for i = 0 to 8 do
+                let d = TrackerModel.GetDungeon(i)
+                let col = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(3.,0.,3.,0.))
+                if TrackerModel.IsHiddenDungeonNumbers() then
+                    col.Children.Add(Views.MakeColorNumberCanvasForHDN(i)) |> ignore
+                col.Children.Add(if i < 8 then Views.MakeTriforceDisplayView(None, i, None) else Views.MakeLevel9View(None)) |> ignore
+                for box in d.Boxes do
+                    col.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, box, false, None)))) |> ignore
+                if i = 1 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled then
+                    col.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, TrackerModel.level2StairBox, false, None)))) |> ignore
+                if i = 8 && TrackerModel.level9FloorBoxEnabled then
+                    col.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, d.ExtraFloorBox, false, None)))) |> ignore
+                row1.Children.Add(col) |> ignore
+            content.Children.Add(row1) |> ignore
+            let row2 = new StackPanel(Orientation=Orientation.Horizontal, Margin=Thickness(0.,12.,0.,0.))
+            // (each box has its icon below it, as on the main tracker)
+            let letterBmp = CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.LETTER, None)
+            for box, icon in [| TrackerModel.armosBox, Graphics.ow_key_armos_bmp; TrackerModel.letterBox, letterBmp; TrackerModel.ladderBox, Graphics.ladder_bmp
+                                TrackerModel.sword2Box, Graphics.white_sword_bmp; TrackerModel.sword3Box, Graphics.magical_sword_bmp |] do
+                let col = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(3.,0.,3.,0.))
+                col.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, box, false, None)))) |> ignore
+                let ic = new Canvas(Width=30., Height=30.)
+                canvasAdd(ic, Graphics.BMPtoImage icon, 4., 4.)
+                col.Children.Add(ic) |> ignore
+                row2.Children.Add(col) |> ignore
+            content.Children.Add(row2) |> ignore
+        build()
+        let vb = new Viewbox(Child=content, Stretch=Stretch.Uniform, StretchDirection=StretchDirection.DownOnly)
+        w.Content <- vb
+        // remembered size and position from the last session
+        let savedW, savedH = (if m.Success && m.Groups.[4].Success && m.Groups.[5].Success && float m.Groups.[4].Value >= 100. && float m.Groups.[5].Value >= 60. then (float m.Groups.[4].Value, float m.Groups.[5].Value) else (0., 0.))
+        if savedW > 0. then
+            w.SizeToContent <- SizeToContent.Manual
+            w.Width <- savedW
+            w.Height <- savedH
+        if validPos then
+            w.WindowStartupLocation <- WindowStartupLocation.Manual
+            w.Left <- float m.Groups.[2].Value
+            w.Top <- float m.Groups.[3].Value
+        let mainClosing = ref false
+        let save(isOpen) =
+            let bounds = if w.Left < ITEMLOC_MINIMIZED then w.RestoreBounds else Rect(w.Left, w.Top, w.ActualWidth, w.ActualHeight)
+            TrackerModelOptions.ItemLocationsWindow_DisplayedLT <- sprintf "%d,%d,%d,%d,%d" (if isOpen then 1 else 0) (int bounds.Left) (int bounds.Top) (int bounds.Width) (int bounds.Height)
+            TrackerModelOptions.writeSettings()
+        let saveTimer = new System.Windows.Threading.DispatcherTimer(Interval=System.TimeSpan.FromMilliseconds(600.))
+        saveTimer.Tick.Add(fun _ -> saveTimer.Stop(); save(true))
+        w.LocationChanged.Add(fun _ -> if w.IsLoaded then (saveTimer.Stop(); saveTimer.Start()))
+        w.SizeChanged.Add(fun _ -> if w.IsLoaded && w.SizeToContent = SizeToContent.Manual then (saveTimer.Stop(); saveTimer.Start()))
+        // opens at the content's natural size (unless a size was remembered), then the content scales as the window is resized
+        w.ContentRendered.Add(fun _ ->
+            if w.SizeToContent <> SizeToContent.Manual then
+                let aw, ah = w.ActualWidth, w.ActualHeight
+                w.SizeToContent <- SizeToContent.Manual
+                w.Width <- aw
+                w.Height <- ah
+                vb.StretchDirection <- StretchDirection.Both)
+        // the item-slot options that add boxes can change while the window is open
+        TrackerModel.level2StairBoxEnabledChanged.Publish.Add(fun _ -> if itemLocationsWindow <> null then build())
+        TrackerModel.level9FloorBoxEnabledChanged.Publish.Add(fun _ -> if itemLocationsWindow <> null then build())
+        Application.Current.MainWindow.Closed.Add(fun _ -> mainClosing.Value <- true; try w.Close() with _ -> ())   // (stays 'open' in the settings, so it reappears next time)
+        w.Closed.Add(fun _ ->
+            itemLocationsWindow <- null
+            saveTimer.Stop()
+            if not mainClosing.Value then save(false))   // the user closed it themselves: don't reopen it next time
+        itemLocationsWindow <- w
+        w.Show()
+        if userClick then save(true)
+
+let openItemLocationsWindow() = openItemLocationsWindowImpl(true)
+// called at startup (after the tracker is set up): reopens the window if it was left open when the program last closed
+let reopenItemLocationsWindowIfWasOpen() = openItemLocationsWindowImpl(false)
+
 let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldInstance, layout:Layout.IApplicationLayoutBase, kind:TrackerModel.DungeonTrackerInstanceKind) =
     let mainTrackerGrid = makeGrid(9, 5, 30, 30)
     let mainTrackerCanvas = new Canvas()
@@ -156,7 +248,8 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
         let refreshL2Slot() =
             l2c.Children.Remove(placeholder)
             l2c.Children.Remove(slot)
-            if TrackerModel.level2StairBoxEnabled then l2c.Children.Insert(0, slot) else l2c.Children.Insert(0, placeholder)
+            if TrackerModel.level9FloorBoxEnabled then ()   // the 4th sword is in level 9: no level 2 staircase slot at all (not even the greyed-out placeholder)
+            elif TrackerModel.level2StairBoxEnabled then l2c.Children.Insert(0, slot) else l2c.Children.Insert(0, placeholder)
         placeholder.MouseDown.Add(fun ea ->
             if ea.ChangedButton = Input.MouseButton.Left then
                 ea.Handled <- true
@@ -169,6 +262,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 TrackerModel.SetLevel2StairBoxEnabled(false)
                 TrackerModel.forceUpdate())
         TrackerModel.level2StairBoxEnabledChanged.Publish.Add(fun _ -> refreshL2Slot())
+        TrackerModel.level9FloorBoxEnabledChanged.Publish.Add(fun _ -> refreshL2Slot())
         refreshL2Slot()
     let extrasImage = Graphics.BMPtoImage Graphics.iconExtras_bmp
     extrasImage.ToolTip <- "Starting items and extra drops"
@@ -366,6 +460,35 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
         Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(level9ColorCanvas)
     gridAdd(mainTrackerGrid, level9ColorCanvas, 8, 0) 
     mainTrackerCanvases.[8,0] <- level9ColorCanvas
+    // optional level 9 floor item check (the '4th Sword' start option can place the 4th sword there instead of the level 2 staircase): it takes the bottom cell under level 9,
+    // and the Extras button moves up into the (then hidden) level 9 hint cell while it is shown
+    do
+        let l9c = mainTrackerCanvases.[8,4]
+        let l9slot = ref (null : Canvas)
+        let refreshL9Slot() =
+            let enabled = TrackerModel.level9FloorBoxEnabled
+            if enabled then
+                if isNull l9slot.Value then
+                    l9slot.Value <- boxItemImpl(Timeline.TimelineID.LevelBox(9,3), TrackerModel.GetDungeon(8).ExtraFloorBox, false)
+                if not(l9c.Children.Contains(l9slot.Value)) then
+                    l9c.Children.Add(l9slot.Value) |> ignore
+            elif not(isNull l9slot.Value) then
+                l9c.Children.Remove(l9slot.Value)
+            mainTrackerGrid.Children.Remove(extrasImage)
+            gridAdd(mainTrackerGrid, extrasImage, 8, (if enabled then 0 else 4))
+            level9ColorCanvas.Visibility <- (if enabled then Visibility.Hidden else Visibility.Visible)
+        TrackerModel.level9FloorBoxEnabledChanged.Publish.Add(fun _ -> refreshL9Slot())
+        refreshL9Slot()
+    // 'Item Locations' button, in the blank cells under levels 5-7 (the default layout only; with hidden dungeon numbers those cells hold item boxes)
+    if not(TrackerModel.IsHiddenDungeonNumbers()) then
+        // (made with Graphics.makeButton, so it has the same look and border as the other tracker buttons, e.g. 'Options...' and 'Item Progress'; use that helper for new buttons)
+        let btn = Graphics.makeButton("Item Locations", Some(12.), Some(Brushes.Orange))
+        btn.Margin <- Thickness(3.)   // (same box size as before)
+        btn.Focusable <- false
+        btn.ToolTip <- "Open a window that shows where all the dungeon items and the armos/letter/ladder/white sword/magical sword items are"
+        btn.Click.Add(fun _ -> openItemLocationsWindow())
+        gridAdd(mainTrackerGrid, btn, 4, 4)
+        Grid.SetColumnSpan(btn, 3)
 (*
     let foundDungeonsTB1 = new TextBox(Text="0/9", FontSize=20., Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false)
     let foundDungeonsTB2 = new TextBox(Text="found", FontSize=12., Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false)

@@ -265,7 +265,7 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
                 w.SizeToContent <- SizeToContent.Manual
                 w.Width <- aw
                 w.Height <- ah
-                vb.StretchDirection <- System.Windows.Controls.StretchDirection.Both)
+            vb.StretchDirection <- System.Windows.Controls.StretchDirection.Both)
         upcast vb
     // like scalable, but the content is not scaled: it re-flows onto more or fewer rows as the window is resized
     let wrapping(e:UIElement) : UIElement =
@@ -349,6 +349,9 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
     if matches.Success && matches.Groups.[4].Success && matches.Groups.[5].Success && float matches.Groups.[4].Value >= 100. && float matches.Groups.[5].Value >= 60. then
         savedW.Value <- float matches.Groups.[4].Value
         savedH.Value <- float matches.Groups.[5].Value
+        w.SizeToContent <- SizeToContent.Manual   // apply the remembered size up front (before Show), rather than after first render
+        w.Width <- savedW.Value
+        w.Height <- savedH.Value
     if (isLeftClick && ok)                                  // the user explicitly is trying to show the window, and we are able to parse valid coords
         || (not isLeftClick && not isRightClick && disp)    // it's startup automatically looking for windows to display, and this one has disp=1 and valid coords
             then
@@ -465,7 +468,7 @@ let showShopPricesWindow() =
 
 let Startup(doUIUpdateEvent:Event<unit>) =
     let f(kind, setting) =
-        let matches = System.Text.RegularExpressions.Regex.Match(setting, """^(1|0),(-?\d+),(-?\d+)$""")
+        let matches = System.Text.RegularExpressions.Regex.Match(setting, """^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$""")   // (optionally followed by the remembered size)
         let disp,_left,_top = 
             if matches.Success && not(float matches.Groups.[2].Value < MINIMIZED_THRESHOLD) then
                 (int matches.Groups.[1].Value)=1, float matches.Groups.[2].Value, float matches.Groups.[3].Value

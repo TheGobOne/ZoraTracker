@@ -375,8 +375,8 @@ let DoModalGridSelect<'State,'Result>
     popupCanvas.Children.Add(pretty) |> ignore
     if gridElementsSelectablesAndIDs.Length > gnr*gnc then
         failwith "the grid is not big enough to accomodate all the choices"
-    // Shift+drag rearranging is supported in the item-box and overworld-tile menus; the layout is remembered in the settings file
-    let isReorderable = (uniqueName = "ItemBox" || uniqueName = "OWGridTile")
+    // Shift+drag rearranging is supported in the item-box, overworld-tile and dungeon-room (room type / monster / floor drop) menus; the layout is remembered in the settings file
+    let isReorderable = (uniqueName = "ItemBox" || uniqueName = "OWGridTile" || uniqueName = "DungeonRoom" || uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail")
     let total = gnc*gnr
     let keyOf(it:FrameworkElement*bool*'State) = let ic,_,st = it in if isNull (box ic) then "" else (box st).ToString()
     let defaultItems : (FrameworkElement*bool*'State)[] = 
@@ -417,7 +417,7 @@ let DoModalGridSelect<'State,'Result>
     if firstRowExtra > 0 then grid.RowDefinitions.[0].Height <- GridLength(float (ROWH + firstRowExtra))
     grid.Background <- Brushes.Black
     // the dungeon-room monster and floor-item menus are shown 2x larger (the grid scales from its top-left corner; cell hit-testing and arrow-key navigation follow the transform)
-    let gridScale = if uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail" then 2.0 elif uniqueName = "ItemBox" || uniqueName = "OWGridTile" then 1.25 else 1.0
+    let gridScale = if uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail" then 2.0 elif uniqueName = "ItemBox" || uniqueName = "OWGridTile" then 1.25 elif uniqueName = "DungeonRoom" then 4./3. else 1.0
     let gridBorder = new Border(BorderThickness=Thickness(ST), BorderBrush=brushes.BorderBrush, Child=grid)
     if gridScale <> 1.0 then
         gridBorder.RenderTransform <- new ScaleTransform(gridScale, gridScale)
@@ -441,7 +441,8 @@ let DoModalGridSelect<'State,'Result>
             let b = new Border(Child=tb, Background=Brushes.Black, BorderBrush=brushes.BorderBrush, BorderThickness=Thickness(1.), Padding=Thickness(6.), IsHitTestVisible=false)
             let rightX = gx + gridPixW + 6.
             let noteX = if tileX + rightX + 132. > cm.AppMainCanvas.Width then gx - 132. - 6. else rightX
-            canvasAdd(popupCanvas, b, noteX, gy)
+            if tileX + noteX < 0. then canvasAdd(popupCanvas, b, gx, gy + gridPixH + 6.)   // no room on either side: put it under the grid
+            else canvasAdd(popupCanvas, b, noteX, gy)
             Some b
         else None
     let mutable currentState = origIdx   // the only bit of local mutable state during the modal - it ranges from 0..gridElements.Length-1
@@ -798,7 +799,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta6"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta7"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))

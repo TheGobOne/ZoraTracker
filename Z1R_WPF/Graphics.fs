@@ -832,15 +832,35 @@ let triforce_item_bmp =
             let c = zi_triforce_bmp.GetPixel(px+1, py+1)
             if c.ToArgb() <> System.Drawing.Color.Black.ToArgb() then r.SetPixel(px+2, py+2, c)
     r
-// magical key (the NES magic key sprite: orange ring-head, red shading, short toothed shaft)
+// magical key: a tall 8x16 sprite, scaled (nearest-neighbor) to fill the 21-pixel height of an item icon, centered in a 21x21 cell
 let magic_key_bmp =
-    makeSprite7x7([| "..ooo.."
-                     ".oo.orr"
-                     ".ooorr."
-                     "...or.."
-                     "...or.."
-                     "...oo.."
-                     "...or.." |], ['o', System.Drawing.Color.FromArgb(252,152,56); 'r', System.Drawing.Color.FromArgb(216,40,0)])
+    let rows = [| ".....o.."
+                  "...ooorr"
+                  "..okorr."
+                  "..okooor"
+                  "rooooorr"
+                  "ooo.oror"
+                  "....oorr"
+                  ".oooorr."
+                  "....or.."
+                  "....or.."
+                  "....or.."
+                  "....or.."
+                  ".oooor.."
+                  "...oor.."
+                  ".oooor.."
+                  "....or.." |]
+    let palette = [ 'o', System.Drawing.Color.FromArgb(232,160,32); 'r', System.Drawing.Color.FromArgb(161,23,20); 'k', System.Drawing.Color.Black ]
+    let r = new System.Drawing.Bitmap(21,21)
+    let W, H = 11, 21   // 8x16 -> 11x21
+    let offX = (21 - W) / 2
+    for px = 0 to W-1 do
+        for py = 0 to H-1 do
+            let ch = rows.[py*16/H].[px*8/W]
+            match List.tryFind (fun (c,_) -> c = ch) palette with
+            | Some(_,col) -> r.SetPixel(px+offX, py, col)
+            | None -> ()
+    r
 let readCacheFileOrCreateBmp(filename, createF : unit -> System.Drawing.Bitmap) =
     // always treat the tiles as 96dpi, whatever the cache file (or this machine's display scaling) says; a tile with another dpi gets drawn smaller than 48x33, leaving dark lines between map tiles
     if System.IO.File.Exists(filename) then

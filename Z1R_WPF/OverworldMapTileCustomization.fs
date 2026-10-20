@@ -157,7 +157,16 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
     let s = TrackerModel.playerComputedStateSummary
     acceleratorCancelled <- false
     TrackerModel.shuffledWoodSwordTiles.Remove((i,j)) |> ignore
-    let! choice = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Question, "What is in this cave?", ["Took Sword"; "Took Candle"; "Shuffled Item"; "Sword Icon"])
+    // the pie menu supports the Contextual_TakeThis_* hotkeys (sword / candle / none); its 4th option leads to the remaining choices
+    let! pie = PieMenus.TakeThisChoicePieMenuAsync(cm, 666.)
+    let! choice =
+        async {
+            match pie with
+            | 1 -> return "Took Sword"
+            | 2 -> return "Took Candle"
+            | 3 -> return! CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Question, "What is in this cave?", ["Shuffled Item"; "Sword Icon"])
+            | _ -> return "Leave"
+        }
     let mutable doneValue = 0   // 0 = not taken yet, SWORD1 = took the sword, CANDLE_TAKEN = took the candle
     match choice with
     | "Took Sword" ->
@@ -181,6 +190,7 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
         // like any other marker icon, the tile itself becomes an 'unmarked, finished' tile that shows the icon
         if not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty) then
             TrackerModel.overworldMapMarks.[i,j].AttemptToSet(TrackerModel.MapSquareChoiceDomainHelper.DARK_X) |> ignore
+    | "Leave" -> ()   // as before: marks the cave as not taken
     | _ -> acceleratorCancelled <- true   // clicked outside the choices: nothing gets placed
     if not acceleratorCancelled then
         TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.SWORD1, doneValue)

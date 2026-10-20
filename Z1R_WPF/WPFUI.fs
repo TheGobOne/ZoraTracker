@@ -2701,7 +2701,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         if data.Items.Level2StairBox <> null then   // (older saves do not have the optional level 2 staircase slot)
             if not(data.Items.Level2StairBox.TryApply(TrackerModel.level2StairBox)) then anySetProblems <- true
             TrackerModel.SetLevel2StairBoxEnabled(data.Items.Level2StairBoxEnabled)
-            TrackerModelOptions.FourthSwordEnabled <- data.Items.Level2StairBoxEnabled
+            TrackerModel.SetLevel9FloorBoxEnabled(data.Items.Level9FloorBoxEnabled)   // (older saves: false)
+            TrackerModelOptions.FourthSwordEnabled <- data.Items.Level2StairBoxEnabled || data.Items.Level9FloorBoxEnabled
         else
             TrackerModelOptions.FourthSwordEnabled <- true   // older saves predate this option: nothing is restricted
         for i = 0 to 8 do
@@ -2923,6 +2924,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     Graphics.PlaySoundForSpeechRecognizedAndUsedToMark()  // the very first call to this lags the system for some reason, so get it out of the way at startup
     layout.AllDone()
     Popouts.Startup(doUIUpdateEvent)
+    MainTrackerTriforcesAndItems.reopenItemLocationsWindowIfWasOpen()   // like the popouts: reopen at its remembered spot/size if it was open when the program last closed
     do! showProgress("all done")
     return drawTimeline
     }

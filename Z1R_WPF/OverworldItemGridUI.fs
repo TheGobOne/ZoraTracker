@@ -45,6 +45,7 @@ let BLOCKERS_AND_NOTES_OFFSET = 408. + 42.  // dungeon area and side-tracker-pan
 let ITEM_PROGRESS_FIRST_ITEM = 93.   // the item progress row starts right after the 'Item Progress' button (which is at x=0); the 3-dot box and the view rects follow this value
 let hmsTimeTextBox = new TextBox(Width=148.,Height=56.,Text="timer",FontSize=42.0,Background=Brushes.Transparent,Foreground=Brushes.LightGreen,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false)
 // shown in the timer's spot (same font, scaled down to fit) while the timer is hidden
+let SHOW_NICE_TIMER_BRO = false   // set to true to bring back the 'Nice timer bro' text in the timer's spot while the timer is hidden
 let niceTimerBox =
     let tb = new TextBlock(Text="Nice timer bro", FontSize=42.0, FontFamily=hmsTimeTextBox.FontFamily, Foreground=Brushes.LightGreen, VerticalAlignment=VerticalAlignment.Center)
     new Viewbox(Width=140., Height=46., Stretch=Stretch.Uniform, IsHitTestVisible=false, Child=tb, Visibility=Visibility.Hidden)
@@ -53,7 +54,7 @@ let broadcastTimeTextBox =
     let timerOpacity() = 
         r.Opacity <- if TrackerModelOptions.HideTimer.Value then 0.0 else 1.0
         hmsTimeTextBox.Opacity <- if TrackerModelOptions.HideTimer.Value then 0.0 else 1.0
-        niceTimerBox.Visibility <- if TrackerModelOptions.HideTimer.Value then Visibility.Visible else Visibility.Hidden
+        niceTimerBox.Visibility <- if SHOW_NICE_TIMER_BRO && TrackerModelOptions.HideTimer.Value then Visibility.Visible else Visibility.Hidden
     OptionsMenu.hideTimerChanged.Publish.Add(timerOpacity)
     r
 
