@@ -230,6 +230,13 @@ TrackerModel.IsWSMSReplacedByBUChanged.Add(fun _ ->
     )
 // boxes whose empty outline is always drawn red (never the white 'skipped and empty' look), e.g. the four item boxes in the top right
 let redBorderBoxes = new System.Collections.Generic.HashSet<TrackerModel.Box>()
+// when a hint says the raft / recorder / power bracelet is (or is not) needed, those items get a red dashed border wherever they appear
+let hintDashedItemsChanged = new Event<unit>()
+let itemIsHintDashed(item:int) =
+    (item = TrackerModel.ITEMS.RAFT && TrackerModel.SailNotHintWasGiven) ||
+    (item = TrackerModel.ITEMS.POWERBRACELET && TrackerModel.NoFeatOfStrengthHintWasGiven)
+let makeHintDashedRect(w:float, h:float) : UIElement =
+    upcast new Shapes.Rectangle(Width=w, Height=h, Stroke=Brushes.Red, StrokeThickness=2., StrokeDashArray=new DoubleCollection([3.;2.]), IsHitTestVisible=false)
 let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, box:TrackerModel.Box, accelerateIntoComboBox, computeExtraDecorationsWhenPopupActivatedOrMouseOverOpt) = 
     let c = new Canvas(Width=30., Height=30., Background=Brushes.Black)
     if box.Stair <> TrackerModel.StairKind.Never then
@@ -260,26 +267,15 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
         // redraw inner canvas
         innerc.Children.Clear()
         let bmp = CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), None)
-        // in staircase boxes, keep the staircase icon visible in the background behind the item: make the item's pure-black pixels transparent
-        let bmp =
-            if bmp <> null && box.Stair <> TrackerModel.StairKind.Never then
-                let t = new System.Drawing.Bitmap(bmp)
-                for x = 0 to t.Width-1 do
-                    for y = 0 to t.Height-1 do
-                        let p = t.GetPixel(x,y)
-                        if p.A > 0uy && p.R = 0uy && p.G = 0uy && p.B = 0uy then
-                            t.SetPixel(x, y, System.Drawing.Color.Transparent)
-                t
-            else bmp
         if bmp <> null then
-            if box.Stair = TrackerModel.StairKind.Never then
-                canvasAdd(innerc, innerCanvasStairwayHider, 3., 3.)  // cover up any stair drawing
+            canvasAdd(innerc, innerCanvasStairwayHider, 3., 3.)  // a black box covers any stair drawing behind the item, so the item is easy to read
             if box.PlayerHas() = TrackerModel.PlayerHas.NO then
                 let image = Graphics.BMPtoImage(Graphics.greyscale bmp)
                 canvasAdd(innerc, image, 4., 4.)
             else
                 let image = Graphics.BMPtoImage(bmp)
                 canvasAdd(innerc, image, 4., 4.)
+            if itemIsHintDashed(box.CellCurrent()) then canvasAdd(innerc, makeHintDashedRect(26., 26.), 2., 2.)
         // redraw box outline
         match box.PlayerHas() with
         | TrackerModel.PlayerHas.YES -> rect.Stroke <- CustomComboBoxes.yes
@@ -305,7 +301,7 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
                 rect.Stroke <- CustomComboBoxes.skipped
                 Graphics.placeSkippedItemXDecoration(innerc)
         if redBorderBoxes.Contains(box) && bmp=null && box.PlayerHas() <> TrackerModel.PlayerHas.YES then
-            rect.Stroke <- CustomComboBoxes.no
+            rect.Stroke <- Brushes.White   // coast / armos / letter / white sword / magical sword boxes start white until an item is placed in them
         // redraw specific-blockers
         match box.PlayerHas() with
         | TrackerModel.PlayerHas.YES -> ()
@@ -339,6 +335,7 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
     with _ -> () // we create fake Views on the startup menu to preview Heart Shuffle; TheDungeonTrackerInstance does not exist yet and throws
     // redraw on changes
     redrawBoxes.Add(fun() -> redraw())
+    hintDashedItemsChanged.Publish.Add(fun _ -> redraw())
     box.Changed.Add(fun _ -> redraw())
     // interactions
     match cmo with

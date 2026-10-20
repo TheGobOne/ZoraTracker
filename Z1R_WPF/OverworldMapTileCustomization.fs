@@ -19,24 +19,26 @@ open CustomComboBoxes.GlobalFlag
 module OW_ITEM_GRID_LOCATIONS =
     let OFFSET = 280.  // the x coordinate of grid; the y is always 30. (just below the numbered triforces in HDN)
     // there is a 6x4 grid of icons, each 30x30, here are their 0-based grid coords
-    // the white sword / ladder / armos item boxes run across the top row, with their icons directly underneath
-    let WHITE_SWORD_ICON = 0,1
-    let WHITE_SWORD_ITEM_BOX = 0,0
-    let MAGS_BOX = 3,1   // magical sword icon (icon only), right of the armos icon
-    let MAGS_ITEM_BOX = 3,0   // its item box, above it
+    // the armos / letter / ladder / white sword / magical sword item boxes run across the top row, with their icons directly underneath
+    let ARMOS_ICON = 0,1
+    let ARMOS_ITEM_BOX = 0,0
+    let LETTER_ICON = 1,1
+    let LETTER_ITEM_BOX = 1,0
+    let LADDER_ICON = 2,1
+    let LADDER_ITEM_BOX = 2,0
+    let WHITE_SWORD_ICON = 3,1
+    let WHITE_SWORD_ITEM_BOX = 3,0
+    let MAGS_BOX = 4,1   // magical sword icon (icon only), right of the white sword icon
+    let MAGS_ITEM_BOX = 4,0   // its item box, above it
     let WOOD_SWORD_BOX = 3,0
     let BOOMSTICK_BOX = 5,0
     let BOMB_BOX = 0,2   // bomb and money icons, left of the Ganon box
     let RUPEE_ICON = 1,2
 
-    let LADDER_ICON = 1,1
-    let LADDER_ITEM_BOX = 1,0
     let BLUE_CANDLE_BOX = 2,1
     let WOOD_ARROW_BOX = 3,1
     let BLUE_RING_BOX = 4,0
 
-    let ARMOS_ICON = 2,1
-    let ARMOS_ITEM_BOX = 2,0
     let GANON_BOX = 2,2
     let ZELDA_BOX = 3,2
 
@@ -103,30 +105,119 @@ let DoLocalItemComboBox(cm:CustomComboBoxes.CanvasManager, activationDelta, trac
     | None -> ()
     }
 
+let mutable acceleratorCancelled = false   // set by an accelerator whose popup was dismissed without choosing: the caller then puts the tile back the way it was
+let CANDLE_TAKEN = 1000   // extra-data value of a wood sword cave tile where the candle was taken
+let mutable setDecorIconsHook : int*int*int -> unit = fun _ -> ()   // set by WPFUI (setDecorIcons lives later in compile order)
+// clearing a wood sword cave tile takes back whatever was taken there: the sword / candle (one level), or the shuffled item
+let clearWoodSwordCaveItems(i, j) =
+    let sw1 = TrackerModel.MapSquareChoiceDomainHelper.SWORD1
+    let ex = TrackerModel.getOverworldMapExtraData(i,j,sw1)
+    let pp = TrackerModel.playerProgressAndTakeAnyHearts
+    let si = TrackerModel.startingItemsAndExtras
+    TrackerModel.recomputePlayerStateSummary()
+    if ex = sw1 then
+        let n = max 0 (TrackerModel.playerComputedStateSummary.SwordLevel - 1)
+        pp.PlayerHasWoodSword.Set(n>=1)
+        si.PlayerHasWhiteSword.Set(n>=2)
+        si.PlayerHasMagicalSword.Set(n>=3)
+    elif ex = CANDLE_TAKEN then
+        let n = max 0 (TrackerModel.playerComputedStateSummary.CandleLevel - 1)
+        pp.PlayerHasBlueCandle.Set(n>=1)
+        si.PlayerHasRedCandle.Set(n>=2)
+    if TrackerModel.shuffledWoodSwordTiles.Contains((i,j)) then
+        TrackerModel.sword1Box.Set(-1, TrackerModel.PlayerHas.SKIPPED)
+        TrackerModel.shuffledWoodSwordTiles.Remove((i,j)) |> ignore
+    TrackerModel.setOverworldMapExtraData(i,j,sw1,0)
+    TrackerModel.recomputePlayerStateSummary()   // the item that was found here no longer counts
+    TrackerModel.forceUpdate()
+let SHUFFLED_ITEM = 2000   // extra-data value of a white / magical sword cave tile that holds a shuffled item
+// the white / magical sword caves get the same treatment as the wood sword cave (without the candle): took the sword, shuffled item, or just a sword icon
+let clearOtherSwordCaveItems(i, j, state) =
+    let ex = TrackerModel.getOverworldMapExtraData(i,j,state)
+    let si = TrackerModel.startingItemsAndExtras
+    if ex = state then
+        if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 then si.PlayerHasWhiteSword.Set(false) else si.PlayerHasMagicalSword.Set(false)
+    let box = if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 then TrackerModel.sword2Box else TrackerModel.sword3Box
+    if ex = SHUFFLED_ITEM then box.Set(-1, TrackerModel.PlayerHas.SKIPPED)   // the item found here is taken back
+    TrackerModel.setOverworldMapExtraData(i,j,state,0)
+    TrackerModel.recomputePlayerStateSummary()
+    TrackerModel.forceUpdate()
+let clearSwordCaveItemsForState(i, j, state) =
+    if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 then clearWoodSwordCaveItems(i, j)
+    elif state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 then clearOtherSwordCaveItems(i, j, state)
+let isSwordCaveState(state) = state = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3
 let overworldAcceleratorTable = new System.Collections.Generic.Dictionary<_,_>()
 overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY, (fun (cm:CustomComboBoxes.CanvasManager,_c:Canvas,i,j) -> async {
     let! shouldMarkTakeAnyAsComplete = PieMenus.TakeAnyPieMenuAsync(cm, 666.)
     TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY, if shouldMarkTakeAnyAsComplete then TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY else 0)
     }))
-overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (fun (cm:CustomComboBoxes.CanvasManager,_c:Canvas,i,j) -> async {
-    let! shouldMarkTakeAnyAsComplete = PieMenus.TakeThisPieMenuAsync(cm, 666.)
-    TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.SWORD1, if shouldMarkTakeAnyAsComplete then TrackerModel.MapSquareChoiceDomainHelper.SWORD1 else 0)
+overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,i,j) -> async {
+    let pp = TrackerModel.playerProgressAndTakeAnyHearts
+    let si = TrackerModel.startingItemsAndExtras
+    let s = TrackerModel.playerComputedStateSummary
+    acceleratorCancelled <- false
+    TrackerModel.shuffledWoodSwordTiles.Remove((i,j)) |> ignore
+    let! choice = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Question, "What is in this cave?", ["Took Sword"; "Took Candle"; "Shuffled Item"; "Sword Icon"])
+    let mutable doneValue = 0   // 0 = not taken yet, SWORD1 = took the sword, CANDLE_TAKEN = took the candle
+    match choice with
+    | "Took Sword" ->
+        let n = min 3 (s.SwordLevel + 1)
+        pp.PlayerHasWoodSword.Set(n>=1)
+        si.PlayerHasWhiteSword.Set(n>=2)
+        si.PlayerHasMagicalSword.Set(n>=3)
+        doneValue <- TrackerModel.MapSquareChoiceDomainHelper.SWORD1
+    | "Took Candle" ->
+        let n = min 2 (s.CandleLevel + 1)
+        pp.PlayerHasBlueCandle.Set(n>=1)
+        si.PlayerHasRedCandle.Set(n>=2)
+        doneValue <- CANDLE_TAKEN
+    | "Shuffled Item" ->
+        TrackerModel.shuffledWoodSwordTiles.Add((i,j)) |> ignore
+        let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
+        do! DoLocalItemComboBox(cm, 0, TrackerModel.sword1Box, pos)
+    | "Sword Icon" ->
+        let before = TrackerModel.owSwordIcons.[i,j]
+        setDecorIconsHook (i, j, TrackerModel.decorIconsToggle(before, TrackerModel.ITEMS.WOODSWORD))
+        // like any other marker icon, the tile itself becomes an 'unmarked, finished' tile that shows the icon
+        if not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty) then
+            TrackerModel.overworldMapMarks.[i,j].AttemptToSet(TrackerModel.MapSquareChoiceDomainHelper.DARK_X) |> ignore
+    | _ -> acceleratorCancelled <- true   // clicked outside the choices: nothing gets placed
+    if not acceleratorCancelled then
+        TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.SWORD1, doneValue)
     }))
 overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.ARMOS, (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,_i,_j) -> async {
     let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
     do! DoRemoteItemComboBox(cm, 0, TrackerModel.armosBox, armosX, armosY, pos)
     }))
-overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD2, (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,_i,_j) -> async {
-    let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
-    do! DoRemoteItemComboBox(cm, 0, TrackerModel.sword2Box, sword2x, sword2y, pos)
-    }))
-overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD3, (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,_i,_j) -> async {
-    let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
-    do! DoRemoteItemComboBox(cm, 0, TrackerModel.sword3Box, sword3x, sword3y, pos)
-    }))
+let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float, decorIdent:int, takeSword:unit->unit) =
+    (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,i,j) -> async {
+        acceleratorCancelled <- false
+        let! choice = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Question, "What is in this cave?", ["Took Sword"; "Shuffled Item"; "Sword Icon"])
+        let mutable doneValue = 0   // 0 = nothing yet, state = took the sword, SHUFFLED_ITEM = the cave holds a shuffled item
+        match choice with
+        | "Took Sword" ->
+            takeSword()
+            doneValue <- state
+        | "Shuffled Item" ->
+            doneValue <- SHUFFLED_ITEM
+            let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
+            do! DoRemoteItemComboBox(cm, 0, box, boxX, boxY, pos)
+        | "Sword Icon" ->
+            let before = TrackerModel.owSwordIcons.[i,j]
+            setDecorIconsHook (i, j, TrackerModel.decorIconsToggle(before, decorIdent))
+            if not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty) then
+                TrackerModel.overworldMapMarks.[i,j].AttemptToSet(TrackerModel.MapSquareChoiceDomainHelper.DARK_X) |> ignore
+        | _ -> acceleratorCancelled <- true
+        if not acceleratorCancelled then
+            TrackerModel.setOverworldMapExtraData(i, j, state, doneValue)
+        })
+overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD2,
+    swordCaveAccelerator(TrackerModel.MapSquareChoiceDomainHelper.SWORD2, TrackerModel.sword2Box, sword2x, sword2y, TrackerModel.ITEMS.WHITESWORD, (fun () -> TrackerModel.startingItemsAndExtras.PlayerHasWhiteSword.Set(true))))
+overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD3,
+    swordCaveAccelerator(TrackerModel.MapSquareChoiceDomainHelper.SWORD3, TrackerModel.sword3Box, sword3x, sword3y, TrackerModel.ITEMS.MAGICALSWORD, (fun () -> TrackerModel.startingItemsAndExtras.PlayerHasMagicalSword.Set(true))))
 
-let makeSwordLeftSideFullTileBmp(swordState) =
-    let interiorBmp = Graphics.theInteriorBmpTable.[swordState].[0]
+let makeSwordLeftSideFullTileBmpN(swordState, interiorIndex) =
+    let interiorBmp = Graphics.theInteriorBmpTable.[swordState].[interiorIndex]
     let fullTileBmp = new System.Drawing.Bitmap(16*3,11*3)
     let BG = System.Drawing.Color.FromArgb(int Graphics.TRANS_BG.A, int Graphics.TRANS_BG.R, int Graphics.TRANS_BG.G, int Graphics.TRANS_BG.B)   // the compiler is being stupid, clone this color to workaround
     for px = 0 to 16*3-1 do
@@ -136,7 +227,26 @@ let makeSwordLeftSideFullTileBmp(swordState) =
             else
                 fullTileBmp.SetPixel(px, py, BG)
     fullTileBmp
+let makeSwordLeftSideFullTileBmp(swordState) = makeSwordLeftSideFullTileBmpN(swordState, 0)
+let sword1LeftSideFullTileBmp = makeSwordLeftSideFullTileBmp(TrackerModel.MapSquareChoiceDomainHelper.SWORD1)
+let sword1LeftSideDarkFullTileBmp = makeSwordLeftSideFullTileBmpN(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, 1)   // dark version, sword at the left so an item fits beside it
 let sword2LeftSideFullTileBmp = makeSwordLeftSideFullTileBmp(TrackerModel.MapSquareChoiceDomainHelper.SWORD2)
+let sword2LeftSideDarkFullTileBmp = makeSwordLeftSideFullTileBmpN(TrackerModel.MapSquareChoiceDomainHelper.SWORD2, 1)
+let sword3LeftSideDarkFullTileBmp = makeSwordLeftSideFullTileBmpN(TrackerModel.MapSquareChoiceDomainHelper.SWORD3, 1)
+// a cave's shuffled item, drawn to the right of the (left-aligned) sword icon at the sword icon's height
+let makeBmpBesideSword(bmp:System.Drawing.Bitmap) : Canvas =
+    // the item sits on a black backing (one pixel bigger all round) so it reads clearly against the tile
+    let swordIconHeight = 27.
+    let w = if bmp <> null then min 27. (swordIconHeight * float bmp.Width / float bmp.Height) else 0.
+    let iconCanvas = new Canvas(Width=w+2., Height=swordIconHeight+2., Background=Brushes.Black)
+    if bmp <> null then
+        let icon = Graphics.BMPtoImage(bmp)
+        icon.Stretch <- Stretch.Uniform
+        icon.Height <- swordIconHeight
+        icon.Width <- w
+        canvasAdd(iconCanvas, icon, 1., 1.)
+    iconCanvas
+let makeCaveItemBesideSword(box:TrackerModel.Box) : Canvas = makeBmpBesideSword(CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), None))
 let sword3LeftSideFullTileBmp = makeSwordLeftSideFullTileBmp(TrackerModel.MapSquareChoiceDomainHelper.SWORD3)
 
 let twoItemShopBmpCache   = new System.Collections.Generic.Dictionary<_,_>()
@@ -296,8 +406,18 @@ let GetIconBMPAndExtraDecorations(cm, ms:MapStateProxy,i,j) =   // returns: (sho
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
         else
             false, Graphics.theFullTileBmpTable.[ms.State].[0], []
+    elif ms.State = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.shuffledWoodSwordTiles.Contains((i,j)) && TrackerModel.sword1Box.IsDone() then
+        // the shuffled item was found: the dark sword cave tile with that item to the right of the sword, the same height as the sword icon
+        let iconCanvas = makeCaveItemBesideSword(TrackerModel.sword1Box)
+        ShouldHide(ms.State,i,j), sword1LeftSideDarkFullTileBmp, [iconCanvas, 20., 2.]
+    elif ms.State = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.shuffledWoodSwordTiles.Contains((i,j)) && not(TrackerModel.sword1Box.IsDone()) then
+        false, sword1LeftSideFullTileBmp, [fst(Views.MakeBoxItemWithExtraDecorations(Some(cm), TrackerModel.sword1Box, false, None)), OMTW-30., 1.]
     elif ms.State = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 then
-        if TrackerModel.getOverworldMapExtraData(i,j,ms.State)=TrackerModel.MapSquareChoiceDomainHelper.SWORD1 then
+        let ex = TrackerModel.getOverworldMapExtraData(i,j,ms.State)
+        if ex = CANDLE_TAKEN then
+            // took the candle: styled like a shuffled item - the dark sword cave tile with the candle beside the sword, at the sword's height
+            ShouldHide(ms.State,i,j), sword1LeftSideDarkFullTileBmp, [makeBmpBesideSword(Graphics.blue_candle_bmp), 20., 2.]
+        elif ex = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 then
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
         else
             false, Graphics.theFullTileBmpTable.[ms.State].[0], []
@@ -309,20 +429,28 @@ let GetIconBMPAndExtraDecorations(cm, ms:MapStateProxy,i,j) =   // returns: (sho
         else
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
     elif ms.State = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 then
-        if not(TrackerModel.sword2Box.IsDone()) then
+        let ex = TrackerModel.getOverworldMapExtraData(i,j,ms.State)
+        if ex = SHUFFLED_ITEM && not(TrackerModel.sword2Box.IsDone()) then
             let extraDecorationsF(boxPos:Point) =
                 let extraDecorations = computeExtraDecorationArrow(sword2x, sword2y, boxPos)
                 seq extraDecorations
             false, sword2LeftSideFullTileBmp, [fst(Views.MakeBoxItemWithExtraDecorations(Some(cm), TrackerModel.sword2Box, false, Some extraDecorationsF)), OMTW-30., 1.]
-        else
+        elif ex = SHUFFLED_ITEM then
+            ShouldHide(ms.State,i,j), sword2LeftSideDarkFullTileBmp, [makeCaveItemBesideSword(TrackerModel.sword2Box), 20., 2.]
+        elif ex = ms.State || TrackerModel.sword2Box.IsDone() then
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
+        else
+            false, Graphics.theFullTileBmpTable.[ms.State].[0], []
     elif ms.State = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 then
-        if not(TrackerModel.sword3Box.IsDone()) then
+        let ex = TrackerModel.getOverworldMapExtraData(i,j,ms.State)
+        if ex = SHUFFLED_ITEM && not(TrackerModel.sword3Box.IsDone()) then
             let extraDecorationsF(boxPos:Point) =
                 let extraDecorations = computeExtraDecorationArrow(sword3x, sword3y, boxPos)
                 seq extraDecorations
             false, sword3LeftSideFullTileBmp, [fst(Views.MakeBoxItemWithExtraDecorations(Some(cm), TrackerModel.sword3Box, false, Some extraDecorationsF)), OMTW-30., 1.]
-        elif TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value() then
+        elif ex = SHUFFLED_ITEM then
+            ShouldHide(ms.State,i,j), sword3LeftSideDarkFullTileBmp, [makeCaveItemBesideSword(TrackerModel.sword3Box), 20., 2.]
+        elif ex = ms.State || TrackerModel.sword3Box.IsDone() || TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value() then
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[1], []
         else
             false, Graphics.theFullTileBmpTable.[ms.State].[0], []
@@ -381,7 +509,7 @@ let ToggleOverworldTileIfItIsToggleable(i, j, state) =
     if toggleables |> Array.contains state then
         // left click to toggle it 'used'
         let ex = TrackerModel.getOverworldMapExtraData(i,j,state)
-        if ex=state then
+        if ex<>0 && (ex=state || (state=TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && ex=CANDLE_TAKEN)) then
             TrackerModel.setOverworldMapExtraData(i,j,state,0)
         else
             TrackerModel.setOverworldMapExtraData(i,j,state,state)
@@ -727,15 +855,10 @@ let MakeRemainderSummaryDisplay() =   // Spot Summary
     for multi in [28; 29; 32; 33; 34] do
         let leftrow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Right, Height=HEIGHT)
         let rightrow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Left, Height=HEIGHT)
-        // potions: show the potion item icon, and grey one out for each potion collected in the tracker (item boxes or map marker icons)
+        // potions: show the potion item icon, and grey one out for each potion spot marked on the map
         let isPotion = (multi = 34)
-        let potionsCollected =
-            if isPotion then
-                let boxes = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
-                let inBoxes = boxes |> Array.sumBy (fun box -> if (box.CellCurrent() = TrackerModel.ITEMS.BLUEPOTION || box.CellCurrent() = TrackerModel.ITEMS.REDPOTION) && box.IsDone() then 1 else 0)
-                inBoxes + TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.BLUEPOTION] + TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.REDPOTION]
-            else 0
-        let usedCount = if isPotion then max (TrackerModel.mapSquareChoiceDomain.NumUses(multi)) potionsCollected else TrackerModel.mapSquareChoiceDomain.NumUses(multi)
+        // (potions placed in item boxes do not count towards the potion spots shown here)
+        let usedCount = TrackerModel.mapSquareChoiceDomain.NumUses(multi)
         for i = 0 to TrackerModel.mapSquareChoiceDomain.MaxUses(multi)-1 do
             let icon = if isPotion then Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.BLUEPOTION, None)) else Graphics.BMPtoImage(MapStateProxy(multi).DefaultInteriorBmp())
             if not(i >= usedCount) then

@@ -855,13 +855,15 @@ type MyWindow() as this =
             if this.WindowState = WindowState.Normal && Graphics.dynamicAppScale > 0. then
                 TrackerModelOptions.MainWindowScale <- Graphics.dynamicAppScale
                 TrackerModelOptions.writeSettings())
+        let appliedScale = ref 0.   // the scale the RenderTransform actually has (dynamicAppScale may be pre-set from saved settings before any transform exists)
         let applyWindowScale() =
             let w = this.ActualWidth - CHROME_WIDTH
             let h = this.ActualHeight - CHROME_HEIGHT
             if w > 50. && h > 50. && cm.Height > 0. then
                 let s = min (w / WIDTH_SANS_CHROME) (h / cm.Height)
                 let s = max 0.4 (min 4.0 s)
-                if abs(s - Graphics.dynamicAppScale) > 0.0005 then
+                if abs(s - appliedScale.Value) > 0.0005 then
+                    appliedScale.Value <- s
                     Graphics.dynamicAppScale <- s
                     wholeCanvas.RenderTransform <- new ScaleTransform(s, s)
                     saveScaleTimer.Stop()   // remember the new size (as a scale) shortly after the user stops dragging
@@ -871,8 +873,8 @@ type MyWindow() as this =
         wholeCanvas.Children.Add(cm.RootCanvas) |> ignore
         wholeCanvas.Children.Add(hmsTimerCanvas) |> ignore
         wholeCanvas.Children.Add(drawingCanvasHolder) |> ignore
-        cm.AfterCreatePopupCanvas.Add(fun _ -> drawingCanvas.Opacity <- 0.)
-        cm.BeforeDismissPopupCanvas.Add(fun _ -> if cm.PopupCanvasStack.Count=0 then drawingCanvas.Opacity <- 1.)
+        cm.AfterCreatePopupCanvas.Add(fun _ -> drawingCanvas.Opacity <- 0.; hmsTimerCanvas.Opacity <- 0.)   // the timer (or 'Nice timer bro') must not draw on top of popups
+        cm.BeforeDismissPopupCanvas.Add(fun _ -> if cm.PopupCanvasStack.Count=0 then (drawingCanvas.Opacity <- 1.; hmsTimerCanvas.Opacity <- 1.))
         let mainDock = new DockPanel(Width=appMainCanvas.Width, Height=appMainCanvas.Height)
         ApplyKonamiCodeEasterEgg(cm, mainDock)
         appMainCanvas.Children.Add(mainDock) |> ignore
@@ -1055,10 +1057,10 @@ type MyWindow() as this =
             dp.Children.Add(vb) |> ignore
             startupOptionsCanvas.Children.Add(dp) |> ignore
 
-        let tb = new TextBox(Text="Startup Options:",IsReadOnly=true, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), Margin=Thickness(0.,16.,0.,0.))   // centered in the gap between the top bar and the checkbox row
+        let tb = new TextBox(Text="Startup Options",IsReadOnly=true, FontWeight=FontWeights.Bold, FontSize=16., TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), Margin=Thickness(0.,40.,0.,0.))   // centered in the gap between the top bar and the checkbox row
         stackPanel.Children.Add(tb) |> ignore
 
-        let hsPanel = new StackPanel(Margin=spacing, Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+        let hsPanel = new StackPanel(Margin=Thickness(0.), Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
         let hsGrid = Graphics.makeGrid(3, 3, 30, 30)
         hsGrid.Background <- Brushes.Black
         let triforcesNumbered = ResizeArray()
@@ -1118,7 +1120,7 @@ type MyWindow() as this =
             explainerBorder.Opacity <- 0.
             explainerLine.Opacity <- 0.
 
-        let checkboxSP = new WrapPanel(Orientation=Orientation.Horizontal, VerticalAlignment=VerticalAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, MaxWidth=WIDTH, Margin=Thickness(0.,9.,0.,0.))   // the three startup options sit side by side
+        let checkboxSP = new WrapPanel(Orientation=Orientation.Horizontal, VerticalAlignment=VerticalAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, MaxWidth=WIDTH, Margin=Thickness(0.,4.,0.,0.))   // the three startup options sit side by side (same gap under the header as the ZORA Extras section)
         let hscb = new CheckBox(Content=new TextBox(Text="Full Shuffle",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
         Graphics.scaleUpCheckBoxBox(hscb, 1.66)
         hscb.IsChecked <- System.Nullable.op_Implicit true
@@ -1133,13 +1135,11 @@ type MyWindow() as this =
         mocb.IsChecked <- System.Nullable.op_Implicit false
         mocb.Checked.Add(fun _ -> TrackerModel.MirrorOverworld <- true)
         mocb.Unchecked.Add(fun _ -> TrackerModel.MirrorOverworld <- false)
-        let moArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=mocb, Margin=Thickness(0.,3.,0.,0.))
+        let moArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=mocb, VerticalAlignment=VerticalAlignment.Top)
         moArea.MouseEnter.Add(fun _ -> hoverExplain(moArea,"Flip the overworld map East<->West."))
         moArea.MouseLeave.Add(fun _ -> explainHide())
-        let hsAndMirror = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Top)
-        hsAndMirror.Children.Add(hsArea) |> ignore
-        hsAndMirror.Children.Add(moArea) |> ignore
-        checkboxSP.Children.Add(hsAndMirror) |> ignore
+        hsArea.VerticalAlignment <- VerticalAlignment.Top
+        checkboxSP.Children.Add(hsArea) |> ignore
 
         checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
 
@@ -1155,13 +1155,20 @@ type MyWindow() as this =
         let fscb = new CheckBox(Content=new TextBox(Text="4th Sword",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
         Graphics.scaleUpCheckBoxBox(fscb, 1.66)
         fscb.IsChecked <- System.Nullable.op_Implicit false
-        let fsArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=fscb, Margin=Thickness(0.,3.,0.,0.))
+        let fsArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=fscb, VerticalAlignment=VerticalAlignment.Top)
         fsArea.MouseEnter.Add(fun _ -> hoverExplain(fsArea,"Checked: the 4th sword is the highest sword level, and the level 2 staircase item box is enabled.\nUnchecked: the magical sword is the highest sword level, and the staircase box starts greyed out."))
         fsArea.MouseLeave.Add(fun _ -> explainHide())
-        let hdnAndSword4 = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Top)
-        hdnAndSword4.Children.Add(hdnArea) |> ignore
-        hdnAndSword4.Children.Add(fsArea) |> ignore
-        checkboxSP.Children.Add(hdnAndSword4) |> ignore
+        checkboxSP.Children.Add(hdnArea) |> ignore
+        checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
+        checkboxSP.Children.Add(moArea) |> ignore   // Mirrored Overworld takes the third spot
+        let mbcb = new CheckBox(Content=new TextBox(Text="Mark Bomb Droppers",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
+        Graphics.scaleUpCheckBoxBox(mbcb, 1.66)
+        mbcb.IsChecked <- System.Nullable.op_Implicit false
+        let mbArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=mbcb, VerticalAlignment=VerticalAlignment.Top)
+        mbArea.MouseEnter.Add(fun _ -> hoverExplain(mbArea,"Middle-click an overworld tile to mark it as a bomb dropper screen (enemies drop bombs).\nThen scroll the mouse wheel to cycle: bomb dropper > blue > yellow > red circle > bomb dropper...\nMiddle-click again to remove it. Shift+middle-click toggles a plain circle.\nHover the bomb shop highlight to see bomb dropper screens outlined in red."))
+        mbArea.MouseLeave.Add(fun _ -> explainHide())
+        checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
+        checkboxSP.Children.Add(mbArea) |> ignore
 
         // custom level name (replaces 'LEVEL-n' at the top of each dungeon map)
         let clnTextBox = new TextBox(MaxLength=7, CharacterCasing=CharacterCasing.Upper, IsEnabled=false, Margin=Thickness(6.,2.,2.,2.), VerticalAlignment=VerticalAlignment.Center)
@@ -1173,7 +1180,6 @@ type MyWindow() as this =
         let clnArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=clncb)
         clnArea.MouseEnter.Add(fun _ -> hoverExplain(clnArea,"Type up to 7 letters/numbers to use in place of\n'LEVEL-1' at the top of each dungeon map.\n(Fewer than 7 keeps the dash; a 7th character replaces it.)"))
         clnArea.MouseLeave.Add(fun _ -> explainHide())
-        checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
         clnTextBox.Margin <- Thickness(30.,2.,2.,2.)   // leaves the check box itself visible and covers the words 'Custom LEVEL Name'
         clnTextBox.Width <- System.Double.NaN
         clnTextBox.HorizontalAlignment <- HorizontalAlignment.Stretch
@@ -1185,9 +1191,28 @@ type MyWindow() as this =
         let clnAndBox = new Grid(VerticalAlignment=VerticalAlignment.Top)   // the name box sits on top of the checkbox's words
         clnAndBox.Children.Add(clnArea) |> ignore
         clnAndBox.Children.Add(clnTextBox) |> ignore
-        checkboxSP.Children.Add(clnAndBox) |> ignore
+        // 'ZORA Extras' section below the main startup options: 4th Sword and the custom level name
+        let extrasHeader = new TextBox(Text="ZORA Extras", IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), FontWeight=FontWeights.Bold, FontSize=16., HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,12.,0.,0.))
+        let extrasSP = new WrapPanel(Orientation=Orientation.Horizontal, VerticalAlignment=VerticalAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, MaxWidth=WIDTH, Margin=Thickness(0.,4.,0.,0.))
+        extrasSP.Children.Add(fsArea) |> ignore
+        extrasSP.Children.Add(new DockPanel(Width=10.)) |> ignore
+        extrasSP.Children.Add(clnAndBox) |> ignore
+        // 'Boots Replace Boomerangs' (what it does is still to be worked out; for now it just records the choice)
+        let brcb = new CheckBox(Content=new TextBox(Text="Boots Replace Boomerangs",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
+        Graphics.scaleUpCheckBoxBox(brcb, 1.66)
+        brcb.IsChecked <- System.Nullable.op_Implicit false
+        let brArea = new Border(BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Child=brcb, VerticalAlignment=VerticalAlignment.Top)
+        brArea.MouseEnter.Add(fun _ -> hoverExplain(brArea,"Boots replace the boomerangs.
+(Details to come.)"))
+        brArea.MouseLeave.Add(fun _ -> explainHide())
+        extrasSP.Children.Add(new DockPanel(Width=10.)) |> ignore
+        extrasSP.Children.Add(brArea) |> ignore
+        let startupOptionsSP = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
+        startupOptionsSP.Children.Add(checkboxSP) |> ignore
+        startupOptionsSP.Children.Add(extrasHeader) |> ignore
+        startupOptionsSP.Children.Add(extrasSP) |> ignore
 
-        hsPanel.Children.Add(checkboxSP) |> ignore
+        hsPanel.Children.Add(startupOptionsSP) |> ignore
         // (the little dungeon preview graphic is no longer shown; its hidden state is still driven by the checkboxes)
         stackPanel.Children.Add(hsPanel) |> ignore
 
@@ -1216,6 +1241,8 @@ type MyWindow() as this =
                 let fourth = fscb.IsChecked.HasValue && fscb.IsChecked.Value
                 TrackerModelOptions.FourthSwordEnabled <- fourth
                 TrackerModel.SetLevel2StairBoxEnabled(fourth)
+            TrackerModel.BootsReplaceBoomerangs <- brcb.IsChecked.HasValue && brcb.IsChecked.Value
+            TrackerModel.MarkBombDroppers <- mbcb.IsChecked.HasValue && mbcb.IsChecked.Value
             TrackerModel.CustomLevelName <- 
                 if clncb.IsChecked.HasValue && clncb.IsChecked.Value then clnTextBox.Text.Trim().ToUpperInvariant() else ""
             let mutable speechRecognitionInstance = null
@@ -1362,7 +1389,7 @@ type MyWindow() as this =
             1, "2nd Quest Overworld"
             2, "Mixed - 1st Quest Overworld"
             3, "Mixed - 2nd Quest Overworld"
-            999, "from a previously saved state"
+            999, "Load Save State"
             |]
         let addQuestExplainer(startButton:FrameworkElement) =
             startButton.MouseEnter.Add(fun _ -> hoverExplain(startButton,"Choose the start button that matches the randomizer setting:\n\nOverworld Quest (dropdown)"))
@@ -1370,7 +1397,7 @@ type MyWindow() as this =
         let startButtons = System.Collections.Generic.Dictionary<int,Button>()
         let mutable moreOptionsButton : Button = null
         for n,q in quests do
-            let startButton = Graphics.makeButton(sprintf "Start: %s" q, None, None)
+            let startButton = Graphics.makeButton(q, None, None)
             if n=0 then
                 startButton.Margin <-Thickness(0.)
             elif n=999 then
@@ -1378,16 +1405,7 @@ type MyWindow() as this =
             else
                 startButton.Margin <- spacing
             if n=0 then
-                let otherButton = Graphics.makeButton("More options...", None, None)
-                let tb = new TextBox(Text="See more\noptions",IsReadOnly=true, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(2.), Opacity=0.)
-                appMainCanvas.Children.Add(tb) |> ignore
-                otherButton.MouseEnter.Add(fun _ ->
-                    let pos = otherButton.TransformToAncestor(appMainCanvas).Transform(Point(otherButton.ActualWidth+3., 0.))
-                    Canvas.SetLeft(tb, pos.X)
-                    Canvas.SetTop(tb, pos.Y)
-                    tb.Opacity <- 1.0
-                    )
-                otherButton.MouseLeave.Add(fun _ -> tb.Opacity <- 0.0)
+                let otherButton = Graphics.makeButton("More Options...", None, None)
                 otherButton.Margin <- Thickness(0.)
                 otherButton.Click.Add(fun _ -> 
                     if popupIsActive then () else
@@ -1425,7 +1443,11 @@ type MyWindow() as this =
                         dialog1.Children.Add(button) |> ignore
                         button.Click.Add(fun _ -> if choice.IsNone then choice <- Some(n); wh.Set() |> ignore)
                     async {
-                        do! CustomComboBoxes.DoModal(cm, wh, 30., 30., new Border(Child=dialog1, BorderThickness=Thickness(3.), BorderBrush=Brushes.Orange, Background=Brushes.Black, Padding=Thickness(5.)))
+                        let dialogBorder = new Border(Child=dialog1, BorderThickness=Thickness(3.), BorderBrush=Brushes.Orange, Background=Brushes.Black, Padding=Thickness(5.))
+                        dialogBorder.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+                        let areaW = if cm.AppMainCanvas.Width > 0. then cm.AppMainCanvas.Width else WIDTH
+                        let areaH = if cm.AppMainCanvas.Height > 0. then cm.AppMainCanvas.Height else dialogBorder.DesiredSize.Height + 60.
+                        do! CustomComboBoxes.DoModal(cm, wh, max 0. ((areaW - dialogBorder.DesiredSize.Width) / 2.), max 0. ((areaH - dialogBorder.DesiredSize.Height) / 2.), dialogBorder)
                         Graphics.alternativeOverworldMapFilename <- ""
                         match choice with
                         | None -> ()  // just exit the modal and go back to startup screen if they click outside
@@ -1480,7 +1502,7 @@ type MyWindow() as this =
         stackPanel.Children.Add(pairRow(startButtons.[1], startButtons.[3])) |> ignore
         stackPanel.Children.Add(divider()) |> ignore
         // 'Randomized quest' does exactly what 'Mixed - 2nd Quest Overworld' does; it's just its own button, next to 'More options...'
-        let randomizedQuestButton = Graphics.makeButton("Start: Randomized quest", None, None)
+        let randomizedQuestButton = Graphics.makeButton("Randomized Quest", None, None)
         randomizedQuestButton.Click.Add(fun _ -> startButtonBehavior(3))
         addQuestExplainer(randomizedQuestButton)
         stackPanel.Children.Add(pairRow(randomizedQuestButton, moreOptionsButton)) |> ignore
@@ -1511,8 +1533,25 @@ type MyWindow() as this =
                 listSP.Children.Add(b) |> ignore
             let scroll = new ScrollViewer(Content=listSP, VerticalScrollBarVisibility=ScrollBarVisibility.Auto, MaxHeight=150.)
             // collapsed by default behind an arrow (Expander); the list inside is still newest-loaded first
-            let expander = new Expander(Header=header, Content=scroll, IsExpanded=false)
-            let recentBox = new Border(Child=expander, BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Padding=Thickness(4.), Width=WIDTH/2., HorizontalAlignment=HorizontalAlignment.Center, Margin=smallSpacing)
+            // (a hand-built toggle rather than an Expander, so the arrow and the text can be centered together)
+            let arrow = new Grid(Width=16., Height=16., Margin=Thickness(0.,0.,6.,0.), VerticalAlignment=VerticalAlignment.Center, RenderTransformOrigin=Point(0.5,0.5))
+            arrow.Children.Add(new Shapes.Ellipse(Fill=Brushes.White, Width=16., Height=16.)) |> ignore
+            arrow.Children.Add(new Shapes.Polyline(Points=new PointCollection([ Point(4.5,6.); Point(8.,10.); Point(11.5,6.) ]), Stroke=Brushes.Black, StrokeThickness=2., HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)) |> ignore
+            header.IsHitTestVisible <- false
+            header.Margin <- Thickness(0.)
+            let headerRow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+            headerRow.Children.Add(arrow) |> ignore
+            headerRow.Children.Add(header) |> ignore
+            let toggleHost = new Border(Background=Brushes.Transparent, Cursor=Input.Cursors.Hand, Child=headerRow, HorizontalAlignment=HorizontalAlignment.Stretch, Padding=Thickness(0.,2.,0.,3.))
+            scroll.Visibility <- Visibility.Collapsed
+            toggleHost.MouseLeftButtonUp.Add(fun _ ->
+                let nowOpen = scroll.Visibility <> Visibility.Visible
+                scroll.Visibility <- (if nowOpen then Visibility.Visible else Visibility.Collapsed)
+                arrow.RenderTransform <- new RotateTransform(if nowOpen then 180. else 0.))
+            let recentsSP = new StackPanel(Orientation=Orientation.Vertical)
+            recentsSP.Children.Add(toggleHost) |> ignore
+            recentsSP.Children.Add(scroll) |> ignore
+            let recentBox = new Border(Child=recentsSP, BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(1.), Padding=Thickness(4.), Width=WIDTH/2., HorizontalAlignment=HorizontalAlignment.Center, Margin=smallSpacing)
             stackPanel.Children.Add(recentBox) |> ignore
 
         stackPanel.Children.Add(finalChildTipArea) |> ignore  // finalChildTipArea still used for explainer arrows on startup options

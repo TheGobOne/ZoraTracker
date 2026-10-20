@@ -27,6 +27,7 @@ let broadcastWindowOptionChanged = new Event<unit>()
 let mouseMagnifierWindowOptionChanged = new Event<unit>()
 let BOARDInsteadOfLEVELOptionChanged = new Event<unit>()
 let displayIconsInDungeonMapOptionChanged = new Event<unit>()
+let showDungeonHintIconsOptionChanged = new Event<unit>()
 let secondQuestDungeonsOptionChanged = new Event<unit>()
 let showBasementInfoOptionChanged = new Event<unit>()
 let bookForHelpfulHintsOptionChanged = new Event<unit>()
@@ -64,6 +65,7 @@ let data1d = [|
     "Dungeon Map Hint", "Check this box to add a transparent icon to the dungeon map rooms in order to better guess where that room is", TrackerModelOptions.DisplayIconsInDungeonMap, false, displayIconsInDungeonMapOptionChanged.Trigger
 // now a clickable feature of top tracker area
 //    "Second quest dungeons", "Check this if dungeon 4, rather than dungeon 1, has 3 items (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.IsSecondQuestDungeons, false, secondQuestDungeonsOptionChanged.Trigger
+    "Show dungeon hint icons", "Uncheck to hide the dim question-mark icons above the dungeons and other items\n(where you click to pick a location hint)", TrackerModelOptions.ShowDungeonHintIcons, false, showDungeonHintIconsOptionChanged.Trigger
     "BOARD instead of LEVEL", "Check this to label the dungeon tabs and headers BOARD-1 ... BOARD-9\ninstead of LEVEL-1 ... LEVEL-9", TrackerModelOptions.BOARDInsteadOfLEVEL, false, BOARDInsteadOfLEVELOptionChanged.Trigger
     "Show basement info", "Check this if empty dungeon item boxes should suggest whether they are found as\nbasement items rather than floor drops (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.ShowBasementInfo, false, showBasementInfoOptionChanged.Trigger
     "Do door inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, fun()->()
@@ -247,7 +249,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     // Options marked as "advanced" only appear in the main-app options popup (not the startup screen),
     // to keep the startup screen compact and avoid layout overflow.
     let advancedOverworldOptions : string[] = [||]   // (none right now) options listed here only appear in the main-app options popup, not the startup screen
-    let advancedDungeonOptions   = [| "Alphabetize hint zone list" |]  // only this one remains advanced (hidden on startup)
+    let advancedDungeonOptions : string[] = [||]  // (none right now)
     let visibleOverworldOpts =
         data1o(isStandardHyrule)
         |> Array.filter (fun (text,_,_,_,_,_) -> includePopupExplainer || not (Array.contains text advancedOverworldOptions))
@@ -283,8 +285,6 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
         ToolTipService.SetShowDuration(cb, 10000)
         link(cb, b, needFU, oe)
         options1sp.Children.Add(cb) |> ignore
-        if text = "Reverse scroll wheel" && includePopupExplainer then
-            options1sp.Children.Add(crashLogButton) |> ignore
         if text = "Dungeon Map Hint" then
             let sliderSp = new StackPanel(Orientation=Orientation.Horizontal, Margin=Thickness(4.,0.,0.,4.))
             let opacityLabel = new TextBox(Text="Opacity",IsReadOnly=true)
@@ -860,6 +860,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     coopHostSettingsButton.HorizontalAlignment <- HorizontalAlignment.Left
     coopHostSettingsButton.Click.Add(fun _ -> showCoopHostSettingsWindow(cm))
     options3sp.Children.Add(coopHostSettingsButton) |> ignore
+    if includePopupExplainer then options3sp.Children.Add(crashLogButton) |> ignore
 
     optionsAllsp.Children.Add(options3sp) |> ignore
 

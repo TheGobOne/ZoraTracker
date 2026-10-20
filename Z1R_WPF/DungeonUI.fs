@@ -1408,7 +1408,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
             let w = new Window(Title="Custom level name", SizeToContent=SizeToContent.WidthAndHeight, ResizeMode=ResizeMode.NoResize, WindowStartupLocation=WindowStartupLocation.CenterOwner,
                                 Owner=Application.Current.MainWindow, ShowInTaskbar=false)
             let sp = new StackPanel(Margin=Thickness(12.))
-            sp.Children.Add(new TextBlock(Text="Name to show instead of LEVEL / BOARD (up to 6 characters).\nLeave blank to go back to the default.", Margin=Thickness(0.,0.,0.,8.))) |> ignore
+            sp.Children.Add(new TextBlock(Text="Name to show instead of LEVEL / BOARD (up to 7 characters).\nLeave blank to go back to the default.", Margin=Thickness(0.,0.,0.,8.))) |> ignore
             let tb = new TextBox(Text=TrackerModel.CustomLevelName, MaxLength=7, Width=140., HorizontalAlignment=HorizontalAlignment.Left, CharacterCasing=CharacterCasing.Upper)
             sp.Children.Add(tb) |> ignore
             let buttons = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Right, Margin=Thickness(0.,10.,0.,0.))

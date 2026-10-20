@@ -470,6 +470,8 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
 
 // set by WPFUI: refreshes the whole UI after the player manually changes an item in the item progress bar
 let mutable itemProgressChanged : unit -> unit = fun () -> ()
+// set by WPFUI: un-collects every marker icon with one of these item ids on the overworld map
+let mutable uncollectMapIcons : int list -> unit = fun _ -> ()
 let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     // item progress
     let itemProgressCanvas = new Canvas(Width=16.*OMTW, Height=30.)
@@ -480,6 +482,7 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
         let slot = int (floor ((pos.X - ITEM_PROGRESS_FIRST_ITEM) / 30.))
         // slots are 30px wide, in this order: sword, arrow, bow, ladder, power bracelet, recorder, raft, candle, ring, wand, key, boomerang, meat, book, letter
         match slot with
+        | 0 -> showSwordLocator()
         | 1 -> showArrowLocator()
         | 3 -> showLocatorInstanceFunc(owInstance.Ladderable)
         | 4 -> showLocatorInstanceFunc(owInstance.PowerBraceletable)
@@ -488,6 +491,24 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
         | 7 -> showLocatorInstanceFunc(owInstance.Burnable)
         | 10 -> showKeyLocator()
         | 12 -> showMeatLocator()
+        | _ -> ()
+        // also highlight any tile where you've placed this item on the map (marker icons, cave item boxes)
+        match slot with
+        | 0 -> showMarkerItemsLocator [TrackerModel.ITEMS.WOODSWORD; TrackerModel.ITEMS.WHITESWORD; TrackerModel.ITEMS.MAGICALSWORD; TrackerModel.ITEMS.PROGRESSIVESWORD]
+        | 1 -> showMarkerItemsLocator [TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW]
+        | 2 -> showMarkerItemsLocator [TrackerModel.ITEMS.BOW]
+        | 10 -> showMarkerItemsLocator [TrackerModel.ITEMS.KEY; TrackerModel.ITEMS.OLDKEY]
+        | 12 -> showMarkerItemsLocator [TrackerModel.ITEMS.MEAT]
+        | 3 -> showMarkerItemsLocator [TrackerModel.ITEMS.LADDER]
+        | 4 -> showMarkerItemsLocator [TrackerModel.ITEMS.POWERBRACELET]
+        | 5 -> showMarkerItemsLocator [TrackerModel.ITEMS.RECORDER]
+        | 6 -> showMarkerItemsLocator [TrackerModel.ITEMS.RAFT]
+        | 7 -> showMarkerItemsLocator [TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE]
+        | 8 -> showMarkerItemsLocator [TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING]
+        | 9 -> showMarkerItemsLocator [TrackerModel.ITEMS.WAND]
+        | 11 -> showMarkerItemsLocator [TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG]
+        | 13 -> showMarkerItemsLocator [TrackerModel.ITEMS.BOOKSHIELD]
+        | 14 -> showMarkerItemsLocator [TrackerModel.ITEMS.LETTER]
         | _ -> ()
         )
     itemProgressCanvas.MouseLeave.Add(fun _ -> hideLocator())
@@ -528,10 +549,12 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     x <- x + DX
     let grey_power_bracelet = Graphics.BMPtoImage(Graphics.greyscale Graphics.power_bracelet_bmp)
     let have_power_bracelet = Graphics.BMPtoImage Graphics.power_bracelet_bmp
+    let dash_bracelet = new Shapes.Rectangle(Width=float Graphics.power_bracelet_bmp.Width+2., Height=float Graphics.power_bracelet_bmp.Height+2., Stroke=Brushes.Red, StrokeThickness=2., StrokeDashArray=new DoubleCollection([3.;2.]), IsHitTestVisible=false, Visibility=Visibility.Collapsed)
     grey_power_bracelet.Opacity <- 0.
     have_power_bracelet.Opacity <- 0.
     canvasAdd(itemProgressCanvas, grey_power_bracelet, x, y)
     canvasAdd(itemProgressCanvas, have_power_bracelet, x, y)
+    canvasAdd(itemProgressCanvas, dash_bracelet, x-1., y-1.)
     x <- x + DX
     let grey_recorder = Graphics.BMPtoImage(Graphics.greyscale Graphics.recorder_bmp)
     let have_recorder = Graphics.BMPtoImage Graphics.recorder_bmp
@@ -546,6 +569,8 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     have_raft.Opacity <- 0.
     canvasAdd(itemProgressCanvas, grey_raft, x, y)
     canvasAdd(itemProgressCanvas, have_raft, x, y)
+    let dash_raft = new Shapes.Rectangle(Width=float Graphics.raft_bmp.Width+2., Height=float Graphics.raft_bmp.Height+2., Stroke=Brushes.Red, StrokeThickness=2., StrokeDashArray=new DoubleCollection([3.;2.]), IsHitTestVisible=false, Visibility=Visibility.Collapsed)
+    canvasAdd(itemProgressCanvas, dash_raft, x-1., y-1.)
     x <- x + DX
     let grey_candle = Graphics.BMPtoImage(Graphics.greyscale Graphics.red_candle_bmp)
     let blue_candle = Graphics.BMPtoImage Graphics.blue_candle_bmp
@@ -575,9 +600,9 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     canvasAdd(itemProgressCanvas, grey_key, x, y)
     canvasAdd(itemProgressCanvas, have_key, x, y)
     x <- x + DX
-    let grey_boomer = Graphics.BMPtoImage(Graphics.greyscale Graphics.magic_boomerang_bmp)
-    let wood_boomer = Graphics.BMPtoImage Graphics.boomerang_bmp
-    let magi_boomer = Graphics.BMPtoImage Graphics.magic_boomerang_bmp
+    let grey_boomer = Graphics.BMPtoImage(Graphics.greyscale (Graphics.magicBoomerangOrMagicalBootsBmp()))
+    let wood_boomer = Graphics.BMPtoImage(Graphics.boomerangOrBootsBmp())
+    let magi_boomer = Graphics.BMPtoImage(Graphics.magicBoomerangOrMagicalBootsBmp())
     for boo in [grey_boomer; wood_boomer; magi_boomer] do
         boo.Opacity <- 0.
         canvasAdd(itemProgressCanvas, boo, x, y)
@@ -656,6 +681,8 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
             have_power_bracelet.Opacity <- 1.; grey_power_bracelet.Opacity <- 0.
         else
             have_power_bracelet.Opacity <- 0.; grey_power_bracelet.Opacity <- 1.
+        dash_bracelet.Visibility <- (if TrackerModel.NoFeatOfStrengthHintWasGiven then Visibility.Visible else Visibility.Collapsed)
+        dash_raft.Visibility <- (if TrackerModel.SailNotHintWasGiven then Visibility.Visible else Visibility.Collapsed)
         if TrackerModel.playerComputedStateSummary.HaveRaft then
             have_raft.Opacity <- 1.; grey_raft.Opacity <- 0.
         else
@@ -731,7 +758,51 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
             if not popupIsActive then
                 let slot = int (floor ((ea.GetPosition(itemProgressCanvas).X - ITEM_PROGRESS_FIRST_ITEM) / 30.))
                 if slot >= 0 && slot <= 14 then
+                    // leveled items: the item can also have been collected from a dungeon box or a map icon, which would keep the level from ever dropping back down
+                    // (e.g. arrow stuck cycling wood <-> silver), so those sources are un-collected when the click is meant to go to a lower level
+                    let levelsOf =
+                        match slot with
+                        | 1 -> Some((fun () -> TrackerModel.playerComputedStateSummary.ArrowLevel), [ TrackerModel.ITEMS.WOODARROW,1; TrackerModel.ITEMS.SILVERARROW,2 ])
+                        | 7 -> Some((fun () -> TrackerModel.playerComputedStateSummary.CandleLevel), [ TrackerModel.ITEMS.BLUECANDLE,1; TrackerModel.ITEMS.REDCANDLE,2 ])
+                        | 8 -> Some((fun () -> TrackerModel.playerComputedStateSummary.RingLevel), [ TrackerModel.ITEMS.BLUERING,1; TrackerModel.ITEMS.REDRING,2 ])
+                        | 11 -> Some((fun () -> TrackerModel.playerComputedStateSummary.BoomerangLevel), [ TrackerModel.ITEMS.BOOMERANG,1; TrackerModel.ITEMS.MAGICBOOMERANG,2 ])
+                        | _ -> None
+                    // on/off items: turning one off must also un-collect it from dungeon boxes and map icons, or it stays lit in the bar
+                    let flipSources =
+                        match slot with
+                        | 2 -> Some((fun () -> TrackerModel.playerComputedStateSummary.HaveBow), TrackerModel.ITEMS.BOW)
+                        | 3 -> Some((fun () -> TrackerModel.playerComputedStateSummary.HaveLadder), TrackerModel.ITEMS.LADDER)
+                        | 4 -> Some((fun () -> TrackerModel.playerComputedStateSummary.HavePowerBracelet), TrackerModel.ITEMS.POWERBRACELET)
+                        | 5 -> Some((fun () -> TrackerModel.playerComputedStateSummary.HaveRecorder), TrackerModel.ITEMS.RECORDER)
+                        | 6 -> Some((fun () -> TrackerModel.playerComputedStateSummary.HaveRaft), TrackerModel.ITEMS.RAFT)
+                        | 9 -> Some((fun () -> TrackerModel.playerComputedStateSummary.HaveWand), TrackerModel.ITEMS.WAND)
+                        | 10 -> Some((fun () -> TrackerModel.playerComputedStateSummary.HaveAnyKey), TrackerModel.ITEMS.KEY)
+                        | _ -> None
+                    let hadBefore = match flipSources with Some(f,_) -> f() | None -> false
+                    let levelBefore = match levelsOf with Some(f,_) -> f() | None -> 0
                     stepItem(slot, dir)
+                    match levelsOf with
+                    | Some(getLevel, idsAndLevels) ->
+                        TrackerModel.recomputePlayerStateSummary()
+                        let expected = ((levelBefore + dir) % 3 + 3) % 3
+                        if getLevel() > expected then
+                            let toClear = idsAndLevels |> List.filter (fun (_,lvl) -> lvl > expected) |> List.map fst
+                            for b in TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() do
+                                if b.PlayerHas() = TrackerModel.PlayerHas.YES && List.contains (b.CellCurrent()) toClear then
+                                    b.SetPlayerHas(TrackerModel.PlayerHas.NO)
+                            uncollectMapIcons toClear
+                            TrackerModel.recomputePlayerStateSummary()
+                    | None -> ()
+                    match flipSources with
+                    | Some(have, ident) when hadBefore ->
+                        TrackerModel.recomputePlayerStateSummary()
+                        if have() then
+                            for b in TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() do
+                                if b.PlayerHas() = TrackerModel.PlayerHas.YES && b.CellCurrent() = ident then
+                                    b.SetPlayerHas(TrackerModel.PlayerHas.NO)
+                            uncollectMapIcons [ident]
+                            TrackerModel.recomputePlayerStateSummary()
+                    | _ -> ()
                     itemProgressChanged()
                     ea.Handled <- true
     itemProgressCanvas.MouseLeftButtonDown.Add(onItemClick(1))
@@ -888,13 +959,13 @@ let MakeHintDecoderUI(cm:CustomComboBoxes.CanvasManager) =
         otherSP.Children.Add(otherBottomTB) |> ignore
         let featsCheckBox  = new CheckBox(Content=makeHintText("No feat of strength... (Power Bracelet / pushing graves not required)"))
         featsCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.NoFeatOfStrengthHintWasGiven
-        featsCheckBox.Checked.Add(fun _ -> TrackerModel.NoFeatOfStrengthHintWasGiven <- true; hideFeatsOfStrength true)
-        featsCheckBox.Unchecked.Add(fun _ -> TrackerModel.NoFeatOfStrengthHintWasGiven <- false; hideFeatsOfStrength false)
+        featsCheckBox.Checked.Add(fun _ -> TrackerModel.NoFeatOfStrengthHintWasGiven <- true; hideFeatsOfStrength true; itemProgressChanged(); Views.hintDashedItemsChanged.Trigger())
+        featsCheckBox.Unchecked.Add(fun _ -> TrackerModel.NoFeatOfStrengthHintWasGiven <- false; hideFeatsOfStrength false; itemProgressChanged(); Views.hintDashedItemsChanged.Trigger())
         otherSP.Children.Add(featsCheckBox) |> ignore
         let raftsCheckBox  = new CheckBox(Content=makeHintText("Sail not... (Raft not required)"))
         raftsCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.SailNotHintWasGiven
-        raftsCheckBox.Checked.Add(fun _ -> TrackerModel.SailNotHintWasGiven <- true; hideRaftSpots true)
-        raftsCheckBox.Unchecked.Add(fun _ -> TrackerModel.SailNotHintWasGiven <- false; hideRaftSpots false)
+        raftsCheckBox.Checked.Add(fun _ -> TrackerModel.SailNotHintWasGiven <- true; hideRaftSpots true; itemProgressChanged(); Views.hintDashedItemsChanged.Trigger())
+        raftsCheckBox.Unchecked.Add(fun _ -> TrackerModel.SailNotHintWasGiven <- false; hideRaftSpots false; itemProgressChanged(); Views.hintDashedItemsChanged.Trigger())
         otherSP.Children.Add(raftsCheckBox) |> ignore
         let sailToCheckBox = new CheckBox(Content=makeHintText("Sail across the water... (Raft required to reach a place)"))
         sailToCheckBox.IsChecked <- System.Nullable.op_Implicit TrackerModel.SailToHintWasGiven

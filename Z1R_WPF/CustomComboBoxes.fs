@@ -33,11 +33,11 @@ let boxCurrentBMP(boxCellCurrent, timelineOrigin) =
     match boxCellCurrent with
     | -1 -> null
     |  0 -> (if TrackerModel.IsCurrentlyBook() then Graphics.book_bmp else Graphics.magic_shield_bmp)
-    |  1 -> Graphics.boomerang_bmp
+    |  1 -> Graphics.boomerangOrBootsBmp()
     |  2 -> Graphics.bow_bmp
     |  3 -> Graphics.power_bracelet_bmp
     |  4 -> Graphics.ladder_bmp
-    |  5 -> Graphics.magic_boomerang_bmp
+    |  5 -> Graphics.magicBoomerangOrMagicalBootsBmp()
     |  6 -> Graphics.magic_key_bmp
     |  7 -> Graphics.raft_bmp
     |  8 -> Graphics.recorder_bmp
@@ -268,7 +268,12 @@ let DoModalMessageBoxCore(cm:CanvasManager, icon:System.Drawing.Icon, mainText, 
     style.Setters.Add(new Setter(Button.BackgroundProperty, Brushes.DarkGray))
     b.Resources.Add(typeof<Button>, style)
 
-    do! DoModal(cm, wh, x, y, b)
+    // message boxes are centered in the app window
+    b.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let areaW, areaH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+    let cx = if areaW > 0. then max 0. ((areaW - b.DesiredSize.Width) / 2.) else x
+    let cy = if areaH > 0. then max 0. ((areaH - b.DesiredSize.Height) / 2.) else y
+    do! DoModal(cm, wh, cx, cy, b)
     return result
     }
 let DoModalMessageBox(cm:CanvasManager, icon:System.Drawing.Icon, mainText, buttonTexts:seq<string>) = 
@@ -419,11 +424,16 @@ let DoModalGridSelect<'State,'Result>
         RenderOptions.SetBitmapScalingMode(gridBorder, BitmapScalingMode.NearestNeighbor)
     // keep the (enlarged) overworld-tile menu inside the app window: slide it up if it would run off the bottom, and put the tip box on the left if it would run off the right
     let gridPixW, gridPixH = (float(gnc*COLW) + 2.*ST)*gridScale, (float(gnr*ROWH + firstRowExtra) + 2.*ST)*gridScale
-    let gy = 
-        if uniqueName = "OWGridTile" then
-            let overflow = tileY + gy + gridPixH - cm.AppMainCanvas.Height
-            if overflow > 0. then gy - System.Math.Ceiling(overflow) else gy
-        else gy
+    // every popup grid stays inside the app window: slide it up/left if it would run off the bottom/right, and down/right if off the top/left
+    let appW, appH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+    let gx, gy =
+        if appW > 0. && appH > 0. then
+            let shiftIntoRange(tilePos:float, g:float, size:float, limit:float) =
+                let over = tilePos + g + size - limit
+                let g2 = if over > 0. then g - System.Math.Ceiling(over) else g
+                if tilePos + g2 < 0. then -tilePos else g2
+            shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH, appH)
+        else gx, gy
     canvasAdd(popupCanvas, gridBorder, gx, gy)
     let noteBox = 
         if isReorderable then
@@ -788,7 +798,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta4"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta6"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))

@@ -121,6 +121,7 @@ let mutable FourthSwordEnabled = false   // per-game start-screen choice (not sa
 let MenuLayouts = new System.Collections.Generic.Dictionary<string,string[]>()
 let mutable UseOldPotionLetterIcons = Bool(true)   // the old potion/letter icons are always used now (no longer an option)
 let mutable DisplayIconsInDungeonMap = Bool(false)
+let mutable ShowDungeonHintIcons = Bool(true)
 let mutable DungeonMapLocationHintOpacity = 0.3
 let mutable ReverseScrollWheelDirection = Bool(false)
 let mutable ShowBasementInfo = Bool(true)
@@ -150,6 +151,8 @@ let mutable BroadcastWindowLT = ""
 let mutable MainWindowScale = 0.0     // the main window's content scale (0 = never resized); the window size is saved as this scale
 let mutable BroadcastWindowWH = ""    // the broadcast window's width,height
 let mutable HotKeyWindowLTWH = ""
+let mutable RemainingItemsIconScale = 1.0   // icon size in the Uncollected Items popout (ctrl+mouse wheel)
+let mutable NotesFontSize = 20.0      // font size of the Notes box (the button at its bottom right changes it)
 let mutable OverlayLocatorWindowLTWH = ""
 let mutable MouseMagnifierWindowLTWH = ""
 let mutable SpotSummaryPopout_DisplayedLT = ""
@@ -238,6 +241,7 @@ type ReadWrite() =
     member val UseOldPotionLetterIcons = true with get,set
     member val MenuLayouts : System.Collections.Generic.Dictionary<string,string[]> = new System.Collections.Generic.Dictionary<string,string[]>() with get,set
     member val DisplayIconsInDungeonMap = false with get,set
+    member val ShowDungeonHintIcons = true with get,set
     member val DungeonMapLocationHintOpacity = 0.3 with get,set
     member val ReverseScrollWheelDirection = false with get,set
     member val IsSecondQuestDungeons = false with get,set
@@ -266,6 +270,8 @@ type ReadWrite() =
     member val MainWindowScale = 0.0 with get,set
     member val BroadcastWindowWH = "" with get,set
     member val HotKeyWindowLTWH = "" with get, set
+    member val RemainingItemsIconScale = 1.0 with get, set
+    member val NotesFontSize = 20.0 with get, set
     member val OverlayLocatorWindowLTWH = "" with get, set
     member val MouseMagnifierWindowLTWH = "" with get, set
     member val SpotSummaryPopout_DisplayedLT = "" with get,set
@@ -365,6 +371,7 @@ let private writeImpl(filename) =
     data.UseOldPotionLetterIcons <- UseOldPotionLetterIcons.Value
     data.MenuLayouts <- new System.Collections.Generic.Dictionary<string,string[]>(MenuLayouts)
     data.DisplayIconsInDungeonMap <- DisplayIconsInDungeonMap.Value
+    data.ShowDungeonHintIcons <- ShowDungeonHintIcons.Value
     data.DungeonMapLocationHintOpacity <- DungeonMapLocationHintOpacity
     data.ReverseScrollWheelDirection <- ReverseScrollWheelDirection.Value
     data.ShowBasementInfo <- ShowBasementInfo.Value
@@ -391,6 +398,8 @@ let private writeImpl(filename) =
     data.MainWindowScale <- MainWindowScale
     data.BroadcastWindowWH <- BroadcastWindowWH
     data.HotKeyWindowLTWH <- HotKeyWindowLTWH
+    data.NotesFontSize <- NotesFontSize
+    data.RemainingItemsIconScale <- RemainingItemsIconScale
     data.OverlayLocatorWindowLTWH <- OverlayLocatorWindowLTWH
     data.MouseMagnifierWindowLTWH <- MouseMagnifierWindowLTWH
     data.SpotSummaryPopout_DisplayedLT <- SpotSummaryPopout_DisplayedLT
@@ -500,6 +509,7 @@ let private read(filename) =
         if not (isNull data.MenuLayouts) then
             for kv in data.MenuLayouts do MenuLayouts.[kv.Key] <- kv.Value
         DisplayIconsInDungeonMap.Value <- data.DisplayIconsInDungeonMap
+        ShowDungeonHintIcons.Value <- data.ShowDungeonHintIcons
         DungeonMapLocationHintOpacity <- max 0.05 (min 1.0 data.DungeonMapLocationHintOpacity)
         ReverseScrollWheelDirection.Value <- data.ReverseScrollWheelDirection
         ShowBasementInfo.Value <- data.ShowBasementInfo
@@ -526,6 +536,8 @@ let private read(filename) =
         MainWindowScale <- (if data.MainWindowScale >= 0.4 && data.MainWindowScale <= 4.0 then data.MainWindowScale else 0.0)
         BroadcastWindowWH <- (if data.BroadcastWindowWH = null then "" else data.BroadcastWindowWH)
         HotKeyWindowLTWH <- data.HotKeyWindowLTWH
+        RemainingItemsIconScale <- (if data.RemainingItemsIconScale >= 0.5 && data.RemainingItemsIconScale <= 8.0 then data.RemainingItemsIconScale else 1.0)
+        NotesFontSize <- (if data.NotesFontSize >= 8.0 && data.NotesFontSize <= 72.0 then data.NotesFontSize else 20.0)
         OverlayLocatorWindowLTWH <- data.OverlayLocatorWindowLTWH
         MouseMagnifierWindowLTWH <- data.MouseMagnifierWindowLTWH
         SpotSummaryPopout_DisplayedLT <- data.SpotSummaryPopout_DisplayedLT

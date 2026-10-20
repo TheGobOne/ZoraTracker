@@ -801,6 +801,17 @@ let zhDungeonNums =
     new System.Drawing.Bitmap(imageStream)
 
 
+// 'Boots Replace Boomerangs' startup option: the boomerang is shown as the boots, and the magical (blue) boomerang as the magical boots
+let private bmpFromBase64(b64:string) =
+    use ms = new System.IO.MemoryStream(System.Convert.FromBase64String(b64))
+    let src = new System.Drawing.Bitmap(ms)
+    let r = new System.Drawing.Bitmap(src)   // detach from the stream
+    r.SetResolution(96.0f, 96.0f)
+    r
+let boots_bmp = bmpFromBase64 "iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAABq0lEQVR4nN2Uz2oUQRCHv+rpyay7MWuIEjwF/LMgGHISTyo5iCdfwIuPIb6PCOLFJ/DiUYUEkSCCB0nWEBNMgu5mZ7q7PAxK3O7dZA65+Dt2V39d1b+qhjOQjC+8fTirqkpw4d8NhSDGzbWMffxmMP9+z+8bgaAx1I4vqCp5kdO53AY9dsIIg4MRejRKpHICNLhAZ/Ec1+9dhTLUAFVoWfprfb5/3EJkOjWCZnnG4e5P1l99iILLKtDOLRrKZlAURIRsJoPj7yVgPGhwU4FJqHeeucVZenfj8rfWv7G70UdMw/L/ZItXNCgitXniFdWE1QmZU0U11H8ONVJ7NcmutFFTJMDAUabG8++lTYFeYXneXLt1MbvQnUk3V0Oo2mGlPLlZrL1c7fzodU03lfCpoCICVeDS0gIrD25g2oXrH1Tu6XLx4tmd9vPx+IlvqjrW7EHJC0t+vqDTbVlXOXqq99V7gEcnQsUIUuSI8bHFClduL0Ge8en1Z7e3uR+dj6BihNGvkp2N7XpMU1UAkgnVsLTWxhER1GSG4eERX959ZXInKmj9TZrsTOYn1m8QJqArILh0CgAAAABJRU5ErkJggg=="
+let magical_boots_bmp = bmpFromBase64 "iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAABkElEQVR4nM2UuUpDQRSGv5m5XJcEF0QQFGxMYxHb4AJpfAUVLXwCewt7KwvRIk/gWtvnCYJNELQIgqAIwS2Cy50Zi7lBSCbLFRF/GC53me/8Z+45B/5Cto201p/WWpvP54cAlFJeRuB7+PIGl7egpLsXwKeGsUGYGAFr2xvzQiv3sHUC6V7QFgIJj6+wPg9rC2B+Ap0eh6MNEAJs7NRYCGPn9QwSQbWF2puDgrtqA+kQ+tvzWkOvbmHrFFI9zqGS8PQKa7OwMucCJIYKAaFyqw4Ng85p19XyM+tZ3arL2Mn0f6BSSqGUQtTLo0HeH9VJtVrtQ2vd8n1iqAVyudxUOtV3XS6Xn6vVqrENfZso/SCQgQD293bPi8XiQzabHWwEdg01BvpDKF7A5iFU7k1kjIkKhcJxqVQ6aArugwhcoSsJIjYi46Fy8w53TzJI9UAmk1mMt6x2hEbGASLt5oDge7AIATtnbjZsL5toZrJ5vxc6OgBLOdeavk4SwEcEY8MykJ4DbCo06zv5DhKtCvY39QWjQ6CiSDEc2gAAAABJRU5ErkJggg=="
+let boomerangOrBootsBmp() = if TrackerModel.BootsReplaceBoomerangs then boots_bmp else boomerang_bmp
+let magicBoomerangOrMagicalBootsBmp() = if TrackerModel.BootsReplaceBoomerangs then magical_boots_bmp else magic_boomerang_bmp
 let allItemBMPs = [| book_bmp; boomerang_bmp; bow_bmp; power_bracelet_bmp; ladder_bmp; magic_boomerang_bmp; key_bmp; raft_bmp; recorder_bmp; red_candle_bmp; red_ring_bmp; silver_arrow_bmp; wand_bmp; white_sword_bmp |]
 let allItemBMPsWithHeartShuffle = [| yield! allItemBMPs; for _i = 0 to 8 do yield heart_container_bmp |]
 
@@ -831,10 +842,14 @@ let magic_key_bmp =
                      "...oo.."
                      "...or.." |], ['o', System.Drawing.Color.FromArgb(252,152,56); 'r', System.Drawing.Color.FromArgb(216,40,0)])
 let readCacheFileOrCreateBmp(filename, createF : unit -> System.Drawing.Bitmap) =
+    // always treat the tiles as 96dpi, whatever the cache file (or this machine's display scaling) says; a tile with another dpi gets drawn smaller than 48x33, leaving dark lines between map tiles
     if System.IO.File.Exists(filename) then
-        System.Drawing.Bitmap.FromFile(filename) :?> System.Drawing.Bitmap
+        let bmp = System.Drawing.Bitmap.FromFile(filename) :?> System.Drawing.Bitmap
+        bmp.SetResolution(96.0f, 96.0f)
+        bmp
     else
         let bmp = createF()
+        bmp.SetResolution(96.0f, 96.0f)
         System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(filename)) |> ignore
         bmp.Save(filename)
         bmp

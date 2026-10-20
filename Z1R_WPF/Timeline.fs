@@ -37,6 +37,7 @@ type TimelineID =
     | LadderBox
     | ArmosBox
     | MagicalSwordCaveBox
+    | LetterCaveBox
     | WhiteSwordBox
     | Level1or4Box3
     | LevelBox of int * int
@@ -54,6 +55,9 @@ type TimelineID =
     | TakeAnyHeart2
     | TakeAnyHeart3
     | TakeAnyHeart4
+    // checked off on the overworld map
+    | Sword4
+    | OWHeart of int
     // custom
     | UserCustom of string
     static member Triforce(n) =
@@ -95,6 +99,7 @@ type TimelineID =
         | LadderBox -> "LadderBox"
         | ArmosBox -> "ArmosBox"
         | MagicalSwordCaveBox -> "MagicalSwordCaveBox"
+        | LetterCaveBox -> "LetterCaveBox"
         | WhiteSwordBox -> "WhiteSwordBox"
         | Level1or4Box3 -> "Level1or4Box3"
         | LevelBox(i,j) -> sprintf "Level%dBox%d" i j
@@ -110,6 +115,8 @@ type TimelineID =
         | TakeAnyHeart2 -> "TakeAnyHeart2"
         | TakeAnyHeart3 -> "TakeAnyHeart3"
         | TakeAnyHeart4 -> "TakeAnyHeart4"
+        | Sword4 -> "Sword4"
+        | OWHeart n -> sprintf "OWHeart%d" n
         | UserCustom s -> "UserCustom_" + s
 
 type TimelineItem(tid : TimelineID, f) =
@@ -226,8 +233,17 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
         itemCanvas.Children.Clear()
         let iconAreaFilled = Array2D.copy iconAreaFilled  // grab fresh copy of fixed timeline labels, to mutate each time we redraw
         let buckets = new System.Collections.Generic.Dictionary<_,_>()
+        // only the highest sword collected is shown (wood < white < magical < 4th sword), not every sword along the way
+        let swordRank(tid:TimelineID) =
+            match tid with
+            | WoodSword -> 1
+            | WhiteSword -> 2
+            | MagicalSword | StartingMagicalSword -> 3
+            | Sword4 -> 4
+            | _ -> 0
+        let topSwordRank = timelineItems |> Seq.filter (fun ti -> ti.IsDone) |> Seq.map (fun ti -> swordRank ti.TID) |> Seq.fold max 0
         for ti in timelineItems do
-            if ti.IsDone then
+            if ti.IsDone && (swordRank ti.TID = 0 || swordRank ti.TID = topSwordRank) then
                 let tick = float ti.FinishedTotalSeconds/(60.*float minutesPerTick) |> int
                 if not(buckets.ContainsKey(tick)) then
                     buckets.Add(tick, ResizeArray())

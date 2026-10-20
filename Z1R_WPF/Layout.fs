@@ -120,10 +120,20 @@ let tryLayoutTopLeftIcons() =
                         | :? FrameworkElement as f ->
                             match f with
                             | :? Button as b ->
-                                b.BorderThickness <- Thickness(1.)   // slimmer border than the default button chrome
-                                b.Padding <- Thickness(0.)
-                                (match b.Content with | :? TextBox as t -> t.VerticalContentAlignment <- VerticalAlignment.Center; t.VerticalAlignment <- VerticalAlignment.Center | _ -> ())
+                                // fill the whole button (a shrunken text box would let the button's light background show through as an extra inner border line)
+                                (match b.Content with | :? TextBox as t -> t.VerticalContentAlignment <- VerticalAlignment.Center; t.VerticalAlignment <- VerticalAlignment.Stretch; t.HorizontalAlignment <- HorizontalAlignment.Stretch | _ -> ())
                             | _ -> ()
+                            // draw exactly like the buttons on the right: same border/padding/brushes, and pixel-snapped so the border doesn't blur or look thicker
+                            (match f, rightButtonForSizing with
+                             | (:? Button as b), (:? Button as rb) ->
+                                b.BorderThickness <- rb.BorderThickness
+                                b.Padding <- rb.Padding
+                                if rb.BorderBrush <> null then b.BorderBrush <- rb.BorderBrush
+                                if rb.Background <> null then b.Background <- rb.Background
+                             | _ -> ())
+                            f.SnapsToDevicePixels <- true
+                            f.UseLayoutRounding <- true
+                            let rowH = System.Math.Round(rowH)
                             if f.Width <> SMALL_BUTTON_W then f.Width <- SMALL_BUTTON_W
                             if f.Height <> rowH then f.Height <- rowH
                             Canvas.SetLeft(f, hintLeft)
@@ -147,6 +157,8 @@ let SWORD_ICON_CENTER_Y = THRU_MAP_AND_LEGEND_H + 3. + 3. + float(Graphics.sword
 // x center of the span between the inner left edge of the blue ring's red box and the inner right edge of the money hover icon's box (grid columns 4..7)
 let OW_STATS_CENTER_X = OW_ITEM_GRID_LOCATIONS.OFFSET + 180.
 // the 'OW spots left / gettable / cave highlight' block sits in the open space just right of the item grid (top, above the Zones/Coords checkboxes)
+// the 'OW spots left' text (and its per-type breakdown) sits a little further right, clear of the fifth item box / hint icon above the grid's top row
+let OW_SPOTS_LEFT_CENTER_X = OW_ITEM_GRID_LOCATIONS.OFFSET + 197.
 let OW_STATS_BLOCK_CENTER_X = OW_ITEM_GRID_LOCATIONS.OFFSET + 294.
 
 type IApplicationLayoutBase =
@@ -288,8 +300,9 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(appMainCanvas, grabModeTextBlock, BLOCKERS_AND_NOTES_OFFSET, START_DUNGEON_AND_NOTES_AREA_H) // grab mode instructions
             canvasAdd(appMainCanvas, rightwardCanvas, BLOCKERS_AND_NOTES_OFFSET, START_DUNGEON_AND_NOTES_AREA_H)   // extra place for dungeonTabs to draw atop blockers/notes, e.g. hover minimaps
         member this.AddOWRemainingScreens(owRemainingScreensTextBox) =
-            canvasAdd(appMainCanvas, owRemainingScreensTextBox, OW_STATS_CENTER_X-58., 0.)   // spots-left text with the per-type breakdown under it, all just above the Max Hearts box
-            centerHorizontallyAt(owRemainingScreensTextBox, OW_STATS_CENTER_X)
+            canvasAdd(appMainCanvas, owRemainingScreensTextBox, OW_SPOTS_LEFT_CENTER_X-58., 0.)   // spots-left text with the per-type breakdown under it, all just above the Max Hearts box
+            centerHorizontallyAt(owRemainingScreensTextBox, OW_SPOTS_LEFT_CENTER_X)
+            Canvas.SetZIndex(owRemainingScreensTextBox, -1)   // draw underneath the item boxes / hint icons so it can never cover them
         member this.AddOWGettableScreens(owGettableScreensCheckBox) =
             canvasAdd(appMainCanvas, owGettableScreensCheckBox, OW_STATS_BLOCK_CENTER_X-50., 22.)
             centerHorizontallyAt(owGettableScreensCheckBox, OW_STATS_BLOCK_CENTER_X)
@@ -545,8 +558,9 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(lower, grabModeTextBlock, BLOCKERS_AND_NOTES_OFFSET, dungeonStart) // grab mode instructions
             canvasAdd(lower, rightwardCanvas, BLOCKERS_AND_NOTES_OFFSET, dungeonStart)   // extra place for dungeonTabs to draw atop blockers/notes, e.g. hover minimaps
         member this.AddOWRemainingScreens(owRemainingScreensTextBox) =
-            canvasAdd(upper, owRemainingScreensTextBox, OW_STATS_CENTER_X-58., 0.)   // spots-left text with the per-type breakdown under it, all just above the Max Hearts box
-            centerHorizontallyAt(owRemainingScreensTextBox, OW_STATS_CENTER_X)
+            canvasAdd(upper, owRemainingScreensTextBox, OW_SPOTS_LEFT_CENTER_X-58., 0.)   // spots-left text with the per-type breakdown under it, all just above the Max Hearts box
+            centerHorizontallyAt(owRemainingScreensTextBox, OW_SPOTS_LEFT_CENTER_X)
+            Canvas.SetZIndex(owRemainingScreensTextBox, -1)   // draw underneath the item boxes / hint icons so it can never cover them
         member this.AddOWGettableScreens(owGettableScreensCheckBox) =
             canvasAdd(upper, owGettableScreensCheckBox, OW_STATS_BLOCK_CENTER_X-50., 22.)
             centerHorizontallyAt(owGettableScreensCheckBox, OW_STATS_BLOCK_CENTER_X)

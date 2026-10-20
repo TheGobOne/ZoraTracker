@@ -131,28 +131,65 @@ let MakeInventoryAndHearts() =
                                 Text="Note: having magical sword may make it\n   hard to notice if white sword picked up")
         sp.Children.Add(tb) |> ignore
     sp
+// Ctrl+mouse wheel over the Uncollected Items window grows / shrinks its icons
+let mutable remainingItemsIconScale = 1.0
 let MakeRemainingItemsDisplay() =
-    let img(i) = let r = CustomComboBoxes.boxCurrentBMP(i, None) |> Graphics.BMPtoImage in r.Margin <- Thickness(0.,0.,3.,0.); r
-    let hsp = new StackPanel(Orientation=Orientation.Horizontal, Margin=Thickness(3.))
+    let scaledImg(bmp:System.Drawing.Bitmap) =
+        let r = Graphics.BMPtoImage(bmp)
+        r.Stretch <- Stretch.Fill
+        r.Width <- float bmp.Width * remainingItemsIconScale
+        r.Height <- float bmp.Height * remainingItemsIconScale
+        RenderOptions.SetBitmapScalingMode(r, BitmapScalingMode.NearestNeighbor)
+        r.Margin <- Thickness(0.,0.,3.,3.)
+        r
+    let img(i) =
+        let im = scaledImg(CustomComboBoxes.boxCurrentBMP(i, None))
+        if Views.itemIsHintDashed i then
+            let g = new Grid()
+            g.Children.Add(im) |> ignore
+            g.Children.Add(new Shapes.Rectangle(Stroke=Brushes.Red, StrokeThickness=2., StrokeDashArray=new DoubleCollection([3.;2.]), IsHitTestVisible=false)) |> ignore
+            g :> UIElement
+        else im :> UIElement
+    let swordImg(bmp:System.Drawing.Bitmap) = scaledImg(bmp)
+    // wraps onto more rows as the window is made narrower
+    let hsp = new WrapPanel(Orientation=Orientation.Horizontal, Margin=Thickness(3.))
     // An item is "remaining" if no dungeon box has it marked as obtained (IsDone = CellCurrent set AND PlayerHas is YES or SKIPPED).
     // This correctly handles presets where all items are pre-placed but not yet obtained (PlayerHas=NO).
     let allBoxes = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
     // (an item whose marker icon has been checked off as collected on the overworld map also counts as obtained)
     let isObtained(i) = (allBoxes |> Array.exists (fun box -> box.CellCurrent() = i && box.IsDone())) || TrackerModel.mapCollectedCount.[i] > 0
-    for i in TrackerModel.ITEMS.PriorityOrderForRemainingDisplay do
-        if not (isObtained i) then
+    // same order as the Item Progress bar: swords first (every sword level not yet reached)
+    let swordLevel = TrackerModel.playerComputedStateSummary.SwordLevel
+    if swordLevel < 1 then hsp.Children.Add(swordImg(Graphics.swordLevelToBmp(1))) |> ignore
+    if swordLevel < 2 && not(isObtained TrackerModel.ITEMS.WHITESWORD) then hsp.Children.Add(swordImg(Graphics.swordLevelToBmp(2))) |> ignore
+    if swordLevel < 3 && not(isObtained TrackerModel.ITEMS.MAGICALSWORD) then hsp.Children.Add(swordImg(Graphics.swordLevelToBmp(3))) |> ignore
+    if TrackerModelOptions.FourthSwordEnabled && TrackerModel.playerHasSword4.Value <> 1 then hsp.Children.Add(swordImg(Graphics.white_sword4_bmp)) |> ignore
+    let candleLevel = TrackerModel.playerComputedStateSummary.CandleLevel
+    let ringLevel = TrackerModel.playerComputedStateSummary.RingLevel
+    for i in [| TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.BOW; TrackerModel.ITEMS.LADDER; TrackerModel.ITEMS.POWERBRACELET; TrackerModel.ITEMS.RECORDER; TrackerModel.ITEMS.RAFT
+                TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WAND; TrackerModel.ITEMS.KEY
+                TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG; TrackerModel.ITEMS.BOOKSHIELD |] do
+        let levelReached =
+            if i = TrackerModel.ITEMS.BLUECANDLE then candleLevel >= 1
+            elif i = TrackerModel.ITEMS.REDCANDLE then candleLevel >= 2
+            elif i = TrackerModel.ITEMS.BLUERING then ringLevel >= 1
+            elif i = TrackerModel.ITEMS.REDRING then ringLevel >= 2
+            else false
+        if not (isObtained i) && not levelReached then
             hsp.Children.Add(img(i)) |> ignore
     let h = TrackerModel.ITEMS.HEARTCONTAINER
     let obtainedHC = (allBoxes |> Array.sumBy (fun box -> if box.CellCurrent() = h && box.IsDone() then 1 else 0)) + TrackerModel.mapCollectedCount.[h]
     let c = TrackerModel.allItemWithHeartShuffleChoiceDomain.MaxUses(h) - obtainedHC
-    for x = 1 to c do
-        hsp.Children.Add(img(h)) |> ignore
-    if c > 1 then
-        hsp.Children.Add(new TextBox(Text=sprintf "x%d" c,FontSize=12.,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),Foreground=Brushes.Orange,Background=Brushes.Black,VerticalAlignment=VerticalAlignment.Center)) |> ignore
+    if c >= 1 then
+        // just one heart, followed by how many remain
+        // the heart and its count are one unit, so they never get separated onto different rows when the window is resized
+        let heartAndCount = new StackPanel(Orientation=Orientation.Horizontal)
+        heartAndCount.Children.Add(img(h)) |> ignore
+        heartAndCount.Children.Add(new TextBox(Text=sprintf "x%d" c,FontSize=20.*remainingItemsIconScale,FontWeight=FontWeights.Bold,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),Foreground=Brushes.Orange,Background=Brushes.Black,VerticalAlignment=VerticalAlignment.Center)) |> ignore
+        hsp.Children.Add(heartAndCount) |> ignore
     if hsp.Children.Count=0 then
         hsp.Children.Add(new TextBox(Text="None",FontSize=12.,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),Foreground=Brushes.Orange,Background=Brushes.Black)) |> ignore
     let vsp = new StackPanel(Orientation=Orientation.Vertical)
-    vsp.Children.Add(new TextBox(Text="Remaining unobtained items:",FontSize=12.,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),Foreground=Brushes.Orange,Background=Brushes.Black)) |> ignore
     vsp.Children.Add(hsp) |> ignore
     vsp
 
@@ -192,6 +229,7 @@ let inventoryAndHeartsContent(doUIUpdateEvent:Event<unit>) =
         )
     new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.))
 let remainingItemsContent(doUIUpdateEvent:Event<unit>) =
+    remainingItemsIconScale <- TrackerModelOptions.RemainingItemsIconScale   // remembered from last time
     let dp = new DockPanel(Background=Brushes.Black)
     let redraw() =
         dp.Children.Clear()
@@ -201,11 +239,43 @@ let remainingItemsContent(doUIUpdateEvent:Event<unit>) =
 //        printfn "redraw remaining items"
         redraw()
         )
-    new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.))
+    let border = new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.), Background=Brushes.Black)
+    border.PreviewMouseWheel.Add(fun e ->
+        if System.Windows.Input.Keyboard.Modifiers = System.Windows.Input.ModifierKeys.Control then
+            e.Handled <- true
+            let factor = if e.Delta > 0 then 1.15 else 1. / 1.15
+            remainingItemsIconScale <- max 0.5 (min 8.0 (remainingItemsIconScale * factor))
+            TrackerModelOptions.RemainingItemsIconScale <- remainingItemsIconScale
+            TrackerModelOptions.writeSettings()
+            redraw())
+    border
 
 let mutable insideMakePopoutCall = false
 let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
-    let w = new Window(ResizeMode=ResizeMode.NoResize, SizeToContent=SizeToContent.WidthAndHeight, Topmost=false, ShowActivated=false)
+    let w = new Window(ResizeMode=ResizeMode.CanResizeWithGrip, SizeToContent=SizeToContent.WidthAndHeight, Topmost=false, ShowActivated=false)   // resizable: the content scales to fit the window (drag the edges or the corner grip)
+    // the window opens at the content's natural size (DownOnly keeps the Viewbox from blowing the content up to fill the screen-sized space the window offers while sizing),
+    // then it's frozen at that size and the content is free to scale both ways as the user drags the window bigger or smaller
+    let savedW, savedH = ref 0., ref 0.   // size remembered from the last session (0 = none yet)
+    let sz() = sprintf ",%d,%d" (int w.RestoreBounds.Width) (int w.RestoreBounds.Height)
+    let scalable(e:UIElement) : UIElement =
+        let vb = new System.Windows.Controls.Viewbox(Child=e, Stretch=System.Windows.Media.Stretch.Uniform, StretchDirection=System.Windows.Controls.StretchDirection.DownOnly)
+        w.ContentRendered.Add(fun _ ->
+            if w.SizeToContent <> SizeToContent.Manual then
+                let aw, ah = (if savedW.Value > 0. then savedW.Value else w.ActualWidth), (if savedH.Value > 0. then savedH.Value else w.ActualHeight)
+                w.SizeToContent <- SizeToContent.Manual
+                w.Width <- aw
+                w.Height <- ah
+                vb.StretchDirection <- System.Windows.Controls.StretchDirection.Both)
+        upcast vb
+    // like scalable, but the content is not scaled: it re-flows onto more or fewer rows as the window is resized
+    let wrapping(e:UIElement) : UIElement =
+        w.ContentRendered.Add(fun _ ->
+            if w.SizeToContent <> SizeToContent.Manual then
+                let aw, ah = (if savedW.Value > 0. then savedW.Value else w.ActualWidth), (if savedH.Value > 0. then savedH.Value else w.ActualHeight)
+                w.SizeToContent <- SizeToContent.Manual
+                w.Width <- aw
+                w.Height <- ah)
+        e
     //w.Owner <- Application.Current.MainWindow  // we don't do this; doing so causes clicking any window to bring all ZT windows to the front, making impossible to layer
                                                  // popout ZT windows with other Windows applications in Z-order of windows desktop
     Application.Current.MainWindow.Closed.Add(fun _ -> theMainWindowHasClosed <- true; try w.Close() with _ -> ())  // do this to get similar close behavior to ownership
@@ -218,13 +288,13 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
             if theSpotSummaryPopoutWindow <> null then
                 theSpotSummaryPopoutWindow.Close()
             theSpotSummaryPopoutWindow <- w
-            w.Title <- "Spot Summary popout"
-            w.Content <- spotSummaryContent(doUIUpdateEvent)
+            w.Title <- "Spot Summary"
+            w.Content <- scalable(spotSummaryContent(doUIUpdateEvent))
             save <- (fun() ->
                 if w.Left < MINIMIZED_THRESHOLD then // minimized or closing
-                    TrackerModelOptions.SpotSummaryPopout_DisplayedLT <- sprintf "0,%d,%d" (int w.RestoreBounds.Left) (int w.RestoreBounds.Top)
+                    TrackerModelOptions.SpotSummaryPopout_DisplayedLT <- sprintf "0,%d,%d" (int w.RestoreBounds.Left) (int w.RestoreBounds.Top) + sz()
                 else
-                    TrackerModelOptions.SpotSummaryPopout_DisplayedLT <- sprintf "1,%d,%d" (int w.Left) (int w.Top)
+                    TrackerModelOptions.SpotSummaryPopout_DisplayedLT <- sprintf "1,%d,%d" (int w.Left) (int w.Top) + sz()
                 TrackerModelOptions.writeSettings()
                 )
             noDisplay <- (fun () ->
@@ -232,18 +302,18 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
                     TrackerModelOptions.SpotSummaryPopout_DisplayedLT <- "0"+TrackerModelOptions.SpotSummaryPopout_DisplayedLT.Substring(1)
                     TrackerModelOptions.writeSettings()
                 )
-            System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.SpotSummaryPopout_DisplayedLT, """^(1|0),(-?\d+),(-?\d+)$""")
+            System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.SpotSummaryPopout_DisplayedLT, """^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$""")
         | InventoryAndHeartsPopout ->
             if theInventoryAndHeartsPopoutWindow <> null then
                 theInventoryAndHeartsPopoutWindow.Close()
             theInventoryAndHeartsPopoutWindow <- w
             w.Title <- "Inventory and Max Hearts popout"
-            w.Content <- inventoryAndHeartsContent(doUIUpdateEvent)
+            w.Content <- scalable(inventoryAndHeartsContent(doUIUpdateEvent))
             save <- (fun() ->
                 if w.Left < MINIMIZED_THRESHOLD then // minimized or closing
-                    TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT <- sprintf "0,%d,%d" (int w.RestoreBounds.Left) (int w.RestoreBounds.Top)
+                    TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT <- sprintf "0,%d,%d" (int w.RestoreBounds.Left) (int w.RestoreBounds.Top) + sz()
                 else
-                    TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT <- sprintf "1,%d,%d" (int w.Left) (int w.Top)
+                    TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT <- sprintf "1,%d,%d" (int w.Left) (int w.Top) + sz()
                 TrackerModelOptions.writeSettings()
                 )
             noDisplay <- (fun () ->
@@ -251,18 +321,18 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
                     TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT <- "0"+TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT.Substring(1)
                     TrackerModelOptions.writeSettings()
                 )
-            System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT, """^(1|0),(-?\d+),(-?\d+)$""")
+            System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT, """^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$""")
         | RemainingItemsPoput ->
             if theRemainingItemsPopoutWindow <> null then
                 theRemainingItemsPopoutWindow.Close()
             theRemainingItemsPopoutWindow <- w
-            w.Title <- "Remaining Items popout"
-            w.Content <- remainingItemsContent(doUIUpdateEvent)
+            w.Title <- "Uncollected Items"
+            w.Content <- wrapping(remainingItemsContent(doUIUpdateEvent))
             save <- (fun() ->
                 if w.Left < MINIMIZED_THRESHOLD then // minimized or closing
-                    TrackerModelOptions.RemainingItemsPoput_DisplayedLT <- sprintf "0,%d,%d" (int w.RestoreBounds.Left) (int w.RestoreBounds.Top)
+                    TrackerModelOptions.RemainingItemsPoput_DisplayedLT <- sprintf "0,%d,%d" (int w.RestoreBounds.Left) (int w.RestoreBounds.Top) + sz()
                 else
-                    TrackerModelOptions.RemainingItemsPoput_DisplayedLT <- sprintf "1,%d,%d" (int w.Left) (int w.Top)
+                    TrackerModelOptions.RemainingItemsPoput_DisplayedLT <- sprintf "1,%d,%d" (int w.Left) (int w.Top) + sz()
                 TrackerModelOptions.writeSettings()
                 )
             noDisplay <- (fun () ->
@@ -270,12 +340,15 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
                     TrackerModelOptions.RemainingItemsPoput_DisplayedLT <- "0"+TrackerModelOptions.RemainingItemsPoput_DisplayedLT.Substring(1)
                     TrackerModelOptions.writeSettings()
                 )
-            System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.RemainingItemsPoput_DisplayedLT, """^(1|0),(-?\d+),(-?\d+)$""")
+            System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.RemainingItemsPoput_DisplayedLT, """^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$""")
     let ok,disp,left,top = 
         if matches.Success && not(float matches.Groups.[2].Value < MINIMIZED_THRESHOLD) then
             true,(int matches.Groups.[1].Value)=1, float matches.Groups.[2].Value, float matches.Groups.[3].Value
         else
             false,false,0.,0.
+    if matches.Success && matches.Groups.[4].Success && matches.Groups.[5].Success && float matches.Groups.[4].Value >= 100. && float matches.Groups.[5].Value >= 60. then
+        savedW.Value <- float matches.Groups.[4].Value
+        savedH.Value <- float matches.Groups.[5].Value
     if (isLeftClick && ok)                                  // the user explicitly is trying to show the window, and we are able to parse valid coords
         || (not isLeftClick && not isRightClick && disp)    // it's startup automatically looking for windows to display, and this one has disp=1 and valid coords
             then
@@ -283,6 +356,9 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
         w.Top <- top
     // otherwise (e.g. right click, bad data) just display a new window at default location selected by Windows
     w.LocationChanged.Add(fun _ -> save(); refocusMainWindow())
+    let sizeSaveTimer = new System.Windows.Threading.DispatcherTimer(Interval=System.TimeSpan.FromMilliseconds(600.))
+    sizeSaveTimer.Tick.Add(fun _ -> sizeSaveTimer.Stop(); save())
+    w.SizeChanged.Add(fun _ -> if w.IsLoaded && w.SizeToContent = SizeToContent.Manual then (sizeSaveTimer.Stop(); sizeSaveTimer.Start()))   // remember the size the user drags it to
     w.Closed.Add(fun _ -> if not(theMainWindowHasClosed) && not(insideMakePopoutCall) then noDisplay())
     w.Show()
     insideMakePopoutCall <- false

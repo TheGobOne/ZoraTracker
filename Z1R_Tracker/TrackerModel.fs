@@ -38,7 +38,9 @@ type ReminderCategory =
 ///////////////////////////////////////////////////////////////////////////
 
 let mutable IsSecondQuestDungeons = false
-let mutable CustomLevelName = ""   // up to 6 chars (uppercase); if non-empty, replaces 'LEVEL-n' in each dungeon map header
+let mutable MarkBombDroppers = false   // Startup Options checkbox: middle-clicking an overworld tile marks it as a bomb dropper screen
+let mutable BootsReplaceBoomerangs = false   // ZORA Extras startup option (behavior still to be decided)
+let mutable CustomLevelName = ""   // up to 7 chars (uppercase); if non-empty, replaces 'LEVEL-n' in each dungeon map header
 let mutable MirrorOverworld = false
 
 let GetOldManCount(i) =
@@ -62,6 +64,7 @@ type ChoiceDomain(name:string,maxUsesArray:int[]) =
     member _this.Changed = ev.Publish
     member _this.Name = name  // just useful for debugging etc
     member _this.MaxKey = uses.Length-1
+    member this.Renotify(key) = if key <> -1 then ev.Trigger(this,key)   // re-announce a key after the owning Cell has settled on its new state
     member this.RemoveUse(key) =
         if key = -1 then  // since Next/Prev FreeKey can return -1 to mean the implicit empty slot, seems ok to RemoveUse() it, it implicitly has infinity current uses
             ev.Trigger(this,key)
@@ -133,9 +136,14 @@ type Cell(cd: ChoiceDomain) =
         if newState < -1 || newState > cd.MaxKey then
             failwith "Cell.Set out of range"
         if state <> newState then
+            let oldState = state
             cd.AddUse(newState)
             cd.RemoveUse(state)
             state <- newState
+            // the use-count events above fire before this cell holds its new state; announce both keys again now that it does,
+            // so listeners that look at the map (e.g. a dungeon's found/located display) see the cleared or newly marked tile
+            cd.Renotify(oldState)
+            cd.Renotify(newState)
             changedEvent.Trigger()
 
     member this.AttemptToSet(newState: int) =
@@ -749,6 +757,9 @@ let ladderBox = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(P
 let armosBox  = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
 let sword2Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
 let sword3Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in the magical sword cave (this session only, not saved)
+let letterBox = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in the letter cave (this session only, not saved)
+let sword1Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in a 'shuffled' wood sword cave (this session only, not saved)
+let shuffledWoodSwordTiles = new System.Collections.Generic.HashSet<int*int>()   // overworld tiles whose wood sword cave holds a shuffled item (this session only)
 // the optional extra 'level 2 staircase' item box (disabled/greyed out until enabled)
 let level2StairBox = Box(StairKind.Always, BoxOwner.None)   // shows the basement staircase icon like the other basement item slots
 let mutable level2StairBoxEnabled = false
@@ -804,6 +815,8 @@ type DungeonTrackerInstance(kind) =
                 yield armosBox
                 yield sword2Box
                 yield sword3Box
+                yield letterBox
+                yield sword1Box
                 |]
         allBoxes
     let allBoxProgress = 
@@ -1145,14 +1158,17 @@ let overworldQuestChanged = new Event<unit>()   // fired when reinitializeOverwo
 
 let mapLastChangedTime = new LastChangedTime()
 let owSwordIcons = Array2D.create 16 8 -1   // decorative marker icons per overworld tile: up to 3 packed into one int (see decorIconsOf/decorIconsPack below), -1 means none
+let DECOR_BOMB_DROPPER = 101   // marker-icon id for a screen whose enemies drop bombs
 let DECOR_BOMB = 100   // marker-icon id for the generic bomb (it is not a tracked ITEMS entry, so it lives outside that id range)
 let MaxDecorIcons = 3
 // each icon takes 7 bits holding (id+1); 0 means an empty slot. Ids are ITEMS ids (0-29) or DECOR_BOMB.
 // bits 21-23 hold a 'collected' flag for each of the three slots
+// bombs and potions on the overworld are just markers: they never need to be (and cannot be) checked off as collected
+let decorNeedsCollecting(ident:int) = not (ident = DECOR_BOMB || ident = DECOR_BOMB_DROPPER || ident = ITEMS.OLDKEY || ident = ITEMS.BLUEPOTION || ident = ITEMS.REDPOTION)
 let decorEntriesOf(packed:int) : (int*bool) list =
     if packed <= 0 then [] else [ for k in 0..MaxDecorIcons-1 do
                                     let v = (packed >>> (7*k)) &&& 127
-                                    if v > 0 then yield (v-1, ((packed >>> (21+k)) &&& 1) = 1) ]
+                                    if v > 0 then yield (v-1, ((packed >>> (21+k)) &&& 1) = 1 && decorNeedsCollecting (v-1)) ]
 let decorEntriesPack(entries:(int*bool) list) : int =
     if entries.IsEmpty then -1 else entries |> List.truncate MaxDecorIcons |> List.mapi (fun k (ident,col) -> ((ident+1) <<< (7*k)) ||| (if col then 1 <<< (21+k) else 0)) |> List.sum
 let decorIconsOf(packed:int) : int list = decorEntriesOf packed |> List.map fst
@@ -1160,7 +1176,9 @@ let decorIconsPack(idents:int list) : int = idents |> List.map (fun i -> (i,fals
 // remove the icon if the tile already has it; otherwise add it (uncollected) if there is room (unchanged when the tile is full)
 let decorIconsToggle(packed:int, ident:int) : int =
     let cur = decorEntriesOf packed
-    if cur |> List.exists (fun (x,_) -> x = ident) then cur |> List.filter (fun (x,_) -> x <> ident) |> decorEntriesPack
+    if ident = ITEMS.HEARTCONTAINER then   // heart containers can repeat on a tile (e.g. a cave with several), each copy checked off separately
+        if cur.Length < MaxDecorIcons then decorEntriesPack (cur @ [(ident,false)]) else packed
+    elif cur |> List.exists (fun (x,_) -> x = ident) then cur |> List.filter (fun (x,_) -> x <> ident) |> decorEntriesPack
     elif cur.Length < MaxDecorIcons then decorEntriesPack (cur @ [(ident,false)])
     else packed
 // collected (checked-off) state of the marker icons on a tile
@@ -1169,10 +1187,18 @@ let decorIsCollected(packed:int, ident:int) = decorEntriesOf packed |> List.exis
 let decorToggleCollected(packed:int, identOpt:int option) : int =
     let cur = decorEntriesOf packed
     match identOpt with
-    | Some ident -> cur |> List.map (fun (x,c) -> if x = ident then (x, not c) else (x,c)) |> decorEntriesPack
+    | Some ident -> cur |> List.map (fun (x,c) -> if x = ident && decorNeedsCollecting x then (x, not c) else (x,c)) |> decorEntriesPack
     | None ->
-        let allDone = cur |> List.forall snd
-        cur |> List.map (fun (x,_) -> (x, not allDone)) |> decorEntriesPack
+        let allDone = cur |> List.forall (fun (x,c) -> c || not (decorNeedsCollecting x))
+        cur |> List.map (fun (x,_) -> (x, decorNeedsCollecting x && not allDone)) |> decorEntriesPack
+// the n-th (0-based) copy of this icon on the tile: flip just its collected state / remove just that copy
+let decorToggleCollectedNth(packed:int, ident:int, n:int) : int =
+    if not (decorNeedsCollecting ident) then packed else
+    let mutable seen = -1
+    decorEntriesOf packed |> List.map (fun (x,c) -> if x = ident then (seen <- seen + 1; if seen = n then (x, not c) else (x,c)) else (x,c)) |> decorEntriesPack
+let decorRemoveNth(packed:int, ident:int, n:int) : int =
+    let mutable seen = -1
+    decorEntriesOf packed |> List.filter (fun (x,_) -> if x = ident then (seen <- seen + 1; seen <> n) else true) |> decorEntriesPack
 let overworldMapCircles = Array2D.create 16 8 0   // 0 means none, 1 means just circle, 48-57 means circle with 0-9 label, 65-90 means circle with A-Z label; +100 of those or +200 of those changes color
 let toggleOverworldMapCircle(i,j) =
     overworldMapCircles.[i,j] <- 
@@ -1189,6 +1215,14 @@ let prevOverworldMapCircleColor(i,j) =
     if overworldMapCircles.[i,j] >= 300 then
         overworldMapCircles.[i,j] <- overworldMapCircles.[i,j] - 300
 let mutable overworldMapMarks : Cell[,] = null
+// a wood sword cave tile that is changed to something else (cleared, re-marked...) gives back the 'shuffled' item that was found there
+let pruneShuffledWoodSwordTiles() =
+    for (i,j) in Seq.toArray shuffledWoodSwordTiles do
+        if overworldMapMarks <> null && overworldMapMarks.[i,j].Current() <> MapSquareChoiceDomainHelper.SWORD1 then
+            shuffledWoodSwordTiles.Remove((i,j)) |> ignore
+            sword1Box.Set(-1, PlayerHas.SKIPPED)
+            recomputePlayerStateSummary()
+mapSquareChangedStable.Publish.Add(fun (_,key) -> if key = MapSquareChoiceDomainHelper.SWORD1 then pruneShuffledWoodSwordTiles())
 let private overworldMapExtraData = Array2D.init 16 8 (fun _ _ -> Array.zeroCreate (MapSquareChoiceDomainHelper.DARK_X+1))
 // Per-shop price notes: 0 = not set, positive value = rupee price the user recorded for that shop
 let overworldShopPrices = Array2D.create 16 8 0
@@ -1800,7 +1834,7 @@ let allUIEventingLogic(ite : ITrackerEvents) =
             if not(owInstance.AlwaysEmpty(i,j)) && overworldMapMarks.[i,j].Current() = -1 then
                 if owInstance.Burnable(i,j) then owSpotTypeCounts.[0] <- owSpotTypeCounts.[0] + 1
                 if owInstance.Bombable(i,j) then owSpotTypeCounts.[1] <- owSpotTypeCounts.[1] + 1
-                if owInstance.PowerBraceletable(i,j) || owInstance.GravePushable(i,j) then owSpotTypeCounts.[2] <- owSpotTypeCounts.[2] + 1
+                if owInstance.PowerBraceletable(i,j) then owSpotTypeCounts.[2] <- owSpotTypeCounts.[2] + 1
                 if owInstance.Ladderable(i,j) then owSpotTypeCounts.[3] <- owSpotTypeCounts.[3] + 1
                 if owInstance.Raftable(i,j) then owSpotTypeCounts.[4] <- owSpotTypeCounts.[4] + 1
                 if owInstance.Whistleable(i,j) then owSpotTypeCounts.[5] <- owSpotTypeCounts.[5] + 1
@@ -1980,6 +2014,7 @@ type TimelineItemDescription =   // a way to identify which unique timeline item
     | Triforce of int
     | ItemBox of string * Box
     | UserCustom of string * Event<bool>
+    | MapCollected of string   // stamped by the UI when an item is checked off on the overworld map (4th sword, overworld hearts)
     member this.Identifier =
         match this with
         | TimelineItemDescription.ExtrasOrShopping(i,_) -> i
@@ -1987,6 +2022,7 @@ type TimelineItemDescription =   // a way to identify which unique timeline item
         | TimelineItemDescription.Triforce n -> sprintf "Triforce%d" (n+1)
         | TimelineItemDescription.ItemBox(i,_) -> i
         | TimelineItemDescription.UserCustom(s,_) -> s
+        | TimelineItemDescription.MapCollected s -> s
 type TimelineItemModel(desc: TimelineItemDescription) =
     // TODO keep history of all changes maybe
     static let all = new System.Collections.Generic.Dictionary<_,_>()
@@ -2011,9 +2047,11 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         | TimelineItemDescription.Triforce(i) -> GetDungeon(i).PlayerHasTriforceChanged.Add(fun _ -> stamp(GetDungeon(i).PlayerHasTriforce(), PlayerHas.YES))
         | TimelineItemDescription.ItemBox(_,b) -> b.Changed.Add(fun _ -> stamp(b.CellCurrent() <> -1 && b.PlayerHas()<>PlayerHas.NO, b.PlayerHas()))
         | TimelineItemDescription.UserCustom(_,e) -> e.Publish.Add(fun b -> stamp(b,PlayerHas.YES))
+        | TimelineItemDescription.MapCollected _ -> ()
     static member TriggerTimelineChanged() =  // used when Loading a Save file
         let span = System.DateTime.Now - theStartTime.Time
         timelineChanged.Trigger(int span.TotalMinutes)
+    member this.SetCollectedFromMap(b:bool) = stamp(b, PlayerHas.YES)   // used for items checked off on the overworld map
     member this.ResetTotalSeconds() = if finishedTotalSeconds <> -1 then finishedTotalSeconds <- 0    // used when user presses Reset Timer
     member this.StampTotalSeconds(s,ph) =  // used when Loading a Save file
         match desc with
@@ -2064,6 +2102,10 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         all.Add(TimelineItemDescription.ExtrasOrShopping("Recorder", startingItemsAndExtras.PlayerHasRecorder))
         all.Add(TimelineItemDescription.ExtrasOrShopping("AnyKey", startingItemsAndExtras.PlayerHasAnyKey))
         all.Add(TimelineItemDescription.ExtrasOrShopping("Book", startingItemsAndExtras.PlayerHasBook))
+        // items checked off on the overworld map
+        all.Add(TimelineItemDescription.MapCollected "Sword4")
+        for i = 1 to 12 do
+            all.Add(TimelineItemDescription.MapCollected(sprintf "OWHeart%d" i))
         // take any hearts
         for i = 0 to 3 do
             all.Add(TimelineItemDescription.TakeAnyHeart i)
@@ -2074,6 +2116,7 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         all.Add(TimelineItemDescription.ItemBox("LadderBox", ladderBox))
         all.Add(TimelineItemDescription.ItemBox("ArmosBox", armosBox))
         all.Add(TimelineItemDescription.ItemBox("MagicalSwordCaveBox", sword3Box))
+        all.Add(TimelineItemDescription.ItemBox("LetterCaveBox", letterBox))
         all.Add(TimelineItemDescription.ItemBox("WhiteSwordBox", sword2Box))
         if IsHiddenDungeonNumbers() then
             for i = 0 to 8 do
@@ -2145,4 +2188,5 @@ let reinitializeOverworld(newInstance: OverworldData.OverworldInstance) =
     recomputeMapStateSummary()
     for d in 0..8 do mapSquareChangedStable.Trigger((mapSquareChoiceDomain,d))   // refresh each dungeon's found/located display against the new domain
     overworldQuestChanged.Trigger()   // notify listeners (e.g. Reminders) to reset cached spot counts
+    forceUpdate()   // refresh 'OW Spots Left' counts and per-type breakdown immediately for the new quest
 
