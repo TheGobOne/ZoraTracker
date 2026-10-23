@@ -23,7 +23,7 @@ let refocusMainWindow() =   // keep hotkeys working
 
 let showHotKeys(isRightClick) =
     let none,p = OverworldMapTileCustomization.MakeMappedHotKeysDisplay()
-    let w = new Window(Title="Z-Tracker HotKeys", Owner=Application.Current.MainWindow)
+    let w = new Window(Title="ZORATracker HotKeys", Owner=Application.Current.MainWindow)
     w.Content <- p
     let save() = 
         TrackerModelOptions.HotKeyWindowLTWH <- sprintf "%d,%d,%d,%d" (int w.Left) (int w.Top) (int w.Width) (int w.Height)
@@ -366,8 +366,29 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
     sizeSaveTimer.Tick.Add(fun _ -> sizeSaveTimer.Stop(); save())
     w.SizeChanged.Add(fun _ -> if w.IsLoaded && w.SizeToContent = SizeToContent.Manual then (sizeSaveTimer.Stop(); sizeSaveTimer.Start()))   // remember the size the user drags it to
     w.Closed.Add(fun _ -> if not(theMainWindowHasClosed) && not(insideMakePopoutCall) then noDisplay())
+    w.Closed.Add(fun _ ->   // (so the Popout Windows menu knows it is no longer open)
+        match kind with
+        | SpotSummaryPopout -> if obj.ReferenceEquals(theSpotSummaryPopoutWindow, w) then theSpotSummaryPopoutWindow <- null
+        | InventoryAndHeartsPopout -> if obj.ReferenceEquals(theInventoryAndHeartsPopoutWindow, w) then theInventoryAndHeartsPopoutWindow <- null
+        | RemainingItemsPoput -> if obj.ReferenceEquals(theRemainingItemsPopoutWindow, w) then theRemainingItemsPopoutWindow <- null)
     w.Show()
     insideMakePopoutCall <- false
+
+// used by the Popout Windows menu: is a popout open, open it (at its remembered spot), close it (which is remembered too)
+let mutable theUIUpdateEvent : Event<unit> option = None
+let private popoutWindowOf(kind) =
+    match kind with
+    | SpotSummaryPopout -> theSpotSummaryPopoutWindow
+    | InventoryAndHeartsPopout -> theInventoryAndHeartsPopoutWindow
+    | RemainingItemsPoput -> theRemainingItemsPopoutWindow
+let isPopoutOpen(kind) = popoutWindowOf(kind) <> null
+let openPopout(kind) =
+    match theUIUpdateEvent with
+    | Some ev -> if popoutWindowOf(kind) = null then makePopout(kind, true, false, ev)
+    | None -> ()
+let closePopout(kind) =
+    let w = popoutWindowOf(kind)
+    if w <> null then (try w.Close() with _ -> ())
 
 // shop price info: tile-state → (display name, price range text, min, max, step)
 let private shopPriceInfo = dict [
@@ -485,6 +506,7 @@ let showShopPricesWindow() =
     w.Show()
 
 let Startup(doUIUpdateEvent:Event<unit>) =
+    theUIUpdateEvent <- Some doUIUpdateEvent
     let f(kind, setting) =
         let matches = System.Text.RegularExpressions.Regex.Match(setting, """^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$""")   // (optionally followed by the remembered size)
         let disp,_left,_top = 

@@ -16,6 +16,8 @@ type Overworld() =
     member val CustomWaypointY = -1 with get,set
     member val Map : int[] = null with get,set
     member val SwordIcons : int[] = null with get,set
+    member val BombDroppers : int[] = null with get,set
+    member val ShopStash : int[] = null with get,set
 
 [<AllowNullLiteral>]
 type Box() =
@@ -213,6 +215,8 @@ let SaveOverworld(prefix) =
     lines.Add(sprintf """    "CustomWaypointX": %d,""" TrackerModel.customWaypointX)
     lines.Add(sprintf """    "CustomWaypointY": %d,""" TrackerModel.customWaypointY)
     lines.Add(sprintf """    "SwordIcons": [%s],""" (System.String.Join(",", [| for j = 0 to 7 do for i = 0 to 15 do yield string TrackerModel.owSwordIcons.[i,j] |])))
+    lines.Add(sprintf """    "BombDroppers": [%s],""" (System.String.Join(",", [| for j = 0 to 7 do for i = 0 to 15 do yield (if TrackerModel.owBombDroppers.[i,j] then "1" else "0") |])))
+    lines.Add(sprintf """    "ShopStash": [%s],""" (System.String.Join(",", [| for k = 0 to 5 do yield string TrackerModel.shopStash.[k] |])))
     lines.Add(sprintf """    "Map": [""")
     for j = 0 to 7 do
         let sb = new System.Text.StringBuilder("        ")

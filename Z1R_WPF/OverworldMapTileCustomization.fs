@@ -237,7 +237,7 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
     let mutable doneValue = 0   // 0 = not taken yet, SWORD1 = took the sword, CANDLE_TAKEN = took the candle
     match choice with
     | "Took Sword" ->
-        let n = min 3 (s.SwordLevel + 1)
+        let n = if TrackerModel.ProgressiveItems then 1 else min 3 (s.SwordLevel + 1)   // (Progressive Items: the tier logic does the upgrading, so this just records the sword)
         pp.PlayerHasWoodSword.Set(n>=1)
         si.PlayerHasWhiteSword.Set(n>=2)
         si.PlayerHasMagicalSword.Set(n>=3)
@@ -274,8 +274,11 @@ let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float
     (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,i,j) -> async {
         acceleratorCancelled <- false
         let hadShuffled = TrackerModel.getOverworldMapExtraData(i,j,state) = SHUFFLED_ITEM
-        if hadShuffled || shuffledItemAlreadyPlaced state then PieMenus.crossedOutChoices <- ["Shuffled Item"]   // this cave, or another one of the same kind, already holds a shuffled item
-        let! choice = PieMenus.CaveChoiceBoxAsync(cm, ["Took Sword"; "Shuffled Item"; "Sword Icon"])
+        PieMenus.crossedOutChoices <- [ if hadShuffled || shuffledItemAlreadyPlaced state then yield "Shuffled Item"   // this cave, or another one of the same kind, already holds a shuffled item
+                                        if TrackerModel.ProgressiveItems then yield "Took Sword" ]   // Progressive Items: the white and magical swords are not separate items
+        // an item already put in this cave's item box (that is not just the cave's own sword) is its shuffled item: no menu, the cave starts out holding it (collected or not as the box says)
+        let preplaced = box.CellCurrent() <> -1 && box.CellCurrent() <> decorIdent && not hadShuffled && not (shuffledItemAlreadyPlaced state)
+        let! choice = if preplaced then async { return "Preplaced" } else PieMenus.CaveChoiceBoxAsync(cm, ["Took Sword"; "Shuffled Item"; "Sword Icon"])
         let mutable doneValue = 0   // 0 = nothing yet, state = took the sword, SHUFFLED_ITEM = the cave holds a shuffled item
         match choice with
         | "Took Sword" ->
@@ -283,9 +286,11 @@ let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float
             // the sword also fills in this cave's item box (and sword icon) in the overworld item area up top
             // (but never over a shuffled item already found in one of these caves)
             if not(hadShuffled || shuffledItemAlreadyPlaced state) then
-                box.Set((if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 then TrackerModel.ITEMS.WHITESWORD else TrackerModel.ITEMS.MAGICALSWORD), TrackerModel.PlayerHas.YES)
+                // (AttemptToSet: that sword may already be in another item box, and the item pool would overflow)
+                box.AttemptToSet((if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 then TrackerModel.ITEMS.WHITESWORD else TrackerModel.ITEMS.MAGICALSWORD), TrackerModel.PlayerHas.YES) |> ignore
                 TrackerModel.forceUpdate()
             doneValue <- state
+        | "Preplaced" -> doneValue <- SHUFFLED_ITEM
         | "Shuffled Item" ->
             doneValue <- SHUFFLED_ITEM
             let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
@@ -304,15 +309,19 @@ let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float
 overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER, (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,i,j) -> async {
     acceleratorCancelled <- false
     if TrackerModel.getOverworldMapExtraData(i,j,TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER) = SHUFFLED_ITEM || shuffledItemAlreadyPlaced TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER then PieMenus.crossedOutChoices <- ["Shuffled Item"]   // this cave, or another letter cave, already holds a shuffled item
-    let! choice = PieMenus.CaveChoiceBoxAsync(cm, ["Took Letter"; "Shuffled Item"])
+    // an item already put in the letter item box (other than the letter itself) is this cave's shuffled item: no menu, the cave starts out holding it
+    let preplaced = TrackerModel.letterBox.CellCurrent() <> -1 && TrackerModel.letterBox.CellCurrent() <> TrackerModel.ITEMS.LETTER
+                    && TrackerModel.getOverworldMapExtraData(i,j,TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER) <> SHUFFLED_ITEM && not (shuffledItemAlreadyPlaced TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER)
+    let! choice = if preplaced then async { return "Preplaced" } else PieMenus.CaveChoiceBoxAsync(cm, ["Took Letter"; "Shuffled Item"])
     let mutable doneValue = 0   // 0 = nothing yet, THE_LETTER = took the letter, SHUFFLED_ITEM = the cave holds a shuffled item
     match choice with
     | "Took Letter" ->
         // fills in the letter item box up top (but never over a shuffled item already found in a letter cave)
         if not(shuffledItemAlreadyPlaced TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER) then
-            TrackerModel.letterBox.Set(TrackerModel.ITEMS.LETTER, TrackerModel.PlayerHas.YES)
+            TrackerModel.letterBox.AttemptToSet(TrackerModel.ITEMS.LETTER, TrackerModel.PlayerHas.YES) |> ignore
             TrackerModel.forceUpdate()
         doneValue <- TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER
+    | "Preplaced" -> doneValue <- SHUFFLED_ITEM
     | "Shuffled Item" ->
         doneValue <- SHUFFLED_ITEM
         let pos = c.TranslatePoint(Point(OMTW/2.-15.,1.), cm.AppMainCanvas)  // place to draw the local box
@@ -1218,11 +1227,11 @@ let MakeRemainderSummaryDisplayEx(_freeWidth:bool) =   // Spot Summary (freeWidt
         // (potions placed in item boxes do not count towards the potion spots shown here)
         let usedCount =
             if isPotion then
-                // a potion spot is used by a tile marked as a potion shop, or by a tile with the potion marker icons on it
+                // a potion spot is used by a tile marked as a potion shop, or by a tile labeled "P SHOP"
                 let mutable n = 0
                 for ti = 0 to 15 do
                     for tj = 0 to 7 do
-                        if TrackerModel.overworldMapMarks.[ti,tj].Current() = 34 || (TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[ti,tj]) |> List.contains TrackerModel.ITEMS.BLUEPOTION) then
+                        if TrackerModel.overworldMapMarks.[ti,tj].Current() = 34 || TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[ti,tj]) = 5 then
                             n <- n + 1
                 n
             elif multi = 33 then
@@ -1251,10 +1260,9 @@ let MakeRemainderSummaryDisplayEx(_freeWidth:bool) =   // Spot Summary (freeWidt
         // nothing shows until a potion shop has its 3rd icon (the one in the middle, between the blue and red potions); that icon is shown here
         let entries = [ for ti = 0 to 15 do
                           for tj = 0 to 7 do
-                              let es = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[ti,tj])
-                              if es |> List.exists (fun (x,_) -> x = TrackerModel.ITEMS.BLUEPOTION) then
-                                  for (ident, collected) in es do
-                                      if ident <> TrackerModel.ITEMS.BLUEPOTION then yield (ident, collected) ]
+                              if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[ti,tj]) = 5 then
+                                  for (ident, collected) in TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[ti,tj]) do
+                                      yield (ident, collected) ]
         match entries with
         | [] -> []
         | (ident, collected) :: _ ->

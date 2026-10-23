@@ -120,11 +120,16 @@ let WriteShowRunCustomFile(filename:string, data:Line[]) = System.IO.File.WriteA
 
 let ShowRunCustomFilename = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "ShowRunCustom.txt")
 
+// the SHOW windows currently open (so the Popout Windows menu can show/hide them as a group)
+let openShowWindows = new System.Collections.Generic.List<Window>()
+let areShowWindowsOpen() = openShowWindows.Count > 0
+let closeShowWindows() = for w in Seq.toArray openShowWindows do (try w.Close() with _ -> ())
+
 let DoShowRunCustom(refocusMainWindow) =
     let displayInfoOrError(titleKind, message) =
         let tb = new System.Windows.Controls.TextBox(FontSize=16., Foreground=System.Windows.Media.Brushes.Orange, Background=System.Windows.Media.Brushes.Black, 
                                 IsReadOnly=true, BorderThickness=Thickness(0.), Text=message, IsHitTestVisible=false)
-        let window = new Window(Title=sprintf "ZORA Tracker %s" titleKind, Owner=Application.Current.MainWindow, SizeToContent=SizeToContent.WidthAndHeight)
+        let window = new Window(Title=sprintf "ZORATracker %s" titleKind, Owner=Application.Current.MainWindow, SizeToContent=SizeToContent.WidthAndHeight)
         makeScalable(window, tb)
         // remember where the user last put this window
         let m = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ShowRunInfoWindowLT, """^(-?\d+),(-?\d+)$""")
@@ -166,7 +171,7 @@ let DoShowRunCustom(refocusMainWindow) =
                 // the image scales (keeping its aspect ratio) as the window is resized; it opens at its natural size
                 let image = new System.Windows.Controls.Image(Source=img.Source, Width=float bmp.Width, Height=float bmp.Height)
                 let b = new System.Windows.Controls.Viewbox(Child=image, Stretch=System.Windows.Media.Stretch.Uniform, StretchDirection=System.Windows.Controls.StretchDirection.Both)
-                let window = new Window(Title="ZORA Tracker SHOW", Owner=Application.Current.MainWindow, Content=b, Background=System.Windows.Media.Brushes.Black)
+                let window = new Window(Title="ZORATracker SHOW", Owner=Application.Current.MainWindow, Content=b, Background=System.Windows.Media.Brushes.Black)
                 match ltwho with
                 | Some(l,t,w,h) ->
                     window.Left <- l
@@ -186,6 +191,8 @@ let DoShowRunCustom(refocusMainWindow) =
                         WriteShowRunCustomFile(ShowRunCustomFilename, data)
                 window.SizeChanged.Add(fun _ -> update(); refocusMainWindow())
                 window.LocationChanged.Add(fun _ -> update(); refocusMainWindow())
+                openShowWindows.Add(window)
+                window.Closed.Add(fun _ -> openShowWindows.Remove(window) |> ignore)
                 window.Show()
                 didAnything <- true
             | Line.RUN(comm,args) ->

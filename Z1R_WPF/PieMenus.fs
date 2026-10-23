@@ -454,20 +454,61 @@ let TakeThisButtonBoxAsync(cm:CustomComboBoxes.CanvasManager) = async {
     return result.Value
     }
 
-// the Shop flyout (opened from the 'Shop' icon in the overworld menu): the blue potion shop, or one of the 4 numbered shops (each button also shows the items placed in that shop).
-// counts.[n] = how many tiles already carry "SHOP n" (max 3 each); current = the shop number already on this tile (0 = none).
-// returns -1 if dismissed, 0 = potion shop, 1-5 = that numbered shop
-let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:int, shopItems:(System.Drawing.Bitmap*bool) list[], potionOk:bool, addItem:(int*int -> int[] * (System.Drawing.Bitmap*bool) list[])) = async {
+// a small box with a grid of icon buttons (the overworld menu's marker icons); returns the id of the one clicked, or -1 if dismissed
+let mutable itemPickerDisabledTip : int -> string = fun _ -> null   // a non-null result greys that item out with this tooltip (set by the caller before opening the picker)
+let ItemPickerAsync(cm:CustomComboBoxes.CanvasManager, items:(int*FrameworkElement) list, cols:int) = async {
+    let wh = new System.Threading.ManualResetEvent(false)
+    let result = ref -1
+    let grid = new System.Windows.Controls.Primitives.UniformGrid(Columns=cols, Background=Brushes.Black, Margin=Thickness(4.))
+    for (ident, content) in items do
+        let b = new Button(MinWidth=36., MinHeight=40., Margin=Thickness(2.), Padding=Thickness(4.), Focusable=false, Background=Graphics.almostBlack, BorderBrush=Brushes.Orange, Content=content)
+        let disabledTip = itemPickerDisabledTip ident
+        if isNull disabledTip then
+            b.Click.Add(fun _ -> result.Value <- ident; wh.Set() |> ignore)
+        else
+            b.Opacity <- 0.4
+            b.ToolTip <- disabledTip
+            System.Windows.Controls.ToolTipService.SetShowOnDisabled(b, true)
+            b.IsEnabled <- false
+        grid.Children.Add(b) |> ignore
+    let b = new Border(Child=grid, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray)
+    b.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let c = new Canvas(Width=b.DesiredSize.Width, Height=b.DesiredSize.Height)
+    c.Children.Add(b) |> ignore
+    let areaW, areaH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+    let cx = if areaW > 0. then max 0. ((areaW - c.Width) / 2.) else 150.
+    let cy = if areaH > 0. then max 0. ((areaH - c.Height) / 2.) else 200.
+    do! CustomComboBoxes.DoModal(cm, wh, cx, cy, c)
+    return result.Value
+    }
+
+// the Shop flyout (opened from the 'Shop' icon in the overworld menu): the P shop (potions) or one of the 4 numbered shops (each button also shows the items placed in that shop).
+// counts.[n] = how many tiles carry that shop (index 0 = the P shop); current = the shop number already on this tile (0 = none).
+// returns -1 if dismissed, 0 = P shop, 1-4 = that numbered shop
+// right clicking a shop button asks pickItem() for a marker icon (-1 if none) and puts it in that shop
+// a plain orange-on-black checkbox (no button frame)
+let makeOrangeCheckBox(text:string, isOn:bool) : System.Windows.Controls.CheckBox =
+    let xaml = "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='CheckBox'>" +
+               "<StackPanel Orientation='Horizontal' Background='Transparent'>" +
+               "<Border Width='16' Height='16' BorderBrush='Orange' BorderThickness='2' Background='Black' VerticalAlignment='Center'>" +
+               "<Path x:Name='tick' Data='M 2,7 L 6,11 L 12,2' Stroke='Orange' StrokeThickness='2.5' Visibility='Collapsed'/></Border>" +
+               "<ContentPresenter Margin='8,0,0,0' VerticalAlignment='Center'/></StackPanel>" +
+               "<ControlTemplate.Triggers><Trigger Property='IsChecked' Value='True'><Setter TargetName='tick' Property='Visibility' Value='Visible'/></Trigger></ControlTemplate.Triggers></ControlTemplate>"
+    let cb = new System.Windows.Controls.CheckBox(Content=text, Foreground=Brushes.Orange, FontSize=14., Margin=Thickness(10.,3.,10.,3.), Focusable=false, Cursor=System.Windows.Input.Cursors.Hand)
+    cb.Template <- (System.Windows.Markup.XamlReader.Parse(xaml) :?> ControlTemplate)
+    cb.IsChecked <- System.Nullable<bool>(isOn)
+    cb
+let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:int, shopItems:(System.Drawing.Bitmap*bool) list[], potionOk:bool, addItem:(int*int -> int[] * (System.Drawing.Bitmap*bool) list[]), pickItem:(unit -> Async<int>)) = async {
     let wh = new System.Threading.ManualResetEvent(false)
     let result = ref -1
     let row = new StackPanel(Orientation=Orientation.Horizontal, Background=Brushes.Black, Margin=Thickness(2.))
     let hkp = HotKeys.ShopHotKeyProcessor
-    // (hotkey indexes: 0 = potion shop, 1-4 = that numbered shop)
-    let itemPanels = new ResizeArray<int*StackPanel>()   // (shop index, the row showing what is in that shop), refreshed when an item hotkey adds something
+    // (hotkey indexes: 0 = P shop, 1-4 = that numbered shop)
+    let itemPanels = new ResizeArray<int*StackPanel>()   // (shop index, the row showing what is in that shop), refreshed when an item is added
     let countBlocks : TextBlock[] = Array.zeroCreate 5
-    let fillItems(panel:StackPanel, items:(System.Drawing.Bitmap*bool) list) =
+    let fillItems(n:int, panel:StackPanel, items:(System.Drawing.Bitmap*bool) list) =
         panel.Children.Clear()
-        for (bmp, collected) in items do
+        let addImg(bmp:System.Drawing.Bitmap, collected:bool) =
             let img = Graphics.BMPtoImage(bmp)
             img.Stretch <- Stretch.Uniform
             img.Width <- 21.
@@ -475,6 +516,20 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
             img.Margin <- Thickness(1.)
             if collected then img.Opacity <- 0.4
             panel.Children.Add(img) |> ignore
+        if n = 0 then
+            // the P shop always shows the blue potion, then its one item (a ? until something is placed), then the red potion
+            addImg(Graphics.blue_potion_bmp, false)
+            match List.tryHead items with
+            | Some((bmp, collected)) -> addImg(bmp, collected)
+            | None -> panel.Children.Add(new TextBlock(Text="?", Foreground=Brushes.White, FontSize=16., FontWeight=FontWeights.Bold, Width=23., Height=23., TextAlignment=TextAlignment.Center)) |> ignore
+            addImg(Graphics.red_potion_bmp, false)
+        else
+            for (bmp, collected) in items do addImg(bmp, collected)
+    let applyItem(shop:int, ident:int) =
+        // the item goes into that shop right away and the menu stays open (clicking a shop or its hotkey is what closes it)
+        let (newCounts, newItems) = addItem(shop, ident)
+        for (n, panel) in itemPanels do fillItems(n, panel, newItems.[n])
+        for n = 0 to 4 do countBlocks.[n].Text <- sprintf "x%d" newCounts.[n]
     let hoverButtons = new ResizeArray<Button*int>()   // (button, shop index) of the enabled ones, to find which shop an item hotkey is meant for
     let addButton(content:UIElement, value:int, enabled:bool) =
         // the content sits centered in the top part and the hotkey label is pinned to the bottom, so it lines up across all the buttons
@@ -494,48 +549,62 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
         b.Content <- g
         b.HorizontalContentAlignment <- HorizontalAlignment.Stretch
         b.VerticalContentAlignment <- VerticalAlignment.Stretch
-        if enabled then b.Click.Add(fun _ -> result.Value <- value; wh.Set() |> ignore)
+        if enabled then
+            b.Click.Add(fun _ -> result.Value <- value; wh.Set() |> ignore)
+            // right click: pick a marker icon from the overworld menu's icons to add to this shop
+            b.PreviewMouseRightButtonUp.Add(fun ea ->
+                ea.Handled <- true
+                async {
+                    let! ident = pickItem()
+                    if ident >= 0 then applyItem(value, ident)
+                    } |> Async.StartImmediate)
         else b.Opacity <- 0.4
         if enabled then hoverButtons.Add((b, value))
         row.Children.Add(b) |> ignore
         b
-    let potion = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center)
-    let pimg = Graphics.BMPtoImage(Graphics.blue_potion_bmp)
-    pimg.Stretch <- Stretch.Uniform
-    pimg.Width <- 21.
-    pimg.Height <- 27.
-    // sized like the numbered shops: the potion on top (where their numbers are), then the row with what is in the shop (the middle item), then the hotkey at the bottom
-    pimg.HorizontalAlignment <- HorizontalAlignment.Center
-    potion.Children.Add(pimg) |> ignore
-    let potionItems = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,4.,0.,0.), MinHeight=21., MinWidth=23.)
-    fillItems(potionItems, List.truncate 1 shopItems.[0])   // the potion shop holds just one item
-    itemPanels.Add((0, potionItems))
-    potion.Children.Add(potionItems) |> ignore
-    let potionButton = addButton(potion, 0, potionOk)   // greyed out once all the potion shops are placed
-    for n = 1 to 4 do
-        let sp = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center)
-        sp.Children.Add(new TextBlock(Text=string n, Foreground=Brushes.Orange, FontSize=24., FontWeight=FontWeights.Bold, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
-        let cb = new TextBlock(Text=sprintf "x%d" counts.[n], Foreground=Brushes.Orange, FontSize=10., HorizontalAlignment=HorizontalAlignment.Center)
-        countBlocks.[n] <- cb
-        sp.Children.Add(cb) |> ignore
-        // the items placed in this shop (collected ones are dimmed), a row under the count
-        let items = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,4.,0.,0.), MinHeight=21., MinWidth=72.)
-        fillItems(items, shopItems.[n])
-        itemPanels.Add((n, items))
-        sp.Children.Add(items) |> ignore
-        addButton(sp, n, true) |> ignore   // shops have no fixed max, so there is no limit; the count is just how many tiles carry it
-    let b = new Border(Child=row, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray)
+    let firstButton : Button ref = ref null
+    for n = 0 to 4 do
+        do
+            let sp = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center)
+            sp.Children.Add(new TextBlock(Text=(if n = 0 then "P" else string n), Foreground=Brushes.Orange, FontSize=24., FontWeight=FontWeights.Bold, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
+            let cb = new TextBlock(Text=sprintf "x%d" counts.[n], Foreground=Brushes.Orange, FontSize=10., HorizontalAlignment=HorizontalAlignment.Center)
+            countBlocks.[n] <- cb
+            sp.Children.Add(cb) |> ignore
+            // the items placed in this shop (collected ones are dimmed), a row under the count
+            let items = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,4.,0.,0.), MinHeight=23., MinWidth=72.)
+            fillItems(n, items, shopItems.[n])
+            itemPanels.Add((n, items))
+            sp.Children.Add(items) |> ignore
+            let btn = addButton(sp, n, (n <> 0 || potionOk))   // the P shop is greyed out once all the potion shops are placed
+            if n = 0 then firstButton.Value <- btn
+    // two option toggles above the shops
+    let makeToggle(text:string, opt:TrackerModelOptions.Bool) =
+        let t = makeOrangeCheckBox(text, opt.Value)
+        t.Click.Add(fun _ ->
+            opt.Value <- (t.IsChecked = System.Nullable<bool>(true))
+            TrackerModelOptions.writeSettings())
+        t
+    let header = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,2.,0.,0.))
+    header.Children.Add(makeToggle("Jump mouse to shop", TrackerModelOptions.JumpMouseToShop)) |> ignore
+    header.Children.Add(makeToggle("Hover shop tooltip", TrackerModelOptions.HoverShopTooltip)) |> ignore
+    row.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let tip = new TextBlock(Text="Right click to enter shops then click (or hotkey) to place on the map. You can also place the shop on the map first and enter items after.",
+                            TextWrapping=TextWrapping.Wrap, Foreground=Brushes.Orange, FontSize=12., TextAlignment=TextAlignment.Center, Width=max 200. (row.DesiredSize.Width - 16.), Margin=Thickness(6.,6.,6.,2.))
+    tip.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    header.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let headerH = tip.DesiredSize.Height + tip.Margin.Top + tip.Margin.Bottom + header.DesiredSize.Height + 2.
+    let stack = new StackPanel(Orientation=Orientation.Vertical)
+    stack.Children.Add(tip) |> ignore
+    stack.Children.Add(header) |> ignore
+    stack.Children.Add(row) |> ignore
+    let b = new Border(Child=stack, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray)
     b.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
     let c = new Canvas(Width=b.DesiredSize.Width, Height=b.DesiredSize.Height)
     c.Children.Add(b) |> ignore
-    // an item hotkey goes into the shop under the mouse: 10000 * (shop index + 1) + item id (no shop hovered: 1000 + item id, a plain item marker on the tile)
+    // an item hotkey goes into the shop under the mouse (no shop hovered: the item is returned as 1000 + item id, a plain item marker on the tile)
     let itemPick(ident:int) =
         match hoverButtons |> Seq.tryFind (fun (b, _) -> b.IsMouseOver) with
-        | Some((_, shop)) ->
-            // the item goes into that shop right away and the menu stays open (clicking a shop or its hotkey is what closes it)
-            let (newCounts, newItems) = addItem(shop, ident)
-            for (n, panel) in itemPanels do fillItems(panel, (if n = 0 then List.truncate 1 newItems.[n] else newItems.[n]))
-            for n = 1 to 4 do countBlocks.[n].Text <- sprintf "x%d" newCounts.[n]
+        | Some((_, shop)) -> applyItem(shop, ident)
         | None ->
             result.Value <- 1000 + ident
             wh.Set() |> ignore
@@ -547,7 +616,7 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
             wh.Set() |> ignore
         | Some(_) -> ()
         | None ->
-            // the overworld item hotkeys (candle, arrow, bomb, ...) also work here: the item goes in the shop (returned as 1000 + the item id, like picking it from the tile menu)
+            // the overworld item hotkeys (candle, arrow, bomb, ...) also work here: the item goes in the shop under the mouse
             match HotKeys.OverworldHotKeyProcessor.TryGetValue(ea.Key) with
             | Some(st) when TrackerModel.MapSquareChoiceDomainHelper.IsItem(st) && st <> TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP ->
                 let ident =
@@ -578,9 +647,10 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
     let areaW, areaH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
     let cx = if areaW > 0. then max 0. ((areaW - c.Width) / 2.) else 150.
     let cy = if areaH > 0. then max 0. ((areaH - c.Height) / 2.) else 200.
-    // the cursor jumps onto the potion shop button (the first one: the border is 5 wide, the row has a 2 margin, and the button a 2 margin)
-    potionButton.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
-    Graphics.WarpMouseCursorTo(Point(cx + 5. + 2. + 2. + potionButton.DesiredSize.Width / 2., cy + c.Height / 2.))
+    // the cursor jumps onto the first shop button (the border is 5 wide, the row has a 2 margin, and the button a 2 margin)
+    firstButton.Value.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    if TrackerModelOptions.JumpMouseToShop.Value then
+        Graphics.WarpMouseCursorTo(Point(cx + 5. + 2. + 2. + firstButton.Value.DesiredSize.Width / 2., cy + 5. + headerH + 2. + firstButton.Value.DesiredSize.Height / 2.))
     do! CustomComboBoxes.DoModal(cm, wh, cx, cy, c)
     return result.Value
     }
@@ -673,6 +743,7 @@ let CaveChoiceBoxAsync(cm:CustomComboBoxes.CanvasManager, labels:string list) = 
         if List.contains label crossed then
             (b.Content :?> TextBox).TextDecorations <- TextDecorations.Strikethrough
             b.Opacity <- 0.5
+            if label = "Took Sword" && TrackerModel.ProgressiveItems then b.ToolTip <- "Disabled Due to Progressive Items"
         else
             b.Click.Add(fun _ -> result.Value <- label; wh.Set() |> ignore)
         col.Children.Add(b) |> ignore

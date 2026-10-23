@@ -102,6 +102,73 @@ let SynthesizeANewLocationKnownEvent(mapChoiceDomainChangePublished:IEvent<_>) =
 let IDEAL_BOX_MOUSE_X = 22.
 let IDEAL_BOX_MOUSE_Y = 17.
 
+// a not-yet-collected blue/red ring, blue/red candle, wood/silver arrow gets a small grey letter (B / R / W / S) so it is easy to tell them apart
+let uncollectedTierLetter(ident:int) : string option =
+    if ident = TrackerModel.ITEMS.BLUERING || ident = TrackerModel.ITEMS.BLUECANDLE then Some "B"
+    elif ident = TrackerModel.ITEMS.WOODARROW then Some "W"
+    elif ident = TrackerModel.ITEMS.REDRING || ident = TrackerModel.ITEMS.REDCANDLE then Some "R"
+    elif ident = TrackerModel.ITEMS.SILVERARROW then Some "S"
+    else None
+let makeTierLetter(letter:string, size:float) : FrameworkElement =
+    // the colored letter with a 1px white outline (the same letter in white drawn behind it, shifted one pixel in every direction)
+    let colorBrush = (match letter with | "B" | "W" -> (Brushes.DodgerBlue :> Brush) | "P1" | "P2" | "P3" | "P4" -> (new SolidColorBrush(Color.FromRgb(176uy, 112uy, 255uy)) :> Brush) | _ -> (Brushes.Red :> Brush))
+    let c = new Canvas(Width=30., Height=size*1.4, IsHitTestVisible=false)
+    let fontSize = (if letter = "W" then size * 0.9 elif letter.Length > 1 then size * 0.85 else size)   // the W is a wide letter: 10% smaller
+    let vShift = (if letter = "W" then size * 0.05 else 0.)
+    let mk(brush:Brush, dx:float, dy:float) =
+        let dy = dy + vShift
+        let tb = new TextBlock(Text=letter, FontSize=fontSize, FontWeight=FontWeights.Bold, Foreground=brush, Width=30., TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
+        Canvas.SetLeft(tb, dx)
+        Canvas.SetTop(tb, dy)
+        c.Children.Add(tb) |> ignore
+    for (dx, dy) in [ (-1.,0.); (1.,0.); (0.,-1.); (0.,1.); (-1.,-1.); (1.,-1.); (-1.,1.); (1.,1.) ] do
+        mk(Brushes.White, dx, dy)
+    mk(colorBrush, 0., 0.)
+    c :> FrameworkElement
+// 'Progressive Items': a bright golden halo behind the full-colour upgraded item that swells and shrinks again; the caller adds it where the item is and removes it after 3 seconds
+let makeProgressiveGlow(bmp:System.Drawing.Bitmap, size:float) : FrameworkElement =
+    let root = new Canvas(Width=size, Height=size, IsHitTestVisible=false)
+    let d = size * 2.8
+    let brush = new RadialGradientBrush()
+    brush.GradientStops.Add(new GradientStop(Color.FromArgb(255uy, 255uy, 240uy, 140uy), 0.0))
+    brush.GradientStops.Add(new GradientStop(Color.FromArgb(220uy, 255uy, 205uy, 0uy), 0.4))
+    brush.GradientStops.Add(new GradientStop(Color.FromArgb(0uy, 255uy, 170uy, 0uy), 1.0))
+    let halo = new System.Windows.Shapes.Ellipse(Width=d, Height=d, Fill=brush, IsHitTestVisible=false)
+    Canvas.SetLeft(halo, (size - d) / 2.)
+    Canvas.SetTop(halo, (size - d) / 2.)
+    root.Children.Add(halo) |> ignore
+    // the item keeps its black outline (like the map icons): draw it on a copy that has the outline added around every opaque pixel
+    let B = 2
+    let outlined = new System.Drawing.Bitmap(bmp.Width + 2*B, bmp.Height + 2*B)
+    for x = 0 to bmp.Width-1 do
+        for y = 0 to bmp.Height-1 do
+            let p = bmp.GetPixel(x, y)
+            if p.A > 0uy && (int p.R + int p.G + int p.B) > 40 then
+                for dx = 0 to 2*B do
+                    for dy = 0 to 2*B do
+                        outlined.SetPixel(x+dx, y+dy, System.Drawing.Color.Black)
+    for x = 0 to bmp.Width-1 do
+        for y = 0 to bmp.Height-1 do
+            let p = bmp.GetPixel(x, y)
+            if p.A > 0uy then outlined.SetPixel(x+B, y+B, p)
+    let scale = size / float bmp.Width
+    let shown = float outlined.Width * scale
+    let img = Graphics.BMPtoImage(outlined)   // (the normal, undimmed colours)
+    img.Stretch <- Stretch.Uniform
+    img.Width <- shown
+    img.Height <- float outlined.Height * scale
+    Canvas.SetLeft(img, (size - shown) / 2.)
+    Canvas.SetTop(img, (size - float outlined.Height * scale) / 2.)
+    img.IsHitTestVisible <- false
+    img.Effect <- new System.Windows.Media.Effects.DropShadowEffect(Color=Colors.Gold, BlurRadius=size * 1.3, ShadowDepth=0., Opacity=1.)
+    root.Children.Add(img) |> ignore
+    root.RenderTransformOrigin <- Point(0.5, 0.5)
+    let st = new ScaleTransform(1., 1.)
+    root.RenderTransform <- st
+    let anim() = new System.Windows.Media.Animation.DoubleAnimation(1., 1.9, new Duration(System.TimeSpan.FromSeconds(1.5)), AutoReverse=true)
+    st.BeginAnimation(ScaleTransform.ScaleXProperty, anim())
+    st.BeginAnimation(ScaleTransform.ScaleYProperty, anim())
+    root :> FrameworkElement
 let redrawTriforces = ResizeArray()
 let triforceBlocked : bool[] = Array.create 9 false   // middle-clicking a dungeon's triforce above it puts a red X on it, and it can't be collected until the X is removed (this session only)
 let MakeTriforceDisplayView(cmo:CustomComboBoxes.CanvasManager option, trackerIndex, owInstanceOpt) =    // cmo=Some(cm) means "makeInteractive"
@@ -271,16 +338,53 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
     c.Children.Add(rect) |> ignore
     let innerc = new Canvas(Width=30., Height=30., Background=Brushes.Transparent)  // just has item drawn on it, not the box
     c.Children.Add(innerc) |> ignore
+    // 'Progressive Items': when this box's item is upgraded, a copy of the item glows and grows for 3 seconds. It is a separate overlay inside the box (the box itself is never transformed, so hover boxes and menus keep lining up).
+    // Progressive Items: the picture of this box's item (null when it is not part of a family): uncollected ones show the family's current tier, collected ones the tier they were collected at
+    let progressiveBoxBitmap() : System.Drawing.Bitmap =
+        let f = TrackerModel.progressiveFamily(box.CellCurrent())
+        if f <= 0 then null
+        else
+            let t = TrackerModel.progressiveFamilyTier f
+            let shown =
+                if box.PlayerHas() = TrackerModel.PlayerHas.YES then
+                    match TrackerModel.progressiveBoxTier.TryGetValue(box) with
+                    | true, v -> v
+                    | _ -> max 1 (t-1)
+                else t
+            if f = 1 then Graphics.ow_progressive_tier_item_bmps.[min 4 (max 1 shown)]
+            else CustomComboBoxes.boxCurrentBMP(TrackerModel.progressiveFamilyIdent(f, min 2 (max 1 shown)), None)
+    TrackerModel.progressiveBoxGlow.Publish.Add(fun b ->
+        if obj.ReferenceEquals(b, box) && c.IsVisible then
+            let cur = box.CellCurrent()
+            let colored =
+                let pb = progressiveBoxBitmap()
+                if pb <> null then pb else CustomComboBoxes.boxCurrentBMP(cur, None)
+            if colored <> null then
+                let overlay = makeProgressiveGlow(colored, 22.)
+                Panel.SetZIndex(overlay, 1000)
+                canvasAdd(c, overlay, 4., 4.)
+                let oldZ = Panel.GetZIndex(c)
+                Panel.SetZIndex(c, 5000)   // the whole box rises above its neighbours while it glows, so they don't cover the growing item
+                async {
+                    do! Async.Sleep 3000
+                    c.Children.Remove(overlay)
+                    Panel.SetZIndex(c, oldZ)
+                } |> Async.StartImmediate)
     let innerCanvasStairwayHider = new Canvas(Background=Brushes.Black, Width=21., Height=21.)
     let redraw() =
         // redraw inner canvas
         innerc.Children.Clear()
-        let bmp = CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), None)
+        let bmp =
+            let pb = progressiveBoxBitmap()
+            if pb <> null then pb else CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), None)
         if bmp <> null then
             canvasAdd(innerc, innerCanvasStairwayHider, 3., 3.)  // a black box covers any stair drawing behind the item, so the item is easy to read
             if box.PlayerHas() = TrackerModel.PlayerHas.NO then
                 let image = Graphics.BMPtoImage(Graphics.greyscale bmp)
                 canvasAdd(innerc, image, 4., 4.)
+                match uncollectedTierLetter(let f = TrackerModel.progressiveFamily(box.CellCurrent()) in if f >= 2 then TrackerModel.progressiveFamilyIdent(f, TrackerModel.progressiveFamilyTier f) else box.CellCurrent()) with   // (Progressive Items: the letter follows the tier shown)
+                | Some(l) -> canvasAdd(innerc, makeTierLetter(l, 11.5), 0., 7.)   // just the letter, centered over the item
+                | None -> ()
             else
                 let image = Graphics.BMPtoImage(bmp)
                 canvasAdd(innerc, image, 4., 4.)
@@ -346,9 +450,31 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
     redrawBoxes.Add(fun() -> redraw())
     hintDashedItemsChanged.Publish.Add(fun _ -> redraw())
     box.Changed.Add(fun _ -> redraw())
+    TrackerModel.progressiveTierChanged.Publish.Add(fun _ -> redraw())   // Progressive Items: the progressive sword's P1..P4 sprite follows the number collected
     // interactions
     match cmo with
     | Some cm ->
+        // a dungeon has just one triforce piece: asking for a triforce in another slot of that dungeon (its item slots or the extra floor box) moves the existing piece to this slot.
+        // clears the old slot and returns Some(was it checked off), or None when there was nothing to move
+        let takeTriforceFromOtherSlot(newValue:int) : bool option =
+            if newValue <> TrackerModel.ITEMS.TRIFORCE then None
+            else
+                let dIdx =
+                    match box.Owner with
+                    | TrackerModel.BoxOwner.DungeonIndexAndNth(i,_) when i <= 7 -> Some i
+                    | TrackerModel.BoxOwner.Dungeon1or4 -> Some(if TrackerModel.IsSecondQuestDungeons then 3 else 0)
+                    | _ -> [0..7] |> List.tryFind (fun i -> obj.ReferenceEquals(TrackerModel.GetDungeon(i).ExtraFloorBox, box))
+                match dIdx with
+                | Some i ->
+                    let d = TrackerModel.GetDungeon(i)
+                    let candidates = Array.append d.Boxes [| d.ExtraFloorBox |]
+                    match candidates |> Array.tryFind (fun b -> not(obj.ReferenceEquals(b, box)) && b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE) with
+                    | Some(other) ->
+                        let had = (other.PlayerHas() = TrackerModel.PlayerHas.YES)
+                        other.Set(-1, TrackerModel.PlayerHas.NO)
+                        Some had
+                    | None -> None
+                | None -> None
         let activateComboBox(activationDelta, gridClickDismissalWarpReturn) =
             popupIsActive <- true
             let pos = c.TranslatePoint(Point(),cm.AppMainCanvas)
@@ -356,7 +482,10 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
             async {
                 let! r = CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, box.CellCurrent(), activationDelta, box.PlayerHas(), extraDecorations, gridClickDismissalWarpReturn)
                 match r with
-                | Some(newBoxCellValue, newPlayerHas) -> box.Set(newBoxCellValue, newPlayerHas)
+                | Some(newBoxCellValue, newPlayerHas) ->
+                    match takeTriforceFromOtherSlot(newBoxCellValue) with
+                    | Some had -> box.Set(newBoxCellValue, (if had then TrackerModel.PlayerHas.YES else newPlayerHas))   // the piece moves here, keeping its checked state
+                    | None -> box.Set(newBoxCellValue, newPlayerHas)
                 | None -> ()
                 popupIsActive <- false
                 } |> Async.StartImmediate
@@ -401,7 +530,9 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
                             box.Set(i, TrackerModel.PlayerHas.NO)      // emptying an empty box toggles the box outline color
                     else
                         // changing from empty/other-item box to this item value always NO on first hotkey press, as this is 'model harmless'
-                        if not(box.AttemptToSet(i, TrackerModel.PlayerHas.NO)) then
+                        let movedFrom = takeTriforceFromOtherSlot(i)
+                        if movedFrom.IsSome then box.Set(i, (if movedFrom.Value then TrackerModel.PlayerHas.YES else TrackerModel.PlayerHas.NO))
+                        elif not(box.AttemptToSet(i, TrackerModel.PlayerHas.NO)) then
                             // e.g. they tried to set this box to Bow when another box already has 'Bow'
                             Graphics.ErrorBeepWithReminderLogText(sprintf "Tried to mark item box as %s, but that item is already marked in a different box" (TrackerModel.ITEMS.AsDisplayDescription(i)))
                 | None -> ()

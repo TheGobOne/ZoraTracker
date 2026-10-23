@@ -584,11 +584,41 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
     // 'Item Locations' button: the top button of the Save / Hint Decoder / Hotkeys column (the layout sizes and places it)
     do
         // (made with Graphics.makeButton, so it has the same look and border as the other tracker buttons; use that helper for new buttons)
-        let btn = Graphics.makeButton("Item Locations", Some(12.), Some(Brushes.Orange))
+        let btn = Graphics.makeButton("Popout Windows", Some(12.), Some(Brushes.Orange))
         (match btn.Content with | :? TextBox as t -> t.Background <- Brushes.Black | _ -> ())   // same black as the Save / Hint Decoder / Hotkeys buttons
         btn.Focusable <- false
-        btn.ToolTip <- "Open a window that shows where all the dungeon items and the armos/letter/ladder/white sword/magical sword items are"
-        btn.Click.Add(fun _ -> openItemLocationsWindow())
+        btn.ToolTip <- "Choose which popout windows to show (they are remembered for next time)"
+        btn.Click.Add(fun _ ->
+            if not CustomComboBoxes.GlobalFlag.popupIsActive then
+                CustomComboBoxes.GlobalFlag.popupIsActive <- true
+                let pos = btn.TranslatePoint(Point(0., btn.ActualHeight + 4.), cm.AppMainCanvas)
+                async {
+                    let wh = new System.Threading.ManualResetEvent(false)
+                    let sp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(6.))
+                    sp.Children.Add(new TextBox(Text="Popout Windows", IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=16., FontWeight=FontWeights.Bold,
+                                                Foreground=Brushes.Orange, Background=Brushes.Black, Margin=Thickness(4.,2.,4.,6.))) |> ignore
+                    let entry(text:string, isOpen:unit->bool, openIt:unit->unit, closeIt:unit->unit) =
+                        let cb = PieMenus.makeOrangeCheckBox(text, isOpen())
+                        cb.Click.Add(fun _ ->
+                            if cb.IsChecked = System.Nullable<bool>(true) then openIt() else closeIt()
+                            cb.IsChecked <- System.Nullable<bool>(isOpen()))
+                        sp.Children.Add(cb) |> ignore
+                    entry("Item Locations", (fun () -> itemLocationsWindow <> null), (fun () -> openItemLocationsWindow()), (fun () -> if itemLocationsWindow <> null then itemLocationsWindow.Close()))
+                    entry("Spot Summary", (fun () -> Popouts.isPopoutOpen(Popouts.SpotSummaryPopout)), (fun () -> Popouts.openPopout(Popouts.SpotSummaryPopout)), (fun () -> Popouts.closePopout(Popouts.SpotSummaryPopout)))
+                    entry("Inventory and Max Hearts", (fun () -> Popouts.isPopoutOpen(Popouts.InventoryAndHeartsPopout)), (fun () -> Popouts.openPopout(Popouts.InventoryAndHeartsPopout)), (fun () -> Popouts.closePopout(Popouts.InventoryAndHeartsPopout)))
+                    entry("Uncollected Items", (fun () -> Popouts.isPopoutOpen(Popouts.RemainingItemsPoput)), (fun () -> Popouts.openPopout(Popouts.RemainingItemsPoput)), (fun () -> Popouts.closePopout(Popouts.RemainingItemsPoput)))
+                    sp.Children.Add(new DockPanel(Background=Brushes.Gray, Height=1., Margin=Thickness(6.,6.,6.,4.))) |> ignore
+                    let showCustomCb = PieMenus.makeOrangeCheckBox("Show Custom", ShowRunCustom.areShowWindowsOpen())
+                    showCustomCb.Click.Add(fun _ ->
+                        if showCustomCb.IsChecked = System.Nullable<bool>(true) then ShowRunCustom.DoShowRunCustom(Popouts.refocusMainWindow) else ShowRunCustom.closeShowWindows()
+                        showCustomCb.IsChecked <- System.Nullable<bool>(ShowRunCustom.areShowWindowsOpen())
+                        TrackerModelOptions.ShowCustomOnStartup <- (showCustomCb.IsChecked = System.Nullable<bool>(true))   // remembered for next time
+                        TrackerModelOptions.writeSettings())
+                    sp.Children.Add(showCustomCb) |> ignore
+                    let b = new Border(Child=sp, Background=Brushes.Black, BorderThickness=Thickness(3.), BorderBrush=Brushes.Gray)
+                    do! CustomComboBoxes.DoModal(cm, wh, pos.X, pos.Y, b)
+                    CustomComboBoxes.GlobalFlag.popupIsActive <- false
+                } |> Async.StartImmediate)
         layout.AddItemLocationsButton(btn)
 (*
     let foundDungeonsTB1 = new TextBox(Text="0/9", FontSize=20., Background=Brushes.Black,Foreground=Brushes.Orange,BorderThickness=Thickness(0.0),IsReadOnly=true,IsHitTestVisible=false)

@@ -1323,6 +1323,58 @@ let ow_sword2_box_bmp = swordBoxBmp ow_sword2_menu_bmp
 let ow_sword3_box_bmp = swordBoxBmp ow_sword3_menu_bmp
 let ow_sword4_box_bmp = swordBoxBmp ow_sword4_menu_bmp
 let ow_progressive_box_bmp = swordBoxBmp ow_progressive_menu_bmp
+// Progressive Items: the progressive sword with its tier next to the P (P1 / P2 / P3 / P4), over a sword drawn like the item progress bar's swords (hilt, tall guard, blade).
+// 21x27: the P and number glyph on top (outlined like the plain P sword), the sword along the bottom. Index 0 of the arrays below is the plain P sword.
+let private progressiveTierSwordBmp(tier:int) : System.Drawing.Bitmap =
+    let pGlyph = [| "bbb"; "bab"; "bbb"; "baa"; "baa" |]
+    let digit =
+        match tier with
+        | 1 -> [| "aba"; "bba"; "aba"; "aba"; "bbb" |]
+        | 2 -> [| "bbb"; "aab"; "bbb"; "baa"; "bbb" |]
+        | 3 -> [| "bbb"; "aab"; "bbb"; "aab"; "bbb" |]
+        | _ -> [| "bab"; "bab"; "bbb"; "aab"; "aab" |]
+    let rows = Array.concat [ [| "aaaaaaa" |]; Array.init 5 (fun r -> pGlyph.[r] + "a" + digit.[r]); [| "aaaaaaa" |] ]
+    let brown = System.Drawing.Color.FromArgb(185,122,87)
+    let art = new System.Drawing.Bitmap(7*3, 7*3)
+    for y = 0 to 6 do
+        for x = 0 to 6 do
+            let c = if rows.[y].[x] = 'b' then System.Drawing.Color.Black else brown
+            for dx = 0 to 2 do
+                for dy = 0 to 2 do
+                    art.SetPixel(x*3+dx, y*3+dy, c)
+    let glyphPart = restyleSwordCard art
+    let rgb (r:int) (g:int) (b:int) = System.Drawing.Color.FromArgb(r, g, b)
+    // hilt, hilt end, blade, guard, bottom edge, tip colors (the same palette as the item progress bar swords)
+    let hilt, hiltEnd, blade, guard, edge, tip =
+        match tier with
+        | 1 -> rgb 136 0 21, rgb 76 0 12, rgb 29 148 65, rgb 29 148 65, rgb 15 74 33, rgb 22 111 49
+        | 2 -> rgb 255 255 255, rgb 80 80 80, rgb 63 72 204, rgb 63 72 204, rgb 32 36 102, rgb 63 72 204
+        | 3 -> rgb 255 255 255, rgb 32 32 32, rgb 237 0 36, rgb 237 0 36, rgb 119 0 18, rgb 59 0 9
+        | _ -> rgb 255 255 255, rgb 223 223 223, rgb 128 128 255, rgb 0 0 168, rgb 0 0 84, rgb 0 0 84
+    let r = new System.Drawing.Bitmap(21, 27)
+    for x = 0 to 20 do
+        for y = 0 to 17 do
+            r.SetPixel(x, y, glyphPart.GetPixel(x, y))
+    let y0 = 18
+    for ry = 0 to 8 do
+        for x = 13 to 16 do
+            r.SetPixel(x, y0 + ry, (if ry < 8 then guard else edge))
+    for ry = 3 to 5 do
+        for x = 0 to 12 do
+            r.SetPixel(x, y0 + ry, (if x = 0 then hiltEnd else hilt))
+        for x = 13 to 20 do
+            r.SetPixel(x, y0 + ry, (if x = 20 then tip elif tier = 4 && x > 17 then rgb 0 0 168 else blade))
+    r
+let private progressiveTierItemBmp(interior:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(21,21)
+    for x = 0 to 14 do
+        for y = 0 to 20 do
+            let sx = min 20 (int ((float x + 0.5) * 21. / 15.))
+            let sy = min 26 (int ((float y + 0.5) * 27. / 21.))
+            r.SetPixel(3 + x, y, interior.GetPixel(sx, sy))
+    r
+let ow_progressive_tier_item_bmps = [| yield ow_progressive_item_bmp; for t in 1..4 do yield progressiveTierItemBmp(progressiveTierSwordBmp t) |]
+let ow_progressive_tier_menu_bmps = [| yield ow_progressive_menu_bmp; for t in 1..4 do yield progressiveTierSwordBmp t |]
 let theFullTileBmpTable = Array.init theInteriorBmpTable.Length (fun _ -> ResizeArray())
 let initFull() =
     let len = theInteriorBmpTable.Length

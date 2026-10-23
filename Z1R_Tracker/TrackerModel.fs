@@ -20,24 +20,25 @@ type ReminderCategory =
     | HaveLadder
     member this.DisplayName =
         match this with
-        | DungeonFeedback -> "Dungeon feedback"
-        | SwordHearts -> "Sword hearts"
+        | DungeonFeedback -> "Dungeon Feedback"
+        | SwordHearts -> "Sword Hearts"
         | CoastItem -> "Coast Item"
         | RecorderPBSpotsAndBoomstickBook -> "Recorder/PB/Boomstick"
-        | HaveKeyLadder -> "Have magic key/ladder"
+        | HaveKeyLadder -> "Have Magic Key/Ladder"
         | Blockers -> "Blockers"
         | DoorRepair -> "Door Repair Count"
-        | OverworldOverwrites -> "Overworld overwrites"
+        | OverworldOverwrites -> "Overworld Overwrites"
         | Asterisk -> "Error beeps"
-        | RecorderSpots -> "Recorder spots"
-        | PowerBraceletSpots -> "Power Bracelet spots"
-        | BoomstickBook -> "Boomstick book"
-        | HaveMagicKey -> "Have magic key"
-        | HaveLadder -> "Have ladder"
+        | RecorderSpots -> "Recorder Spots"
+        | PowerBraceletSpots -> "Power Bracelet Spots"
+        | BoomstickBook -> "Boomstick Book"
+        | HaveMagicKey -> "Have Magic Key"
+        | HaveLadder -> "Have Ladder"
 
 ///////////////////////////////////////////////////////////////////////////
 
 let mutable IsSecondQuestDungeons = false
+let mutable ProgressiveItems = false   // ZORA Extras: collecting a base item (blue candle / blue ring / wood arrow / sword) upgrades the rest of that item marked on the map to the next level
 let mutable MarkBombDroppers = false   // Startup Options checkbox: middle-clicking an overworld tile marks it as a bomb dropper screen
 let mutable BootsReplaceBoomerangs = false   // ZORA Extras startup option (behavior still to be decided)
 let mutable CustomLevelName = ""   // up to 7 chars (uppercase); if non-empty, replaces 'LEVEL-n' in each dungeon map header
@@ -787,6 +788,7 @@ let armosBox  = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(P
 let sword2Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
 let sword3Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in the magical sword cave (this session only, not saved)
 let letterBox = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in the letter cave (this session only, not saved)
+let progressiveBoxGlow = new Event<Box>()   // 'Progressive Items': an item box whose item was just upgraded (its views glow and grow for a moment)
 let sword1Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in a 'shuffled' wood sword cave (this session only, not saved)
 let hintShopColors = new System.Collections.Generic.Dictionary<int*int, int>()   // overworld tile -> the background color chosen for its hint shop (0 purple, 1 red, 2 green, 3 orange); saved with the tracker
 let shuffledWoodSwordTiles = new System.Collections.Generic.HashSet<int*int>()   // overworld tiles whose wood sword cave holds a shuffled item (this session only)
@@ -1033,6 +1035,61 @@ let playerSwordLevel, playerCandleLevel, playerRingLevel, playerArrowLevel = new
 let playerHasSword4 = new EventingInt(0)   // 1 if a 4th sword has been collected (an item box, or its marker icon checked off on the map); puts the purple X on the 3rd (magical) sword box
 // how many marker icons of each kind are checked off as 'collected' on the overworld map (index = item id); these count as owning the item
 let mapCollectedCount : int[] = Array.zeroCreate 128
+// Progressive Items: every progressive sword (the 'P' sword) that has been collected, on the map or in an item box, bumps the tier shown by the ones still to be collected (P1 wood, P2 white, P3 magical, P4 4th sword); 0 when the option is off
+let progressiveTierChanged = new Event<unit>()
+// with Progressive Items on, a sword placed in a dungeon item box acts like its progressive sword: wood = P1, white = P2, magical = P3, 4th = P4
+let progressiveSwordBoxTier(ident:int) : int =
+    if not ProgressiveItems then 0
+    elif ident = ITEMS.WOODSWORD then 1
+    elif ident = ITEMS.WHITESWORD then 2
+    elif ident = ITEMS.MAGICALSWORD then 3
+    elif ident = ITEMS.WHITESWORD4 then 4
+    elif ident = ITEMS.PROGRESSIVESWORD then 5   // (the progressive sword itself: shows the current tier)
+    else 0
+// which tier each collected sword was collected at (session only), so the collected icon keeps showing where the upgrade came from
+let progressiveTileTier = new System.Collections.Generic.Dictionary<int*int*int, int>()   // (tile x, tile y, item) -> tier
+let progressiveBoxTier = new System.Collections.Generic.Dictionary<Box, int>(HashIdentity.Reference)
+let mutable progressiveTierOverride = -1   // while set, drawing code asks for this tier instead of the current one
+let progressiveSwordTier() : int =
+    if not ProgressiveItems then 0
+    elif progressiveTierOverride >= 1 then progressiveTierOverride
+    else
+        let inBoxes = try DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() |> Array.filter (fun b -> progressiveSwordBoxTier(b.CellCurrent()) > 0 && b.PlayerHas() = PlayerHas.YES) |> Array.length with _ -> 0
+        let onMap = [ ITEMS.PROGRESSIVESWORD; ITEMS.WOODSWORD; ITEMS.WHITESWORD; ITEMS.MAGICALSWORD; ITEMS.WHITESWORD4 ] |> List.sumBy (fun id -> mapCollectedCount.[id])   // (swords on the map, in shops too, act like progressive swords)
+        // the wood sword cave's 'Took Sword' (and starting swords) also count: the sword level the player has, when higher than what the icons and boxes account for
+        let level = if startingItemsAndExtras.PlayerHasMagicalSword.Value() then 3 elif startingItemsAndExtras.PlayerHasWhiteSword.Value() then 2 elif playerProgressAndTakeAnyHearts.PlayerHasWoodSword.Value() then 1 else 0
+        min 4 (1 + max (onMap + inBoxes) level)
+// Progressive Items: families of items that upgrade each other. 1 = swords, 2 = rings, 3 = candles, 4 = arrows (0 = not part of one, or the option is off)
+let progressiveFamily(ident:int) : int =
+    if not ProgressiveItems then 0
+    elif progressiveSwordBoxTier(ident) > 0 then 1
+    elif ident = ITEMS.BLUERING || ident = ITEMS.REDRING then 2
+    elif ident = ITEMS.BLUECANDLE || ident = ITEMS.REDCANDLE then 3
+    elif ident = ITEMS.WOODARROW || ident = ITEMS.SILVERARROW then 4
+    else 0
+// the item (base = tier 1, upgraded = tier 2) that stands for a family tier; swords use their own sprites instead
+let progressiveFamilyIdent(family:int, tier:int) : int =
+    match family with
+    | 2 -> (if tier >= 2 then ITEMS.REDRING else ITEMS.BLUERING)
+    | 3 -> (if tier >= 2 then ITEMS.REDCANDLE else ITEMS.BLUECANDLE)
+    | 4 -> (if tier >= 2 then ITEMS.SILVERARROW else ITEMS.WOODARROW)
+    | _ -> ITEMS.PROGRESSIVESWORD
+// the current tier of a family: 1 + how many of its items have been collected (on the map or in item boxes), 2 at most for rings / candles / arrows
+let progressiveFamilyTier(family:int) : int =
+    if not ProgressiveItems || family <= 0 then 0
+    elif family = 1 then progressiveSwordTier()
+    elif progressiveTierOverride >= 1 then min 2 progressiveTierOverride
+    else
+        let ids, propLevel =
+            match family with
+            | 2 -> [ITEMS.BLUERING; ITEMS.REDRING], (if startingItemsAndExtras.PlayerHasRedRing.Value() then 2 elif playerProgressAndTakeAnyHearts.PlayerHasBlueRing.Value() then 1 else 0)
+            | 3 -> [ITEMS.BLUECANDLE; ITEMS.REDCANDLE], (if startingItemsAndExtras.PlayerHasRedCandle.Value() then 2 elif playerProgressAndTakeAnyHearts.PlayerHasBlueCandle.Value() then 1 else 0)
+            | _ -> [ITEMS.WOODARROW; ITEMS.SILVERARROW], (if startingItemsAndExtras.PlayerHasSilverArrow.Value() then 2 elif playerProgressAndTakeAnyHearts.PlayerHasWoodArrow.Value() then 1 else 0)
+        let n = (ids |> List.sumBy (fun id -> mapCollectedCount.[id])) + (try DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() |> Array.filter (fun b -> List.contains (b.CellCurrent()) ids && b.PlayerHas() = PlayerHas.YES) |> Array.length with _ -> 0)
+        min 2 (1 + max n propLevel)
+// items that the option disables in the pickers: the plain swords (use the progressive sword) and the second tier of rings, candles and arrows
+let progressiveDisabledIdent(ident:int) : bool =
+    ProgressiveItems && ((progressiveSwordBoxTier(ident) >= 1 && progressiveSwordBoxTier(ident) <= 4) || ident = ITEMS.REDRING || ident = ITEMS.REDCANDLE || ident = ITEMS.SILVERARROW)
 let recomputePlayerStateSummary() =
     let mutable haveRecorder,haveLadder,haveAnyKey,haveCoastItem,haveWhiteSwordItem,havePowerBracelet,haveRaft,playerHearts = false,false,false,false,false,false,false,3
     let mutable swordLevel,candleLevel,ringLevel,haveBow,arrowLevel,haveWand,haveBookOrShield,boomerangLevel = 0,0,0,false,0,false,false,0
@@ -1068,6 +1125,8 @@ let recomputePlayerStateSummary() =
                 arrowLevel <- 2
             elif b.CellCurrent() = ITEMS.WAND then
                 haveWand <- true
+            elif ProgressiveItems && progressiveSwordBoxTier(b.CellCurrent()) >= 1 && progressiveSwordBoxTier(b.CellCurrent()) <= 4 then
+                progressiveSwords <- progressiveSwords + 1   // Progressive Items: every sword counts as one more progressive sword
             elif b.CellCurrent() = ITEMS.WHITESWORD then
                 if not(IsWSMSReplacedByBU()) then
                     swordLevel <- max swordLevel 2
@@ -1132,10 +1191,14 @@ let recomputePlayerStateSummary() =
         haveBookOrShield <- true
     // items checked off as collected on the overworld map
     let mapHas(id) = mapCollectedCount.[id] > 0
-    if mapHas ITEMS.WOODSWORD then swordLevel <- max swordLevel 1
-    if mapHas ITEMS.WHITESWORD || mapHas ITEMS.WHITESWORD4 then swordLevel <- max swordLevel 2
-    if mapHas ITEMS.WHITESWORD4 then haveSword4 <- true
-    if mapHas ITEMS.MAGICALSWORD then swordLevel <- 3
+    if ProgressiveItems then
+        // swords (of any kind) collected on the map each count as one more progressive sword
+        progressiveSwords <- progressiveSwords + mapCollectedCount.[ITEMS.WOODSWORD] + mapCollectedCount.[ITEMS.WHITESWORD] + mapCollectedCount.[ITEMS.MAGICALSWORD] + mapCollectedCount.[ITEMS.WHITESWORD4]
+    else
+        if mapHas ITEMS.WOODSWORD then swordLevel <- max swordLevel 1
+        if mapHas ITEMS.WHITESWORD || mapHas ITEMS.WHITESWORD4 then swordLevel <- max swordLevel 2
+        if mapHas ITEMS.WHITESWORD4 then haveSword4 <- true
+        if mapHas ITEMS.MAGICALSWORD then swordLevel <- 3
     progressiveSwords <- progressiveSwords + mapCollectedCount.[ITEMS.PROGRESSIVESWORD]
     for _ in 1 .. progressiveSwords do   // each one is the next sword up: wood > white > magical > 4th sword (the max)
         if not haveSword4 then
@@ -1147,6 +1210,15 @@ let recomputePlayerStateSummary() =
     if mapHas ITEMS.REDRING then ringLevel <- 2
     if mapHas ITEMS.WOODARROW then arrowLevel <- max arrowLevel 1
     if mapHas ITEMS.SILVERARROW then arrowLevel <- 2
+    if ProgressiveItems then
+        // rings, candles and arrows: the second one collected of a kind (blue or red) is the upgrade
+        let famCount (ids:int list) =
+            (ids |> List.sumBy (fun id -> mapCollectedCount.[id]))
+            + (DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() |> Array.filter (fun b -> List.contains (b.CellCurrent()) ids && b.PlayerHas() = PlayerHas.YES) |> Array.length)
+        let lvl n = if n >= 2 then 2 elif n >= 1 then 1 else 0
+        candleLevel <- max candleLevel (lvl (famCount [ITEMS.BLUECANDLE; ITEMS.REDCANDLE]))
+        ringLevel <- max ringLevel (lvl (famCount [ITEMS.BLUERING; ITEMS.REDRING]))
+        arrowLevel <- max arrowLevel (lvl (famCount [ITEMS.WOODARROW; ITEMS.SILVERARROW]))
     if mapHas ITEMS.BOOMERANG then boomerangLevel <- max boomerangLevel 1
     if mapHas ITEMS.MAGICBOOMERANG then boomerangLevel <- 2
     if mapHas ITEMS.BOW then haveBow <- true
@@ -1198,6 +1270,8 @@ let mutable owInstance = new OverworldData.OverworldInstance(OverworldData.OWQue
 let overworldQuestChanged = new Event<unit>()   // fired when reinitializeOverworld switches to a new quest
 
 let mapLastChangedTime = new LastChangedTime()
+let shopStash : int[] = Array.create 6 -1   // items entered in a shop window (index = shop label 1-5) while no tile of that shop is on the map: packed like a tile's icons, picked up by the first tile that becomes that shop
+let owBombDroppers = Array2D.create 16 8 false   // bomb dropper screens: their own layer (a small badge in the tile's corner), independent of the marker icons / shops
 let owSwordIcons = Array2D.create 16 8 -1   // decorative marker icons per overworld tile: up to 3 packed into one int (see decorIconsOf/decorIconsPack below), -1 means none
 let DECOR_BOMB_DROPPER = 101   // marker-icon id for a screen whose enemies drop bombs
 let DECOR_BOMB = 100   // marker-icon id for the generic bomb (it is not a tracked ITEMS entry, so it lives outside that id range)
@@ -1218,7 +1292,7 @@ let decorIconsPack(idents:int list) : int = idents |> List.map (fun i -> (i,fals
 let decorIconsToggle(packed:int, ident:int) : int =
     let cur = decorEntriesOf packed
     // a potion marker draws as two icons (blue and red), so a potion tile holds just one more marker icon, which goes in the middle between them
-    let limit = if ident = ITEMS.BLUEPOTION || (cur |> List.exists (fun (x,_) -> x = ITEMS.BLUEPOTION)) then 2 else MaxDecorIcons
+    let limit = MaxDecorIcons   // (the blue potion marker is just a vanity icon like any other: no special limit)
     if ident = ITEMS.HEARTCONTAINER then   // heart containers can repeat on a tile (e.g. a cave with several), each copy checked off separately
         if cur.Length < limit then decorEntriesPack (cur @ [(ident,false)]) else packed
     elif cur |> List.exists (fun (x,_) -> x = ident) then cur |> List.filter (fun (x,_) -> x <> ident) |> decorEntriesPack

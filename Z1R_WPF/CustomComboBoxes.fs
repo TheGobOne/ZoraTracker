@@ -49,7 +49,7 @@ let boxCurrentBMP(boxCellCurrent, timelineOrigin) =
     | 15 -> Graphics.blue_potion_bmp
     | 16 -> Graphics.red_potion_bmp
     | 17 -> Graphics.old_letter_bmp
-    | 18 -> Graphics.ow_progressive_item_bmp
+    | 18 -> Graphics.ow_progressive_tier_item_bmps.[TrackerModel.progressiveSwordTier()]   // (P1..P4 while Progressive Items is on)
     | 19 -> Graphics.ow_sword1_item_bmp
     | 20 -> Graphics.ow_sword3_item_bmp
     | 21 -> Graphics.ow_sword4_item_bmp
@@ -925,11 +925,11 @@ let itemBoxModalGridSelectBrushes = new ModalGridSelectBrushes(Brushes.Yellow, B
 // the big (15x27) sword icons for the item menu's top row; null for every other item
 let swordMenuBmpFor(ident:int) : System.Drawing.Bitmap =
     match ident with
-    | 19 -> Graphics.ow_sword1_menu_bmp
-    | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then null else Graphics.ow_sword2_menu_bmp)
-    | 20 -> Graphics.ow_sword3_menu_bmp
-    | 21 -> Graphics.ow_sword4_menu_bmp
-    | 18 -> Graphics.ow_progressive_menu_bmp
+    | 19 -> (if TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_menu_bmps.[1] else Graphics.ow_sword1_menu_bmp)   // (with Progressive Items, the plain swords show as P1..P4 even though they are disabled)
+    | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then null elif TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_menu_bmps.[2] else Graphics.ow_sword2_menu_bmp)
+    | 20 -> (if TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_menu_bmps.[3] else Graphics.ow_sword3_menu_bmp)
+    | 21 -> (if TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_menu_bmps.[4] else Graphics.ow_sword4_menu_bmp)
+    | 18 -> Graphics.ow_progressive_tier_menu_bmps.[TrackerModel.progressiveSwordTier()]
     | _ -> null
 let mutable itemMenuDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain   // DoLocalItemComboBox swaps this for boxes that don't use up items
 let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activationDelta, originalPlayerHas, callerExtraDecorations, gridClickDismissalWarpReturn) = async {
@@ -982,8 +982,17 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
                         img.Tag <- box "sword"
                         RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor)
                         upcast img
-                    else upcast (boxCurrentBMP(ident, None) |> Graphics.BMPtoImage)
-            let isSelectable = ident = -1 || (ident <> -2 && ident=boxCellCurrent) || (ident <> -2 &&  (itemMenuDomain.CanAddUse(ident) && not (ident = TrackerModel.ITEMS.WHITESWORD4 && not TrackerModelOptions.FourthSwordEnabled)))   // the 4th sword is disabled unless the 4th Sword start option is on
+                    else
+                        // Progressive Items: the blue ring / candle and wood arrow cells show the current tier (the red ones are disabled and keep their own picture)
+                        let f = TrackerModel.progressiveFamily ident
+                        let shownIdent = if f >= 2 && not (TrackerModel.progressiveDisabledIdent ident) then TrackerModel.progressiveFamilyIdent(f, TrackerModel.progressiveFamilyTier f) else ident
+                        upcast (boxCurrentBMP(shownIdent, None) |> Graphics.BMPtoImage)
+            // Progressive Items: the plain swords are disabled (the progressive sword does their job)
+            let progDisabled = ident <> boxCellCurrent && TrackerModel.progressiveDisabledIdent ident
+            if progDisabled then
+                fe.ToolTip <- "Disabled Due to Progressive Items"
+                System.Windows.Controls.ToolTipService.SetShowOnDisabled(fe, true)
+            let isSelectable = not progDisabled && (ident = -1 || (ident <> -2 && ident=boxCellCurrent) || (ident <> -2 &&  (itemMenuDomain.CanAddUse(ident) && not (ident = TrackerModel.ITEMS.WHITESWORD4 && not TrackerModelOptions.FourthSwordEnabled))))   // the 4th sword is disabled unless the 4th Sword start option is on
             yield fe, isSelectable, ident
         |]
     let originalStateIndex = gridIdents |> Array.tryFindIndex (fun ident -> ident = boxCellCurrent) |> Option.defaultValue emptyCellIdx
@@ -1035,7 +1044,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta11"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta12"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))

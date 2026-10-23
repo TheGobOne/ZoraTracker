@@ -133,6 +133,10 @@ let mutable DoDoorInference = Bool(false)
 let mutable DefaultRoomPreferNonDescriptToMaybePushBlock = Bool(false)
 let mutable GiveDungeonTrackerSunglasses = Bool(true)
 let mutable LeftClickDragAutoInverts = Bool(false)
+let mutable HintHoverTooltip = Bool(true)   // the Dead Woods / Lost Hills hint buttons show their hint in a big hover box
+let mutable JumpMouseToShop = Bool(true)   // the shop flyout puts the mouse on the first shop button
+let mutable HoverShopTooltip = Bool(false)   // hovering a shop on the overworld shows its items
+let mutable OldStyleGrab = Bool(false)   // the dungeon MOVE button works like the old GRAB (click a room to pick up it and every connected room); middle click on the button switches
 let mutable BookForHelpfulHints = Bool(false)
 let mutable ShowMouseMagnifierWindow = Bool(false)
 let mutable HideTimer = Bool(false)
@@ -151,6 +155,8 @@ let mutable LastSeenVersionNotes = ""   // version whose About/patch notes the u
 let mutable ReminderFrequency = 1000
 // Base interval (in minutes) for periodic reminders. Actual intervals scale proportionally.
 let mutable ReminderIntervalMinutes = 5
+// how often the tracker auto-saves (minutes, 1-10)
+let mutable AutoSaveMinutes = 2
 let mutable PreferredVoice = ""
 let mutable MainWindowLT = ""
 let mutable BroadcastWindowLT = ""
@@ -168,6 +174,7 @@ let mutable SpotSummaryPopout_DisplayedLT = ""
 let mutable InventoryAndHeartsPopout_DisplayedLT = ""
 let mutable RemainingItemsPoput_DisplayedLT = ""
 let mutable ItemLocationsWindow_DisplayedLT = ""
+let mutable ShowCustomOnStartup = false
 let mutable DungeonSummaryTabMode = 0
 let mutable PortNumber = "5000"
 let mutable CoopHostSession = false
@@ -264,6 +271,10 @@ type ReadWrite() =
     member val DefaultRoomPreferNonDescriptToMaybePushBlock = false with get,set
     member val GiveDungeonTrackerSunglasses = true with get,set
     member val LeftClickDragAutoInverts = false with get,set
+    member val HintHoverTooltip = true with get,set
+    member val JumpMouseToShop = true with get,set
+    member val HoverShopTooltip = false with get,set
+    member val OldStyleGrab = false with get,set
     member val BookForHelpfulHints = false with get,set
     member val ShowMouseMagnifierWindow = false with get,set
     member val HideTimer = false with get,set
@@ -281,6 +292,7 @@ type ReadWrite() =
     member val LastSeenVersionNotes = "" with get, set
     member val PreferredVoice = "" with get,set
     member val ReminderIntervalMinutes = 5 with get,set
+    member val AutoSaveMinutes = 2 with get,set
     member val MainWindowLT = "" with get,set
     member val BroadcastWindowLT = "" with get,set
     member val MainWindowScale = 0.0 with get,set
@@ -297,6 +309,7 @@ type ReadWrite() =
     member val InventoryAndHeartsPopout_DisplayedLT = "" with get,set
     member val RemainingItemsPoput_DisplayedLT = "" with get,set
     member val ItemLocationsWindow_DisplayedLT = "" with get,set
+    member val ShowCustomOnStartup = false with get,set
     member val DungeonSummaryTabMode = 0 with get,set
 
     member val MyConsoleId = CoopSyncOptions.MyConsoleId with get,set
@@ -403,6 +416,10 @@ let private writeImpl(filename) =
     data.DefaultRoomPreferNonDescriptToMaybePushBlock <- DefaultRoomPreferNonDescriptToMaybePushBlock.Value
     data.GiveDungeonTrackerSunglasses <- GiveDungeonTrackerSunglasses.Value
     data.LeftClickDragAutoInverts <- LeftClickDragAutoInverts.Value
+    data.HintHoverTooltip <- HintHoverTooltip.Value
+    data.JumpMouseToShop <- JumpMouseToShop.Value
+    data.HoverShopTooltip <- HoverShopTooltip.Value
+    data.OldStyleGrab <- OldStyleGrab.Value
     data.BookForHelpfulHints <- BookForHelpfulHints.Value
     data.ShowMouseMagnifierWindow <- ShowMouseMagnifierWindow.Value
     data.HideTimer <- HideTimer.Value
@@ -419,6 +436,7 @@ let private writeImpl(filename) =
     data.LastSeenVersionNotes <- LastSeenVersionNotes
     data.PreferredVoice <- PreferredVoice
     data.ReminderIntervalMinutes <- ReminderIntervalMinutes
+    data.AutoSaveMinutes <- AutoSaveMinutes
     data.MainWindowLT <- MainWindowLT
     data.BroadcastWindowLT <- BroadcastWindowLT
     data.MainWindowScale <- MainWindowScale
@@ -435,6 +453,7 @@ let private writeImpl(filename) =
     data.InventoryAndHeartsPopout_DisplayedLT <- InventoryAndHeartsPopout_DisplayedLT
     data.RemainingItemsPoput_DisplayedLT <- RemainingItemsPoput_DisplayedLT
     data.ItemLocationsWindow_DisplayedLT <- ItemLocationsWindow_DisplayedLT
+    data.ShowCustomOnStartup <- ShowCustomOnStartup
     data.DungeonSummaryTabMode <- DungeonSummaryTabMode
     data.MyConsoleId <- CoopSyncOptions.MyConsoleId
     data.TargetConsoleId <- CoopSyncOptions.TargetConsoleId
@@ -551,6 +570,10 @@ let private read(filename) =
         DefaultRoomPreferNonDescriptToMaybePushBlock.Value <- data.DefaultRoomPreferNonDescriptToMaybePushBlock
         GiveDungeonTrackerSunglasses.Value <- data.GiveDungeonTrackerSunglasses
         LeftClickDragAutoInverts.Value <- data.LeftClickDragAutoInverts
+        HintHoverTooltip.Value <- data.HintHoverTooltip
+        JumpMouseToShop.Value <- data.JumpMouseToShop
+        HoverShopTooltip.Value <- data.HoverShopTooltip
+        OldStyleGrab.Value <- data.OldStyleGrab
         BookForHelpfulHints.Value <- data.BookForHelpfulHints
         ShowMouseMagnifierWindow.Value <- data.ShowMouseMagnifierWindow
         HideTimer.Value <- data.HideTimer
@@ -567,6 +590,7 @@ let private read(filename) =
         LastSeenVersionNotes <- (if data.LastSeenVersionNotes = null then "" else data.LastSeenVersionNotes)
         PreferredVoice <- data.PreferredVoice
         ReminderIntervalMinutes <- max 1 (min 60 data.ReminderIntervalMinutes)
+        AutoSaveMinutes <- (if data.AutoSaveMinutes < 1 then 2 else min 10 data.AutoSaveMinutes)
         MainWindowLT <- data.MainWindowLT
         BroadcastWindowLT <- data.BroadcastWindowLT
         MainWindowScale <- (if data.MainWindowScale >= 0.4 && data.MainWindowScale <= 4.0 then data.MainWindowScale else 0.0)
@@ -583,6 +607,7 @@ let private read(filename) =
         InventoryAndHeartsPopout_DisplayedLT <- data.InventoryAndHeartsPopout_DisplayedLT
         RemainingItemsPoput_DisplayedLT <- data.RemainingItemsPoput_DisplayedLT
         ItemLocationsWindow_DisplayedLT <- (if isNull data.ItemLocationsWindow_DisplayedLT then "" else data.ItemLocationsWindow_DisplayedLT)
+        ShowCustomOnStartup <- data.ShowCustomOnStartup
         DungeonSummaryTabMode <- data.DungeonSummaryTabMode
 
         AllowItemIconOnNonShopTile.Value <- data.AllowItemIconOnNonShopTile

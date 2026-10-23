@@ -182,7 +182,7 @@ let ApplyKonamiCodeEasterEgg(cm:CustomComboBoxes.CanvasManager, fe:FrameworkElem
                     tips.Children.Add(header("Advanced-level tips")) |> ignore
                     for t in DungeonData.Factoids.advancedTips do
                         tips.Children.Add(body(t)) |> ignore
-                    tips.Children.Add(header("Z-Tracker tips")) |> ignore
+                    tips.Children.Add(header("ZORATracker tips")) |> ignore
                     for t in DungeonData.Factoids.zTrackerTips do
                         tips.Children.Add(body(t)) |> ignore
                     let BUFFER = 160.
@@ -228,8 +228,8 @@ type MyWindow() as this =
                     Console.ReadKey(false) |> ignore   // clear keyboard buffer
                 if gotThruStartup then
                     printfn ""
-                    printfn "If Z-Tracker crashed while you were playing, you might be able to restore the most recent"
-                    printfn "auto-save, by restarting Z-Tracker right now."
+                    printfn "If ZORATracker crashed while you were playing, you might be able to restore the most recent"
+                    printfn "auto-save, by restarting ZORATracker right now."
                 printfn ""
                 printfn "Press a key to close this window"
                 System.Console.ReadKey() |> ignore
@@ -328,7 +328,7 @@ type MyWindow() as this =
                 Activator.CreateInstance ty
             let isl = shellLink :?> Winterop.IShellLink
             let cwd = System.IO.Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName)
-            isl.SetDescription("Launch Z-Tracker")
+            isl.SetDescription("Launch ZORATracker")
             isl.SetPath(System.IO.Path.Combine(cwd, Graphics.ExeName))
             isl.SetWorkingDirectory(cwd)
             isl.SetIconLocation(System.IO.Path.Combine(cwd, "icons/ztlogo64x64.ico"), 0)
@@ -337,7 +337,7 @@ type MyWindow() as this =
 
         Graphics.theWindow <- this
         // full window
-        this.Title <- "Z-Tracker for Zelda 1 Randomizer"
+        this.Title <- "ZORATracker"
         this.ResizeMode <- ResizeMode.CanResize   // resizable: the whole UI scales to fit (see the SizeChanged handler below)
         this.MinWidth <- round(WIDTH_SANS_CHROME*0.4 + CHROME_WIDTH)
         this.MinHeight <- round(HEIGHT_SANS_CHROME*0.4 + CHROME_HEIGHT)
@@ -912,7 +912,7 @@ type MyWindow() as this =
                 let title = new TextBox(Text="Window Size",IsReadOnly=true, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, 
                                             BorderThickness=Thickness(0.,0.,0.,3.), FontSize=20.)
                 sp.Children.Add(title) |> ignore
-                sp.Children.Add(mkTxt("Z-Tracker can run in a few window sizes: '4/3 size', 'Default', '5/6 size', or '2/3 size'.")) |> ignore
+                sp.Children.Add(mkTxt("ZORATracker can run in a few window sizes: '4/3 size', 'Default', '5/6 size', or '2/3 size'.")) |> ignore
                 let MODE8,MODE6,MODE5,MODE4 = "4/3 size (Largest)", "Default", "5/6 size", "2/3 size (Smallest)"
                 let curMode = 
                     if TrackerModelOptions.SmallerAppWindow.Value then 
@@ -926,7 +926,7 @@ type MyWindow() as this =
                             sprintf "scale factor: %f" TrackerModelOptions.SmallerAppWindowScaleFactor
                     else 
                         MODE6
-                sp.Children.Add(mkTxt(sprintf "The current Z-Tracker window size is '%s'.  You can change the setting here:" curMode)) |> ignore
+                sp.Children.Add(mkTxt(sprintf "The current ZORATracker window size is '%s'.  You can change the setting here:" curMode)) |> ignore
                 sp.Children.Add(new DockPanel(Height=20.)) |> ignore
                 let rb8 = new RadioButton(Content=new TextBox(Text=MODE8,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),FontSize=16.),Margin=Thickness(20.,0.,0.,0.))
                 let rb6 = new RadioButton(Content=new TextBox(Text=MODE6,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),FontSize=16.),Margin=Thickness(20.,0.,0.,0.))
@@ -957,7 +957,7 @@ type MyWindow() as this =
                 let title = new TextBox(Text="Window Shape",IsReadOnly=true, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, 
                                             BorderThickness=Thickness(0.,0.,0.,3.), FontSize=20., Margin=spacing)
                 sp.Children.Add(title) |> ignore
-                sp.Children.Add(mkTxt("Z-Tracker can run in two window shapes: 'Tall' (default) and 'Square' (smaller/shorter).")) |> ignore
+                sp.Children.Add(mkTxt("ZORATracker can run in two window shapes: 'Tall' (default) and 'Square' (smaller/shorter).")) |> ignore
                 sp.Children.Add(mkTxt("The 'Square' option auto-swaps between Overworld and Dungeon focus, based on your mouse.")) |> ignore
                 sp.Children.Add(mkTxt("Note: This option only affects the main application; the startup options screen is always 'Tall'.")) |> ignore
                 sp.Children.Add(mkTxt("Note: 'Square' disables some features: overworld magnifier, broadcast window, Draw&UCC buttons.")) |> ignore
@@ -1004,7 +1004,7 @@ type MyWindow() as this =
                     sp.Children.Add(tb2) |> ignore
                     let button = new Button(Content=sp, HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch,BorderThickness=Thickness(3.,3.,3.,3.))
                     button
-                let sb = makeButton("Save changes","Save changes and restart Z-Tracker")
+                let sb = makeButton("Save changes","Save changes and restart ZORATracker")
                 let cb = makeButton("Discard changes","Don't make any changes\n(exit this popup menu)")
                 cb.Click.Add(fun _ -> wh.Set() |> ignore)
                 sb.Click.Add(fun _ ->
@@ -1053,18 +1053,6 @@ type MyWindow() as this =
         let startupOptionsCanvas = new Canvas()
         startupOptionsCanvas.Children.Add(stackPanel) |> ignore
         mainStackPanel.Children.Add(startupOptionsCanvas) |> ignore
-        do  // version button, drawn atop without affecting layout (top right of the start screen)
-            let dp = new DockPanel(Width=WIDTH_SANS_CHROME, Height=40., LastChildFill=false)
-            let vbButton = CustomComboBoxes.makeVersionButtonWithBehavior(cm)
-            Layout.styleStartupButton(vbButton)   // (styled before it is wrapped in the dock panel)
-            (match vbButton.Content with
-             | :? TextBox as vt -> vt.Padding <- Thickness(8.,1.,8.,1.)
-             | _ -> ())
-            let vb = Graphics.dock(vbButton, Dock.Top)
-            vb.LayoutTransform <- new ScaleTransform(4./3., 4./3.)   // 33% bigger than the plain button
-            DockPanel.SetDock(vb, Dock.Right)
-            dp.Children.Add(vb) |> ignore
-            startupOptionsCanvas.Children.Add(dp) |> ignore
         // (the version button now lives at the bottom right of the open space, just above the Settings line: see bottomSP below)
 
         let tb = new TextBox(Text="Startup Options",IsReadOnly=true, FontWeight=FontWeights.Bold, FontSize=16., TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, BorderThickness=Thickness(0.), Margin=Thickness(0.,8.,0.,0.))   // centered in the gap between the top bar and the checkbox row
@@ -1251,10 +1239,11 @@ type MyWindow() as this =
             cb
         let epbcb = makeExtraBlocksCheckBox("Extra PB Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4")
         let erbcb = makeExtraBlocksCheckBox("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16")
-        let dwcb = makeExtraBlocksCheckBox("Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)")
-        let lhcb = makeExtraBlocksCheckBox("Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)")
+        let dwcb = makeExtraBlocksCheckBox("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)")
+        let lhcb = makeExtraBlocksCheckBox("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)")
+        let pricb = makeExtraBlocksCheckBox("Progressive Items", "Blue candle, blue ring, wood arrows and swords become progressive:\ncollecting the base item upgrades the others of it marked on the map\nblue candle > red candle, blue ring > red ring, wood arrow > silver arrow,\nwood sword > white > magical > 4th sword")
         // the 'ZORA Extras' master checkbox
-        let extrasCheckBoxes : CheckBox list = [ fscb; clncb; brcb; epbcb; erbcb; dwcb; lhcb ]
+        let extrasCheckBoxes : CheckBox list = [ fscb; clncb; brcb; epbcb; erbcb; dwcb; lhcb; pricb ]
         let settingExtras = ref false
         let isOn (cb:CheckBox) = cb.IsChecked.HasValue && cb.IsChecked.Value
         let syncMaster() =
@@ -1277,7 +1266,7 @@ type MyWindow() as this =
             syncMaster())
         // 'Remember startup selection' (Other options): bring back the checkboxes that were checked when the last game was started
         let rememberedCheckBoxes : (string * CheckBox) list =
-            [ "full", hscb; "hdn", hdcb; "mirror", mocb; "bomb", mbcb; "4th", fscb; "cln", clncb; "boots", brcb; "epb", epbcb; "erb", erbcb; "dw", dwcb; "lh", lhcb ]
+            [ "full", hscb; "hdn", hdcb; "mirror", mocb; "bomb", mbcb; "4th", fscb; "cln", clncb; "boots", brcb; "epb", epbcb; "erb", erbcb; "dw", dwcb; "lh", lhcb; "prog", pricb ]
         if TrackerModelOptions.RememberStartupSelection.Value then
             let saved = TrackerModelOptions.SavedStartupSelection.Split([|','|], System.StringSplitOptions.RemoveEmptyEntries) |> Set.ofArray
             if saved.Count > 0 then
@@ -1299,22 +1288,22 @@ type MyWindow() as this =
                             | :? FrameworkElement as fe -> yield fe
                             | _ -> () ]
             panel.Children.Clear()
-            let sp = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Left, Margin=Thickness(0.,4.,0.,0.))
+            let sp = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,4.,0.,0.))   // the checkbox block is centered under its header, over the quest button
             for fe in items do
                 (match fe with :? Border as bd -> plain bd | _ -> ())
                 fe.HorizontalAlignment <- HorizontalAlignment.Left
                 fe.Margin <- Thickness(0.,0.,0.,4.)
                 sp.Children.Add(fe) |> ignore
             sp
-        let leftCol = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Left, Margin=Thickness(0.))   // its left edge lines up with the left edge of the '1st Quest Overworld' button
+        let leftCol = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Stretch, Margin=Thickness(0.))   // its left edge lines up with the left edge of the '1st Quest Overworld' button
         tb.Margin <- Thickness(0.)
-        tb.HorizontalAlignment <- HorizontalAlignment.Left
+        tb.HorizontalAlignment <- HorizontalAlignment.Center   // centered over the quest button below it
         leftCol.Children.Add(tb) |> ignore
         leftCol.Children.Add(new Border(Height=1., Background=Brushes.Gray, Margin=Thickness(0.,2.,0.,4.), HorizontalAlignment=HorizontalAlignment.Stretch)) |> ignore   // line under the header
         leftCol.Children.Add(plainRows checkboxSP) |> ignore
-        let rightCol = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Left, Margin=Thickness(3.,0.,0.,0.))   // lines up with the left edge of the 'Mixed - 1st Quest Overworld' button (the quest buttons have a 3px margin)
+        let rightCol = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Stretch, Margin=Thickness(3.,0.,0.,0.))   // lines up with the left edge of the 'Mixed - 1st Quest Overworld' button (the quest buttons have a 3px margin)
         extrasHeader.Margin <- Thickness(0.)
-        extrasHeader.HorizontalAlignment <- HorizontalAlignment.Left
+        extrasHeader.HorizontalAlignment <- HorizontalAlignment.Center   // centered over the quest button below it
         rightCol.Children.Add(extrasHeader) |> ignore
         rightCol.Children.Add(new Border(Height=1., Background=Brushes.Gray, Margin=Thickness(0.,2.,0.,4.), HorizontalAlignment=HorizontalAlignment.Stretch)) |> ignore   // line under the header
         rightCol.Children.Add(plainRows extrasSP) |> ignore
@@ -1375,6 +1364,9 @@ type MyWindow() as this =
             OverworldData.DeadWoodsHintKnown <- false
             OverworldData.LostHillsHintKnown <- false
             TrackerModel.MarkBombDroppers <- mbcb.IsChecked.HasValue && mbcb.IsChecked.Value
+            TrackerModel.ProgressiveItems <- pricb.IsChecked.HasValue && pricb.IsChecked.Value
+            // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade)
+            for (id, n) in [ TrackerModel.ITEMS.PROGRESSIVESWORD, (if TrackerModel.ProgressiveItems then 4 else 3); TrackerModel.ITEMS.BLUERING, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.BLUECANDLE, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.WOODARROW, (if TrackerModel.ProgressiveItems then 2 else 1) ] do TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, n)
             TrackerModel.CustomLevelName <- 
                 if clncb.IsChecked.HasValue && clncb.IsChecked.Value then clnTextBox.Text.Trim().ToUpperInvariant() else ""
             let mutable speechRecognitionInstance = null
@@ -1495,7 +1487,7 @@ type MyWindow() as this =
                                             "Loading this file might not work"
                                         else
                                             "Loading this file will probably fail"
-                                    sprintf "You are running Z-Tracker version '%s' but the\nsave file was created using version '%s'.\n%s, but Z-Tracker will attempt to load it anyway." 
+                                    sprintf "You are running ZORATracker version '%s' but the\nsave file was created using version '%s'.\n%s, but ZORATracker will attempt to load it anyway." 
                                                     OverworldData.VersionString ver.Version prefix
                                 popupIsActive <- true
                                 let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, msg, ["Attempt Load"])
@@ -1550,12 +1542,12 @@ type MyWindow() as this =
                     let dialog1 = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black)
                     addDarkTheme(dialog1.Resources)
                     let tb1 = new TextBox(IsReadOnly=true, BorderThickness=Thickness(0.), Foreground=Brushes.Orange)
-                    tb1.Text <- "Z-Tracker was designed for use with fcoughlin's Zelda 1 Randomizer.\n\n" +
+                    tb1.Text <- "ZORATracker was designed for use with fcoughlin's Zelda 1 Randomizer.\n\n" +
                                 
                                 "There are other randomizers/ROM-Hacks for Zelda 1 which use other\n" + 
-                                "(sometimes randomized) overworld maps.  Z-Tracker may not work with\n" +
+                                "(sometimes randomized) overworld maps.  ZORATracker may not work with\n" +
                                 "these perfectly, but the options here are designed to allow you to use\n" +
-                                "Z-Tracker with non-standard overworld maps, for a slightly degraded, but\n" +
+                                "ZORATracker with non-standard overworld maps, for a slightly degraded, but\n" +
                                 "workable tracking experience.\n\n" + 
 
                                 "There are two main options:\n" +
@@ -1610,9 +1602,9 @@ type MyWindow() as this =
                             Graphics.shouldInitiallyHideOverworldMap <- (choice=0 || choice=2)
                             let text = (if choice=0 then "You have chosen a blank map grid.\n\n" else "You have chosen to load a map file.\n\n") +
 
-                                        "Some randomizers have behavior that Z-Tracker does not natively support.  For example, " +
+                                        "Some randomizers have behavior that ZORATracker does not natively support.  For example, " +
                                         "in z1m1 you might be able to purchase a Ladder in an overworld shop.  There is no native " +
-                                        "Z-Tracker support for marking an overworld tile as a Ladder shop.  But you can add some " +
+                                        "ZORATracker support for marking an overworld tile as a Ladder shop.  But you can add some " +
                                         "abitrary markup to the app in a few ways:\n" +
                                         " - click the 'Draw' button in the bottom left, to place arbitrary icons\n" +
                                         "      (e.g. you might put '$' and Ladder icons on an overworld tile)\n" +
@@ -1721,7 +1713,7 @@ type MyWindow() as this =
         stackPanel.Children.Add(finalChildTipArea) |> ignore  // finalChildTipArea still used for explainer arrows on startup options
 
         // Tip lives inside bottomSP so it's in proper layout flow — can never overlap the Settings header
-        let bottomSP = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center)
+        let bottomSP = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Stretch)
         let tipsp = new StackPanel(Orientation=Orientation.Vertical)
         let tb = MakeTipTextBox("Random tip:")
         tipsp.Children.Add(tb) |> ignore
@@ -1736,7 +1728,21 @@ type MyWindow() as this =
                                 Margin=Thickness(0.,0.,0.,5.), BorderThickness=Thickness(0.))
         ignore tb   // (the "Settings (most can be changed later...)" heading is no longer shown)
         let options = OptionsMenu.makeOptionsCanvas(cm, false, true)
-        bottomSP.Children.Add(options) |> ignore
+        let optionsWithVersion = new Grid()   // the version button sits at the bottom right of the other settings
+        optionsWithVersion.Children.Add(options) |> ignore
+        do
+            let vbButton = CustomComboBoxes.makeVersionButtonWithBehavior(cm)
+            Layout.styleStartupButton(vbButton)   // (styled before it is wrapped in the dock panel)
+            (match vbButton.Content with
+             | :? TextBox as vt -> vt.Padding <- Thickness(8.,1.,8.,1.)
+             | _ -> ())
+            let vb = Graphics.dock(vbButton, Dock.Top)
+            vb.LayoutTransform <- new ScaleTransform(16./9., 16./9.)
+            vb.HorizontalAlignment <- HorizontalAlignment.Right
+            vb.VerticalAlignment <- VerticalAlignment.Bottom
+            vb.Margin <- Thickness(0.,0.,12.,8.)
+            optionsWithVersion.Children.Add(vb) |> ignore
+        bottomSP.Children.Add(optionsWithVersion) |> ignore
         mainDock.Children.Add(bottomSP) |> ignore
         DockPanel.SetDock(bottomSP, Dock.Bottom)
 
@@ -1774,15 +1780,14 @@ type MyWindow() as this =
                         // it crashed in the past 10 minutes
                         if System.IO.File.Exists(SaveAndLoad.AutoSaveFilename) then
                             let autoSaveTime = System.IO.File.GetLastWriteTime(SaveAndLoad.AutoSaveFilename)
-                            if autoSaveTime > (crashTime - TimeSpan.FromMinutes(2.)) then
+                            if autoSaveTime > (crashTime - TimeSpan.FromMinutes(float TrackerModelOptions.AutoSaveMinutes + 1.)) then   // (the Auto-save interval option, plus a minute of slack)
                                 popupIsActive <- true
                                 async {
                                 // there was an autosave just before the crash
-                                let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, 
-                                                                            "It appears that Z-Tracker recently crashed.\n\n"+
-                                                                                "There is a recent auto-save from a\n"+
-                                                                                "minute or so before the crash.\n\n"+
-                                                                                "Would you like to try loading the auto-save?", ["Yes, load auto-save"; "No"])
+                                let! r = CustomComboBoxes.DoModalMessageBox(cm, null,
+                                                                            "It appears that ZORATracker recently crashed.\n"+
+                                                                            "There is an auto-save from shortly before the crash.\n"+
+                                                                            "Would you like to try loading it?", ["Yes, load auto-save"; "No"])
                                 popupIsActive <- false
                                 if r <> "No" then
                                     let json = System.IO.File.ReadAllText(SaveAndLoad.AutoSaveFilename)
@@ -1815,7 +1820,7 @@ type DummyWindow() as this =
     inherit Window()
     do
         this.ShowInTaskbar <- false
-        this.Title <- "Z-Tracker start-up..."
+        this.Title <- "ZORATracker start-up..."
         this.Width <- 300.
         this.Height <- 100.
         this.WindowState <- WindowState.Minimized
@@ -1842,14 +1847,15 @@ type DummyWindow() as this =
             mainW.Owner <- this
             mainW.Show()
             let handle = Winterop.GetConsoleWindow()
-            Winterop.ShowWindow(handle, Winterop.SW_MINIMIZE) |> ignore
+            Winterop.ShowWindow(handle, Winterop.SW_HIDE) |> ignore   // hidden rather than minimized (no stray bar on screen); a crash still brings it back with SW_SHOWNORMAL
             mainW.Closed.Add(fun _ -> try this.Close() with e -> ())  // ignore exceptions on close; restart button tends to crash here
             )
 
 [<STAThread>]
 [<EntryPoint>]
 let main _argv = 
-    printfn "Starting Z-Tracker..."
+    printfn "Starting ZORATracker..."
+    (try Winterop.ShowWindow(Winterop.GetConsoleWindow(), Winterop.SW_HIDE) |> ignore with _ -> ())   // hide the console right away (a crash still re-shows it)
     let cwd = System.IO.Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName)
     let thisExe = System.IO.Path.Combine(cwd, Graphics.ExeName)
     let thisExeName = thisExe.Replace('\\', '_')   // backslash is not allowed character in mutex name
@@ -1889,7 +1895,7 @@ let main _argv =
         if mutex.WaitOne(5000, false) then   // single instance, to prevent competing write of auto-save or options in this directory
             runTheApp()
         else
-            printfn "Another instance of Z-Tracker is already running in this directory."
+            printfn "Another instance of ZORATracker is already running in this directory."
             printfn "Close it before running this."
             printfn "(Press a key to dismiss this console window)"
             System.Threading.Thread.Sleep(1000)

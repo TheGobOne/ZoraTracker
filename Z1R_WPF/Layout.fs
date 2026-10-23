@@ -104,7 +104,7 @@ let mutable iconShowRun : UIElement = null
 let mutable iconFQSQ : UIElement = null
 let panelHeading(text:string) =
     new TextBlock(Text=text, FontSize=8., FontWeight=FontWeights.SemiBold, Foreground=new SolidColorBrush(Color.FromRgb(143uy,143uy,143uy)), TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
-let panelHeadings = [ panelHeading("TRACK"), PANEL_X0, 0., PANEL_LW; panelHeading("TOOLS"), PANEL_X0, 68., PANEL_LW; panelHeading("TIMER"), PANEL_X1, 0., PANEL_RW; panelHeading("OVERWORLD OPTIONS"), PANEL_X1, 68., PANEL_RW; panelHeading("FILE"), PANEL_X1, 104., PANEL_RW ]
+let panelHeadings = [ panelHeading("TRACK"), PANEL_X0, 0., PANEL_LW; panelHeading("TOOLS"), PANEL_X0, 32., PANEL_LW; panelHeading("TIMER"), PANEL_X1, 0., PANEL_RW; panelHeading("OVERWORLD OPTIONS"), PANEL_X0, 114., PANEL_LW; panelHeading("FILE"), PANEL_X1, 68., PANEL_RW ]
 let panelDivider = new System.Windows.Shapes.Rectangle(Width=1., Height=148., Fill=new SolidColorBrush(Color.FromRgb(38uy,38uy,38uy)), IsHitTestVisible=false)
 let addPanelDecor(add:UIElement -> unit) =
     for tb, _, _, _ in panelHeadings do add(tb)
@@ -168,17 +168,16 @@ let tryLayoutTopLeftIcons() =
                     | _ -> ()
                     // two-column control panel: left TRACK / TOOLS, right TIMER (+ Pause/Reset level with Spot Summary) / FILE; every button the same size
                     let items : (UIElement * float * float) list =
-                        [ hintDecoderElementForCentering, PANEL_X0, 10.
-                          iconItemLocations, PANEL_X0, 28.
-                          iconSpot, PANEL_X0, 46.
-                          hotkeysElementForCentering, PANEL_X0, 78.
-                          iconLog, PANEL_X0, 96.
-                          iconDraw, PANEL_X0, 114.
-                          iconShowRun, PANEL_X0, 132.
+                        [ iconItemLocations, PANEL_X0, 10.   // (the 'Popout Windows' button; Spot Summary and Show Custom now live in its menu)
+                          hintDecoderElementForCentering, PANEL_X0, 42.
+                          hotkeysElementForCentering, PANEL_X0, 60.
+                          iconLog, PANEL_X0, 78.
+                          iconDraw, PANEL_X0, 96.
                           rightButtonForSizing, PANEL_X1, 46.
-                          iconFQSQ, PANEL_X1, 78.
-                          iconOptions, PANEL_X1, 114.
-                          iconSave, PANEL_X1, 132. ]
+                          iconFQSQ, PANEL_X0, 124.
+                          iconOptions, PANEL_X1, 78.
+                          iconSave, PANEL_X1, 96. ]
+                    for e in [iconSpot; iconShowRun] do (if e <> null then e.Visibility <- Visibility.Collapsed)
                     for e, x, y in items do
                         match e with
                         | :? FrameworkElement as f ->
@@ -339,10 +338,9 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, racingLink:UIElement) =
             let logoX = 16.*OMTW - kittyWidth - 22. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used, nudged 10px left
             canvasAdd(appMainCanvas, discordLink, logoX - (DiscordLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2.)
-            canvasAdd(appMainCanvas, racingLink, logoX - (RacingLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2. - 15.)   // above the ZORA Discord link (the logo itself is no longer shown)
+            canvasAdd(appMainCanvas, kitty, 0., 0.)   // the ZORA logo sits above the ZORA links (positioned in WPFUI.placeLinkStack)
         member this.AddExtraSiteLinks(zoraSiteLink, racingSiteLink) =
             canvasAdd(appMainCanvas, zoraSiteLink, 0., 0.)   // (positioned together with the other links in WPFUI.placeLinkStack)
-            canvasAdd(appMainCanvas, racingSiteLink, 0., 0.)
         member this.AddShowHotKeysButton(showHotKeysButton) = 
             canvasAdd(appMainCanvas, showHotKeysButton, WEBCAM_LINE-41., 128.)
             hotkeysElementForCentering <- showHotKeysButton
@@ -595,7 +593,6 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, racingLink:UIElement) =
             let logoX = 16.*OMTW - kittyWidth - 22. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used, nudged 10px left
             canvasAdd(upper, discordLink, logoX - (DiscordLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2.)
-            canvasAdd(upper, racingLink, logoX - (RacingLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2. - 15.)
             // WANT!
             let kitty = new Image()
             let imageStream = Graphics.GetResourceStream("CustomLogo.png")
@@ -606,7 +603,6 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(lower, lowerDiscordLink, afterSoldItemBoxesX+150. + 5. - (DiscordLinkWidth - kitty.Width)/2., 48. + kitty.Height + 1.)
         member this.AddExtraSiteLinks(zoraSiteLink, racingSiteLink) =
             canvasAdd(upper, zoraSiteLink, 0., 0.)
-            canvasAdd(upper, racingSiteLink, 0., 0.)
         member this.AddShowHotKeysButton(showHotKeysButton) = 
             canvasAdd(upper, showHotKeysButton, WEBCAM_LINE-41., 128.)
             hotkeysElementForCentering <- showHotKeysButton
@@ -739,7 +735,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
 
 let makeMouseMagnifierWindow(cm:CustomComboBoxes.CanvasManager) =
     let mmWindow = new Window()
-    mmWindow.Title <- "ZORA Tracker mouse magnifier"
+    mmWindow.Title <- "ZORATracker mouse magnifier"
     mmWindow.ResizeMode <- ResizeMode.CanResizeWithGrip
     mmWindow.SizeToContent <- SizeToContent.Manual
     mmWindow.WindowStartupLocation <- WindowStartupLocation.Manual

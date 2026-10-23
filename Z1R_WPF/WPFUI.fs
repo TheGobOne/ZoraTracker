@@ -89,6 +89,7 @@ let decorDisplayList(idents:int list) : (int*int) list =
     let indexed = idents |> List.indexed
     match indexed |> List.tryFind (fun (_, id) -> id = TrackerModel.ITEMS.BLUEPOTION) with
     | None -> indexed |> List.map (fun (k, id) -> id, k)
+    | Some(_pk, _) when true -> indexed |> List.map (fun (k, id) -> id, k)   // the blue potion marker is an ordinary icon now
     | Some(pk, _) ->
         let others = indexed |> List.filter (fun (k, _) -> k <> pk) |> List.map (fun (k, id) -> id, k)
         [ (TrackerModel.ITEMS.BLUEPOTION, pk) ] @ others   // (just the blue potion: the red one made the icons too small)
@@ -106,43 +107,69 @@ let bombDropperBmp : System.Drawing.Bitmap =
     g.DrawLine(pen, r.X + 3, r.Y + 5, r.X + 5, r.Y + 8)
     g.DrawLine(pen, r.X + 7, r.Y + 5, r.X + 5, r.Y + 8)
     b
+// the bomb dropper icon with a 1px red outline hugging its shape (transparent everywhere else): the badge drawn in a tile's corner
+let bombDropperOutlinedBmp : System.Drawing.Bitmap =
+    let src = bombDropperBmp
+    let o = new System.Drawing.Bitmap(src.Width + 2, src.Height + 2, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+    for x = 0 to src.Width - 1 do
+        for y = 0 to src.Height - 1 do
+            if src.GetPixel(x, y).A > 60uy then
+                for dx = -1 to 1 do
+                    for dy = -1 to 1 do
+                        o.SetPixel(x + 1 + dx, y + 1 + dy, System.Drawing.Color.Red)
+    for x = 0 to src.Width - 1 do
+        for y = 0 to src.Height - 1 do
+            let c = src.GetPixel(x, y)
+            if c.A > 0uy then
+                let a = int c.A
+                let blend(fg:int, bg:int) : int = (fg * a + bg * (255 - a)) / 255
+                o.SetPixel(x + 1, y + 1, System.Drawing.Color.FromArgb(255, blend(int c.R, 255), blend(int c.G, 0), blend(int c.B, 0)))
+    o
+// Progressive Items: the picture of a family's tier (swords: the P1..P4 sprites; rings / candles / arrows: the base item, then the upgraded one)
+let progressiveFamilyTierBmp(family:int, tier:int) : System.Drawing.Bitmap =
+    if family = 1 then Graphics.ow_progressive_tier_item_bmps.[max 1 (min 4 tier)]
+    else CustomComboBoxes.boxCurrentBMP(TrackerModel.progressiveFamilyIdent(family, tier), None)
 let decorSourceBmp(item:int) : System.Drawing.Bitmap =
     if item = TrackerModel.DECOR_BOMB then Graphics.bomb_bmp
     elif item = TrackerModel.DECOR_BOMB_DROPPER then bombDropperBmp
     elif item = TrackerModel.ITEMS.BLUEPOTION then (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_blue_potion_bmp else Graphics.blue_potion_bmp)
     elif item = TrackerModel.ITEMS.REDPOTION then (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_red_potion_bmp else Graphics.red_potion_bmp)
+    elif TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(item) >= 1 && TrackerModel.progressiveSwordBoxTier(item) <= 4 then Graphics.ow_progressive_tier_item_bmps.[TrackerModel.progressiveSwordTier()]   // Progressive Items: swords act like the progressive sword (they all show the current tier, P1..P4)
+    elif TrackerModel.progressiveFamily item >= 2 then progressiveFamilyTierBmp(TrackerModel.progressiveFamily item, TrackerModel.progressiveFamilyTier(TrackerModel.progressiveFamily item))   // Progressive Items: rings / candles / arrows show the current tier
     elif item = TrackerModel.ITEMS.WOODSWORD then Graphics.swordLevelToOwBmp(1)   // the same sword icon the item progress bar uses
     elif item = TrackerModel.ITEMS.WHITESWORD then Graphics.swordLevelToOwBmp(2)
     elif item = TrackerModel.ITEMS.MAGICALSWORD then Graphics.swordLevelToOwBmp(3)
     else CustomComboBoxes.boxCurrentBMP(item, None)
 // the items placed in numbered shop n (taken from the first tile carrying that shop's label), as (icon, collected)
 let shopItemBitmapsGlobal(n:int) : (System.Drawing.Bitmap*bool) list =
-    if n = 0 then
-        // the potion shop: the icon in the middle (anything on a potion tile besides the potion itself)
-        [ for x in 0..15 do
-            for y in 0..7 do
-                let es = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[x,y])
-                if es |> List.exists (fun (id,_) -> id = TrackerModel.ITEMS.BLUEPOTION) then
-                    for (ident, collected) in es do
-                        if ident <> TrackerModel.ITEMS.BLUEPOTION then
-                            let bmp = decorSourceBmp ident
-                            if bmp <> null then yield (bmp, collected) ] |> List.truncate 1
-    elif n < 1 then []
+    // (index 0 is the P shop, which is shop label 5; it holds just one item)
+    let label = if n = 0 then 5 else n
+    let src = [ for x in 0..15 do
+                  for y in 0..7 do
+                      if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = label && not (TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[x,y]).IsEmpty) then yield (x,y) ]
+    if src.IsEmpty then
+        // no tile of this shop on the map: whatever was entered in the shop window
+        let all = [ for (ident, collected) in TrackerModel.decorEntriesOf(TrackerModel.shopStash.[label]) do
+                      let bmp = decorSourceBmp ident
+                      if bmp <> null then yield (bmp, collected) ]
+        if n = 0 then List.truncate 1 all else all
     else
-        let src = [ for x in 0..15 do
-                      for y in 0..7 do
-                          if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = n && not (TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[x,y]).IsEmpty) then yield (x,y) ]
-        if src.IsEmpty then []
-        else
-            let sx, sy = src.Head
-            [ for (ident, collected) in TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[sx,sy]) do
-                let bmp = decorSourceBmp ident
-                if bmp <> null then yield (bmp, collected) ]
+        let sx, sy = src.Head
+        let all = [ for (ident, collected) in TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[sx,sy]) do
+                      let bmp = decorSourceBmp ident
+                      if bmp <> null then yield (bmp, collected) ]
+        if n = 0 then List.truncate 1 all else all
+// Progressive Items: every sword (and the progressive sword) shows the current tier, so its cached picture depends on the tier
+let progressiveSwordCacheOffset(item:int) =
+    let f = TrackerModel.progressiveFamily item
+    if f = 1 then 10000 + 100 * TrackerModel.progressiveSwordTier()
+    elif f >= 2 then 20000 + 100 * TrackerModel.progressiveFamilyTier f
+    else 0
 let decorIconBmp(item:int) : System.Drawing.Bitmap =
-    if item = TrackerModel.ITEMS.PROGRESSIVESWORD || item = TrackerModel.ITEMS.WHITESWORD4 then
+    if (item = TrackerModel.ITEMS.PROGRESSIVESWORD || item = TrackerModel.ITEMS.WHITESWORD4) && not TrackerModel.ProgressiveItems then
         extraSwordIconBmp item
     else
-        let cacheKey = item + (if TrackerModelOptions.UseOldPotionLetterIcons.Value then 5000 else 0)   // old/new potion & letter icons are cached separately
+        let cacheKey = item + (if TrackerModelOptions.UseOldPotionLetterIcons.Value then 5000 else 0) + progressiveSwordCacheOffset item   // old/new potion & letter icons are cached separately
         let found, cached = decorIconCache.TryGetValue(cacheKey)
         if found then cached
         else
@@ -172,7 +199,7 @@ let decorIconBmp(item:int) : System.Drawing.Bitmap =
                 dst
 
 let decorGreyBmp(item:int) : System.Drawing.Bitmap =
-    let cacheKey = item + (if TrackerModelOptions.UseOldPotionLetterIcons.Value then 5000 else 0)
+    let cacheKey = item + (if TrackerModelOptions.UseOldPotionLetterIcons.Value then 5000 else 0) + progressiveSwordCacheOffset item
     let found, cached = decorGreyCache.TryGetValue(cacheKey)
     if found then cached
     else
@@ -204,17 +231,21 @@ Graphics.styleRoundedButton(currentMaxHeartsButton)
 // heart containers marked 'collected' on the map count toward the player's max hearts; every change to a tile's icons goes through here
 let rebuildMapCollected() =
     System.Array.Clear(TrackerModel.mapCollectedCount, 0, TrackerModel.mapCollectedCount.Length)
+    // (with Progressive Items, a shop shown on several tiles is still one shop: its swords / rings / candles / arrows count once, however many tiles carry it)
+    let shopCounted = new System.Collections.Generic.HashSet<int*int>()   // (shop label, item)
     for i = 0 to 15 do
         for j = 0 to 7 do
+            let label = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
             for (ident, col) in TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j]) do
                 if col && ident >= 0 && ident < TrackerModel.mapCollectedCount.Length then
-                    TrackerModel.mapCollectedCount.[ident] <- TrackerModel.mapCollectedCount.[ident] + 1
+                    let isRepeat = label > 0 && TrackerModel.progressiveFamily ident > 0 && not (shopCounted.Add((label, ident)))
+                    if not isRepeat then TrackerModel.mapCollectedCount.[ident] <- TrackerModel.mapCollectedCount.[ident] + 1
 let mutable copiedMarkerIdents : int list = []
 let mutable copiedMarkerPacked : int = -1   // same, including each icon's collected state   // shift+left-click on a tile that has only item markers copies them; shift+left-click on an unmarked tile pastes them
 let mutable decorStateChanged = fun () -> ()   // set once the main UI exists: refreshes the item progress bar etc.
-// potion shops: a tile counts as one if it is marked as a potion shop or carries the blue potion marker icon; no more than the max can be placed
+// potion shops: a tile counts as one if it carries the "P SHOP" label (shop label 5) or is marked as an old-style potion shop; the blue potion marker icon is just a marker and does not count
 let tileHasPotionShop(i:int, j:int) =
-    TrackerModel.overworldMapMarks.[i,j].Current() = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || (TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.ITEMS.BLUEPOTION)
+    TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) = 5 || TrackerModel.overworldMapMarks.[i,j].Current() = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP
 let canPlacePotionShop(i:int, j:int) =
     if tileHasPotionShop(i,j) then true
     else
@@ -229,10 +260,28 @@ let dupLinks = new System.Collections.Generic.Dictionary<(int*int), ResizeArray<
 let mutable copiedMarkerSource = (-1, -1)
 let mutable copiedMarkerBomb = false   // the copied tile was a bomb shop (the paste makes a bomb shop too)
 let mutable redrawOwTileHook = fun (_i:int, _j:int) -> ()   // set once the map exists: redraws one overworld tile
+// toggling a marker icon on a tile; a P shop (shop label 5) holds just one item, so picking a different one replaces it
+let decorToggleForTile(before:int, ident:int) : int =
+    let cur = TrackerModel.decorIconsOf before
+    if TrackerModel.shopLabelOf before = 5 && not cur.IsEmpty && not (cur |> List.contains ident) then
+        TrackerModel.decorIconsToggle(TrackerModel.withShopLabel(-1, 5), ident)
+    else TrackerModel.decorIconsToggle(before, ident)
 let mutable syncingShops = false
 let mutable openShopFlyoutDirectly = false   // set by the Overworld_Shop hotkey: the next tile popup goes straight to the Shop flyout (potion shop / shops 1-4)
 // the Dead Woods / Lost Hills hint buttons (set when the legend is built): hovering a tile locked by that hint highlights its button
 let mutable hintButtonHighlightHook : int -> bool -> unit = fun _ _ -> ()   // zone (1 = Dead Woods, 2 = Lost Hills), on/off
+// 'Progressive Items' (ZORA Extras): the next level of each base item; the UI sets the hook (notification + glow) once it exists
+let mutable progressiveUpgradeHook : (int*int) list -> System.Drawing.Bitmap -> System.Drawing.Bitmap -> unit = fun _ _ _ -> ()   // upgraded tiles, from icon, to icon
+let mutable progressiveSwordCheckHook : unit -> unit = fun () -> ()   // the progressive sword's tier (P1..P4) may have changed
+let mutable progressiveWired = false
+let progressiveLastTiers : int[] = Array.create 5 1
+let progressivePrevTiers : int[] = Array.create 5 1   // per family: the tier before the latest change
+let progressiveChangedAt : System.DateTime[] = Array.create 5 System.DateTime.MinValue
+// the tier a family item that was just collected is recorded at: the tier it was showing before it was collected. That is the last tier we saw, unless another handler for this very click
+// already moved the tier up (then it is the tier from before that move)
+let progressiveCollectedTier(family:int) : int =
+    let moved = (System.DateTime.Now - progressiveChangedAt.[family]).TotalMilliseconds < 200.
+    max 1 (if moved then progressivePrevTiers.[family] else progressiveLastTiers.[family])   // per family (1 swords, 2 rings, 3 candles, 4 arrows): the tier before the change being processed (what a newly collected item is recorded at)
 let rec setDecorIcons(i:int, j:int, newPacked0:int) =
     let oldEntriesForDups = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j])
     // the tile's "SHOP n" text label is not an item icon: icon changes keep it (only setShopLabel changes it)
@@ -250,6 +299,15 @@ let rec setDecorIcons(i:int, j:int, newPacked0:int) =
     let itemsBefore = Array.copy TrackerModel.mapCollectedCount
     TrackerModel.owSwordIcons.[i,j] <- newPacked
     rebuildMapCollected()
+    if TrackerModel.ProgressiveItems then
+        // remember (or forget) the tier each collected sword was collected at, so its icon keeps showing where the upgrade came from
+        let nOf (es:(int*bool) list) id = es |> List.filter (fun (x,c) -> x = id && c) |> List.length
+        let newEs = TrackerModel.decorEntriesOf(newPacked)
+        for id in [ TrackerModel.ITEMS.PROGRESSIVESWORD; TrackerModel.ITEMS.WOODSWORD; TrackerModel.ITEMS.WHITESWORD; TrackerModel.ITEMS.MAGICALSWORD; TrackerModel.ITEMS.WHITESWORD4
+                    TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW ] do
+            if nOf newEs id > nOf oldEntriesForDups id then TrackerModel.progressiveTileTier.[(i,j,id)] <- progressiveCollectedTier(TrackerModel.progressiveFamily id)
+            elif nOf newEs id < nOf oldEntriesForDups id then TrackerModel.progressiveTileTier.Remove((i,j,id)) |> ignore
+        progressiveSwordCheckHook()
     List.iter2 (fun (id, (prop:TrackerModel.BoolProperty)) wasHad ->
         let has = TrackerModel.mapCollectedCount.[id] > 0
         if has <> wasHad then prop.Set(has)) boxLinks before
@@ -312,7 +370,15 @@ let rec setDecorIcons(i:int, j:int, newPacked0:int) =
 OverworldMapTileCustomization.setDecorIconsHook <- setDecorIcons
 // set (1-5) or remove (0) the tile's "SHOP n" text label
 let setShopLabel(i:int, j:int, label:int) =
+    let old = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
+    if old > 0 && label <> old && TrackerModel.shopLabelCount(old) = 1 then
+        // this was the last tile of that shop: its items stay in the shop window
+        TrackerModel.shopStash.[old] <- TrackerModel.decorEntriesPack(TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j]))
     TrackerModel.owSwordIcons.[i,j] <- TrackerModel.withShopLabel(TrackerModel.owSwordIcons.[i,j], label)
+    if label > 0 && label <> old && TrackerModel.shopLabelCount(label) = 1 && TrackerModel.shopStash.[label] > 0 then
+        // the first tile of a shop picks up the items already entered in its shop window
+        TrackerModel.owSwordIcons.[i,j] <- TrackerModel.withShopLabel(TrackerModel.shopStash.[label], label)
+        TrackerModel.shopStash.[label] <- -1
     decorStateChanged()
 // removes every marker icon AND the shop label from a tile
 let clearAllTileIcons(i:int, j:int) =
@@ -1047,7 +1113,37 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 let decorList = (if bombAsSlot then [TrackerModel.DECOR_BOMB] else []) @ visibleDecorIcons(TrackerModel.owSwordIcons.[i,j]) |> decorDisplayList |> List.map fst
                 let shopLabelNow = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
                 let hasShopLabel = shopLabelNow > 0
-                if not decorList.IsEmpty then
+                if shopLabelNow = 5 then
+                    // the P shop mirrors the flyout: blue potion, the one item (a ? until something is placed), red potion; only the middle slot can change
+                    let big = ms.State = -1 || ms.IsX || bombAsSlot
+                    let entries = TrackerModel.decorEntriesOf TrackerModel.owSwordIcons.[i,j]
+                    let mid = match decorList with | h :: _ -> Some h | [] -> None
+                    let midCollected = match mid with | Some h -> (entries |> List.exists (fun (x,col) -> x = h && col)) | None -> false
+                    for k in 0..2 do
+                        let size, x, y = decorSlotC(true, bombAsSlot, big, 3, k)
+                        if k = 1 && mid.IsNone then
+                            let q = new TextBlock(Text="?", Foreground=Brushes.White, FontSize=size, FontWeight=FontWeights.Bold, Width=size, Height=size, TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
+                            canvasAdd(c, q, x, y - 3.)
+                        else
+                            let ident = if k = 0 then TrackerModel.ITEMS.BLUEPOTION elif k = 2 then TrackerModel.ITEMS.REDPOTION else mid.Value
+                            let dbmp =
+                                if (k = 1 && midCollected) && TrackerModel.progressiveFamily ident > 0 then
+                                    // a collected sword keeps the tier it was collected at (so you can see where each upgrade came from)
+                                    TrackerModel.progressiveTierOverride <- (match TrackerModel.progressiveTileTier.TryGetValue((i,j,ident)) with | true, v -> v | _ -> max 1 (TrackerModel.progressiveFamilyTier(TrackerModel.progressiveFamily ident) - 1))
+                                    let b = (try decorIconBmp ident finally TrackerModel.progressiveTierOverride <- -1)
+                                    b
+                                else decorIconBmp ident
+                            if dbmp <> null then
+                                let img = Graphics.BMPtoImage(dbmp)
+                                img.Stretch <- Stretch.Uniform
+                                img.Width <- size
+                                img.Height <- size
+                                if k = 1 && midCollected && ident = TrackerModel.ITEMS.OLDKEY then img.Opacity <- 0.35
+                                canvasAdd(c, img, x, y)
+                                if k = 1 && midCollected && ident <> TrackerModel.ITEMS.OLDKEY then
+                                    let ck = decorCheckmark(size)
+                                    canvasAdd(c, ck, x + (size - ck.Width)/2., y + (size - ck.Height)/2.)
+                elif not decorList.IsEmpty then
                     let n = decorList.Length
                     let big = ms.State = -1 || ms.IsX || bombAsSlot   // a bomb shop's bomb and its other icons are drawn full size, like two icons on an unmarked tile
                     let packedNow = TrackerModel.owSwordIcons.[i,j]
@@ -1060,13 +1156,19 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         let justDim = collected && ident = TrackerModel.ITEMS.OLDKEY   // regular key: just dimmed, collects nothing
                         // a single sword icon on an open tile is drawn at the same size as the sword on its cave tile (15x27), not shrunk into the square marker slot
                         let naturalSword =
-                            if n = 1 && big && not bombAsSlot && not hasShopLabel then   // (on a "SHOP n" tile the label needs the top of the tile, so the sword is scaled down into the slot below it, like the 4th sword)
+                            if n = 1 && big && not bombAsSlot && not hasShopLabel && not TrackerModel.ProgressiveItems then   // (on a "SHOP n" tile the label needs the top of the tile, so the sword is scaled down into the slot below it, like the 4th sword)
                                 (if ident = TrackerModel.ITEMS.WOODSWORD then Some Graphics.ow_sword1_menu_bmp
                                  elif ident = TrackerModel.ITEMS.WHITESWORD then Some Graphics.ow_sword2_menu_bmp
                                  elif ident = TrackerModel.ITEMS.MAGICALSWORD then Some Graphics.ow_sword3_menu_bmp
                                  else None)
                             else None
-                        let dbmp = decorIconBmp ident   // collected items get a little green checkmark (the regular key just dims)
+                        let dbmp =   // collected items get a little green checkmark (the regular key just dims)
+                            if collected && TrackerModel.progressiveFamily ident > 0 then
+                                // a collected sword keeps the tier it was collected at (so you can see where each upgrade came from)
+                                TrackerModel.progressiveTierOverride <- (match TrackerModel.progressiveTileTier.TryGetValue((i,j,ident)) with | true, v -> v | _ -> max 1 (TrackerModel.progressiveFamilyTier(TrackerModel.progressiveFamily ident) - 1))
+                                let b = (try decorIconBmp ident finally TrackerModel.progressiveTierOverride <- -1)
+                                b
+                            else decorIconBmp ident
                         if naturalSword.IsSome then
                             let sb = naturalSword.Value
                             let img = Graphics.BMPtoImage(if collected then Graphics.greyscale sb else sb)
@@ -1090,9 +1192,17 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                 canvasAdd(c, ck, x + (size - ck.Width)/2., y + (size - ck.Height)/2.))
                 // the "SHOP n" text label across the top of the tile (plain text: it is not an item icon and never uses up one of the item slots)
                 if hasShopLabel then
-                    let labelTB = new TextBlock(Text=sprintf "SHOP %d" shopLabelNow, Foreground=Brushes.Gold, FontSize=9., FontWeight=FontWeights.Bold, TextAlignment=TextAlignment.Center,
+                    let labelTB = new TextBlock(Text=(if shopLabelNow = 5 then "P SHOP" else sprintf "SHOP %d" shopLabelNow), Foreground=Brushes.Gold, FontSize=9., FontWeight=FontWeights.Bold, TextAlignment=TextAlignment.Center,
                                                 Width=OMTW, Height=11., Background=Brushes.Black, IsHitTestVisible=false)
                     canvasAdd(c, labelTB, 0., 0.)
+                // the bomb dropper badge: its own layer in the top-right corner of the tile (never an item slot); the icon carries its own red outline
+                if TrackerModel.owBombDroppers.[i,j] then
+                    let badge = Graphics.BMPtoImage(bombDropperOutlinedBmp)
+                    badge.Stretch <- Stretch.Uniform
+                    badge.Width <- 12.
+                    badge.Height <- 12.
+                    badge.IsHitTestVisible <- false
+                    canvasAdd(c, badge, OMTW - 12., 0.)
             Views.hintDashedItemsChanged.Publish.Add(fun _ -> redrawGridSpot())
             // the letter / white sword / magical sword cave once the user has picked 'Took ...' there
             let tookCaveItem(state) =
@@ -1254,14 +1364,18 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                   else
                     // the swords are 15x27 cave-style icons; the dungeon items are shown at full 21x21 size (without the black outline, which is only for the map)
                     let isSword = (ident = TrackerModel.ITEMS.PROGRESSIVESWORD || ident = TrackerModel.ITEMS.WHITESWORD4)
-                    let bmp = if isSword then Graphics.swordMenuBmp(decorIconBmp ident) else decorSourceBmp ident
+                    let progSword = TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(ident) > 0   // Progressive Items: the sword cells show the current P tier sprite (21x27)
+                    let bmp = if progSword then Graphics.ow_progressive_tier_menu_bmps.[(let t = TrackerModel.progressiveSwordBoxTier(ident) in if t >= 1 && t <= 4 then t else TrackerModel.progressiveSwordTier())] elif isSword then Graphics.swordMenuBmp(decorIconBmp ident) elif TrackerModel.progressiveDisabledIdent ident && TrackerModel.progressiveFamily ident >= 2 then CustomComboBoxes.boxCurrentBMP(ident, None) else decorSourceBmp ident   // (a disabled red ring / candle / silver arrow keeps its own picture)
                     let img = Graphics.BMPtoImage(bmp)
                     img.Stretch <- Stretch.Uniform
-                    img.Width <- (if isSword then 15. else 21.)
-                    img.Height <- (if isSword then 27. else 21.)
+                    img.Width <- (if progSword then 21. elif isSword then 15. else 21.)
+                    img.Height <- (if progSword || isSword then 27. else 21.)
                     let cell = new Canvas(Width=7.*3., Height=9.*3.)
-                    canvasAdd(cell, img, (if isSword then 3. else 0.), (if isSword then 0. else 3.))
-                    (cell :> FrameworkElement), (not markersBlocked && not (ident = TrackerModel.ITEMS.WHITESWORD4 && not TrackerModelOptions.FourthSwordEnabled) && (ident <> TrackerModel.ITEMS.BLUEPOTION || canPlacePotionShop(i,j))), 1000 + ident   // the 4th sword icon is disabled unless the 4th Sword start option is on
+                    canvasAdd(cell, img, (if isSword && not progSword then 3. else 0.), (if isSword then 0. else 3.))
+                    let progDisabled = TrackerModel.progressiveDisabledIdent ident
+                    if progDisabled then
+                        cell.Background <- Brushes.Transparent
+                    (cell :> FrameworkElement), (not markersBlocked && not progDisabled && not (ident = TrackerModel.ITEMS.WHITESWORD4 && not TrackerModelOptions.FourthSwordEnabled)), 1000 + ident   // the 4th sword icon is disabled unless the 4th Sword start option is on
                 // 9 columns x 6 rows
                 let topRows : (FrameworkElement*bool*int)[] = [|
                     // row 1: all 9 dungeons
@@ -1276,6 +1390,14 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     yield swordIconCell(TrackerModel.ITEMS.WHITESWORD4)
                     yield swordIconCell(TrackerModel.ITEMS.PROGRESSIVESWORD)
                     |]
+                let markerIdentList =
+                    [ TrackerModel.ITEMS.LADDER; TrackerModel.ITEMS.POWERBRACELET; TrackerModel.ITEMS.RECORDER; TrackerModel.ITEMS.RAFT; TrackerModel.ITEMS.BOW
+                      TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.WAND
+                      TrackerModel.ITEMS.KEY; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG
+                      TrackerModel.ITEMS.BOOKSHIELD; TrackerModel.ITEMS.SHIELD; TrackerModel.ITEMS.MEAT; TrackerModel.DECOR_BOMB; TrackerModel.ITEMS.OLDKEY
+                      SHOP_MENU; TrackerModel.ITEMS.LETTER; TrackerModel.ITEMS.HEARTCONTAINER; TrackerModel.ITEMS.BLUEPOTION; TrackerModel.ITEMS.BOMBUPGRADE ]
+                // the bottom row of the menu is always: shop, bomb, key, letter, heart container, blue potion, bomb upgrade, clear
+                let lastRowIdents = [ SHOP_MENU; TrackerModel.DECOR_BOMB; TrackerModel.ITEMS.OLDKEY; TrackerModel.ITEMS.LETTER; TrackerModel.ITEMS.HEARTCONTAINER; TrackerModel.ITEMS.BLUEPOTION; TrackerModel.ITEMS.BOMBUPGRADE ]
                 let bottomRows : (FrameworkElement*bool*int)[] = [|
                     // row 3: unknown secret '?' first, then secrets, door repair, money making game, armos, take any, and the purple '?' hint shop at the end
                     yield typicalGESAI(TrackerModel.MapSquareChoiceDomainHelper.UNKNOWN_SECRET)
@@ -1285,12 +1407,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     yield typicalGESAI(TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY)
                     yield typicalGESAI(TrackerModel.MapSquareChoiceDomainHelper.HINT_SHOP)
                     // rows 4-6: dungeon items (decorative icons, in item-menu order from the ladder to the heart container), then the personal preference markers, Don't Care and Unmarked
-                    for ident in [ TrackerModel.ITEMS.LADDER; TrackerModel.ITEMS.POWERBRACELET; TrackerModel.ITEMS.RECORDER; TrackerModel.ITEMS.RAFT; TrackerModel.ITEMS.BOW
-                                   TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.WAND
-                                   TrackerModel.ITEMS.KEY; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG
-                                   TrackerModel.ITEMS.BOOKSHIELD; TrackerModel.ITEMS.SHIELD; TrackerModel.ITEMS.MEAT; TrackerModel.DECOR_BOMB; TrackerModel.ITEMS.OLDKEY
-                                   SHOP_MENU; TrackerModel.ITEMS.LETTER; TrackerModel.ITEMS.HEARTCONTAINER; TrackerModel.ITEMS.BOMBUPGRADE ] do
-                        yield swordIconCell(ident)
+                    for ident in markerIdentList do
+                        if not (lastRowIdents |> List.contains ident) then
+                            yield swordIconCell(ident)
                     // the user's custom icons (if that option is on) go at the bottom
                     for k = 0 to TrackerModel.ITEMS.customMenuCount-1 do
                         yield swordIconCell(TrackerModel.ITEMS.CUSTOM_BASE + k)
@@ -1301,7 +1420,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     for (x1, y1, x2, y2) in [ (4., 7., 17., 20.); (17., 7., 4., 20.) ] do
                         cell.Children.Add(new System.Windows.Shapes.Line(X1=x1, Y1=y1, X2=x2, Y2=y2, Stroke=Brushes.Red, StrokeThickness=3.5, StrokeStartLineCap=PenLineCap.Round, StrokeEndLineCap=PenLineCap.Round)) |> ignore
                     (cell :> FrameworkElement), true, CLEAR_ICONS
-                let tailCells = [| clearIconsCell; darkXCell; unmarkedCell |]
+                let tailCells = [| yield! (lastRowIdents |> List.map swordIconCell); yield clearIconsCell |]   // (no Don't Care cell: the clear option does it better)
                 let bodyCells = Array.append topRows bottomRows
                 let paddedCount = ((bodyCells.Length + tailCells.Length + GCOL - 1) / GCOL) * GCOL
                 let GROW = paddedCount / GCOL
@@ -1312,7 +1431,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 let originalStateIndex =
                     match gridElementsSelectablesAndIDs |> Array.tryFindIndex (fun (_,_,s) -> s = originalState) with
                     | Some idx -> idx
-                    | None -> gridElementsSelectablesAndIDs |> Array.findIndex (fun (_,_,s) -> s = -1)
+                    | None -> gridElementsSelectablesAndIDs |> Array.findIndex (fun (_,_,s) -> s = CLEAR_ICONS)   // (no 'Unmarked' cell: the red X does the same)
                 if gridElementsSelectablesAndIDs.Length <> GCOUNT then
                     failwith "bad ow grid tile layout"
                 async {
@@ -1341,7 +1460,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                                 icon.Opacity <- X_OPACITY
                                             canvasAdd(tileCanvas, icon, 0., 0.)
                                     let s = 
-                                        if isSwordIcon then decorDescription(currentState-1000) + "\n(marker icon only)"
+                                        if isSwordIcon then decorDescription(currentState-1000) + "\n(marker icon only)" + (if TrackerModel.progressiveDisabledIdent (currentState-1000) then "\nDisabled Due to Progressive Items" else "")
                                         elif isClearCell then "Clear this tile\n(removes marker icons and sets it back to unmarked)"
                                         elif isShopCell then "Shop...\n(potion shop, or shop 1-4: puts the shop's name at the top of the tile)"
                                         elif currentState = -1 then "Unmarked" 
@@ -1349,7 +1468,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                     let s = if isSwordIcon || isClearCell || isShopCell then s else HotKeys.OverworldHotKeyProcessor.AppendHotKeyToDescription(s,currentState)
                                     let s = if currentState >= TrackerModel.MapSquareChoiceDomainHelper.WARP_1 && currentState <= TrackerModel.MapSquareChoiceDomainHelper.WARP_4 then s + " - Right click to place Vanilla" else s
                                     // the description box sits just above the menu and is exactly as wide as it (the menu can be resized, so follow its current size); the text wraps and scales with the width
-                                    let (menuX, menuY, menuW, _menuH) = CustomComboBoxes.MovableGridRect
+                                    let (menuX, menuY, menuW, menuH) = CustomComboBoxes.MovableGridRect
                                     let boxW = if menuW > 0. then menuW else gridWidth
                                     let fs = max 9. (min 24. (16. * boxW / gridWidth))
                                     let text = new TextBox(Text=s, Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.),
@@ -1369,7 +1488,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                     textBorder.Width <- boxW
                                     textBorder.Measure(Size(boxW, System.Double.PositiveInfinity))
                                     let boxLeft = if menuW > 0. then menuX else gridxPosition
-                                    let boxTop = (if menuW > 0. then menuY else 11.*3.+ST) - textBorder.DesiredSize.Height - 4.
+                                    let boxTop = if menuW > 0. then menuY + menuH + 4. else (11.*3.+ST) - textBorder.DesiredSize.Height - 4.   // under the menu (below the tip box)
                                     Canvas.SetLeft(textBorder, boxLeft)
                                     Canvas.SetTop(textBorder, boxTop)
                                     tileCanvas.Children.Add(textBorder) |> ignore
@@ -1380,6 +1499,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                     else CustomComboBoxes.DismissPopupWithResult(currentState)),
                                 [], CustomComboBoxes.ModalGridSelectBrushes.Defaults(), CustomComboBoxes.WarpToCenter, None, "OWGridTile", None))
                     let reopenMenu = ref false
+                    let flyoutAddedItem = ref false   // set when items were added to a shop from inside the flyout (so clicking that shop afterwards keeps its label instead of toggling it off)
                     let shopItemBitmaps(n:int) = shopItemBitmapsGlobal n
                     // placing another 'Shop n' starts it with the same items (and collected state) as an existing 'Shop n' tile, and links the two like a copy / paste would
                     let autoDupShop(n:int) : bool =
@@ -1405,77 +1525,100 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         async {
                             match r with
                             | Some(sel) when sel = SHOP_MENU ->
-                                let counts = Array.init 5 (fun n -> if n = 0 then 0 else TrackerModel.shopLabelCount n)
+                                flyoutAddedItem.Value <- false
+                                let counts = Array.init 5 (fun n -> TrackerModel.shopLabelCount (if n = 0 then 5 else n))
                                 let shopItems = Array.init 5 shopItemBitmaps
                                 // an item hotkey over a shop: this tile becomes that shop (if it isn't already) and the item goes in it, while the flyout stays open
-                                let addItemToShop(shop:int, ident:int) =
+                                let addItemToShopImpl(shop:int, ident:int) =
+                                    // (the flyout's shop 0 is the P shop, shop label 5)
+                                    flyoutAddedItem.Value <- true
+                                    let lbl = if shop = 0 then 5 else shop
                                     let curLabel = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
                                     let hasIdent (x:int, y:int) = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[x,y]) |> List.exists (fun (id,_) -> id = ident)
-                                    // the tile the item goes on: this one, unless it already is a different numbered shop, in which case another tile of the shop hovered (if there is one)
-                                    let target : (int*int) option =
-                                        if shop = 0 then Some((i,j))
-                                        elif curLabel = shop || (curLabel = 0 && not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.ITEMS.BLUEPOTION)) then Some((i,j))
+                                    // the tile the item goes on: this one if it is that shop (or has no shop yet); otherwise another tile of that shop, or if there is none this tile changes into it
+                                    let target : int*int =
+                                        if curLabel = lbl || curLabel = 0 then (i,j)
                                         else
-                                            match [ for x in 0..15 do for y in 0..7 do if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = shop then yield (x,y) ] with
-                                            | t :: _ -> Some(t)
-                                            | [] -> Some((i,j))   // no tile is that shop yet: this tile changes into it
-                                    match target with
-                                    | None ->
-                                        Graphics.ErrorBeepWithReminderLogText(if shop = 0 then sprintf "This tile is already shop %d" curLabel elif curLabel > 0 then sprintf "This tile is already shop %d, and no tile is shop %d yet" curLabel shop else sprintf "This tile is the potion shop, and no tile is shop %d yet" shop)
-                                    | Some((tx, ty)) ->
-                                        // an item already in a different shop moves: it is taken out of that shop first (shops with the same number are synced, so one tile does them all)
-                                        let removeIdent (x:int, y:int) =
-                                            let p0 = TrackerModel.owSwordIcons.[x,y]
-                                            let lbl = TrackerModel.shopLabelOf(p0)
-                                            let es = TrackerModel.decorEntriesOf(p0)
-                                            let k = es |> List.findIndex (fun (id,_) -> id = ident)
-                                            let es2 = es |> List.indexed |> List.filter (fun (n,_) -> n <> k) |> List.map snd
-                                            let packed = TrackerModel.decorEntriesPack es2
-                                            setDecorIcons(x, y, (if lbl > 0 then TrackerModel.withShopLabel(packed, lbl) else packed))
-                                            redrawOwTileHook(x, y)
-                                        for m in 1..4 do
-                                            if m <> shop then
-                                                match [ for x in 0..15 do for y in 0..7 do if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = m && hasIdent(x,y) then yield (x,y) ] with
-                                                | t :: _ -> removeIdent t
-                                                | [] -> ()
-                                        for x in 0..15 do
-                                            for y in 0..7 do
-                                                if (x,y) <> (tx,ty) && TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = 0 && hasIdent(x,y) && TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[x,y]) |> List.contains TrackerModel.ITEMS.BLUEPOTION then removeIdent (x,y)
-                                        let mutable justConverted = false
-                                        if shop >= 1 then
-                                            if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[tx,ty]) <> shop then
-                                                justConverted <- true
-                                                // a potion shop tile changing into this shop gives up its potion marker
-                                                if TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[tx,ty]) |> List.contains TrackerModel.ITEMS.BLUEPOTION then
-                                                    setDecorIcons(tx, ty, TrackerModel.decorEntriesPack(TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[tx,ty]) |> List.filter (fun (x,_) -> x <> TrackerModel.ITEMS.BLUEPOTION)))
-                                                // an unlabeled tile becoming shop n: take on what that shop already holds (otherwise this tile's old items would overwrite it on every tile of that shop)
-                                                let others = [ for x in 0..15 do for y in 0..7 do if (x,y) <> (tx,ty) && TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = shop then yield TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[x,y]) ]
-                                                setShopLabel(tx, ty, shop)
-                                                match others with
-                                                | e :: _ -> setDecorIcons(tx, ty, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack e, shop))
-                                                | [] -> ()
-                                        else
-                                            if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[tx,ty]) > 0 then setShopLabel(tx, ty, 0)   // a numbered shop tile changing into the potion shop
-                                            if not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[tx,ty]) |> List.contains TrackerModel.ITEMS.BLUEPOTION) then
-                                                setDecorIcons(tx, ty, TrackerModel.decorIconsToggle(TrackerModel.owSwordIcons.[tx,ty], TrackerModel.ITEMS.BLUEPOTION))
-                                        let before = TrackerModel.owSwordIcons.[tx,ty]
-                                        if shop = 0 then
-                                            // the potion shop has just the one slot: the new item replaces what was there (the same item again removes it)
-                                            let entries = TrackerModel.decorEntriesOf(before)
-                                            let potionEntries = entries |> List.filter (fun (x,_) -> x = TrackerModel.ITEMS.BLUEPOTION)
-                                            let already = entries |> List.exists (fun (x,_) -> x = ident)
-                                            setDecorIcons(tx, ty, TrackerModel.decorEntriesPack(if already then potionEntries else potionEntries @ [(ident,false)]))
-                                        elif not(justConverted && TrackerModel.decorIconsOf(before) |> List.contains ident) then   // (a tile that just became this shop already holding the item keeps it rather than toggling it off)
-                                            setDecorIcons(tx, ty, TrackerModel.decorIconsToggle(before, ident))
-                                        if TrackerModel.owSwordIcons.[tx,ty] = before then
-                                            Graphics.ErrorBeepWithReminderLogText(sprintf "A tile can show at most %d marker icons; ctrl+left click one of its icons to remove it first" TrackerModel.MaxDecorIcons)
-                                        if (tx,ty) = (i,j) && not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[tx,ty]).IsEmpty) && not(owInstance.AlwaysEmpty(tx,ty)) && TrackerModel.overworldMapMarks.[tx,ty].Current() = -1 then
-                                            SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1) |> Async.StartImmediate
-                                        redrawOwTileHook(tx, ty)
+                                            match [ for x in 0..15 do for y in 0..7 do if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = lbl then yield (x,y) ] with
+                                            | t :: _ -> t
+                                            | [] -> (i,j)
+                                    let (tx, ty) = target
+                                    // an item already in a different shop moves: it is taken out of that shop first (shops with the same label are synced, so one tile does them all)
+                                    let removeIdent (x:int, y:int) =
+                                        let p0 = TrackerModel.owSwordIcons.[x,y]
+                                        let l0 = TrackerModel.shopLabelOf(p0)
+                                        let es = TrackerModel.decorEntriesOf(p0)
+                                        let k = es |> List.findIndex (fun (id,_) -> id = ident)
+                                        let es2 = es |> List.indexed |> List.filter (fun (n,_) -> n <> k) |> List.map snd
+                                        let packed = TrackerModel.decorEntriesPack es2
+                                        setDecorIcons(x, y, (if l0 > 0 then TrackerModel.withShopLabel(packed, l0) else packed))
+                                        redrawOwTileHook(x, y)
+                                    for m in 1..5 do
+                                        if false && m <> lbl then   // (an item can now be in several shops at once, so adding it to one shop no longer takes it out of another)   // (potions can be sold in several shops, so a blue potion is never moved out of another shop; with Progressive Items neither are swords, rings, candles and arrows)
+                                            match [ for x in 0..15 do for y in 0..7 do if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = m && hasIdent(x,y) then yield (x,y) ] with
+                                            | t :: _ -> removeIdent t
+                                            | [] -> ()
+                                    if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[tx,ty]) <> lbl then
+                                        // a tile becoming this shop: take on what that shop already holds (otherwise this tile's old items would overwrite it on every tile of that shop)
+                                        let others = [ for x in 0..15 do for y in 0..7 do if (x,y) <> (tx,ty) && TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = lbl then yield TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[x,y]) ]
+                                        setShopLabel(tx, ty, lbl)
+                                        match others with
+                                        | e :: _ -> setDecorIcons(tx, ty, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack e, lbl))
+                                        | [] -> ()
+                                    let before = TrackerModel.owSwordIcons.[tx,ty]
+                                    if lbl = 5 then
+                                        // the P shop has just the one slot: the new item replaces what was there (the same item again removes it)
+                                        let already = TrackerModel.decorEntriesOf(before) |> List.exists (fun (x,_) -> x = ident)
+                                        setDecorIcons(tx, ty, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack(if already then [] else [(ident,false)]), lbl))
+                                    else
+                                        setDecorIcons(tx, ty, TrackerModel.decorIconsToggle(before, ident))
+                                    if TrackerModel.owSwordIcons.[tx,ty] = before then
+                                        Graphics.ErrorBeepWithReminderLogText(sprintf "A tile can show at most %d marker icons; ctrl+left click one of its icons to remove it first" TrackerModel.MaxDecorIcons)
+                                    if (tx,ty) = (i,j) && not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[tx,ty]).IsEmpty) && not(owInstance.AlwaysEmpty(tx,ty)) && TrackerModel.overworldMapMarks.[tx,ty].Current() = -1 then
+                                        SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1) |> Async.StartImmediate
+                                    redrawOwTileHook(tx, ty)
                                     redrawGridSpot()
-                                    (Array.init 5 (fun n -> if n = 0 then 0 else TrackerModel.shopLabelCount n)), (Array.init 5 shopItemBitmaps)
-                                let! pick = PieMenus.ShopFlyoutAsync(cm, counts, TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]), shopItems, canPlacePotionShop(i,j), addItemToShop)
-                                if pick = 0 then return Some(1000 + TrackerModel.ITEMS.BLUEPOTION)
+                                    (Array.init 5 (fun n -> TrackerModel.shopLabelCount (if n = 0 then 5 else n))), (Array.init 5 shopItemBitmaps)
+                                let addItemToShop(shop:int, ident:int) =
+                                    let lbl = if shop = 0 then 5 else shop
+                                    let curLabel = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
+                                    let targetHasTile = [ for x in 0..15 do for y in 0..7 do if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = lbl then yield 1 ] |> List.isEmpty |> not
+                                    if curLabel <> lbl && not targetHasTile then
+                                        // that shop is not on the map yet: the items wait in the shop window until a tile becomes that shop
+                                        if false then   // (items can be in several shops at once: nothing is taken out of the other shops)
+                                            for m in 1..5 do
+                                                if m <> lbl then
+                                                    match [ for x in 0..15 do for y in 0..7 do if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = m && (TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[x,y]) |> List.contains ident) then yield (x,y) ] with
+                                                    | (x,y) :: _ ->
+                                                        let es = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[x,y]) |> List.filter (fun (id,_) -> id <> ident)
+                                                        setDecorIcons(x, y, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack es, m))
+                                                        redrawOwTileHook(x, y)
+                                                    | [] ->
+                                                        let es = TrackerModel.decorEntriesOf(TrackerModel.shopStash.[m])
+                                                        if es |> List.exists (fun (id,_) -> id = ident) then
+                                                            TrackerModel.shopStash.[m] <- TrackerModel.decorEntriesPack(es |> List.filter (fun (id,_) -> id <> ident))
+                                        let stashBefore = TrackerModel.shopStash.[lbl]
+                                        if lbl = 5 then
+                                            let already = TrackerModel.decorEntriesOf(stashBefore) |> List.exists (fun (x,_) -> x = ident)
+                                            TrackerModel.shopStash.[lbl] <- TrackerModel.decorEntriesPack(if already then [] else [(ident,false)])
+                                        else
+                                            TrackerModel.shopStash.[lbl] <- TrackerModel.decorIconsToggle(stashBefore, ident)
+                                            if TrackerModel.shopStash.[lbl] = stashBefore then
+                                                Graphics.ErrorBeepWithReminderLogText(sprintf "A shop can show at most %d items" TrackerModel.MaxDecorIcons)
+                                        decorStateChanged()
+                                        (Array.init 5 (fun n -> TrackerModel.shopLabelCount (if n = 0 then 5 else n))), (Array.init 5 shopItemBitmaps)
+                                    else addItemToShopImpl(shop, ident)
+                                // the marker icons offered when right clicking a shop in the flyout (the same icons as the overworld menu, minus the Shop cell)
+                                let pickItemForShop() : Async<int> =
+                                    let idents = [ TrackerModel.ITEMS.WOODSWORD; TrackerModel.ITEMS.WHITESWORD; TrackerModel.ITEMS.MAGICALSWORD; TrackerModel.ITEMS.WHITESWORD4; TrackerModel.ITEMS.PROGRESSIVESWORD ] @ [ for ident in markerIdentList do if ident <> SHOP_MENU then yield ident ] @ [ for k = 0 to TrackerModel.ITEMS.customMenuCount-1 do yield TrackerModel.ITEMS.CUSTOM_BASE + k ]
+                                    let isProgressiveDisabled(ident:int) = TrackerModel.progressiveDisabledIdent ident
+                                    let items = [ for ident in idents do
+                                                    let (cell, enabled, _) = swordIconCell ident
+                                                    if enabled || isProgressiveDisabled ident then yield (ident, cell) ]
+                                    PieMenus.itemPickerDisabledTip <- (fun ident -> if isProgressiveDisabled ident then "Disabled Due to Progressive Items" else null)
+                                    PieMenus.ItemPickerAsync(cm, items, 9)
+                                let! pick = PieMenus.ShopFlyoutAsync(cm, counts, TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]), shopItems, canPlacePotionShop(i,j), addItemToShop, pickItemForShop)
+                                if pick = 0 then return Some(SHOP_LABEL_BASE + 5)   // the P shop is shop label 5
                                 elif pick >= 1 && pick <= 4 then return Some(SHOP_LABEL_BASE + pick)
                                 elif pick >= 1000 then return Some(pick)   // an item hotkey pressed in the flyout
                                 else return None
@@ -1483,13 +1626,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         }
                     match r with
                     | Some(currentState) -> 
-                        if currentState > SHOP_LABEL_BASE && currentState <= SHOP_LABEL_BASE + 4 then
+                        if currentState > SHOP_LABEL_BASE && currentState <= SHOP_LABEL_BASE + 5 then
                             // a numbered shop: its "SHOP n" text goes across the top of the tile (picking the same number again removes it)
                             let n = currentState - SHOP_LABEL_BASE
-                            // a potion shop tile becoming a numbered shop gives up its potion marker (its other item stays)
-                            if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) <> n && TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.ITEMS.BLUEPOTION then
-                                setDecorIcons(i, j, TrackerModel.decorEntriesPack(TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j]) |> List.filter (fun (x,_) -> x <> TrackerModel.ITEMS.BLUEPOTION)))
-                            setShopLabel(i, j, (if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) = n then 0 else n))
+                            setShopLabel(i, j, (if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) = n && not flyoutAddedItem.Value then 0 else n))
                             let sourceWasBomb = (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) = n && autoDupShop(n))
                             if sourceWasBomb && TrackerModel.overworldMapMarks.[i,j].Current() = -1 && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.mapSquareChoiceDomain.CanAddUse(TrackerModel.MapSquareChoiceDomainHelper.BOMB) then
                                 do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.BOMB, -1)   // the shop being duplicated is a bomb shop: this one is too
@@ -1558,7 +1698,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             // decorative sword item icon: toggles on this tile, tile's real mark is left alone
                             let ident = currentState - 1000
                             let before = TrackerModel.owSwordIcons.[i,j]
-                            setDecorIcons(i, j, TrackerModel.decorIconsToggle(before, ident))
+                            setDecorIcons(i, j, decorToggleForTile(before, ident))
                             if TrackerModel.owSwordIcons.[i,j] = before then
                                 Graphics.ErrorBeepWithReminderLogText(sprintf "A tile can show at most %d marker icons; ctrl+left click one of its icons to remove it first" TrackerModel.MaxDecorIcons)
                             // an unmarked tile that gets a marker icon counts as finished (Don't Care), icons stay visible
@@ -1610,6 +1750,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         setDecorIcons(i, j, copiedMarkerPacked)   // just the duplicated markers: the tile itself is left as it was (a copied bomb shop makes this a bomb shop too)
                         if copiedMarkerBomb && TrackerModel.mapSquareChoiceDomain.CanAddUse(TrackerModel.MapSquareChoiceDomainHelper.BOMB) then
                             do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.BOMB, -1)
+                        elif not copiedMarkerBomb then
+                            do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1)   // a duplicated shop is placed as complete (dimmed), like any placed shop
                         linkDuplicate()
                         redrawGridSpot()
                         copiedMarkerIdents <- []   // one paste per copy: clear the cursor
@@ -1720,14 +1862,15 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         if TrackerModel.MarkBombDroppers && Input.Keyboard.Modifiers <> Input.ModifierKeys.Shift then
                             // 'Mark Bomb Droppers' startup option: the first middle click puts the bomb dropper icon on the tile; the scroll wheel then cycles bomb dropper > blue > yellow > red circle and around;
                             // middle clicking again removes whatever was chosen. (shift+middle click is the plain circle toggle)
-                            let hasDropper = TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.DECOR_BOMB_DROPPER
+                            let hasDropper = TrackerModel.owBombDroppers.[i,j]
                             if hasDropper then
-                                setDecorIcons(i, j, TrackerModel.decorIconsToggle(TrackerModel.owSwordIcons.[i,j], TrackerModel.DECOR_BOMB_DROPPER))
+                                TrackerModel.owBombDroppers.[i,j] <- false
                             elif TrackerModel.overworldMapCircles.[i,j] <> 0 then
                                 TrackerModel.overworldMapCircles.[i,j] <- 0
                                 owCircleRedraws.[i,j]()
                             else
-                                setDecorIcons(i, j, TrackerModel.decorIconsToggle(TrackerModel.owSwordIcons.[i,j], TrackerModel.DECOR_BOMB_DROPPER))
+                                TrackerModel.owBombDroppers.[i,j] <- true
+                            TrackerModel.forceUpdate()
                             redrawGridSpot()
                         else
                             // middle click toggles the circle
@@ -1736,7 +1879,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 )
             c.MouseWheel.Add(fun x -> 
                 if not popupIsActive then 
-                    let hasDropper = TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.DECOR_BOMB_DROPPER
+                    let hasDropper = TrackerModel.owBombDroppers.[i,j]
                     if TrackerModel.overworldMapMarks.[i,j].Current() = TrackerModel.MapSquareChoiceDomainHelper.HINT_SHOP && TrackerModel.overworldMapCircles.[i,j] = 0 then
                         // a hint shop: scrolling cycles its background color (purple, red, green, orange)
                         let cur = OverworldMapTileCustomization.hintShopColorOf(i,j)
@@ -1746,7 +1889,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         redrawGridSpot()
                     elif TrackerModel.MarkBombDroppers && hasDropper && TrackerModel.overworldMapCircles.[i,j] = 0 then
                         // bomb dropper > (scroll) blue > yellow > red > bomb dropper ...
-                        setDecorIcons(i, j, TrackerModel.decorIconsToggle(TrackerModel.owSwordIcons.[i,j], TrackerModel.DECOR_BOMB_DROPPER))
+                        TrackerModel.owBombDroppers.[i,j] <- false
                         TrackerModel.toggleOverworldMapCircle(i,j)   // starts at the first color
                         if x.Delta >= 0 then TrackerModel.prevOverworldMapCircleColor(i,j)   // scrolling the other way enters the rotation at the last color
                         owCircleRedraws.[i,j]()
@@ -1758,8 +1901,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             // scrolled past the last (first) color: back around to the bomb dropper icon
                             TrackerModel.overworldMapCircles.[i,j] <- 0
                             owCircleRedraws.[i,j]()
-                            if TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.DECOR_BOMB_DROPPER |> not then
-                                setDecorIcons(i, j, TrackerModel.decorIconsToggle(TrackerModel.owSwordIcons.[i,j], TrackerModel.DECOR_BOMB_DROPPER))
+                            TrackerModel.owBombDroppers.[i,j] <- true
+                            TrackerModel.forceUpdate()
                             redrawGridSpot()
                         else
                             if x.Delta<0 then
@@ -1772,6 +1915,40 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 )
             c.MouseEnter.Add(fun _ -> let z = owInstance.HintZoneOf(i,j) in if z <> 0 then hintButtonHighlightHook z true)
             c.MouseLeave.Add(fun _ -> let z = owInstance.HintZoneOf(i,j) in if z <> 0 then hintButtonHighlightHook z false)
+            // 'Hover shop tooltip' option: hovering a shop tile shows what is in that shop (same size as the Dead Woods hint hover box)
+            c.MouseEnter.Add(fun _ ->
+                let label = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
+                if TrackerModelOptions.HoverShopTooltip.Value && label > 0 && not popupIsActive then
+                    let items = shopItemBitmapsGlobal (if label = 5 then 0 else label)
+                    let sp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(4.), VerticalAlignment=VerticalAlignment.Center)
+                    let iconSize = (if label = 5 || items.Length <= 3 then 48. else 36.)
+                    sp.Children.Add(new TextBlock(Text=(if label = 5 then "P SHOP" else sprintf "SHOP %d" label), FontSize=22., FontWeight=FontWeights.Bold, Foreground=Brushes.Orange, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
+                    let wp = new WrapPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,6.,0.,0.))
+                    let addImg(bmp:System.Drawing.Bitmap, collected:bool) =
+                        let img = Graphics.BMPtoImage(bmp)
+                        img.Stretch <- Stretch.Uniform
+                        img.Width <- iconSize
+                        img.Height <- iconSize
+                        img.Margin <- Thickness(2.)
+                        RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor)
+                        if collected then img.Opacity <- 0.4
+                        wp.Children.Add(img) |> ignore
+                    if label = 5 then
+                        addImg(decorSourceBmp TrackerModel.ITEMS.BLUEPOTION, false)
+                        (match items with
+                         | h :: _ -> addImg h
+                         | [] -> wp.Children.Add(new TextBlock(Text="?", FontSize=40., FontWeight=FontWeights.Bold, Foreground=Brushes.White, Width=iconSize + 4., TextAlignment=TextAlignment.Center)) |> ignore)
+                        addImg(decorSourceBmp TrackerModel.ITEMS.REDPOTION, false)
+                    else
+                        for it in items do addImg it
+                    sp.Children.Add(wp) |> ignore
+                    let big = new Border(Child=sp, Background=Brushes.Black, BorderBrush=Brushes.DarkGray, BorderThickness=Thickness(3.), Width=200., Height=112., IsHitTestVisible=false)
+                    let ctr = centerOf(i,j)
+                    let x = max 0. (min (ctr.X - 100.) (cm.AppMainCanvas.Width - 202.))
+                    let y = if ctr.Y + 20. + 112. < cm.AppMainCanvas.Height then ctr.Y + 20. else max 0. (ctr.Y - 20. - 112.)
+                    layout.ClearTopLayerHovers()
+                    layout.AddTopLayerHover(big, x, y))
+            c.MouseLeave.Add(fun _ -> if TrackerModelOptions.HoverShopTooltip.Value then layout.ClearTopLayerHovers())
             c.MyKeyAdd(fun ea ->
                 if not popupIsActive then
                     match HotKeys.OverworldHotKeyProcessor.TryGetValue(ea.Key) with
@@ -1802,10 +1979,14 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         ea.Handled <- true
                         async {
                             let origState = TrackerModel.overworldMapMarks.[i,j].Current()
-                            if shopIdent = TrackerModel.DECOR_BOMB && (origState = -1 || origState = TrackerModel.MapSquareChoiceDomainHelper.DARK_X)
+                            if shopIdent = TrackerModel.DECOR_BOMB && TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) = 0 && (origState = -1 || origState = TrackerModel.MapSquareChoiceDomainHelper.DARK_X)
                                     && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.mapSquareChoiceDomain.CanAddUse(TrackerModel.MapSquareChoiceDomainHelper.BOMB) then
                                 // like the tile menu: a bomb marker places the bomb shop tile (so it shows the yellow 'found but not collected' bomb)
                                 do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.BOMB, origState)
+                                redrawGridSpot()
+                            elif shopIdent = TrackerModel.DECOR_BOMB && origState = TrackerModel.MapSquareChoiceDomainHelper.BOMB then
+                                // pressing the bomb hotkey again on a bomb tile takes the bomb back off
+                                do! SetNewValue((if TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty then -1 else TrackerModel.MapSquareChoiceDomainHelper.DARK_X), origState)
                                 redrawGridSpot()
                             else
                                 let before = TrackerModel.owSwordIcons.[i,j]
@@ -1859,7 +2040,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             ea.Handled <- true
                             async {
                                 let before = TrackerModel.owSwordIcons.[i,j]
-                                setDecorIcons(i, j, TrackerModel.decorIconsToggle(before, ident))
+                                setDecorIcons(i, j, decorToggleForTile(before, ident))
                                 if TrackerModel.owSwordIcons.[i,j] = before then
                                     Graphics.ErrorBeepWithReminderLogText(sprintf "A tile can show at most %d marker icons; ctrl+left click one of its icons to remove it first" TrackerModel.MaxDecorIcons)
                                 if not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty) && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.overworldMapMarks.[i,j].Current() = -1 then
@@ -1928,7 +2109,15 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             let hint = ref ""
             let defaultBorderBrush = btn.BorderBrush
             let defaultBorderThickness = btn.BorderThickness
-            let refreshLabel() = tb.Text <- (if hint.Value = "" then name else prefix + ": " + hint.Value)
+            let refreshLabel() =
+                tb.Text <- (if hint.Value = "" then name else hint.Value)   // once entered: just the letters, bigger
+                tb.FontSize <- (if hint.Value = "" then 10. else 20.)
+                tb.FontWeight <- (if hint.Value = "" then FontWeights.Normal else FontWeights.Bold)
+                tb.HorizontalAlignment <- HorizontalAlignment.Stretch   // (fills the button, so its black background doesn't show as a box around the text)
+                tb.VerticalAlignment <- VerticalAlignment.Stretch
+                tb.VerticalContentAlignment <- VerticalAlignment.Center
+                tb.Padding <- (if hint.Value = "" then Thickness(2.,0.,2.,0.) else Thickness(0.))
+                tb.TextAlignment <- TextAlignment.Center
             btn.Click.Add(fun _ ->
                 if not popupIsActive then
                     popupIsActive <- true
@@ -1937,7 +2126,13 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         let wh = new System.Threading.ManualResetEvent(false)
                         let cur = ref hint.Value
                         let sp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(3.))
-                        let mkTxt(size:float, txt) = new TextBox(IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=size, Margin=Thickness(3.), Text=txt, Foreground=Brushes.Orange, Background=Brushes.Black)
+                        let mkTxt(size:float, txt) = new TextBox(IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=size, Margin=Thickness(3.), Text=txt, Foreground=Brushes.Orange, Background=Brushes.Black, TextAlignment=TextAlignment.Center)
+                        let hoverToggle = PieMenus.makeOrangeCheckBox("Hover tooltip", TrackerModelOptions.HintHoverTooltip.Value)
+                        hoverToggle.HorizontalAlignment <- HorizontalAlignment.Center
+                        hoverToggle.Click.Add(fun _ ->
+                            TrackerModelOptions.HintHoverTooltip.Value <- (hoverToggle.IsChecked = System.Nullable<bool>(true))
+                            TrackerModelOptions.writeSettings())
+                        sp.Children.Add(hoverToggle) |> ignore
                         sp.Children.Add(mkTxt(16., name + " hint")) |> ignore
                         sp.Children.Add(mkTxt(12., "Select direction or use arrow keys")) |> ignore
                         let display = mkTxt(20., "")
@@ -2007,7 +2202,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     } |> Async.StartImmediate)
             // once a hint has been entered, hovering the button shows it in a much larger popup so it is easy to read at a glance
             btn.MouseEnter.Add(fun _ ->
-                if hint.Value <> "" && not popupIsActive then
+                if hint.Value <> "" && not popupIsActive && TrackerModelOptions.HintHoverTooltip.Value then
                     let sp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(12.,6.,12.,6.))
                     sp.Children.Add(new TextBlock(Text=name, FontSize=27., Foreground=Brushes.Orange, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
                     sp.Children.Add(new TextBlock(Text=System.String.Join("  ", hint.Value.ToCharArray() |> Array.map string), FontSize=45., FontWeight=FontWeights.Bold, 
@@ -2018,6 +2213,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     layout.AddTopLayerHover(big, pos.X, pos.Y)
                 )
             btn.MouseLeave.Add(fun _ -> layout.ClearTopLayerHovers())
+            // right click does the same as left click (opens the hint entry)
+            btn.MouseRightButtonUp.Add(fun ea ->
+                ea.Handled <- true
+                btn.RaiseEvent(new RoutedEventArgs(Primitives.ButtonBase.ClickEvent)))
             btn
         // the two hint buttons are stacked, no heading
         let hintButtons = new StackPanel(Orientation=Orientation.Horizontal)
@@ -2027,15 +2226,15 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         let hintBtnNormalBrush = lostHillsButton.BorderBrush
         let hintBtnNormalThickness = lostHillsButton.BorderThickness
         hintButtonHighlightHook <- (fun zone on ->
-            // a bright gold glow, a thick gold border, and a gold-filled label, so it is obvious which button the hovered tile is waiting on
+            // a bright red glow, a thick red border, and a red-filled label, so it is obvious which button the hovered tile is waiting on
             let b = if zone = 1 then deadWoodsButton else lostHillsButton
             let label = b.Content :?> TextBox
             if on then
-                b.BorderBrush <- (Brushes.Gold :> Brush)
+                b.BorderBrush <- (Brushes.Red :> Brush)
                 b.BorderThickness <- Thickness(3.)
-                b.Effect <- new System.Windows.Media.Effects.DropShadowEffect(Color=Colors.Gold, BlurRadius=18., ShadowDepth=0., Opacity=1.)
-                label.Background <- (Brushes.Gold :> Brush)
-                label.Foreground <- (Brushes.Black :> Brush)
+                b.Effect <- new System.Windows.Media.Effects.DropShadowEffect(Color=Colors.Red, BlurRadius=18., ShadowDepth=0., Opacity=1.)
+                label.Background <- (Brushes.Red :> Brush)
+                label.Foreground <- (Brushes.White :> Brush)
                 label.FontWeight <- FontWeights.Bold
             else
                 let known = (if zone = 1 then OverworldData.DeadWoodsHintKnown else OverworldData.LostHillsHintKnown)
@@ -2106,8 +2305,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     let kitty = new Image()   // the custom logo
     let imageStream = Graphics.GetResourceStream("CustomLogo.png")
     kitty.Source <- System.Windows.Media.Imaging.BitmapFrame.Create(imageStream)
-    kitty.Width <- 44.     // leaves room for the Discord link line underneath
-    kitty.Height <- 44.
+    kitty.Width <- 30.     // leaves room for the two ZORA link lines underneath
+    kitty.Height <- 30.
     let ztlogo = new Image()
     let imageStream = Graphics.GetResourceStream("ZTlogo64x64.png")
     ztlogo.Source <- System.Windows.Media.Imaging.BitmapFrame.Create(imageStream)
@@ -2164,6 +2363,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         | _ -> ())
         questRefViewbox.Child <- chart
     updateQuestRef()
+    let lastQuestRefKey = ref ""
     // hovering the chart shows it at 2x size (current state), above the chart, kept inside the window
     // (only while the mouse is inside the big outer triangle of the chart: the 340x180 drawing's apex is at the top center and its base line is at y=171)
     let questRefHoverShown = ref false
@@ -2196,6 +2396,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     TrackerModel.overworldQuestChanged.Publish.Add(fun _ -> updateQuestRef())
     for i = 0 to 7 do
         TrackerModel.GetDungeon(i).PlayerHasTriforceChanged.Add(fun _ -> updateQuestRef())
+        // a triforce piece marked as obtained in a dungeon item box also lights its piece in the chart
+        for b in TrackerModel.GetDungeon(i).Boxes do
+            b.Changed.Add(fun _ -> updateQuestRef())
     layout.AddQuestReferenceChart(questRefBorder, BLOCKERS_AND_NOTES_OFFSET + 108. + 12. - 20. - 9. * questRefH0 / 180. - (questRefH - questRefH0) * 340. / 180., meatBottomY - questRefH + 3.)   // the chart's bottom-left corner (drawn 9/180 of its height in from its edge) lines up with the left side of the first blocker box (blocker column is 108 wide, then a 12px dungeon-number label)   // bottom-aligned with the meat icon
     // the blue 3-dot box's bottom edge is lined up with the drawn base line of the triforce chart, measured from the real on-screen positions
     // (the chart is a 340x180 drawing whose base line, 2px stroke included, is at y=171, scaled to fit questRefH)
@@ -2232,24 +2435,21 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     // stack (bottom to top): ZORA Discord link, Z1R Racing Discord link, centered on the discord links (Save now sits above the Hint Decoder button, placed in Layout)
     let placeLinkStack() =
         let d = discordLink :?> FrameworkElement
-        let r = racingLink :?> FrameworkElement
         let zs = zoraSiteLink :?> FrameworkElement
-        let rs = racingSiteLink :?> FrameworkElement
-        if d.ActualHeight > 0. && r.ActualHeight > 0. && zs.ActualHeight > 0. && rs.ActualHeight > 0. && not (System.Double.IsNaN(Canvas.GetLeft(d))) then
+        if d.ActualHeight > 0. && zs.ActualHeight > 0. && not (System.Double.IsNaN(Canvas.GetLeft(d))) then
             let cx = Canvas.GetLeft(d) + Layout.DiscordLinkWidth / 2.
-            // top to bottom: ZORA Site, ZORA Discord, (small gap), Z1R Racing Site, Z1R Racing Discord
-            // centered vertically in the strip of space (the old logo area) to the right of the map: THRU_MAIN_MAP_H down through the item progress row
-            let gap = 4.
-            let totalH = zs.ActualHeight + d.ActualHeight + gap + rs.ActualHeight + r.ActualHeight
-            let top = THRU_MAIN_MAP_H + Layout.kittyWidth / 2. - totalH / 2.
+            // top to bottom: ZORA logo, ZORA Site, ZORA Discord; the stack ends at the bottom of the strip of space (the old logo area) to the right of the map
             let place(e:FrameworkElement, y:float) =
                 Canvas.SetTop(e, y)
                 Canvas.SetLeft(e, cx - e.ActualWidth / 2.)
-            place(zs, top)
-            place(d, top + zs.ActualHeight)
-            place(rs, top + zs.ActualHeight + d.ActualHeight + gap)
-            place(r, top + zs.ActualHeight + d.ActualHeight + gap + rs.ActualHeight)
-    for e in [discordLink :?> FrameworkElement; racingLink :?> FrameworkElement; zoraSiteLink :?> FrameworkElement; racingSiteLink :?> FrameworkElement] do
+            let bottom = THRU_MAIN_MAP_H + Layout.kittyWidth
+            let dTop = bottom - d.ActualHeight
+            let zTop = dTop - zs.ActualHeight
+            place(zs, zTop)
+            place(d, dTop)
+            Canvas.SetTop(kitty, zTop - kitty.Height - 1.)
+            Canvas.SetLeft(kitty, cx - kitty.Width / 2.)
+    for e in [discordLink :?> FrameworkElement; zoraSiteLink :?> FrameworkElement] do
         e.SizeChanged.Add(fun _ -> placeLinkStack())
     saveButton.Click.Add(fun _ -> 
         if not popupIsActive then
@@ -2330,6 +2530,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         // update specific-blockers that may have been (un)blocked
         for f in Views.redrawBoxes do f()
         for f in Views.redrawTriforces do f()
+        // the triforce reference chart follows the triforces however they were marked (numbered triforce, chart click, or a triforce piece in an item box)
+        let havesKey = System.String.Join(",", TrackerModel.GetTriforceHaves() |> Array.map (fun b -> if b then "1" else "0")) + (if questRefIsSecond() then "2" else "1")
+        if havesKey <> lastQuestRefKey.Value then
+            lastQuestRefKey.Value <- havesKey
+            updateQuestRef()
         // update overworld marks (may be hiding useless shops, and they just got an item rendering a shop useless (e.g. magic key and key shops))
         OptionsMenu.requestRedrawOverworldEvent.Trigger()
 
@@ -2337,6 +2542,91 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         // TODO event for redraw item progress? does any of this event interface make sense? hmmm
         redrawItemProgressBar()
 
+        // Progressive Items: each family (1 swords, 2 rings, 3 candles, 4 arrows) has a tier that follows the number collected; when it goes up, the others glow and the alert plays
+        for f in 1..4 do progressiveLastTiers.[f] <- max 1 (TrackerModel.progressiveFamilyTier f)
+        let progressiveIdentsOf(f:int) = [ for id in 0..127 do if TrackerModel.progressiveFamily id = f then yield id ]
+        let progressiveAutoChecking = ref false
+        progressiveSwordCheckHook <- (fun () ->
+            for f in 1..4 do
+                let t = TrackerModel.progressiveFamilyTier f
+                let old = progressiveLastTiers.[f]
+                if t <> old then
+                    progressivePrevTiers.[f] <- old
+                    progressiveChangedAt.[f] <- System.DateTime.Now
+                    progressiveLastTiers.[f] <- t
+                    TrackerModel.progressiveTierChanged.Trigger()
+                    for x = 0 to 15 do
+                        for y = 0 to 7 do
+                            redrawOwTileHook(x, y)
+                    if t > old && old > 0 then
+                        let ids = progressiveIdentsOf f
+                        let tiles = [ for x in 0..15 do
+                                        for y in 0..7 do
+                                            if TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[x,y]) |> List.exists (fun (id,c) -> List.contains id ids && not c) then yield (x,y) ]
+                        let boxes = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() |> Array.filter (fun b -> List.contains (b.CellCurrent()) ids && b.PlayerHas() = TrackerModel.PlayerHas.NO)
+                        if not tiles.IsEmpty || boxes.Length > 0 then
+                            for b in boxes do TrackerModel.progressiveBoxGlow.Trigger(b)
+                            progressiveUpgradeHook tiles (progressiveFamilyTierBmp(f, old)) (progressiveFamilyTierBmp(f, t))
+                    // once the click that caused this has finished (other handlers may still be updating), draw everything again from the final state
+                    async {
+                        do! Async.Sleep 150
+                        TrackerModel.progressiveTierChanged.Trigger()
+                        for x = 0 to 15 do
+                            for y = 0 to 7 do
+                                redrawOwTileHook(x, y)
+                    } |> Async.StartImmediate
+            // once the last upgrade of a family has been collected (4 swords, 2 rings / candles / arrows), every other copy of it still to be collected is checked off too
+            if not progressiveAutoChecking.Value then
+                progressiveAutoChecking.Value <- true
+                try
+                    for f in 1..4 do
+                        let cap = if f = 1 then 4 else 2
+                        let ids = progressiveIdentsOf f
+                        let boxesAll = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
+                        let n = (ids |> List.sumBy (fun id -> TrackerModel.mapCollectedCount.[id])) + (boxesAll |> Array.filter (fun b -> List.contains (b.CellCurrent()) ids && b.PlayerHas() = TrackerModel.PlayerHas.YES) |> Array.length)
+                        if n >= cap then
+                            for x in 0..15 do
+                                for y in 0..7 do
+                                    let es = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[x,y])
+                                    if es |> List.exists (fun (id,c) -> List.contains id ids && not c) then
+                                        let label = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y])
+                                        let packed = TrackerModel.decorEntriesPack(es |> List.map (fun (id,c) -> if List.contains id ids then (id, true) else (id, c)))
+                                        setDecorIcons(x, y, (if label > 0 then TrackerModel.withShopLabel(packed, label) else packed))
+                                        redrawOwTileHook(x, y)
+                            for b in boxesAll do
+                                if List.contains (b.CellCurrent()) ids && b.PlayerHas() = TrackerModel.PlayerHas.NO then b.SetPlayerHas(TrackerModel.PlayerHas.YES)
+                finally
+                    progressiveAutoChecking.Value <- false)
+        if not progressiveWired then
+            progressiveWired <- true
+            // collecting (or un-collecting) any item of a family in an item box (dungeon, shop/cave box, ...)
+            for b in TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() do
+                let prev = ref (b.CellCurrent(), b.PlayerHas())
+                b.Changed.Add(fun () ->
+                    let (pc, pph) = prev.Value
+                    let c, ph = b.CellCurrent(), b.PlayerHas()
+                    prev.Value <- (c, ph)
+                    if TrackerModel.ProgressiveItems then
+                        let nowF = if ph = TrackerModel.PlayerHas.YES then TrackerModel.progressiveFamily c else 0
+                        let wasF = if pph = TrackerModel.PlayerHas.YES then TrackerModel.progressiveFamily pc else 0
+                        if nowF > 0 && (wasF = 0 || pc <> c) then TrackerModel.progressiveBoxTier.[b] <- progressiveCollectedTier nowF
+                        elif wasF > 0 && nowF = 0 then TrackerModel.progressiveBoxTier.Remove(b) |> ignore
+                        if TrackerModel.progressiveFamily pc > 0 || TrackerModel.progressiveFamily c > 0 then progressiveSwordCheckHook())
+            // items taken from caves / ticked in Item Progress or the starting items also count toward the tiers
+            let pp = TrackerModel.playerProgressAndTakeAnyHearts
+            let se = TrackerModel.startingItemsAndExtras
+            for (prop:TrackerModel.BoolProperty) in [ pp.PlayerHasWoodSword; se.PlayerHasWhiteSword; se.PlayerHasMagicalSword; pp.PlayerHasBlueRing; se.PlayerHasRedRing; pp.PlayerHasBlueCandle; se.PlayerHasRedCandle; pp.PlayerHasWoodArrow; se.PlayerHasSilverArrow ] do
+                prop.Changed.Add(fun _ -> if TrackerModel.ProgressiveItems then progressiveSwordCheckHook())
+        // Progressive Items: a notification plus a 3 second glow-and-grow of every upgraded item on the map
+        progressiveUpgradeHook <- (fun tiles fromBmp toBmp ->
+            SendReminder(TrackerModel.ReminderCategory.DungeonFeedback, "Progressive Item Upgraded", [ReminderTextBox("Progressive Item Upgraded"); upcb(fromBmp); upcb(Graphics.iconRightArrow_bmp); upcb(toBmp)])
+            for (x, y) in tiles do
+                let glow = Views.makeProgressiveGlow(toBmp, 24.)   // the upgraded item in full colour, on a golden halo
+                canvasAdd(overworldCanvas, glow, float x * OMTW + OMTW / 2. - 12., float (y * 11 * 3) + 33. / 2. - 12.)
+                async {
+                    do! Async.Sleep 3000
+                    overworldCanvas.Children.Remove(glow)
+                } |> Async.StartImmediate)
         TrackerModel.allUIEventingLogic( {new TrackerModel.ITrackerEvents with
             member _this.CurrentHearts(h) = currentMaxHeartsTextBox.Text <- sprintf "Max Hearts: %d" h
             member _this.AnnounceConsiderSword2() = RemindSword2()
@@ -2844,7 +3134,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         OverworldRouteDrawing.routeDrawingLayer.Clear()
         for i = 0 to 15 do
             for j = 0 to 7 do
-                if f(i,j) && TrackerModel.overworldMapMarks.[i,j].Current() = -1 then
+                if f(i,j) && (TrackerModel.overworldMapMarks.[i,j].Current() = -1 || (i,j) = (15,5)) then   // (F16, the coast ladder spot, is always shown even though that tile is already marked)
                     if owInstance.SometimesEmpty(i,j) then
                         owLocatorTileRectangles.[i,j].MakeYellowWithBriefAnimation()
                     else
@@ -2939,11 +3229,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             for j = 0 to 7 do
                 if TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.DECOR_BOMB then
                     owLocatorTileRectangles.[i,j].MakeGreenWithBriefAnimation()
-                if TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]) |> List.contains TrackerModel.DECOR_BOMB_DROPPER then
+                if TrackerModel.owBombDroppers.[i,j] then
                     owLocatorTileRectangles.[i,j].MakeRedWithBriefAnimation()   // bomb dropper screens get a red border
         )
     showShopLocatorInstanceFunc <- (fun item ->
-        OverworldRouteDrawing.routeDrawingLayer.Clear()
+        // (the existing overworld highlighting (open cave boxes, routes) stays while hovering arrow / key / meat)
         let mutable anyFound = false
         for i = 0 to 15 do
             for j = 0 to 7 do
@@ -3310,6 +3600,23 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             for j = 0 to 7 do
                 for i = 0 to 15 do
                     TrackerModel.owSwordIcons.[i,j] <- data.Overworld.SwordIcons.[j*16+i]
+                    TrackerModel.owBombDroppers.[i,j] <- false
+            // (older saves kept bomb droppers as a marker icon: they move to their own layer)
+            for j = 0 to 7 do
+                for i = 0 to 15 do
+                    let es = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j])
+                    if es |> List.exists (fun (id,_) -> id = TrackerModel.DECOR_BOMB_DROPPER) then
+                        TrackerModel.owBombDroppers.[i,j] <- true
+                        let label = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
+                        let packed = TrackerModel.decorEntriesPack(es |> List.filter (fun (id,_) -> id <> TrackerModel.DECOR_BOMB_DROPPER))
+                        TrackerModel.owSwordIcons.[i,j] <- (if label > 0 then TrackerModel.withShopLabel(packed, label) else packed)
+            for k = 0 to 5 do TrackerModel.shopStash.[k] <- -1
+            if data.Overworld.ShopStash <> null && data.Overworld.ShopStash.Length = 6 then
+                for k = 0 to 5 do TrackerModel.shopStash.[k] <- data.Overworld.ShopStash.[k]
+            if data.Overworld.BombDroppers <> null && data.Overworld.BombDroppers.Length = 16 * 8 then
+                for j = 0 to 7 do
+                    for i = 0 to 15 do
+                        if data.Overworld.BombDroppers.[j*16+i] <> 0 then TrackerModel.owBombDroppers.[i,j] <- true
             rebuildMapCollected()
         if a.Length <> 16 * 8 * 3 then
             failwith "bad load data at data.Overworld.Map"
@@ -3489,8 +3796,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         let diskIcon = new Border(BorderThickness=Thickness(3.), BorderBrush=Brushes.Gray, Background=Brushes.Gray, Child=Graphics.BMPtoImage(Graphics.iconDisk_bmp), Opacity=0.0, IsHitTestVisible=false)
         layout.AddDiskIcon(diskIcon)
         let timer = new System.Windows.Threading.DispatcherTimer()
-        timer.Interval <- TimeSpan.FromSeconds(60.0)
+        timer.Interval <- TimeSpan.FromSeconds(10.0)   // (checks every 10 seconds; it saves once the Auto-save interval option has passed)
+        let lastAutoSave = ref DateTime.Now
         timer.Tick.Add(fun _ -> 
+          if (DateTime.Now - lastAutoSave.Value).TotalMinutes >= float TrackerModelOptions.AutoSaveMinutes - 0.01 then
+            lastAutoSave.Value <- DateTime.Now
             try
                 SaveAndLoad.SaveAll(notesTextBox.Text, DungeonUI.theDungeonTabControl.SelectedIndex, exportDungeonModelsJsonLines(), DungeonSaveAndLoad.SaveDrawingLayer(), 
                                         Graphics.alternativeOverworldMapFilename, Graphics.shouldInitiallyHideOverworldMap, currentRecorderDestinationIndex, 
@@ -3583,6 +3893,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     Graphics.PlaySoundForSpeechRecognizedAndUsedToMark()  // the very first call to this lags the system for some reason, so get it out of the way at startup
     layout.AllDone()
     Popouts.Startup(doUIUpdateEvent)
+    if TrackerModelOptions.ShowCustomOnStartup then ShowRunCustom.DoShowRunCustom(refocusMainWindow)   // reopen the custom SHOW windows if they were showing last time
     MainTrackerTriforcesAndItems.reopenItemLocationsWindowIfWasOpen()   // like the popouts: reopen at its remembered spot/size if it was open when the program last closed
     do! showProgress("all done")
     return drawTimeline

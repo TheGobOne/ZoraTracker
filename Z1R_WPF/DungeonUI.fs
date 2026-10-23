@@ -395,6 +395,14 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
         for b in d.Boxes do
             b.Changed.Add(fun _ -> refreshTriforceHeaderOrSlot())
         refreshTriforceHeaderOrSlot()
+        // like the main tracker: while the triforce sits in an item slot, right click on it opens that slot's item menu (left click checks the triforce, middle click puts the X on it)
+        dungeonView.PreviewMouseDown.Add(fun ea ->
+            let slotK = slotCells |> Seq.tryFindIndex (fun sc -> obj.ReferenceEquals(dungeonView.Parent, sc))
+            match slotK with
+            | Some(k) when ea.ChangedButton = System.Windows.Input.MouseButton.Right && k < boxViewsAndActivations.Length ->
+                ea.Handled <- true
+                if not popupIsActive then (snd boxViewsAndActivations.[k])(0, CustomComboBoxes.WarpToCenter)
+            | _ -> ())
     // the optional extra staircase item slot of level 2, as on the main tracker
     if level = 2 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled then
         let c = new Canvas(Width=30., Height=30.)
@@ -525,6 +533,8 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                     Child=new TextBlock(TextWrapping=TextWrapping.Wrap, FontSize=16., Foreground=Brushes.Black, Background=Brushes.Gray, IsHitTestVisible=false,
                                         Text="You are now in 'move mode', which can be used to move any set of dungeon rooms and doors.\n\nTo abort move mode, click again on 'MOVE' in the dungeon tracker.\n\nLeft click each room you want to move (click again to un-pick it); picked rooms turn orange.  When you have picked them all, right click to 'cut' them out - they will follow your cursor, with a preview of where they would land.  Left click to 'drop' them on the map.  Adjacent doors come along for the ride.\n\nUpon completion, you will be prompted to keep changes or undo them, so you can experiment.")
         )
+    let moveModeText = (grabModeTextBlock.Child :?> TextBlock).Text
+    let oldGrabModeText = "You are now in 'grab mode', which can be used to move an entire segment of dungeon rooms and doors at once.\n\nTo abort grab mode, click again on 'GRAB' in the dungeon tracker. (Middle click it to switch to 'MOVE', where you pick the rooms one by one.)\n\nTo move a segment, first click any marked room, to pick up that room and all contiguous rooms.  Then click again on a new location to 'drop' the segment you grabbed.  After grabbing, hovering the mouse shows a preview of where you would drop.  This behaves like 'cut and paste', and adjacent doors will come along for the ride.\n\nUpon completion, you will be prompted to keep changes or undo them, so you can experiment."
     let dungeonTabs = new TabControl(FontSize=12., Background=Brushes.Black)
     theDungeonTabControl <- dungeonTabs
     //let masterRoomStates = Array.init 9 (fun _ -> Array2D.init 8 8 (fun _ _ -> DungeonRoomState()))
@@ -1028,6 +1038,12 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             door.State <- Dungeon.DoorState.YELLOW
                         else
                             door.State <- Dungeon.DoorState.UNKNOWN
+                    elif ea.ChangedButton = Input.MouseButton.XButton1 then
+                        // mouse button 4 toggles the purple door
+                        if door.State <> Dungeon.DoorState.PURPLE then
+                            door.State <- Dungeon.DoorState.PURPLE
+                        else
+                            door.State <- Dungeon.DoorState.UNKNOWN
                     ea.Handled <- true
                 ), (fun _ -> ()))
             doorCanvas.MouseWheel.Add(fun ea ->
@@ -1316,7 +1332,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
             canvasAdd(contentCanvas, b, LD_X+2., LD_Y+191.+32.)
         // grab button for this tab
         let grabTB = new TextBox(FontSize=float(TH-12), Foreground=Brushes.Gray, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false,
-                                Text="MOVE", BorderThickness=Thickness(0.), Margin=Thickness(0.), Padding=Thickness(0.),
+                                Text=(if TrackerModelOptions.OldStyleGrab.Value then "GRAB" else "MOVE"), BorderThickness=Thickness(0.), Margin=Thickness(0.), Padding=Thickness(0.),
                                 HorizontalContentAlignment=HorizontalAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center)
         let grabButton = new Button(Width=float(13*3), Height=float(TH-3), Content=grabTB, Background=Brushes.Black, BorderThickness=Thickness(2.), 
                                     Margin=Thickness(0.), Padding=Thickness(0.), Focusable=false,
@@ -1326,6 +1342,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 grabTB.Foreground <- Brushes.White
                 grabTB.Background <- Brushes.DarkOrange
                 dungeonTabs.Cursor <- System.Windows.Input.Cursors.Hand
+                (grabModeTextBlock.Child :?> TextBlock).Text <- (if TrackerModelOptions.OldStyleGrab.Value then oldGrabModeText else moveModeText)
                 grabModeTextBlock.Opacity <- 1.
             else
                 grabHelper.Abort()
@@ -1339,6 +1356,18 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
         grabButton.Click.Add(fun _ ->
             grabHelper.ToggleGrabMode()
             grabRedraw()
+            )
+        grabButton.ToolTip <- "Middle click: switch between MOVE (pick rooms one by one, right click to cut, left click to drop) and GRAB (click a room to pick up it and every connected room)"
+        // middle click switches between the new MOVE and the old GRAB; the choice is remembered
+        grabButton.PreviewMouseDown.Add(fun ea ->
+            if ea.ChangedButton = Input.MouseButton.Middle then
+                ea.Handled <- true
+                if grabHelper.IsGrabMode then
+                    grabHelper.ToggleGrabMode()   // leave the current mode first (grabRedraw aborts any carried rooms)
+                TrackerModelOptions.OldStyleGrab.Value <- not TrackerModelOptions.OldStyleGrab.Value
+                grabTB.Text <- (if TrackerModelOptions.OldStyleGrab.Value then "GRAB" else "MOVE")
+                grabRedraw()
+                TrackerModelOptions.writeSettings()
             )
         dungeonTabs.SelectionChanged.Add(fun ea -> 
             try
@@ -1849,7 +1878,12 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                     if not popupIsActive then
                         if grabHelper.IsGrabMode then
                             if not grabHelper.HasGrab then
-                                if not(roomStates.[i,j].IsEmpty) then
+                                if TrackerModelOptions.OldStyleGrab.Value then
+                                    // old grab: hovering a marked room previews it and every room connected to it
+                                    if not(roomStates.[i,j].IsEmpty) then
+                                        dungeonHighlightCanvas.Children.Clear() // clear old preview
+                                        highlight(grabHelper.PreviewGrab(i,j,roomStates), Brushes.Lime)
+                                elif not(roomStates.[i,j].IsEmpty) then
                                     dungeonHighlightCanvas.Children.Clear() // clear old preview
                                     let single : bool[,] = Array2D.zeroCreate 8 8   // just this one room (rooms are picked one at a time)
                                     single.[i,j] <- true
@@ -1951,7 +1985,14 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             if ea.Handled then return ()
                             if ea.ChangedButton = Input.MouseButton.Left then
                                 if grabHelper.IsGrabMode then
-                                    if not grabHelper.HasGrab then
+                                    if not grabHelper.HasGrab && TrackerModelOptions.OldStyleGrab.Value then
+                                        // old grab: click a marked room to pick it up along with every connected room; the next click drops them
+                                        if not(roomStates.[i,j].IsEmpty) then
+                                            dungeonHighlightCanvas.Children.Clear() // clear preview
+                                            let contiguous = grabHelper.StartGrab(i,j,roomStates,roomIsCircled,horizontalDoors,verticalDoors)
+                                            highlightImpl(dungeonSourceHighlightCanvas, contiguous, Brushes.Pink)  // this highlight stays around until completed/aborted
+                                            highlight(contiguous, Brushes.Lime)
+                                    elif not grabHelper.HasGrab then
                                         // left click picks (or un-picks) this one room; right click then cuts all the picked rooms out
                                         if not(roomStates.[i,j].IsEmpty) then
                                             grabHelper.ToggleSelect(i,j)
@@ -2065,7 +2106,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             elif ea.ChangedButton = Input.MouseButton.Right then
                                 if grabHelper.IsGrabMode then
                                     // right click in move mode: cut out all the rooms that were picked, so they can be carried to a new spot (left click drops them)
-                                    if not grabHelper.HasGrab && grabHelper.HasSelection then
+                                    if not grabHelper.HasGrab && grabHelper.HasSelection && not TrackerModelOptions.OldStyleGrab.Value then
                                         dungeonHighlightCanvas.Children.Clear()
                                         grabHelper.StartGrabFromSelection(i,j,roomStates,roomIsCircled,horizontalDoors,verticalDoors) |> ignore
                                         dungeonSourceHighlightCanvas.Children.Clear()
@@ -2308,11 +2349,10 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 canvasAdd(c, n, (float w - n.Width) / 2., numeralTop)
                 canvasAdd(mini, c, 0., 0.)
                 let origNumeralColor = n.Foreground
-                let notFoundText = new TextBox(Text="not yet found",Foreground=origNumeralColor,Background=Brushes.Black,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),FontSize=12.)
-                let completeText = new TextBox(Text="complete",Foreground=Brushes.Lime,Background=Brushes.Black,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.))
+                let notFoundText = new TextBox(Text="not yet found",Foreground=origNumeralColor,Background=Brushes.Black,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),FontSize=12.,Width=float w,TextAlignment=TextAlignment.Center)   // (full cell width with centered text, so it sits under the numeral)
+                let completeText = new TextBox(Text="complete",Foreground=Brushes.Lime,Background=Brushes.Black,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),Width=float w,TextAlignment=TextAlignment.Center)
                 let placeNote(tbx:TextBox) =
-                    tbx.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
-                    canvasAdd(c, tbx, (float w - tbx.DesiredSize.Width) / 2., numeralTop + 77.)
+                    canvasAdd(c, tbx, 0., numeralTop + 77.)
                 placeNote notFoundText
                 placeNote completeText
                 let miniContent = new Shapes.Rectangle(Width=float w, Height=float h, Fill=new VisualBrush(contentCanvases.[i]))
@@ -2429,10 +2469,10 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
         // the mode button and the three lines of help text, centered in the cell (horizontally and vertically) with even spacing
         let dp = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
         summaryModeButton.HorizontalAlignment <- HorizontalAlignment.Center
-        summaryModeButton.Margin <- Thickness(0.,0.,0.,14.)
+        summaryModeButton.Margin <- Thickness(0.,0.,0.,8.)   // (tighter spacing so the whole stack fits in the cell and the mode button isn't pushed up out of view)
         dp.Children.Add(summaryModeButton) |> ignore
-        for line in ["Dungeon Summary"; "Hover to preview tab"; "Click to switch tab"] do
-            dp.Children.Add(new TextBlock(Text=line, Foreground=Brushes.Orange, FontSize=12., TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,0.,0.,14.), IsHitTestVisible=false)) |> ignore
+        for (k, line) in List.indexed ["Dungeon Summary"; "Hover to preview tab"; "Click to switch tab"] do
+            dp.Children.Add(new TextBlock(Text=line, Foreground=Brushes.Orange, FontSize=12., TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,0.,0.,(if k = 2 then 0. else 8.)), IsHitTestVisible=false)) |> ignore
         let tb = new Border(Width=float w, Height=float h, Background=Brushes.Black, Child=dp)
         makeMidiPreviewBehavior(8, tb)
         Graphics.gridAdd(g, tb, 0, 0)

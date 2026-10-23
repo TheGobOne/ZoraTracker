@@ -46,7 +46,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         let W = 768.
         let scaleSize = if size=1 then 256. elif size=2 then 512. else 768.
         let broadcastWindow = new Window()
-        broadcastWindow.Title <- "Z-Tracker broadcast"
+        broadcastWindow.Title <- "ZORATracker broadcast"
         broadcastWindow.ResizeMode <- ResizeMode.CanResize   // resizable: the content scales (via a Viewbox) to fit the window
         broadcastWindow.SizeToContent <- SizeToContent.Manual
         broadcastWindow.WindowStartupLocation <- WindowStartupLocation.Manual
@@ -55,7 +55,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
                                         Background=Graphics.freeze(new SolidColorBrush(Color.FromRgb(120uy, 30uy, 30uy))), Width=scaleSize, Opacity=0.0)
         let tb = new TextBox(Text="The broadcast window is at least partially off-screen.  Streaming software like OBS cannot capture display updates to off-screen windows.  " +
                                     "Re-position this window so that it is entirely within the bounds of a screen.  It is ok for this window to be BEHIND another window, " +
-                                    "such as behind the main Z-Tracker application window.  See the Z-Tracker documentation for details.",
+                                    "such as behind the main ZORATracker application window.  See the ZORATracker documentation for details.",
                                     Foreground=Brushes.White, Background=Brushes.Transparent, 
                                     IsReadOnly=true, BorderThickness=Thickness(0.), FontSize=14., VerticalAlignment=VerticalAlignment.Center, TextWrapping=TextWrapping.Wrap)
         topBar.Children.Add(tb) |> ignore
@@ -167,7 +167,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         dp.Children.Add(timeline) |> ignore
         dp.Children.Add(topc) |> ignore
         
-        let timerX = 600.
+        let timerX = OMTW*16. - 200. - 44. + 127. - 3.   // the same spot and size as the timer in the main window's control panel (right column, under the TIMER heading)
         let factor = if size=1 then 0.333333 elif size=2 then 0.666666 else 1.0   // only the initial window size; the content is always laid out at full size and scaled by the Viewbox below
         if size=1 || size=2 then
             broadcastWindow.Height <- H*factor + 40.
@@ -176,9 +176,11 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         c.UseLayoutRounding <- true
         c.Children.Add(dp) |> ignore
         OverworldItemGridUI.broadcastTimeTextBox.Parent :?> Canvas |> (fun c -> if c <> null then c.Children.Remove(OverworldItemGridUI.broadcastTimeTextBox))  // deparent from prior window
-        canvasAdd(c, OverworldItemGridUI.broadcastTimeTextBox, timerX, -10.)
         topBar.Width <- W
         c.Children.Add(topBar) |> ignore
+        let bt = OverworldItemGridUI.broadcastTimeTextBox
+        bt.Width <- 114.; bt.Height <- 46.; bt.FontSize <- 28.; bt.TextAlignment <- TextAlignment.Center; bt.VerticalContentAlignment <- VerticalAlignment.Center; bt.Padding <- Thickness(0.)
+        canvasAdd(c, bt, timerX, 0.)   // (added after the top bar so the bar's black background cannot cover the top of the digits)
         broadcastWindow.Content <- new Viewbox(Stretch=Stretch.Uniform, StretchDirection=StretchDirection.Both, Child=c)
         broadcastWindow.MinWidth <- 160.
         broadcastWindow.MinHeight <- 100.

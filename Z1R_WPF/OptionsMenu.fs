@@ -52,12 +52,12 @@ let link(cb:CheckBox, b:TrackerModelOptions.Bool, needFU, otherEffect) =
 let data1o(isStandardHyrule) = 
     [|
     // These features are disabled by the app when not(isStandardHyrule)
-    if isStandardHyrule then yield "Draw routes", "Constantly display routing lines when mousing over overworld tiles", TrackerModelOptions.Overworld.DrawRoutes, true, (fun()->()), None
-    if isStandardHyrule then yield "Show screen scrolls", "Routing lines assume the player can screen scroll\nScreen scrolls appear as curved lines", TrackerModelOptions.Overworld.RoutesCanScreenScroll, true, (fun()->()), Some(Thickness(20.,0.,0.,0.))
-    if isStandardHyrule then yield "Highlight nearby", "Highlight nearest unmarked gettable overworld tiles when mousing", TrackerModelOptions.Overworld.HighlightNearby, false, (fun()->()), None
-    if isStandardHyrule then yield "Hover on zones/coords", "Hovering the Zones or Coords checkbox shows that overlay while the mouse is over it", TrackerModelOptions.Overworld.HoverZonesCoords, false, (fun()->()), None
-    if isStandardHyrule then yield "Show magnifier", "Display magnified view of overworld tiles when mousing", TrackerModelOptions.Overworld.ShowMagnifier, false, (fun()->()), None
-    yield "Use old popups", "Check this to show the old picture popups (instead of the button boxes)\nwhen marking the wood sword cave and the take-any caves", TrackerModelOptions.Overworld.UseOldPopups, false, (fun()->()), None
+    if isStandardHyrule then yield "Draw Routes", "Constantly display routing lines when mousing over overworld tiles", TrackerModelOptions.Overworld.DrawRoutes, true, (fun()->()), None
+    if isStandardHyrule then yield "Show Screen Scrolls", "Routing lines assume the player can screen scroll\nScreen scrolls appear as curved lines", TrackerModelOptions.Overworld.RoutesCanScreenScroll, true, (fun()->()), Some(Thickness(20.,0.,0.,0.))
+    if isStandardHyrule then yield "Highlight Nearby", "Highlight nearest unmarked gettable overworld tiles when mousing", TrackerModelOptions.Overworld.HighlightNearby, false, (fun()->()), None
+    if isStandardHyrule then yield "Hover On Zones/Coords", "Hovering the Zones or Coords checkbox shows that overlay while the mouse is over it", TrackerModelOptions.Overworld.HoverZonesCoords, false, (fun()->()), None
+    if isStandardHyrule then yield "Show Magnifier", "Display magnified view of overworld tiles when mousing", TrackerModelOptions.Overworld.ShowMagnifier, false, (fun()->()), None
+    yield "Use Old Popups", "Check this to show the old picture popups (instead of the button boxes)\nwhen marking the wood sword cave and the take-any caves", TrackerModelOptions.Overworld.UseOldPopups, false, (fun()->()), None
     // Mirror overworld is not useful when not(isStandardHyrule), but if the user has it checked, we want them to be able to uncheck it
 // now a clickable feature of top tracker area
 //    yield "Mirror overworld", "Flip the overworld map East<->West", TrackerModelOptions.Overworld.MirrorOverworld, true, (fun()->()), None
@@ -67,17 +67,17 @@ let data1d = [|
     "Dungeon Map Hint", "Check this box to add a transparent icon to the dungeon map rooms in order to better guess where that room is", TrackerModelOptions.DisplayIconsInDungeonMap, false, displayIconsInDungeonMapOptionChanged.Trigger
 // now a clickable feature of top tracker area
 //    "Second quest dungeons", "Check this if dungeon 4, rather than dungeon 1, has 3 items (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.IsSecondQuestDungeons, false, secondQuestDungeonsOptionChanged.Trigger
-    "Show dungeon hint icons", "Uncheck to hide the dim question-mark icons above the dungeons and other items\n(where you click to pick a location hint)", TrackerModelOptions.ShowDungeonHintIcons, false, showDungeonHintIconsOptionChanged.Trigger
-    "BOARD instead of LEVEL", "Check this to label the dungeon tabs and headers BOARD-1 ... BOARD-9\ninstead of LEVEL-1 ... LEVEL-9", TrackerModelOptions.BOARDInsteadOfLEVEL, false, BOARDInsteadOfLEVELOptionChanged.Trigger
-    "Show basement info", "Check this if empty dungeon item boxes should suggest whether they are found as\nbasement items rather than floor drops (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.ShowBasementInfo, false, showBasementInfoOptionChanged.Trigger
-    "Do door inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, fun()->()
-    "Book for Helpful Hints", "Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, bookForHelpfulHintsOptionChanged.Trigger
-    "Alphabetize hint zone list", "When checked, the hint zone dropdown (where you mark which zone a dungeon/sword is in)\nshows zones in alphabetical order instead of geographic order.", TrackerModelOptions.AlphabetizeHintZones, false, (fun()->())
-    "Left-drag auto-inverts", "Painting maps: When checked, If your first drag is with left-click,\nand you've not yet inverted OffTheMap with Unmarked, then\nauto-invert when left-click-dragging, to immediately start painting a map.", TrackerModelOptions.LeftClickDragAutoInverts, false, (fun()->())
-    "Default to NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, (fun()->())
-    "Dungeon 'sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, dungeonSunglassesChanged.Trigger
-    "Reverse scroll wheel", "When unchecked: scroll up = monster popup, scroll down = floor-drop/item popup.\nWhen checked: scroll up = floor-drop/item popup, scroll down = monster popup.\n(Dungeon rooms)", TrackerModelOptions.ReverseScrollWheelDirection, false, (fun()->())
-    "Hide lock and hints", "Check this to hide the tip box and the lock bar on the dungeon room type,\nmonster and floor drop menus", TrackerModelOptions.HidePopupHintAndLock, false, (fun()->())
+    "Show Dungeon Hint Icons", "Uncheck to hide the dim question-mark icons above the dungeons and other items\n(where you click to pick a location hint)", TrackerModelOptions.ShowDungeonHintIcons, false, showDungeonHintIconsOptionChanged.Trigger
+    "BOARD Instead Of LEVEL", "Check this to label the dungeon tabs and headers BOARD-1 ... BOARD-9\ninstead of LEVEL-1 ... LEVEL-9", TrackerModelOptions.BOARDInsteadOfLEVEL, false, BOARDInsteadOfLEVELOptionChanged.Trigger
+    "Show Basement Info", "Check this if empty dungeon item boxes should suggest whether they are found as\nbasement items rather than floor drops (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.ShowBasementInfo, false, showBasementInfoOptionChanged.Trigger
+    "Do Door Inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, fun()->()
+    "Book For Helpful Hints", "Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, bookForHelpfulHintsOptionChanged.Trigger
+    "Alphabetize Hint Zone List", "When checked, the hint zone dropdown (where you mark which zone a dungeon/sword is in)\nshows zones in alphabetical order instead of geographic order.", TrackerModelOptions.AlphabetizeHintZones, false, (fun()->())
+    "Left-Drag Auto-Inverts", "Painting maps: When checked, If your first drag is with left-click,\nand you've not yet inverted OffTheMap with Unmarked, then\nauto-invert when left-click-dragging, to immediately start painting a map.", TrackerModelOptions.LeftClickDragAutoInverts, false, (fun()->())
+    "Default To NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, (fun()->())
+    "Dungeon 'Sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, dungeonSunglassesChanged.Trigger
+    "Reverse Scroll Wheel", "When unchecked: scroll up = monster popup, scroll down = floor-drop/item popup.\nWhen checked: scroll up = floor-drop/item popup, scroll down = monster popup.\n(Dungeon rooms)", TrackerModelOptions.ReverseScrollWheelDirection, false, (fun()->())
+    "Hide Lock And Hints", "Check this to hide the tip box and the lock bar on the dungeon room type,\nmonster and floor drop menus", TrackerModelOptions.HidePopupHintAndLock, false, (fun()->())
     |]
 
 let data2 = [|
@@ -107,7 +107,7 @@ let data2 = [|
 
 let showCoopHostSettingsWindow(cm: CustomComboBoxes.CanvasManager) =
     let wh = new System.Threading.ManualResetEvent(false)
-    let window = new Window(Title = "Co-op Host Settings", Width = 400.0, Height = 300.0)
+    let window = new Window(Title = "Co-Op Host Settings", Width = 400.0, Height = 300.0)
     let sp = new StackPanel(Orientation = Orientation.Vertical, Margin = Thickness(10.))
 
     // Apply modal style
@@ -272,7 +272,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     let tb = new TextBox(Text="Dungeon Settings", IsReadOnly=true, FontWeight=FontWeights.Bold) |> header
     options1sp.Children.Add(tb) |> ignore
     // open the folder containing the crash log (with the log file selected), to make it easy to send to the developer
-    let crashLogButton = Graphics.makeButton(" Show crash log... ",None,None)
+    let crashLogButton = Graphics.makeButton(" Show Crash Log... ",None,None)
     crashLogButton.HorizontalAlignment <- HorizontalAlignment.Left
     crashLogButton.Margin <- Thickness(0.,10.,0.,0.)
     crashLogButton.ToolTip <- "Open the folder containing Z1R_Tracker_crash_log.txt with the file selected,\nso you can send it along when reporting a problem"
@@ -341,7 +341,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     options2Topsp.Children.Add(dp) |> ignore
     options2sp.Children.Add(options2Topsp) |> ignore
     // stop
-    let muteCB = new CheckBox(Content=new TextBox(Text="Disable all",IsReadOnly=true))
+    let muteCB = new CheckBox(Content=new TextBox(Text="Disable All",IsReadOnly=true))
     muteCB.ToolTip <- "Turn off all reminders (but you can still view them by\nclicking the reminder log in the upper-right of the timeline)"
     muteCB.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.IsMuted
     muteCB.Checked.Add(fun _ -> TrackerModelOptions.IsMuted <- true; voice.Volume <- 0)
@@ -349,7 +349,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     options2sp.Children.Add(muteCB) |> ignore
     // reset every setting to its default: delete the settings file and restart (only offered in the in-app options popup)
     if includePopupExplainer then
-        let resetButton = Graphics.makeButton(" Reset all settings to defaults... ",None,None)
+        let resetButton = Graphics.makeButton(" Reset All Settings To Defaults... ",None,None)
         resetButton.HorizontalAlignment <- HorizontalAlignment.Left
         resetButton.Margin <- Thickness(0.,10.,0.,0.)
         resetButton.ToolTip <- "Delete your saved settings and restart the app, so that every option goes back to its default"
@@ -401,17 +401,17 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
 
     options2sp.Children.Add(options2Grid) |> ignore
     // Reminder interval slider (label row then slider row for compact layout)
-    let reminderIntervalLabel = new TextBox(Text=sprintf "Reminder interval (minutes): %d" TrackerModelOptions.ReminderIntervalMinutes, IsReadOnly=true, Margin=Thickness(0.,4.,0.,0.), Background=Brushes.Transparent)
+    let reminderIntervalLabel = new TextBox(Text=sprintf "Reminder Interval (Minutes): %d" TrackerModelOptions.ReminderIntervalMinutes, IsReadOnly=true, Margin=Thickness(0.,4.,0.,0.), Background=Brushes.Transparent)
     options2sp.Children.Add(reminderIntervalLabel) |> ignore
     let reminderIntervalSlider = new Slider(Minimum=1., Maximum=60., TickFrequency=1., IsSnapToTickEnabled=true, Value=float TrackerModelOptions.ReminderIntervalMinutes, Width=200., Margin=Thickness(0.,0.,0.,2.))
     reminderIntervalSlider.ToolTip <- "How often periodic reminders fire (recorder/power-bracelet spots, boomstick, white sword)"
     reminderIntervalSlider.ValueChanged.Add(fun _ ->
         let v = int reminderIntervalSlider.Value
         TrackerModelOptions.ReminderIntervalMinutes <- v
-        reminderIntervalLabel.Text <- sprintf "Reminder interval (minutes): %d" v)
+        reminderIntervalLabel.Text <- sprintf "Reminder Interval (Minutes): %d" v)
     options2sp.Children.Add(reminderIntervalSlider) |> ignore
     if voice.GetInstalledVoices() |> Seq.filter (fun v -> v.Enabled) |> Seq.length > 1 then
-        let changeVoiceButton = Graphics.makeButton("Change voice",None,None)
+        let changeVoiceButton = Graphics.makeButton("Change Voice",None,None)
         changeVoiceButton.HorizontalAlignment <- HorizontalAlignment.Left
         do  // scope local mutable popupIsActive variable to this one button
             let mutable popupIsActive = false  // second level of popup, need local copy
@@ -461,8 +461,20 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
                     } |> Async.StartImmediate
                 )
         options2sp.Children.Add(changeVoiceButton) |> ignore
+    // Auto-save: how often (1-10 minutes) the tracker writes its auto-save file
+    let autoSaveHeader = new TextBox(Text="Auto-save", IsReadOnly=true, FontWeight=FontWeights.Bold, Margin=Thickness(0.,12.,0.,0.)) |> header
+    options2sp.Children.Add(autoSaveHeader) |> ignore
+    let autoSaveLabel = new TextBox(Text=sprintf "Auto-save Interval (Minutes): %d" TrackerModelOptions.AutoSaveMinutes, IsReadOnly=true, Margin=Thickness(0.,4.,0.,0.), Background=Brushes.Transparent)
+    options2sp.Children.Add(autoSaveLabel) |> ignore
+    let autoSaveSlider = new Slider(Minimum=1., Maximum=10., TickFrequency=1., IsSnapToTickEnabled=true, Value=float TrackerModelOptions.AutoSaveMinutes, Width=200., Margin=Thickness(0.,0.,0.,2.))
+    autoSaveSlider.ToolTip <- "How often the tracker automatically saves your run (used to restore after a crash)"
+    autoSaveSlider.ValueChanged.Add(fun _ ->
+        let v = int autoSaveSlider.Value
+        TrackerModelOptions.AutoSaveMinutes <- v
+        autoSaveLabel.Text <- sprintf "Auto-save Interval (Minutes): %d" v)
+    options2sp.Children.Add(autoSaveSlider) |> ignore
 
-    let coopSettingsButton = Graphics.makeButton("Co-op Client Settings", None, None)
+    let coopSettingsButton = Graphics.makeButton("Co-Op Client Settings", None, None)
     coopSettingsButton.HorizontalAlignment <- HorizontalAlignment.Left
     do
         let mutable popupIsActive = false
@@ -512,7 +524,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
 
 
                 coopCheckStack.Margin <- Thickness(0., 0., 0., 10.)
-                coopCheckStack.ToolTip <- "Enables co-op syncing between two instances of Z-Tracker via Azure Functions and Azure SignalR.\nThis cannot be enabled if the value of Function App Base is not a valid URL"
+                coopCheckStack.ToolTip <- "Enables co-op syncing between two instances of ZORATracker via Azure Functions and Azure SignalR.\nThis cannot be enabled if the value of Function App Base is not a valid URL"
                 ToolTipService.SetShowDuration(coopCheckStack, 10000)
                 enableCoopCheckbox.IsChecked <- System.Nullable.op_Implicit (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
 
@@ -726,7 +738,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     let tb = new TextBox(Text="Other", IsReadOnly=true, FontWeight=FontWeights.Bold) |> header
     options3sp.Children.Add(tb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Animate tile changes",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Animate Tile Changes",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.AnimateTileChanges.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.AnimateTileChanges.Value <- true)
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.AnimateTileChanges.Value <- false)
@@ -734,7 +746,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Animate shop highlights",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Animate Shop Highlights",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.AnimateShopHighlights.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.AnimateShopHighlights.Value <- true)
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.AnimateShopHighlights.Value <- false)
@@ -742,7 +754,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Remember startup selection",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Remember Startup Selection",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.RememberStartupSelection.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.RememberStartupSelection.Value <- true)
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.RememberStartupSelection.Value <- false)
@@ -750,7 +762,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Save on completion",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Save On Completion",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.SaveOnCompletion.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.SaveOnCompletion.Value <- true)
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.SaveOnCompletion.Value <- false)
@@ -758,7 +770,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Check for updates on startup",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Check For Updates On Startup",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.CheckForUpdates.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.CheckForUpdates.Value <- true)
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.CheckForUpdates.Value <- false)
@@ -766,7 +778,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Snoop for seed&flags",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Snoop For Seed&flags",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.SnoopSeedAndFlags.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.SnoopSeedAndFlags.Value <- true; SaveAndLoad.MaybePollSeedAndFlags())
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.SnoopSeedAndFlags.Value <- false)
@@ -774,14 +786,14 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Display seed&flags",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
+    let cb = new CheckBox(Content=new TextBox(Text="Display Seed&flags",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.DisplaySeedAndFlags.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.DisplaySeedAndFlags.Value <- true; SaveAndLoad.seedAndFlagsUpdated.Trigger())
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.DisplaySeedAndFlags.Value <- false; SaveAndLoad.seedAndFlagsUpdated.Trigger())
     cb.ToolTip <- "Display seed & flags (if known) in the bottom corner of Notes box"
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Listen for speech",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Listen For Speech",IsReadOnly=true))
     if microphoneFailedToInitialize then
         cb.IsEnabled <- false
         cb.IsChecked <- System.Nullable.op_Implicit false
@@ -794,7 +806,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
         link(cb, TrackerModelOptions.ListenForSpeech, false, fun()->())
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Confirmation sound",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
+    let cb = new CheckBox(Content=new TextBox(Text="Confirmation Sound",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
     if microphoneFailedToInitialize then
         cb.IsEnabled <- false
         cb.IsChecked <- System.Nullable.op_Implicit false
@@ -828,7 +840,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     options3sp.Children.Add(cb) |> ignore
 *)
 
-    let cb = new CheckBox(Content=new TextBox(Text="Broadcast window",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Broadcast Window",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.ShowBroadcastWindow.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.ShowBroadcastWindow.Value <- true; broadcastWindowOptionChanged.Trigger())
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.ShowBroadcastWindow.Value <- false; broadcastWindowOptionChanged.Trigger())
@@ -837,7 +849,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     options3sp.Children.Add(cb) |> ignore
 
 
-    let cb = new CheckBox(Content=new TextBox(Text="Include overworld magnifier",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
+    let cb = new CheckBox(Content=new TextBox(Text="Include Overworld Magnifier",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value <- true; broadcastWindowOptionChanged.Trigger())
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value <- false; broadcastWindowOptionChanged.Trigger())
@@ -845,7 +857,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Mouse magnifier window",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Mouse Magnifier Window",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.ShowMouseMagnifierWindow.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.ShowMouseMagnifierWindow.Value <- true; mouseMagnifierWindowOptionChanged.Trigger())
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.ShowMouseMagnifierWindow.Value <- false; mouseMagnifierWindowOptionChanged.Trigger())
@@ -853,7 +865,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     ToolTipService.SetShowDuration(cb, 10000)
     options3sp.Children.Add(cb) |> ignore
 
-    let cb = new CheckBox(Content=new TextBox(Text="Hide timer",IsReadOnly=true))
+    let cb = new CheckBox(Content=new TextBox(Text="Hide Timer",IsReadOnly=true))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.HideTimer.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.HideTimer.Value <- true; hideTimerChanged.Trigger())
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.HideTimer.Value <- false; hideTimerChanged.Trigger())
@@ -875,7 +887,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     coopSettingsButton.Width <- 182.
     coopSettingsButton.Margin <- Thickness(0., 0., 0., 3.)
     options3sp.Children.Add(coopSettingsButton) |> ignore
-    let coopHostSettingsButton = Graphics.makeButton("Co-op Host Settings", None, None)
+    let coopHostSettingsButton = Graphics.makeButton("Co-Op Host Settings", None, None)
     coopHostSettingsButton.HorizontalAlignment <- HorizontalAlignment.Left
     coopHostSettingsButton.Width <- 182.
     coopHostSettingsButton.Click.Add(fun _ -> showCoopHostSettingsWindow(cm))
