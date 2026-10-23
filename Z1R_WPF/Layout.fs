@@ -64,13 +64,51 @@ let tryCenterHotkeysUnderHintDecoder(hintLeft:float) =
 let mutable iconQuestion : UIElement = null
 let mutable iconEye : UIElement = null
 let mutable iconSave : UIElement = null
+let mutable iconOptions : UIElement = null   // the Options / Draw / log buttons, stacked just above the Item Locations button
+let mutable iconDraw : UIElement = null
+let mutable iconLog : UIElement = null
 let mutable iconItemLocations : UIElement = null   // the Item Locations button, the top button of the Save / Hint Decoder / Hotkeys column
 let mutable iconMirror : UIElement = null
 let mutable zonesCheckBoxEl : UIElement = null
 let mutable coordsCheckBoxEl : UIElement = null
+let mutable zonesCoordsNatural : (float*float*float*float) option = None   // unscaled sizes of the zones / coords checkboxes
 let mutable topLeftIconsHooked = false
 let SMALL_BUTTON_W = 84.   // width of the Save / Hint Decoder / Hotkeys column (it has to fit between the OW stats and the Pause/Reset timer column)
 let mutable rightButtonForSizing : UIElement = null
+let PANEL_X0 = WEBCAM_LINE-44.   // (3px left of the old column so the panel isn't against the window edge)
+// // left column of the control panel (TRACK / TOOLS)
+let PANEL_LW = 114.
+let PANEL_X1 = PANEL_X0 + PANEL_LW + 13.   // right column (TIMER / FILE)
+let PANEL_RW = PANEL_LW
+// the panel buttons' look (from the approved mockup): dark fill, thin gray border, 4px rounded corners, orange border on hover
+let panelButtonTemplate =
+    let xaml = "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'><Border x:Name='bd' Background='#171717' BorderBrush='#3A3A3A' BorderThickness='1' CornerRadius='4' SnapsToDevicePixels='True'><ContentPresenter HorizontalAlignment='Stretch' VerticalAlignment='Stretch'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='BorderBrush' Value='#FFA31A'/><Setter TargetName='bd' Property='Background' Value='#241A0A'/></Trigger></ControlTemplate.Triggers></ControlTemplate>"
+    System.Windows.Markup.XamlReader.Parse(xaml) :?> ControlTemplate
+// startup screen: the same button look as the control panel (rounded 8px), and option boxes (checkbox areas) with a matching rounded border + orange hover
+let startupButtonTemplate =
+    let xaml = "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'><Border x:Name='bd' Background='#171717' BorderBrush='#3A3A3A' BorderThickness='1' CornerRadius='8' SnapsToDevicePixels='True'><ContentPresenter HorizontalAlignment='Stretch' VerticalAlignment='Stretch'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='BorderBrush' Value='#FFA31A'/><Setter TargetName='bd' Property='Background' Value='#241A0A'/></Trigger></ControlTemplate.Triggers></ControlTemplate>"
+    System.Windows.Markup.XamlReader.Parse(xaml) :?> ControlTemplate
+let styleStartupButton(e:UIElement) =
+    match e with
+    | :? Button as b ->
+        b.Template <- startupButtonTemplate
+        (match b.Content with
+         | :? TextBox as t -> t.Background <- Brushes.Transparent
+         | _ -> ())
+    | _ -> ()
+let optionBorderStyle =
+    let xaml = "<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Border'><Setter Property='BorderBrush' Value='#3A3A3A'/><Setter Property='Background' Value='#171717'/><Setter Property='CornerRadius' Value='8'/><Style.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter Property='BorderBrush' Value='#FFA31A'/><Setter Property='Background' Value='#241A0A'/></Trigger></Style.Triggers></Style>"
+    System.Windows.Markup.XamlReader.Parse(xaml) :?> Style
+let mutable iconSpot : UIElement = null
+let mutable iconShowRun : UIElement = null
+let mutable iconFQSQ : UIElement = null
+let panelHeading(text:string) =
+    new TextBlock(Text=text, FontSize=8., FontWeight=FontWeights.SemiBold, Foreground=new SolidColorBrush(Color.FromRgb(143uy,143uy,143uy)), TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
+let panelHeadings = [ panelHeading("TRACK"), PANEL_X0, 0., PANEL_LW; panelHeading("TOOLS"), PANEL_X0, 68., PANEL_LW; panelHeading("TIMER"), PANEL_X1, 0., PANEL_RW; panelHeading("OVERWORLD OPTIONS"), PANEL_X1, 68., PANEL_RW; panelHeading("FILE"), PANEL_X1, 104., PANEL_RW ]
+let panelDivider = new System.Windows.Shapes.Rectangle(Width=1., Height=148., Fill=new SolidColorBrush(Color.FromRgb(38uy,38uy,38uy)), IsHitTestVisible=false)
+let addPanelDecor(add:UIElement -> unit) =
+    for tb, _, _, _ in panelHeadings do add(tb)
+    add(panelDivider)
 let mutable topLeftPlace : unit -> unit = fun () -> ()
 let hookTopLeftOnSizeChange(e:UIElement) =
     match e with
@@ -105,43 +143,64 @@ let tryLayoutTopLeftIcons() =
                     // zones and coords sit at the very top of the screen; Save goes right above the Hint Decoder button, and Hotkeys/Save/Hint Decoder are all the same size
                     match zonesCheckBoxEl, coordsCheckBoxEl with
                     | (:? FrameworkElement as z), (:? FrameworkElement as cc) when z.ActualHeight > 0. && cc.ActualHeight > 0. ->
-                        let top = max 0. ((58. - z.ActualHeight - cc.ActualHeight) / 2.)   // centered in the space above the Save button
-                        Canvas.SetTop(z, top)
-                        Canvas.SetLeft(z, hintCx - z.ActualWidth / 2.)
-                        Canvas.SetLeft(cc, hintCx - cc.ActualWidth / 2.)
-                        Canvas.SetTop(cc, top + z.ActualHeight)
+                        // zones and coords sit side by side in the open strip above the item grid (centered over the armos / letter / ladder item boxes, the first three grid columns) and scaled down to fit
+                        let areaX, areaW, areaY, areaH = OW_ITEM_GRID_LOCATIONS.OFFSET + 2., 86., 3., 24.
+                        if not zonesCoordsNatural.IsSome && not(z.LayoutTransform :? ScaleTransform) then
+                            zonesCoordsNatural <- Some(z.ActualWidth, z.ActualHeight, cc.ActualWidth, cc.ActualHeight)
+                        match zonesCoordsNatural with
+                        | Some(zw, zh, cw, ch) ->
+                            let gap = 4.
+                            let s = min 1. (min ((areaW - gap) / (zw + cw)) (areaH / (max zh ch)))
+                            let want = new ScaleTransform(s, s)
+                            let cur = (match z.LayoutTransform with :? ScaleTransform as t -> t.ScaleX | _ -> 1.)
+                            if abs (cur - s) > 0.001 then
+                                z.LayoutTransform <- want
+                                cc.LayoutTransform <- new ScaleTransform(s, s)
+                            let totalW = (zw + cw) * s + gap
+                            let left = areaX + (areaW - totalW) / 2.
+                            Canvas.SetLeft(z, left)
+                            Canvas.SetTop(z, areaY + (areaH - zh * s) / 2.)
+                            Canvas.SetLeft(cc, left + zw * s + gap)
+                            Canvas.SetTop(cc, areaY + (areaH - ch * s) / 2.)
+                            Canvas.SetZIndex(z, 100)
+                            Canvas.SetZIndex(cc, 100)
+                        | None -> ()
                     | _ -> ()
-                    // Save / Hint Decoder / Hotkeys line up row for row with the Pause/Reset timer, Spot Summary and Show/Run Custom buttons to their right, and match their height
-                    // (four smaller buttons now: Item Locations on top, so they fit under the zones/coords checkboxes without clipping them)
-                    let rowH = 21.
-                    for e, y in [iconItemLocations, 60.; iconSave, 82.; hintDecoderElementForCentering, 104.; hotkeysElementForCentering, 126.] do
+                    // two-column control panel: left TRACK / TOOLS, right TIMER (+ Pause/Reset level with Spot Summary) / FILE; every button the same size
+                    let items : (UIElement * float * float) list =
+                        [ hintDecoderElementForCentering, PANEL_X0, 10.
+                          iconItemLocations, PANEL_X0, 28.
+                          iconSpot, PANEL_X0, 46.
+                          hotkeysElementForCentering, PANEL_X0, 78.
+                          iconLog, PANEL_X0, 96.
+                          iconDraw, PANEL_X0, 114.
+                          iconShowRun, PANEL_X0, 132.
+                          rightButtonForSizing, PANEL_X1, 46.
+                          iconFQSQ, PANEL_X1, 78.
+                          iconOptions, PANEL_X1, 114.
+                          iconSave, PANEL_X1, 132. ]
+                    for e, x, y in items do
                         match e with
                         | :? FrameworkElement as f ->
-                            match f with
-                            | :? Button as b ->
-                                // fill the whole button (a shrunken text box would let the button's light background show through as an extra inner border line)
+                            (match f with
+                             | :? Button as b ->
                                 (match b.Content with
                                  | :? TextBox as t ->
                                     t.VerticalContentAlignment <- VerticalAlignment.Center; t.VerticalAlignment <- VerticalAlignment.Stretch; t.HorizontalAlignment <- HorizontalAlignment.Stretch
-                                    t.FontSize <- (if obj.ReferenceEquals(e, iconItemLocations) then 10.5 else 13.); t.Padding <- Thickness(0.); t.RenderTransform <- (if obj.ReferenceEquals(e, hotkeysElementForCentering) then (new System.Windows.Media.TranslateTransform(0., -1.) :> System.Windows.Media.Transform) else null)   // (Hotkeys: nudged up a pixel to look vertically centered)   // (the longer Item Locations label gets a smaller font to fit the column)
+                                    t.FontSize <- 11.; t.Padding <- Thickness(0.); t.RenderTransform <- null; t.Background <- Brushes.Transparent
                                  | _ -> ())
-                            | _ -> ()
-                            // draw exactly like the buttons on the right: same border/padding/brushes, and pixel-snapped so the border doesn't blur or look thicker
-                            (match f, rightButtonForSizing with
-                             | (:? Button as b), (:? Button as rb) ->
-                                b.BorderThickness <- rb.BorderThickness
-                                b.Padding <- rb.Padding
-                                if rb.BorderBrush <> null then b.BorderBrush <- rb.BorderBrush
-                                if rb.Background <> null then b.Background <- rb.Background
+                                b.Template <- panelButtonTemplate
                              | _ -> ())
                             f.SnapsToDevicePixels <- true
                             f.UseLayoutRounding <- true
-                            let rowH = System.Math.Round(rowH)
-                            if f.Width <> SMALL_BUTTON_W then f.Width <- SMALL_BUTTON_W
-                            if f.Height <> rowH then f.Height <- rowH
-                            Canvas.SetLeft(f, hintLeft)
+                            if f.Width <> PANEL_LW then f.Width <- PANEL_LW
+                            if f.Height <> 16. then f.Height <- 16.
+                            Canvas.SetLeft(f, x)
                             Canvas.SetTop(f, y)
                         | _ -> ()
+                    for tb, x, y, w in panelHeadings do
+                        Canvas.SetLeft(tb, x); Canvas.SetTop(tb, y); tb.Width <- w
+                    Canvas.SetLeft(panelDivider, PANEL_X0 + PANEL_LW + 6.); Canvas.SetTop(panelDivider, 0.)
             m.SizeChanged.Add(fun _ -> place())
             topLeftPlace <- place
             place()
@@ -177,12 +236,14 @@ type IApplicationLayoutBase =
     abstract member AddItemProgress : itemProgressCanvas:UIElement * itemProgressTB:UIElement -> unit
     abstract member AddVersionButton : vb:UIElement -> unit
     abstract member AddHintDecoderButton : tb:UIElement -> unit
+    abstract member AddOverworldOptionsButton : fqsqButton:UIElement -> unit
     abstract member AddExtraSiteLinks : zoraSiteLink:UIElement * racingSiteLink:UIElement -> unit
     abstract member AddKittyAndLogo : kitty:Image * logoBorder:UIElement * ztlogo:Image * discordLink:UIElement * racingLink:UIElement -> unit
     abstract member AddShowHotKeysButton : showHotKeysButton:UIElement -> unit
     abstract member AddShowRunCustomButton : showRunCustomButton:UIElement -> unit
     abstract member AddSaveButton : saveButton:UIElement -> unit
     abstract member AddItemLocationsButton : itemLocationsButton:UIElement -> unit
+    abstract member AddTopLeftButtons : optionsButton:UIElement * drawButton:UIElement * logButton:UIElement -> unit
     abstract member AddQuestReferenceChart : chart:UIElement * x:float * y:float -> unit
     abstract member AddUserCustomContentButton : uccButton:UIElement -> unit
     abstract member AddDungeonTabsOverlay : dungeonTabsOverlay:UIElement -> unit
@@ -223,13 +284,15 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(appMainCanvas, mainTracker, 0., 0.)
         member this.AddNumberedTriforceCanvas(triforceCanvas, i) =
             canvasAdd(appMainCanvas, triforceCanvas, OW_ITEM_GRID_LOCATIONS.OFFSET+30.*float i, 0.)
-        member this.AddItemGridStuff(owItemGrid, _toggleBookShieldCheckBox, _bookIsAtlasCheckBox, highlightOpenCavesCheckBox, timerResetButton, spotSummaryTB, mirrorOW, 
+        member this.AddItemGridStuff(owItemGrid, _toggleBookShieldCheckBox, _bookIsAtlasCheckBox, _highlightOpenCavesCheckBox, timerResetButton, spotSummaryTB, mirrorOW, 
                                         hideIconsEyeball, _moreFQSQoptionsButton, _ws_ms_bu_toggleButton) =
             canvasAdd(appMainCanvas, owItemGrid, OW_ITEM_GRID_LOCATIONS.OFFSET, 30.)
             rightButtonForSizing <- timerResetButton
             hookTopLeftOnSizeChange(timerResetButton)
-            canvasAdd(appMainCanvas, timerResetButton, 12.8*OMTW, 60.)
-            canvasAdd(appMainCanvas, spotSummaryTB, 12.8*OMTW, 90.)
+            canvasAdd(appMainCanvas, timerResetButton, 12.8*OMTW + 10., 60.)
+            canvasAdd(appMainCanvas, spotSummaryTB, 12.8*OMTW + 10., 90.)
+            iconSpot <- spotSummaryTB
+            topLeftPlace()
             canvasAdd(appMainCanvas, hideIconsEyeball, WEBCAM_LINE+4.-10., 2.)
             canvasAdd(appMainCanvas, mirrorOW, WEBCAM_LINE+4.-10., 26.)
             iconEye <- hideIconsEyeball
@@ -260,15 +323,19 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(appMainCanvas, legendCanvas, 0., THRU_MAIN_MAP_H)
         member this.AddItemProgress(itemProgressCanvas, itemProgressTB) = 
             canvasAdd(appMainCanvas, itemProgressCanvas, 0., THRU_MAP_AND_LEGEND_H + 3.)
-            canvasAdd(appMainCanvas, itemProgressTB, 0., THRU_MAP_AND_LEGEND_H + 10.)   // all the way left (the version button that used to share this space is gone)
+            canvasAdd(appMainCanvas, itemProgressTB, 3., THRU_MAP_AND_LEGEND_H + 10.)   // all the way left (the version button that used to share this space is gone)
             itemProgressLabelForCentering <- itemProgressTB
             centerVerticallyAt(itemProgressTB, SWORD_ICON_CENTER_Y)
         member this.AddVersionButton(_vb) = ()   // the version button is no longer shown on the main screen
+        member this.AddOverworldOptionsButton(fqsqButton) =
+            canvasAdd(appMainCanvas, fqsqButton, PANEL_X1, 78.)
+            iconFQSQ <- fqsqButton
+            topLeftPlace()
         member this.AddHintDecoderButton(tb) =
             canvasAdd(appMainCanvas, tb, WEBCAM_LINE-41., 108.)
             hintDecoderElementForCentering <- tb
             hookTopLeftOnSizeChange(tb)
-            tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
+            tryCenterHotkeysUnderHintDecoder(PANEL_X0)
         member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, racingLink:UIElement) =
             let logoX = 16.*OMTW - kittyWidth - 22. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used, nudged 10px left
             canvasAdd(appMainCanvas, discordLink, logoX - (DiscordLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2.)
@@ -279,10 +346,19 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddShowHotKeysButton(showHotKeysButton) = 
             canvasAdd(appMainCanvas, showHotKeysButton, WEBCAM_LINE-41., 128.)
             hotkeysElementForCentering <- showHotKeysButton
-            tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
+            tryCenterHotkeysUnderHintDecoder(PANEL_X0)
         member this.AddShowRunCustomButton(showRunCustomButton) = 
-            canvasAdd(appMainCanvas, showRunCustomButton, 12.8*OMTW, 120.)   // under Spot Summary
+            canvasAdd(appMainCanvas, showRunCustomButton, 12.8*OMTW + 10., 120.)   // under Spot Summary
+            iconShowRun <- showRunCustomButton
+            topLeftPlace()
             Canvas.SetZIndex(showRunCustomButton, 1000)   // always above the map tiles / their icons
+        member this.AddTopLeftButtons(optionsButton, drawButton, logButton) =
+            for e in [optionsButton; drawButton; logButton] do canvasAdd(appMainCanvas, e, 0., 0.)
+            addPanelDecor(fun e -> canvasAdd(appMainCanvas, e, 0., 0.))
+            iconOptions <- optionsButton
+            iconDraw <- drawButton
+            iconLog <- logButton
+            topLeftPlace()
         member this.AddQuestReferenceChart(chart, x, y) = canvasAdd(appMainCanvas, chart, x, y)
         member this.AddSaveButton(saveButton) = 
             canvasAdd(appMainCanvas, saveButton, 530., 28.)   // below the ? button
@@ -318,8 +394,7 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddCurrentMaxHearts(currentMaxHeartsTextBox) = 
             canvasAdd(appMainCanvas, currentMaxHeartsTextBox, OW_STATS_CENTER_X-56., 121.)
             centerHorizontallyAt(currentMaxHeartsTextBox, OW_STATS_CENTER_X)
-        member this.AddShowCoords(showCoordsCB, havePotionLetterImage) = 
-            canvasAdd(appMainCanvas, havePotionLetterImage, OW_ITEM_GRID_LOCATIONS.OFFSET+182.+120.+65., 124.)
+        member this.AddShowCoords(showCoordsCB, _havePotionLetterImage) = 
             canvasAdd(appMainCanvas, showCoordsCB, WEBCAM_LINE-41., 88.)
             coordsCheckBoxEl <- showCoordsCB
             hookTopLeftOnSizeChange(showCoordsCB)
@@ -456,13 +531,15 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             if i=1 then // only once
                 let ntView = Broadcast.makeViewRectImpl(Point(OW_ITEM_GRID_LOCATIONS.OFFSET,0.), Point(OW_ITEM_GRID_LOCATIONS.OFFSET+float(30*8), float(30)), upper)
                 canvasAdd(lower, ntView, OW_ITEM_GRID_LOCATIONS.OFFSET, 0.)
-        member this.AddItemGridStuff(owItemGrid, _toggleBookShieldCheckBox, _bookIsAtlasCheckBox, highlightOpenCavesCheckBox, timerResetButton, spotSummaryTB, mirrorOW, 
+        member this.AddItemGridStuff(owItemGrid, _toggleBookShieldCheckBox, _bookIsAtlasCheckBox, _highlightOpenCavesCheckBox, timerResetButton, spotSummaryTB, mirrorOW, 
                                         hideIconsEyeball, _moreFQSQoptionsButton, _ws_ms_bu_toggleButton) =
             canvasAdd(upper, owItemGrid, OW_ITEM_GRID_LOCATIONS.OFFSET, 30.)
             rightButtonForSizing <- timerResetButton
             hookTopLeftOnSizeChange(timerResetButton)
-            canvasAdd(upper, timerResetButton, 12.8*OMTW, 60.)
-            canvasAdd(upper, spotSummaryTB, 12.8*OMTW, 90.)
+            canvasAdd(upper, timerResetButton, 12.8*OMTW + 10., 60.)
+            canvasAdd(upper, spotSummaryTB, 12.8*OMTW + 10., 90.)
+            iconSpot <- spotSummaryTB
+            topLeftPlace()
             canvasAdd(upper, hideIconsEyeball, WEBCAM_LINE+4.-10., 2.)
             canvasAdd(upper, mirrorOW, WEBCAM_LINE+4.-10., 26.)
             iconEye <- hideIconsEyeball
@@ -491,7 +568,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(upper, legendCanvas, 0., THRU_MAIN_MAP_H)
         member this.AddItemProgress(itemProgressCanvas, itemProgressTB) = 
             canvasAdd(upper, itemProgressCanvas, 0., THRU_MAP_AND_LEGEND_H + 3.)
-            canvasAdd(upper, itemProgressTB, 0., THRU_MAP_AND_LEGEND_H + 10.)   // all the way left (the version button that used to share this space is gone)
+            canvasAdd(upper, itemProgressTB, 3., THRU_MAP_AND_LEGEND_H + 10.)   // all the way left (the version button that used to share this space is gone)
             itemProgressLabelForCentering <- itemProgressTB
             centerVerticallyAt(itemProgressTB, SWORD_ICON_CENTER_Y)
             let pro = Broadcast.makeViewRectImpl(Point(ITEM_PROGRESS_FIRST_ITEM,THRU_MAP_AND_LEGEND_H), 
@@ -506,11 +583,15 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddVersionButton(_vb) =   // the version button is no longer shown on the main screen
             let v = Broadcast.makeViewRectImpl(Point(0.,THRU_MAP_AND_LEGEND_H), Point(50.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H), upper)
             canvasAdd(lower, v, 0., 180.+20.)
+        member this.AddOverworldOptionsButton(fqsqButton) =
+            canvasAdd(upper, fqsqButton, PANEL_X1, 78.)
+            iconFQSQ <- fqsqButton
+            topLeftPlace()
         member this.AddHintDecoderButton(tb) =
             canvasAdd(upper, tb, WEBCAM_LINE-41., 108.)
             hintDecoderElementForCentering <- tb
             hookTopLeftOnSizeChange(tb)
-            tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
+            tryCenterHotkeysUnderHintDecoder(PANEL_X0)
         member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, racingLink:UIElement) =
             let logoX = 16.*OMTW - kittyWidth - 22. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used, nudged 10px left
             canvasAdd(upper, discordLink, logoX - (DiscordLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2.)
@@ -521,7 +602,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             kitty.Source <- System.Windows.Media.Imaging.BitmapFrame.Create(imageStream)
             kitty.Width <- 45.
             kitty.Height <- 45.
-            let lowerDiscordLink = MakeDiscordLink("https://discord.com/channels/723242830331510844/1431412013170688152")
+            let lowerDiscordLink = MakeDiscordLink("https://discord.gg/zescSjDtme")
             canvasAdd(lower, lowerDiscordLink, afterSoldItemBoxesX+150. + 5. - (DiscordLinkWidth - kitty.Width)/2., 48. + kitty.Height + 1.)
         member this.AddExtraSiteLinks(zoraSiteLink, racingSiteLink) =
             canvasAdd(upper, zoraSiteLink, 0., 0.)
@@ -529,10 +610,19 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddShowHotKeysButton(showHotKeysButton) = 
             canvasAdd(upper, showHotKeysButton, WEBCAM_LINE-41., 128.)
             hotkeysElementForCentering <- showHotKeysButton
-            tryCenterHotkeysUnderHintDecoder(WEBCAM_LINE-41.)
+            tryCenterHotkeysUnderHintDecoder(PANEL_X0)
         member this.AddShowRunCustomButton(showRunCustomButton) = 
-            canvasAdd(upper, showRunCustomButton, 12.8*OMTW, 120.)   // under Spot Summary
+            canvasAdd(upper, showRunCustomButton, 12.8*OMTW + 10., 120.)   // under Spot Summary
+            iconShowRun <- showRunCustomButton
+            topLeftPlace()
             Canvas.SetZIndex(showRunCustomButton, 1000)   // always above the map tiles / their icons
+        member this.AddTopLeftButtons(optionsButton, drawButton, logButton) =
+            for e in [optionsButton; drawButton; logButton] do canvasAdd(upper, e, 0., 0.)
+            addPanelDecor(fun e -> canvasAdd(upper, e, 0., 0.))
+            iconOptions <- optionsButton
+            iconDraw <- drawButton
+            iconLog <- logButton
+            topLeftPlace()
         member this.AddQuestReferenceChart(chart, x, y) = canvasAdd(upper, chart, x, y)
         member this.AddSaveButton(saveButton) = 
             canvasAdd(upper, saveButton, 530., 28.)   // below the ? button
@@ -581,8 +671,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddCurrentMaxHearts(currentMaxHeartsTextBox) = 
             canvasAdd(upper, currentMaxHeartsTextBox, OW_STATS_CENTER_X-56., 121.)
             centerHorizontallyAt(currentMaxHeartsTextBox, OW_STATS_CENTER_X)
-        member this.AddShowCoords(showCoordsCB, havePotionLetterImage) = 
-            canvasAdd(upper, havePotionLetterImage, OW_ITEM_GRID_LOCATIONS.OFFSET+182.+120.+65., 124.)
+        member this.AddShowCoords(showCoordsCB, _havePotionLetterImage) = 
             canvasAdd(upper, showCoordsCB, WEBCAM_LINE-41., 88.)
             coordsCheckBoxEl <- showCoordsCB
             hookTopLeftOnSizeChange(showCoordsCB)

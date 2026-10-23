@@ -53,7 +53,8 @@ namespace Z1R_Tracker.Models
             StartEnterFromS,
             OffTheMap,
             Gannon,
-            Zelda
+            Zelda,
+            PrincessRoom
         }
 
         public enum MonsterDetail
@@ -260,6 +261,7 @@ namespace Z1R_Tracker.Models
                     case RoomType.OffTheMap: return "Off the Map";
                     case RoomType.Gannon: return "Ganon";
                     case RoomType.Zelda: return "Zelda";
+                    case RoomType.PrincessRoom: return "Princess Room";
                     default: return roomType.ToString();
                 }
             }
@@ -1171,6 +1173,7 @@ namespace Z1R_Tracker.Models
                 case RoomType.OffTheMap: return dungeonRoomBmpPairs[30];
                 case RoomType.Gannon: return Tuple.Create(dungeonRoomBmpPairs[31].Item2, dungeonRoomBmpPairs[31].Item2);
                 case RoomType.Zelda: return Tuple.Create(dungeonRoomBmpPairs[32].Item2, dungeonRoomBmpPairs[32].Item2);
+                case RoomType.PrincessRoom: return dungeonRoomBmpPairs[42];
                 case RoomType.OldManHint:
                     return TrackerOptionsBridge.BookForHelpfulHints()
                         ? dungeonRoomBmpPairs[12]
@@ -1216,6 +1219,7 @@ namespace Z1R_Tracker.Models
                 case RoomType.OffTheMap: return dungeonRoomTinyBmpPairs[30];
                 case RoomType.Gannon: return Tuple.Create(dungeonRoomTinyBmpPairs[31].Item2, dungeonRoomTinyBmpPairs[31].Item2);
                 case RoomType.Zelda: return Tuple.Create(dungeonRoomTinyBmpPairs[32].Item2, dungeonRoomTinyBmpPairs[32].Item2);
+                case RoomType.PrincessRoom: return dungeonRoomTinyBmpPairs[42];
                 case RoomType.OldManHint:
                     return TrackerOptionsBridge.BookForHelpfulHints()
                         ? dungeonRoomTinyBmpPairs[12]

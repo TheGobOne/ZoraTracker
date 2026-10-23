@@ -88,7 +88,7 @@ let openItemLocationsWindowImpl(userClick) =
             // (each box has its icon below it, as on the main tracker)
             let letterBmp = CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.LETTER, None)
             for box, icon in [| TrackerModel.armosBox, Graphics.ow_key_armos_bmp; TrackerModel.letterBox, letterBmp; TrackerModel.ladderBox, Graphics.ladder_bmp
-                                TrackerModel.sword2Box, Graphics.white_sword_bmp; TrackerModel.sword3Box, Graphics.magical_sword_bmp |] do
+                                TrackerModel.sword2Box, Graphics.ow_sword2_item_bmp; TrackerModel.sword3Box, Graphics.ow_sword3_item_bmp |] do
                 let col = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(3.,0.,3.,0.))
                 col.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, box, false, None)))) |> ignore
                 let ic = new Canvas(Width=30., Height=30.)
@@ -125,7 +125,7 @@ let openItemLocationsWindowImpl(userClick) =
                 w.SizeToContent <- SizeToContent.Manual
                 w.Width <- aw
                 w.Height <- ah
-                vb.StretchDirection <- StretchDirection.Both)
+            vb.StretchDirection <- StretchDirection.Both)   // (also when a remembered size was restored, otherwise it could never scale up)
         // the item-slot options that add boxes can change while the window is open
         TrackerModel.level2StairBoxEnabledChanged.Publish.Add(fun _ -> if itemLocationsWindow <> null then build())
         TrackerModel.level9FloorBoxEnabledChanged.Publish.Add(fun _ -> if itemLocationsWindow <> null then build())
@@ -262,7 +262,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
         let refreshL2Slot() =
             l2c.Children.Remove(placeholder)
             l2c.Children.Remove(slot)
-            if TrackerModel.level9FloorBoxEnabled then ()   // the 4th sword is in level 9: no level 2 staircase slot at all (not even the greyed-out placeholder)
+            if TrackerModel.level9FloorBoxEnabled || (not TrackerModel.level2StairBoxEnabled && not TrackerModelOptions.FourthSwordEnabled) then ()   // no 4th sword option: no extra slot. The 4th sword is in level 9: no level 2 staircase slot at all (not even the greyed-out placeholder)
             elif TrackerModel.level2StairBoxEnabled then l2c.Children.Insert(0, slot) else l2c.Children.Insert(0, placeholder)
         placeholder.MouseDown.Add(fun ea ->
             if ea.ChangedButton = Input.MouseButton.Left then
@@ -478,7 +478,6 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
     // optional level 9 floor item check (the '4th Sword' start option can place the 4th sword there instead of the level 2 staircase): it takes the bottom cell under level 9,
     // and the Extras button moves up into the (then hidden) level 9 hint cell while it is shown
     do
-        let l9c = mainTrackerCanvases.[8,4]
         let l9slot = ref (null : Canvas)
         let l9host = ref (null : Canvas)   // its own cell host, placed straight into the grid (row 4 of the level 9 column) on top of everything else there
         let refreshL9Slot() =
@@ -498,6 +497,90 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
             level9ColorCanvas.Visibility <- (if enabled then Visibility.Hidden else Visibility.Visible)
         TrackerModel.level9FloorBoxEnabledChanged.Publish.Add(fun _ -> refreshL9Slot())
         refreshL9Slot()
+    // Level 9 entry rule, in the empty cells of the bottom row (under levels 5-7): "9 ? = [triforce] x8".
+    // The default is all 8 triforces; right-click the triforce to pick a different item that opens level 9. Once that item is collected, the go-time reminders play.
+    if kind = TrackerModel.DungeonTrackerInstanceKind.DEFAULT then
+        let entry = new Canvas(Width=90., Height=30., Background=Brushes.Black, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
+        // the 9: just the 9 in its yellow box
+        let nine = Graphics.BMPtoImage(Graphics.theInteriorBmpTable.[8].[0])
+        nine.Stretch <- Stretch.Uniform
+        nine.Width <- 10.
+        nine.Height <- 18.
+        RenderOptions.SetBitmapScalingMode(nine, BitmapScalingMode.NearestNeighbor)
+        let nineHost = new Grid(Width=10., Height=18.)
+        nineHost.Children.Add(nine) |> ignore
+        canvasAdd(entry, nineHost, 3., 6.)
+        let mkText(s:string) = new TextBlock(Text=s, Foreground=Brushes.Orange, FontSize=18., IsHitTestVisible=false)
+        let eqText = mkText("=")
+        canvasAdd(entry, eqText, 17., 3.)
+        // the entry requirement: the 8-triforce default, or the item the user chose
+        let trigArea = new Canvas(Width=44., Height=30., Background=Brushes.Transparent, Cursor=Input.Cursors.Hand)
+        trigArea.ToolTip <- "What it takes to enter level 9 (default: all 8 triforces; scroll to change the number).\nRight-click to choose a different item that opens level 9;\nthe go-time reminders play once it is collected."
+        canvasAdd(entry, trigArea, 32., 0.)
+        let redrawEntry() =
+            trigArea.Children.Clear()
+            let item = TrackerModel.level9CustomTriggerItem()
+            // center the whole "9 = ..." group in the open space (it is narrower once an item replaces the triforce and "xN")
+            let mutable contentW = 50.
+            if item = -1 then
+                let img = Graphics.BMPtoImage(Graphics.triforce_item_bmp)
+                img.Width <- 21.
+                img.Height <- 21.
+                canvasAdd(trigArea, img, 0., 4.)
+                let x8 = new TextBlock(Text=sprintf "x%d" TrackerModel.level9TriforceCount, Foreground=Brushes.Orange, FontSize=14., IsHitTestVisible=false)
+                canvasAdd(trigArea, x8, 22., 7.)
+                x8.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+                contentW <- 32. + 22. + x8.DesiredSize.Width - 3.   // the real width of the "xN" text
+            else
+                let img = Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(item, None))
+                img.Width <- 21.
+                img.Height <- 21.
+                canvasAdd(trigArea, img, 0., 4.)
+            let shift = (90. - contentW) / 2. - 3.
+            Canvas.SetLeft(nineHost, 3. + shift)
+            Canvas.SetLeft(eqText, 17. + shift)
+            Canvas.SetLeft(trigArea, 32. + shift)
+        redrawEntry()
+        Views.redrawBoxes.Add(redrawEntry)
+        TrackerModel.level9TriggerBox.Changed.Add(fun _ -> redrawEntry())
+        // scrolling the triforce (default rule) changes how many triforces are needed
+        trigArea.MouseWheel.Add(fun ea ->
+            ea.Handled <- true
+            if not popupIsActive && TrackerModel.level9CustomTriggerItem() = -1 then
+                let n = TrackerModel.level9TriforceCount + (if ea.Delta > 0 then 1 else -1)
+                TrackerModel.level9TriforceCount <- max 1 (min 8 n)
+                redrawEntry()
+                TrackerModel.forceUpdate())
+        trigArea.MouseRightButtonDown.Add(fun ea ->
+            ea.Handled <- true
+            if not popupIsActive then
+                let pos = trigArea.TranslatePoint(Point(0.,0.), cm.AppMainCanvas)
+                popupIsActive <- true
+                async {
+                    do! OverworldMapTileCustomization.DoLocalItemComboBox(cm, 0, TrackerModel.level9TriggerBox, pos)
+                    // this spot is only a note of what it takes to enter level 9: it is never itself "collected" (so it counts for nothing)
+                    if TrackerModel.level9TriggerBox.PlayerHas() <> TrackerModel.PlayerHas.SKIPPED then
+                        TrackerModel.level9TriggerBox.SetPlayerHas(TrackerModel.PlayerHas.SKIPPED)
+                        TrackerModel.recomputePlayerStateSummary()
+                        TrackerModel.forceUpdate()
+                    popupIsActive <- false
+                    redrawEntry()
+                    } |> Async.StartImmediate)
+        gridAdd(mainTrackerGrid, entry, 4, 4)
+        Grid.SetColumnSpan(entry, 3)
+        // Race Mode: the level 9 entry rule is hidden and this text stands in for it
+        let raceText = new Canvas(Width=90., Height=30., Background=Brushes.Black, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
+        let raceTB = new TextBlock(Text="Race Mode", FontSize=16., Foreground=Brushes.Orange, IsHitTestVisible=false)
+        raceTB.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+        canvasAdd(raceText, raceTB, (90. - raceTB.DesiredSize.Width) / 2., (30. - raceTB.DesiredSize.Height) / 2.)   // centered in the space
+        gridAdd(mainTrackerGrid, raceText, 4, 4)
+        Grid.SetColumnSpan(raceText, 3)
+        let applyRace() =
+            let race = TrackerModelOptions.RaceMode.Value
+            entry.Visibility <- (if race then Visibility.Collapsed else Visibility.Visible)
+            raceText.Visibility <- (if race then Visibility.Visible else Visibility.Collapsed)
+        applyRace()
+        OptionsMenu.raceModeChanged.Publish.Add(fun () -> applyRace())
     // 'Item Locations' button: the top button of the Save / Hint Decoder / Hotkeys column (the layout sizes and places it)
     do
         // (made with Graphics.makeButton, so it has the same look and border as the other tracker buttons; use that helper for new buttons)

@@ -280,6 +280,13 @@ let owMapSquaresFirstQuestOnly = [|
 // ZORA Extras startup options: extra overworld tiles that also count as blocked by the power bracelet / raft (x = column 0-15 for 1-16, y = row 0-7 for A-H)
 let mutable ExtraPBBlocks = false       // a1 a2 a3 a4 b1 b2 b3 b4
 let mutable ExtraRaftBlocks = false     // d5 e5 a15 a16 b15 b16
+// ZORA Extras 'Dead Woods' / 'Lost Hills': while the hint for that zone has not been entered, its three tiles are locked (the hint is needed to get through)
+let mutable DeadWoodsEnabled = false     // h1 h2 h3
+let mutable LostHillsEnabled = false     // a12 a13 a14
+let mutable DeadWoodsHintKnown = false   // set once a Dead Woods hint has been entered in the hint button
+let mutable LostHillsHintKnown = false
+let deadWoodsTiles = set [ (0,7); (1,7); (2,7) ]
+let lostHillsTiles = set [ (11,0); (12,0); (13,0) ]
 let mutable IsMirroredFunc : unit -> bool = fun () -> false
 // (the tile lists are in the game's own coordinates; when the map is flipped East<->West the whole map view is flipped, so these tiles flip along with it automatically)
 let isExtraTile(tiles:Set<int*int>, x, y) = tiles.Contains((x, y))
@@ -295,6 +302,18 @@ type OverworldInstance(quest) =
         | OWQuest.MIXED_FIRST ->  PrivateInternals.owMapSquaresMixedQuestAlwaysEmpty.[y].Chars(x) = 'X'
         | OWQuest.MIXED_SECOND -> PrivateInternals.owMapSquaresMixedQuestAlwaysEmpty.[y].Chars(x) = 'X'
         | OWQuest.BLANK ->        false
+    // 0 = not in a hint zone, 1 = Dead Woods, 2 = Lost Hills (only when that ZORA Extra is on)
+    member this.HintZoneOf(x,y) =
+        if quest = OWQuest.BLANK then 0
+        elif DeadWoodsEnabled && deadWoodsTiles.Contains((x,y)) then 1
+        elif LostHillsEnabled && lostHillsTiles.Contains((x,y)) then 2
+        else 0
+    // true while the tile is locked by a hint that has not been entered yet
+    member this.HintLocked(x,y) =
+        match this.HintZoneOf(x,y) with
+        | 1 -> not DeadWoodsHintKnown
+        | 2 -> not LostHillsHintKnown
+        | _ -> false
     member this.Ladderable(x,y) =
         (quest <> OWQuest.BLANK && isExtraTile(ladderBlockTilesAllQuests, x, y)) || this.LadderableBase(x,y)
     member this.LadderableBase(x,y) =

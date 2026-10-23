@@ -12,6 +12,19 @@ let MINIMIZED_THRESHOLD = -15999.
 
 
 
+// puts a window's content in a Viewbox so the content scales as the window is resized (opens at the content's natural size; the window can be resized with its edges or corner grip)
+let makeScalable(w:Window, content:UIElement) =
+    let vb = new System.Windows.Controls.Viewbox(Child=content, Stretch=System.Windows.Media.Stretch.Uniform, StretchDirection=System.Windows.Controls.StretchDirection.DownOnly)
+    w.Content <- vb
+    w.ResizeMode <- ResizeMode.CanResizeWithGrip
+    w.ContentRendered.Add(fun _ ->
+        if w.SizeToContent <> SizeToContent.Manual then
+            let aw, ah = w.ActualWidth, w.ActualHeight
+            w.SizeToContent <- SizeToContent.Manual
+            w.Width <- aw
+            w.Height <- ah
+        vb.StretchDirection <- System.Windows.Controls.StretchDirection.Both)
+
 let MakeDefaultShowRunCustomFile(filename:string) =
     System.IO.File.WriteAllText(filename, sprintf """
 # %s ShowRunCustom file
@@ -111,7 +124,18 @@ let DoShowRunCustom(refocusMainWindow) =
     let displayInfoOrError(titleKind, message) =
         let tb = new System.Windows.Controls.TextBox(FontSize=16., Foreground=System.Windows.Media.Brushes.Orange, Background=System.Windows.Media.Brushes.Black, 
                                 IsReadOnly=true, BorderThickness=Thickness(0.), Text=message, IsHitTestVisible=false)
-        let window = new Window(Title=sprintf "ZORA Tracker %s" titleKind, Owner=Application.Current.MainWindow, Content=tb, SizeToContent=SizeToContent.WidthAndHeight)
+        let window = new Window(Title=sprintf "ZORA Tracker %s" titleKind, Owner=Application.Current.MainWindow, SizeToContent=SizeToContent.WidthAndHeight)
+        makeScalable(window, tb)
+        // remember where the user last put this window
+        let m = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ShowRunInfoWindowLT, """^(-?\d+),(-?\d+)$""")
+        if m.Success && not(float m.Groups.[1].Value < MINIMIZED_THRESHOLD) then
+            window.WindowStartupLocation <- WindowStartupLocation.Manual
+            window.Left <- float m.Groups.[1].Value
+            window.Top <- float m.Groups.[2].Value
+        window.LocationChanged.Add(fun _ ->
+            if window.IsLoaded && not(window.Left < MINIMIZED_THRESHOLD) then
+                TrackerModelOptions.ShowRunInfoWindowLT <- sprintf "%d,%d" (int window.Left) (int window.Top)
+                TrackerModelOptions.writeSettings())
         window.Show()
         let fileToSelect = ShowRunCustomFilename
         let args = sprintf "/Select, \"%s\"" fileToSelect
@@ -150,6 +174,10 @@ let DoShowRunCustom(refocusMainWindow) =
                     window.Width <- w
                     window.Height <- h
                 | _ -> 
+                    // no remembered size yet: open at the image's natural size, but never bigger than 800x600 (it keeps its aspect ratio; resize it and the size is remembered)
+                    let scale = min 1.0 (min (800. / float bmp.Width) (600. / float bmp.Height))
+                    image.Width <- float bmp.Width * scale
+                    image.Height <- float bmp.Height * scale
                     window.SizeToContent <- SizeToContent.WidthAndHeight
                 let cur = i
                 let update() = 

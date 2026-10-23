@@ -103,6 +103,7 @@ let IDEAL_BOX_MOUSE_X = 22.
 let IDEAL_BOX_MOUSE_Y = 17.
 
 let redrawTriforces = ResizeArray()
+let triforceBlocked : bool[] = Array.create 9 false   // middle-clicking a dungeon's triforce above it puts a red X on it, and it can't be collected until the X is removed (this session only)
 let MakeTriforceDisplayView(cmo:CustomComboBoxes.CanvasManager option, trackerIndex, owInstanceOpt) =    // cmo=Some(cm) means "makeInteractive"
     let emptyUnfoundTriImage = Graphics.BMPtoImage(emptyUnfoundTriforce_bmp(trackerIndex))
     let emptyFoundTriImage   = Graphics.BMPtoImage(emptyFoundTriforce_bmp(trackerIndex))
@@ -145,12 +146,20 @@ let MakeTriforceDisplayView(cmo:CustomComboBoxes.CanvasManager option, trackerIn
                         else
                             canvasAdd(innerc, new Canvas(Width=9., Height=9., Background=Brushes.Black), float(1+j*10), 7.+16.)
                         canvasAdd(innerc, img, float(2+j*10), 8.+16.)
+        if triforceBlocked.[trackerIndex] then
+            // a red X over the whole triforce
+            canvasAdd(innerc, new Shapes.Line(X1=3., Y1=3., X2=27., Y2=27., Stroke=Brushes.Red, StrokeThickness=4., IsHitTestVisible=false), 0., 0.)
+            canvasAdd(innerc, new Shapes.Line(X1=27., Y1=3., X2=3., Y2=27., Stroke=Brushes.Red, StrokeThickness=4., IsHitTestVisible=false), 0., 0.)
     redraw()
     // interactions
     match cmo with
     | Some(cm) ->
-        innerc.MouseDown.Add(fun _ -> 
-            if not popupIsActive then
+        innerc.MouseDown.Add(fun ea -> 
+            if not popupIsActive && ea.ChangedButton = System.Windows.Input.MouseButton.Middle then
+                triforceBlocked.[trackerIndex] <- not triforceBlocked.[trackerIndex]
+                ea.Handled <- true
+                redraw()
+            elif not popupIsActive && not triforceBlocked.[trackerIndex] then
                 dungeon.ToggleTriforce()
                 if dungeon.PlayerHasTriforce() && TrackerModel.IsHiddenDungeonNumbers() && dungeon.LabelChar='?' then
                     // if it's hidden dungeon numbers, the player just got a triforce, and the player has not yet set the dungeon number, then popup the number chooser

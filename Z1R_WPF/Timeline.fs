@@ -132,12 +132,12 @@ let ICON_SPACING = 6.
 let BIG_HASH = 15.
 let LINE_THICKNESS = 3.
 let numTicks, ticksPerHash = 60, 5
-type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[], moreOptionsButton:Button, drawButton:Button) =
+type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[], moreOptionsButton:Button, _drawButton:Button) =
     let topRowReserveWidth = moreOptionsButton.DesiredSize.Width-24.
     let iconAreaHeight = float numRows*(iconSize+ICON_SPACING)
     let timelineCanvas = new Canvas(Height=iconAreaHeight+BIG_HASH, Width=lineWidth)
     let graphCanvas = new Canvas(Height=iconAreaHeight+BIG_HASH, Width=lineWidth)
-    let owAxisLabel = new TextBox(Text="OW Completion", Foreground=Brushes.DarkCyan, Background=Brushes.Black, BorderThickness=Thickness(0.0), FontSize=12.0, FontWeight=FontWeights.Bold, IsHitTestVisible=false, IsReadOnly=true)
+    let owAxisLabel = new TextBox(Text="Overworld Completion and Collection Timeline", Foreground=Brushes.DarkCyan, Background=Brushes.Transparent, TextAlignment=TextAlignment.Center, BorderThickness=Thickness(0.0), FontSize=12.0, FontWeight=FontWeights.Bold, IsHitTestVisible=false, IsReadOnly=true)
     let itemCanvas = new Canvas(Height=iconAreaHeight+BIG_HASH, Width=lineWidth)
     let timeToolTip = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Black, BorderThickness=Thickness(3.0), FontSize=16.0, IsHitTestVisible=false)
     let line1 = new Shapes.Line(X1=0., Y1=iconAreaHeight+BIG_HASH/2., X2=lineWidth, Y2=iconAreaHeight+BIG_HASH/2., Stroke=TLC, StrokeThickness=LINE_THICKNESS)
@@ -160,9 +160,9 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
             canvasAdd(timelineCanvas, new TextBlock(Text=sevenTexts.[n],FontSize=12.,Foreground=TLC,Background=Brushes.Black), xpos, ypos)
             n <- n + 1
         canvasAdd(timelineCanvas, graphCanvas, 0., 0.)
-        owAxisLabel.RenderTransform <- new RotateTransform(-90.)
-        Canvas.SetLeft(owAxisLabel, -25.)
-        Canvas.SetBottom(owAxisLabel, -8.)
+        owAxisLabel.Width <- lineWidth   // horizontal title, centered across the top of the timeline
+        Canvas.SetLeft(owAxisLabel, 0.)
+        Canvas.SetTop(owAxisLabel, 0.)
         graphCanvas.Children.Add(owAxisLabel) |> ignore
         canvasAdd(timelineCanvas, itemCanvas, 0., 0.)
         for i = 0 to numTicks do
@@ -180,10 +180,8 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
             iconAreaFilled.[x, 0] <- 99
     member this.Canvas = timelineCanvas
     member this.ThisIsNowTheVisibleTimeline() =
-        if moreOptionsButton.Parent <> null then (moreOptionsButton.Parent :?> Canvas).Children.Remove(moreOptionsButton)
-        if drawButton.Parent <> null then (drawButton.Parent :?> Canvas).Children.Remove(drawButton)
-        canvasAdd(timelineCanvas, moreOptionsButton, -22., 0.)
-        canvasAdd(timelineCanvas, drawButton, 729., 25.)
+        // (the Options and Draw buttons now live in the top-left button stack above Item Locations; see Layout.AddTopLeftButtons)
+        ()
     member this.Update(minute, timelineItems:seq<TimelineItem>, maxOverworldRemain) =
         if not isCurrentlyLoadingASave then
             let tick = minute / minutesPerTick
@@ -273,7 +271,11 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
                     // items
                     for row,(bmp,totalSeconds,has,tid) in rowBmps do
                         let c = new Canvas(Width=iconSize, Height=iconSize)
-                        let img = Graphics.BMPtoImage ((if has = TrackerModel.PlayerHas.NO then Graphics.greyscale else id) bmp)
+                        let img =
+                            try Graphics.BMPtoImage ((if has = TrackerModel.PlayerHas.NO then Graphics.greyscale else id) bmp)
+                            with e ->
+                                printfn "Timeline icon for %s failed: %s" tid.Identifier (e.ToString())
+                                Graphics.BMPtoImage ((if has = TrackerModel.PlayerHas.NO then Graphics.greyscale else id) (new System.Drawing.Bitmap(bmp.Width, bmp.Height)))
                         if img.Width = 30. && iconSize = 21. then
                             // a kludge to not make overworld hearts look so awful when scaled
                             img.Width <- 20.

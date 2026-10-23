@@ -55,7 +55,9 @@ let data1o(isStandardHyrule) =
     if isStandardHyrule then yield "Draw routes", "Constantly display routing lines when mousing over overworld tiles", TrackerModelOptions.Overworld.DrawRoutes, true, (fun()->()), None
     if isStandardHyrule then yield "Show screen scrolls", "Routing lines assume the player can screen scroll\nScreen scrolls appear as curved lines", TrackerModelOptions.Overworld.RoutesCanScreenScroll, true, (fun()->()), Some(Thickness(20.,0.,0.,0.))
     if isStandardHyrule then yield "Highlight nearby", "Highlight nearest unmarked gettable overworld tiles when mousing", TrackerModelOptions.Overworld.HighlightNearby, false, (fun()->()), None
+    if isStandardHyrule then yield "Hover on zones/coords", "Hovering the Zones or Coords checkbox shows that overlay while the mouse is over it", TrackerModelOptions.Overworld.HoverZonesCoords, false, (fun()->()), None
     if isStandardHyrule then yield "Show magnifier", "Display magnified view of overworld tiles when mousing", TrackerModelOptions.Overworld.ShowMagnifier, false, (fun()->()), None
+    yield "Use old popups", "Check this to show the old picture popups (instead of the button boxes)\nwhen marking the wood sword cave and the take-any caves", TrackerModelOptions.Overworld.UseOldPopups, false, (fun()->()), None
     // Mirror overworld is not useful when not(isStandardHyrule), but if the user has it checked, we want them to be able to uncheck it
 // now a clickable feature of top tracker area
 //    yield "Mirror overworld", "Flip the overworld map East<->West", TrackerModelOptions.Overworld.MirrorOverworld, true, (fun()->()), None
@@ -75,6 +77,7 @@ let data1d = [|
     "Default to NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, (fun()->())
     "Dungeon 'sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, dungeonSunglassesChanged.Trigger
     "Reverse scroll wheel", "When unchecked: scroll up = monster popup, scroll down = floor-drop/item popup.\nWhen checked: scroll up = floor-drop/item popup, scroll down = monster popup.\n(Dungeon rooms)", TrackerModelOptions.ReverseScrollWheelDirection, false, (fun()->())
+    "Hide lock and hints", "Check this to hide the tip box and the lock bar on the dungeon room type,\nmonster and floor drop menus", TrackerModelOptions.HidePopupHintAndLock, false, (fun()->())
     |]
 
 let data2 = [|
@@ -119,6 +122,8 @@ let showCoopHostSettingsWindow(cm: CustomComboBoxes.CanvasManager) =
 
         let checkboxStyle = new Style(typeof<CheckBox>)
         checkboxStyle.Setters.Add(new Setter(CheckBox.HeightProperty, 22.))
+        checkboxStyle.Setters.Add(new Setter(Control.TemplateProperty, Graphics.roundedCheckBoxTemplate))
+        checkboxStyle.Setters.Add(new Setter(Control.PaddingProperty, Thickness(4.,0.,0.,0.)))
         e.Resources.Add(typeof<CheckBox>, checkboxStyle)
 
     AddStyle(sp)
@@ -236,6 +241,8 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
         e.Resources.Add(typeof<TextBox>, style)
         let style = new Style(typeof<CheckBox>)
         style.Setters.Add(new Setter(CheckBox.HeightProperty, 22.))
+        style.Setters.Add(new Setter(Control.TemplateProperty, Graphics.roundedCheckBoxTemplate))
+        style.Setters.Add(new Setter(Control.PaddingProperty, Thickness(4.,0.,0.,0.)))
         e.Resources.Add(typeof<CheckBox>, style)
     AddStyle(all)
 
@@ -261,6 +268,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
         ToolTipService.SetShowDuration(cb, 10000)
         link(cb, b, needFU, oe)
         options1sp.Children.Add(cb) |> ignore
+    options1sp.Children.Add(new DockPanel(Height=24.)) |> ignore   // a blank row between the overworld settings and this header
     let tb = new TextBox(Text="Dungeon Settings", IsReadOnly=true, FontWeight=FontWeights.Bold) |> header
     options1sp.Children.Add(tb) |> ignore
     // open the folder containing the crash log (with the log file selected), to make it easy to send to the developer
@@ -863,24 +871,28 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
 
     // Co-op buttons (moved here from Reminders column to reduce its height)
     options3sp.Children.Add(new DockPanel(Height=6.)) |> ignore  // small spacer
+    // the two co-op buttons are the same size (the widest label sets it), with a couple of pixels between them
+    coopSettingsButton.Width <- 182.
+    coopSettingsButton.Margin <- Thickness(0., 0., 0., 3.)
     options3sp.Children.Add(coopSettingsButton) |> ignore
     let coopHostSettingsButton = Graphics.makeButton("Co-op Host Settings", None, None)
     coopHostSettingsButton.HorizontalAlignment <- HorizontalAlignment.Left
+    coopHostSettingsButton.Width <- 182.
     coopHostSettingsButton.Click.Add(fun _ -> showCoopHostSettingsWindow(cm))
     options3sp.Children.Add(coopHostSettingsButton) |> ignore
-    if includePopupExplainer then options3sp.Children.Add(crashLogButton) |> ignore
+    options3sp.Children.Add(crashLogButton) |> ignore
 
     optionsAllsp.Children.Add(options3sp) |> ignore
 
     let total = new StackPanel(Orientation=Orientation.Vertical)
     if includePopupExplainer then
         let tb1 = new TextBox(Text="Options Menu", IsReadOnly=true, FontWeight=FontWeights.Bold, HorizontalAlignment=HorizontalAlignment.Center)
-        let tb2 = new TextBox(Text="options are automatically applied and saved when dismissing this popup (by clicking outside it)", 
-                                IsReadOnly=true, Margin=Thickness(0.,0.,0.,6.), HorizontalAlignment=HorizontalAlignment.Center)
         total.Children.Add(tb1) |> ignore
-        total.Children.Add(tb2) |> ignore
         total.Children.Add(new DockPanel(Height=2.,Background=Brushes.Gray)) |> ignore
 
+    // some spare black space at the bottom of every column (so the dividers between the columns run all the way down), for future options
+    for col in [options1sp; options2sp; options3sp] do
+        col.Children.Add(new DockPanel(Height=8., Background=Brushes.Black)) |> ignore
     total.Children.Add(optionsAllsp) |> ignore
 
     all.Child <- total

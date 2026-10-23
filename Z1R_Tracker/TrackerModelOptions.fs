@@ -14,8 +14,11 @@ module Overworld =
     let mutable RoutesCanScreenScroll = Bool(false)
     let mutable HighlightNearby = Bool(true)
     let mutable ShowMagnifier = Bool(true)
+    let mutable AddCustomIconsToMenus = Bool(false)   // ExtraIcons-folder icons are appended to the bottom of the item-box menu and the overworld tile marker menu
+    let mutable UseOldPopups = Bool(false)   // the wood sword and take-any caves show the old picture popups instead of the button boxes
     let mutable Zones = Bool(false)
     let mutable Coords = Bool(false)
+    let mutable HoverZonesCoords = Bool(true)   // hovering the Zones / Coords checkboxes shows that overlay for as long as the mouse is over them
     let mutable Gettables = Bool(true)
     let mutable OpenCaves = Bool(false)
 module VoiceReminders =
@@ -124,6 +127,7 @@ let mutable DisplayIconsInDungeonMap = Bool(false)
 let mutable ShowDungeonHintIcons = Bool(true)
 let mutable DungeonMapLocationHintOpacity = 0.3
 let mutable ReverseScrollWheelDirection = Bool(false)
+let mutable HidePopupHintAndLock = Bool(false)   // hide the tip box and lock bar on the dungeon room type / monster / floor drop menus
 let mutable ShowBasementInfo = Bool(true)
 let mutable DoDoorInference = Bool(false)
 let mutable DefaultRoomPreferNonDescriptToMaybePushBlock = Bool(false)
@@ -153,6 +157,9 @@ let mutable BroadcastWindowLT = ""
 let mutable MainWindowScale = 0.0     // the main window's content scale (0 = never resized); the window size is saved as this scale
 let mutable BroadcastWindowWH = ""    // the broadcast window's width,height
 let mutable HotKeyWindowLTWH = ""
+let mutable SavedCustomLevelName = ""   // the last custom LEVEL name typed (start screen or the dungeon header), brought back with Remember startup selection
+let mutable ShopPricesWindowLTWH = ""   // "left,top,width,height" of the Shop Prices window
+let mutable ShowRunInfoWindowLT = ""   // "left,top" of the ShowRunCustom info/error window
 let mutable RemainingItemsIconScale = 1.0   // icon size in the Uncollected Items popout (ctrl+mouse wheel)
 let mutable NotesFontSize = 20.0      // font size of the Notes box (the button at its bottom right changes it)
 let mutable OverlayLocatorWindowLTWH = ""
@@ -181,9 +188,12 @@ type ReadWrite() =
     member val RoutesCanScreenScroll = false with get,set
     member val HighlightNearby = true with get,set
     member val ShowMagnifier = true with get,set
+    member val AddCustomIconsToMenus = false with get,set
+    member val UseOldPopups = false with get,set
     member val MirrorOverworld = false with get,set
     member val Zones = false with get,set
     member val Coords = false with get,set
+    member val HoverZonesCoords = true with get,set
     member val Gettables = false with get,set
     member val OpenCaves = false with get,set
 
@@ -247,6 +257,7 @@ type ReadWrite() =
     member val ShowDungeonHintIcons = true with get,set
     member val DungeonMapLocationHintOpacity = 0.3 with get,set
     member val ReverseScrollWheelDirection = false with get,set
+    member val HidePopupHintAndLock = false with get,set
     member val IsSecondQuestDungeons = false with get,set
     member val ShowBasementInfo = true with get,set
     member val DoDoorInference = false with get,set
@@ -275,6 +286,9 @@ type ReadWrite() =
     member val MainWindowScale = 0.0 with get,set
     member val BroadcastWindowWH = "" with get,set
     member val HotKeyWindowLTWH = "" with get, set
+    member val ShowRunInfoWindowLT = "" with get, set
+    member val ShopPricesWindowLTWH = "" with get, set
+    member val SavedCustomLevelName = "" with get, set
     member val RemainingItemsIconScale = 1.0 with get, set
     member val NotesFontSize = 20.0 with get, set
     member val OverlayLocatorWindowLTWH = "" with get, set
@@ -315,8 +329,11 @@ let private writeImpl(filename) =
     data.RoutesCanScreenScroll <- Overworld.RoutesCanScreenScroll.Value
     data.HighlightNearby <- Overworld.HighlightNearby.Value
     data.ShowMagnifier <- Overworld.ShowMagnifier.Value
+    data.AddCustomIconsToMenus <- Overworld.AddCustomIconsToMenus.Value
+    data.UseOldPopups <- Overworld.UseOldPopups.Value
     data.Zones <- Overworld.Zones.Value
     data.Coords <- Overworld.Coords.Value
+    data.HoverZonesCoords <- Overworld.HoverZonesCoords.Value
     data.Gettables <- Overworld.Gettables.Value
     data.OpenCaves <- Overworld.OpenCaves.Value
 
@@ -380,6 +397,7 @@ let private writeImpl(filename) =
     data.ShowDungeonHintIcons <- ShowDungeonHintIcons.Value
     data.DungeonMapLocationHintOpacity <- DungeonMapLocationHintOpacity
     data.ReverseScrollWheelDirection <- ReverseScrollWheelDirection.Value
+    data.HidePopupHintAndLock <- HidePopupHintAndLock.Value
     data.ShowBasementInfo <- ShowBasementInfo.Value
     data.DoDoorInference <- DoDoorInference.Value
     data.DefaultRoomPreferNonDescriptToMaybePushBlock <- DefaultRoomPreferNonDescriptToMaybePushBlock.Value
@@ -406,6 +424,9 @@ let private writeImpl(filename) =
     data.MainWindowScale <- MainWindowScale
     data.BroadcastWindowWH <- BroadcastWindowWH
     data.HotKeyWindowLTWH <- HotKeyWindowLTWH
+    data.ShowRunInfoWindowLT <- ShowRunInfoWindowLT
+    data.ShopPricesWindowLTWH <- ShopPricesWindowLTWH
+    data.SavedCustomLevelName <- SavedCustomLevelName
     data.NotesFontSize <- NotesFontSize
     data.RemainingItemsIconScale <- RemainingItemsIconScale
     data.OverlayLocatorWindowLTWH <- OverlayLocatorWindowLTWH
@@ -454,8 +475,11 @@ let private read(filename) =
         Overworld.RoutesCanScreenScroll.Value <- data.RoutesCanScreenScroll
         Overworld.HighlightNearby.Value <- data.HighlightNearby
         Overworld.ShowMagnifier.Value <- data.ShowMagnifier
+        Overworld.AddCustomIconsToMenus.Value <- data.AddCustomIconsToMenus
+        Overworld.UseOldPopups.Value <- data.UseOldPopups
         Overworld.Zones.Value <- data.Zones
         Overworld.Coords.Value <- data.Coords
+        Overworld.HoverZonesCoords.Value <- data.HoverZonesCoords
         Overworld.Gettables.Value <- data.Gettables
         Overworld.OpenCaves.Value <- data.OpenCaves
 
@@ -521,6 +545,7 @@ let private read(filename) =
         ShowDungeonHintIcons.Value <- data.ShowDungeonHintIcons
         DungeonMapLocationHintOpacity <- max 0.05 (min 1.0 data.DungeonMapLocationHintOpacity)
         ReverseScrollWheelDirection.Value <- data.ReverseScrollWheelDirection
+        HidePopupHintAndLock.Value <- data.HidePopupHintAndLock
         ShowBasementInfo.Value <- data.ShowBasementInfo
         DoDoorInference.Value <- data.DoDoorInference
         DefaultRoomPreferNonDescriptToMaybePushBlock.Value <- data.DefaultRoomPreferNonDescriptToMaybePushBlock
@@ -547,6 +572,9 @@ let private read(filename) =
         MainWindowScale <- (if data.MainWindowScale >= 0.4 && data.MainWindowScale <= 4.0 then data.MainWindowScale else 0.0)
         BroadcastWindowWH <- (if data.BroadcastWindowWH = null then "" else data.BroadcastWindowWH)
         HotKeyWindowLTWH <- data.HotKeyWindowLTWH
+        ShowRunInfoWindowLT <- (if isNull data.ShowRunInfoWindowLT then "" else data.ShowRunInfoWindowLT)
+        ShopPricesWindowLTWH <- (if isNull data.ShopPricesWindowLTWH then "" else data.ShopPricesWindowLTWH)
+        SavedCustomLevelName <- (if isNull data.SavedCustomLevelName then "" else data.SavedCustomLevelName)
         RemainingItemsIconScale <- (if data.RemainingItemsIconScale >= 0.5 && data.RemainingItemsIconScale <= 8.0 then data.RemainingItemsIconScale else 1.0)
         NotesFontSize <- (if data.NotesFontSize >= 8.0 && data.NotesFontSize <= 72.0 then data.NotesFontSize else 20.0)
         OverlayLocatorWindowLTWH <- data.OverlayLocatorWindowLTWH

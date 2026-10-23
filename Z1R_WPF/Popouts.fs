@@ -23,7 +23,8 @@ let refocusMainWindow() =   // keep hotkeys working
 
 let showHotKeys(isRightClick) =
     let none,p = OverworldMapTileCustomization.MakeMappedHotKeysDisplay()
-    let w = new Window(Title="Z-Tracker HotKeys", Owner=Application.Current.MainWindow, Content=p, ResizeMode=ResizeMode.CanResizeWithGrip)
+    let w = new Window(Title="Z-Tracker HotKeys", Owner=Application.Current.MainWindow)
+    w.Content <- p
     let save() = 
         TrackerModelOptions.HotKeyWindowLTWH <- sprintf "%d,%d,%d,%d" (int w.Left) (int w.Top) (int w.Width) (int w.Height)
         TrackerModelOptions.writeSettings()
@@ -160,10 +161,10 @@ let MakeRemainingItemsDisplay() =
     let isObtained(i) = (allBoxes |> Array.exists (fun box -> box.CellCurrent() = i && box.IsDone())) || TrackerModel.mapCollectedCount.[i] > 0
     // same order as the Item Progress bar: swords first (every sword level not yet reached)
     let swordLevel = TrackerModel.playerComputedStateSummary.SwordLevel
-    if swordLevel < 1 then hsp.Children.Add(swordImg(Graphics.swordLevelToBmp(1))) |> ignore
-    if swordLevel < 2 && not(isObtained TrackerModel.ITEMS.WHITESWORD) then hsp.Children.Add(swordImg(Graphics.swordLevelToBmp(2))) |> ignore
-    if swordLevel < 3 && not(isObtained TrackerModel.ITEMS.MAGICALSWORD) then hsp.Children.Add(swordImg(Graphics.swordLevelToBmp(3))) |> ignore
-    if TrackerModelOptions.FourthSwordEnabled && TrackerModel.playerHasSword4.Value <> 1 then hsp.Children.Add(swordImg(Graphics.white_sword4_bmp)) |> ignore
+    if swordLevel < 1 then hsp.Children.Add(swordImg(Graphics.swordLevelToOwBmp(1))) |> ignore
+    if swordLevel < 2 && not(isObtained TrackerModel.ITEMS.WHITESWORD) then hsp.Children.Add(swordImg(Graphics.swordLevelToOwBmp(2))) |> ignore
+    if swordLevel < 3 && not(isObtained TrackerModel.ITEMS.MAGICALSWORD) then hsp.Children.Add(swordImg(Graphics.swordLevelToOwBmp(3))) |> ignore
+    if TrackerModelOptions.FourthSwordEnabled && TrackerModel.playerHasSword4.Value <> 1 then hsp.Children.Add(swordImg(Graphics.ow_sword4_item_bmp)) |> ignore
     let candleLevel = TrackerModel.playerComputedStateSummary.CandleLevel
     let ringLevel = TrackerModel.playerComputedStateSummary.RingLevel
     for i in [| TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.BOW; TrackerModel.ITEMS.LADDER; TrackerModel.ITEMS.POWERBRACELET; TrackerModel.ITEMS.RECORDER; TrackerModel.ITEMS.RAFT
@@ -179,7 +180,9 @@ let MakeRemainingItemsDisplay() =
             hsp.Children.Add(img(i)) |> ignore
     let h = TrackerModel.ITEMS.HEARTCONTAINER
     let obtainedHC = (allBoxes |> Array.sumBy (fun box -> if box.CellCurrent() = h && box.IsDone() then 1 else 0)) + TrackerModel.mapCollectedCount.[h]
-    let c = TrackerModel.allItemWithHeartShuffleChoiceDomain.MaxUses(h) - obtainedHC
+    // 13 hearts in all: the 9 in the item pool plus the 4 take-any hearts; every take-any slot that has been used (a heart, or a candle / potion taken instead) counts as collected
+    let tookAnyCount = [0..3] |> List.filter (fun k -> TrackerModel.playerProgressAndTakeAnyHearts.GetTakeAnyHeart(k) <> 0) |> List.length
+    let c = TrackerModel.allItemWithHeartShuffleChoiceDomain.MaxUses(h) + 4 - obtainedHC - tookAnyCount
     if c >= 1 then
         // just one heart, followed by how many remain
         // the heart and its count are one unit, so they never get separated onto different rows when the window is resized
@@ -386,7 +389,7 @@ let showShopPricesWindow() =
     if theShopPricesWindow <> null then
         theShopPricesWindow.Activate() |> ignore
     else
-    let w = new Window(Title="Shop Prices", ResizeMode=ResizeMode.NoResize, SizeToContent=SizeToContent.WidthAndHeight,
+    let w = new Window(Title="Shop Prices", SizeToContent=SizeToContent.WidthAndHeight,
                         Background=Brushes.Black, Foreground=Brushes.Orange, Topmost=false)
     Application.Current.MainWindow.Closed.Add(fun _ -> try w.Close() with _ -> ())
     w.Closed.Add(fun _ -> theShopPricesWindow <- null)
@@ -463,7 +466,22 @@ let showShopPricesWindow() =
         sp.Children.Add(grid) |> ignore
     let sv = new ScrollViewer(Content=sp, VerticalScrollBarVisibility=ScrollBarVisibility.Auto, MaxHeight=600.)
     let border = new Border(Child=sv, BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.), Background=Brushes.Black)
-    w.Content <- border
+    ShowRunCustom.makeScalable(w, border)
+    // remember where the window was left (and how big)
+    let m = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ShopPricesWindowLTWH, """^(-?\d+),(-?\d+),(\d+),(\d+)$""")
+    if m.Success && not(float m.Groups.[1].Value < ShowRunCustom.MINIMIZED_THRESHOLD) && float m.Groups.[3].Value >= 100. && float m.Groups.[4].Value >= 60. then
+        w.WindowStartupLocation <- WindowStartupLocation.Manual
+        w.Left <- float m.Groups.[1].Value
+        w.Top <- float m.Groups.[2].Value
+        w.SizeToContent <- SizeToContent.Manual
+        w.Width <- float m.Groups.[3].Value
+        w.Height <- float m.Groups.[4].Value
+    let saveBounds() =
+        if w.IsLoaded && not(w.Left < ShowRunCustom.MINIMIZED_THRESHOLD) && w.WindowState = WindowState.Normal then
+            TrackerModelOptions.ShopPricesWindowLTWH <- sprintf "%d,%d,%d,%d" (int w.Left) (int w.Top) (int w.ActualWidth) (int w.ActualHeight)
+            TrackerModelOptions.writeSettings()
+    w.LocationChanged.Add(fun _ -> saveBounds())
+    w.SizeChanged.Add(fun _ -> if w.SizeToContent = SizeToContent.Manual then saveBounds())
     w.Show()
 
 let Startup(doUIUpdateEvent:Event<unit>) =

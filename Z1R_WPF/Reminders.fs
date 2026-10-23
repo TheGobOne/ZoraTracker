@@ -47,13 +47,21 @@ do
         SendReminder(TrackerModel.ReminderCategory.Asterisk, txt, [Graphics.BMPtoImage Graphics.other_monster2; ReminderTextBox("Error beep")])
         )
 
+// the 'log' button now sits in the top-left button stack above Item Locations (the green reminder box itself still shows at the top right of the timeline)
+let reminderLogButton = Graphics.makeButton("Log", Some(12.), Some(Brushes.Orange))
 let SetupReminderDisplayAndProcessing(cm) =
     let ctxt = System.Threading.SynchronizationContext.Current
     let reminderDisplayOuterDockPanel = new DockPanel(Width=OMTW*16., Height=THRU_TIMELINE_H-START_TIMELINE_H, LastChildFill=false)
-    let reminderLogTB = new TextBox(Text="log", Foreground=Brushes.Orange, FontSize=10., Background=Brushes.Black, IsHitTestVisible=false, BorderThickness=Thickness(0.), Margin=Thickness(0.,0.,0.,2.))
-    let reminderDisplayInnerBorder = new Border(Child=reminderLogTB, BorderThickness=Thickness(3.), BorderBrush=Brushes.Lime, Background=Brushes.Black, HorizontalAlignment=HorizontalAlignment.Right)
+    // the idle 'log' button is a real button, same style and height as the 'Draw + Custom Icons' button (not hit-testable itself: the wrapper border below handles the mouse)
+    let reminderLogTB = Graphics.makeButton("Log", Some(12.), Some(Brushes.Orange))
+    reminderLogTB.MaxHeight <- 22.
+    reminderLogTB.VerticalAlignment <- VerticalAlignment.Top   // natural height, capped like the Draw button, so the two match exactly
+    reminderLogTB.IsHitTestVisible <- false
+    reminderLogTB.Focusable <- false
+    let reminderDisplayInnerBorder = new Border(Child=reminderLogTB, BorderThickness=Thickness(0.), BorderBrush=Brushes.Gray, Background=Brushes.Black, HorizontalAlignment=HorizontalAlignment.Right)
     DockPanel.SetDock(reminderDisplayInnerBorder, Dock.Right)
-    reminderDisplayInnerBorder.MouseDown.Add(fun _ ->
+    reminderDisplayInnerBorder.Visibility <- Visibility.Collapsed   // only shown while a reminder is displaying
+    let openLog() =
         if not popupIsActive then
             popupIsActive <- true
             let wh = new System.Threading.ManualResetEvent(false)
@@ -72,9 +80,10 @@ let SetupReminderDisplayAndProcessing(cm) =
                 reminderView.Content <- null // deparent log for future reuse
                 popupIsActive <- false
             } |> Async.StartImmediate
-        )
-    reminderDisplayInnerBorder.MouseEnter.Add(fun _ -> reminderDisplayInnerBorder.BorderBrush <- Brushes.Cyan)
-    reminderDisplayInnerBorder.MouseLeave.Add(fun _ -> reminderDisplayInnerBorder.BorderBrush <- Brushes.Lime)
+    reminderDisplayInnerBorder.MouseDown.Add(fun _ -> openLog())
+    reminderLogButton.Click.Add(fun _ -> openLog())
+    reminderDisplayInnerBorder.MouseEnter.Add(fun _ -> if not(obj.ReferenceEquals(reminderDisplayInnerBorder.Child, reminderLogTB)) then reminderDisplayInnerBorder.BorderBrush <- Brushes.Cyan)
+    reminderDisplayInnerBorder.MouseLeave.Add(fun _ -> reminderDisplayInnerBorder.BorderBrush <- (if obj.ReferenceEquals(reminderDisplayInnerBorder.Child, reminderLogTB) then Brushes.Gray else Brushes.Lime))
     DockPanel.SetDock(reminderDisplayInnerBorder, Dock.Top)
     reminderDisplayOuterDockPanel.Children.Add(reminderDisplayInnerBorder) |> ignore
     reminderAgent <- MailboxProcessor.Start(fun inbox -> 
@@ -93,6 +102,9 @@ let SetupReminderDisplayAndProcessing(cm) =
                     Graphics.PlaySoundForReminder()
                 if shouldRemindVisual || category=TrackerModel.ReminderCategory.Asterisk then
                     reminderDisplayInnerBorder.Child <- sp
+                    reminderDisplayInnerBorder.Visibility <- Visibility.Visible
+                    reminderDisplayInnerBorder.BorderThickness <- Thickness(3.)   // a reminder is showing: the green box
+                    reminderDisplayInnerBorder.BorderBrush <- Brushes.Lime
                 match visualUpdateToSynchronizeWithReminder with
                 | None -> ()
                 | Some vu -> Async.StartImmediate vu
@@ -112,6 +124,9 @@ let SetupReminderDisplayAndProcessing(cm) =
             // once reminder no longer displayed, log it.
             let timeString = OverworldItemGridUI.hmsTimeTextBox.Text
             reminderDisplayInnerBorder.Child <- reminderLogTB   // also deparents sp
+            reminderDisplayInnerBorder.Visibility <- Visibility.Collapsed
+            reminderDisplayInnerBorder.BorderThickness <- Thickness(0.)   // back to the plain 'log' button look
+            reminderDisplayInnerBorder.BorderBrush <- Brushes.Gray
             sp.Margin <- Thickness(0.)
             sp.Children.Insert(0, new DockPanel(Background=Brushes.Gray, Width=18., Height=3., Margin=Thickness(6.,0.,6.,0.), VerticalAlignment=VerticalAlignment.Center))
             sp.Children.Insert(0, ReminderTextBox(timeString))
@@ -177,15 +192,17 @@ let RemindFoundDungeonCount(n) =
         SendReminder(TrackerModel.ReminderCategory.DungeonFeedback, sprintf "You have located %d dungeons" n, icons) 
 
 let RemindTriforceCount(n, asyncBrieflyHighlightAnOverworldLocation) =
-    let icons = [upcb(Graphics.fullOrangeTriforce_bmp); ReminderTextBox(sprintf"%d/8"n)]
+    // the number of triforces needed to enter level 9 (8 by default; the user can change it, or pick an item instead, in which case this stays 8)
+    let req = if TrackerModel.level9CustomTriggerItem() <> -1 then 8 else TrackerModel.level9TriforceCount
+    let icons = [upcb(Graphics.fullOrangeTriforce_bmp); ReminderTextBox(sprintf"%d/%d" n req)]
     if n = 1 then
         SendReminder(TrackerModel.ReminderCategory.DungeonFeedback, "You now have one triforce", icons)
     else
-        SendReminder(TrackerModel.ReminderCategory.DungeonFeedback, sprintf "You now have %d triforces" n, [yield! icons; if n=8 then yield upcb(Graphics.iconCheckMark_bmp)])
-    if n = 8 && not(TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value()) then
-        SendReminderImpl(TrackerModel.ReminderCategory.DungeonFeedback, "Consider the magical sword before dungeon nine", [upcb(Graphics.iconRightArrow_bmp); upcb(Graphics.magical_sword_bmp)],
+        SendReminder(TrackerModel.ReminderCategory.DungeonFeedback, sprintf "You now have %d triforces" n, [yield! icons; if n=req then yield upcb(Graphics.iconCheckMark_bmp)])
+    if n = req && not(TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value()) then
+        SendReminderImpl(TrackerModel.ReminderCategory.DungeonFeedback, "Consider the magical sword before dungeon nine", [upcb(Graphics.iconRightArrow_bmp); upcb(Graphics.ow_sword3_item_bmp)],
                             Some(asyncBrieflyHighlightAnOverworldLocation(TrackerModel.mapStateSummary.Sword3Location)))
-    if n = 8 && (TrackerModel.mapStateSummary.DungeonLocations.[8] <> TrackerModel.NOTFOUND) then
+    if n = req && (TrackerModel.mapStateSummary.DungeonLocations.[8] <> TrackerModel.NOTFOUND) then
         SendReminderImpl(TrackerModel.ReminderCategory.DungeonFeedback, "Dungeon nine is open", [upcb(Graphics.iconRightArrow_bmp); upcb(MapStateProxy(8).DefaultInteriorBmp())],
                             Some(asyncBrieflyHighlightAnOverworldLocation(TrackerModel.mapStateSummary.DungeonLocations.[8])))
 

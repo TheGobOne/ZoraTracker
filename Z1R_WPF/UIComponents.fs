@@ -22,7 +22,7 @@ let MakeMagnifier(mirrorOverworldFEs:ResizeArray<FrameworkElement>, owMapNum, ow
     let POP = 1  // width of entrance border
     let BT = 2.  // border thickness of the interior 3x3 grid of tiles
     let dungeonTabsOverlay = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(5.), Background=Brushes.Black, Opacity=0., IsHitTestVisible=false,
-                                    Width=3.+39.*8.+12.*7.+3.+42., Height=float(2*DungeonUI.TH + 3 + 27*8 + 12*7 + 3 + 6 - DungeonUI.TH))  // exactly covers the dungeon tab area beneath it
+                                    Width=3.+39.*8.+12.*7.+3.+42.+6., Height=float(2*DungeonUI.TH + 3 + 27*8 + 12*7 + 3 + 6 - DungeonUI.TH + 1))  // exactly covers the dungeon tab area beneath it
     let DTOCW,DTOCH = 3.*16.*ENLARGE + 4.*BT, 3.*11.*ENLARGE + 4.*BT
     let dungeonTabsOverlayContent = new Canvas(Width=DTOCW, Height=DTOCH)
     if owMapNum=4 then  // disable magnifier on blank/custom map
@@ -48,7 +48,7 @@ let MakeMagnifier(mirrorOverworldFEs:ResizeArray<FrameworkElement>, owMapNum, ow
                                     FontSize=12., HorizontalContentAlignment=HorizontalAlignment.Center)
         dtocLegend.Children.Add(text) |> ignore
     dtocPlusLegend.Children.Add(dtocLegend) |> ignore
-    dtocPlusLegend.LayoutTransform <- new ScaleTransform(1.06, 1.06)   // grow the magnified map slightly, to halve the empty black margin around it
+    dtocPlusLegend.LayoutTransform <- new ScaleTransform(1.02, 1.02)   // grow the magnified map slightly, to halve the empty black margin around it
     RenderOptions.SetBitmapScalingMode(dtocPlusLegend, BitmapScalingMode.NearestNeighbor)
     dtocPlusLegend.HorizontalAlignment <- HorizontalAlignment.Center
     dtocPlusLegend.VerticalAlignment <- VerticalAlignment.Center
@@ -271,14 +271,14 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
         let _dotsRight = dotsX + measure "..." + 14.
         let customWaypointX = ITEM_PROGRESS_FIRST_ITEM + 7.*30. + visibleLeft(Graphics.red_candle_bmp)   // aligned with the left of the candle icon (item slot 7) in the item row below
         let boxGap = 7.   // the circle, Start Spot, 1Q/2Q and hint boxes sit close together
-        let startX = customWaypointX + 29. + boxGap
+        let startX = customWaypointX   // (the Custom Waypoint button is gone: everything to its right starts where the button was)
         dungeonX, recorderX, dotsX, customWaypointX, startX, startX + OMTW*1.45 + boxGap
     let dungeonLegendX, recorderLegendX, dotsLegendX, customWaypointLegendX, startLegendX, afterStartLegendX = legendXs
     legendAfterStartX <- afterStartLegendX
     legendStartX <- startLegendX
     let dungeonLegendIconCanvas = new Canvas(Width=float(16*3), Height=float(11*3))
     let dungeonLegendIconArea = new Canvas(Width=15., Height=float(11*3), Background=Brushes.White, Opacity=0.0001)   // to respond to mouse hover
-    canvasAdd(legendCanvas, dungeonLegendIconCanvas, dungeonLegendX, 0.)
+    canvasAdd(legendCanvas, dungeonLegendIconCanvas, dungeonLegendX, 3.)
     let recorderDestinationButtonCanvas = new Canvas(Width=OMTW, Height=float(11*3), Background=Brushes.Transparent, ClipToBounds=true)   // transparent (still clickable) so it can't cover the end of the 'Dungeon (Completed)' text
     let recorderDestinationMouseHoverHighlight = new Shapes.Rectangle(Width=OMTW, Height=float(11*3), Stroke=Brushes.DarkCyan, StrokeThickness=1., Opacity=0.)
     //let recorderEllipse = new Shapes.Ellipse(Width=float(11*3)-2.+12.0, Height=float(11*3)-2.+6., Stroke=RecorderEllipseColor(), StrokeThickness=3.0, IsHitTestVisible=false)
@@ -286,13 +286,18 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
 
     let _legendTB = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), Text="LEGEND - ", Height=float(11*3), VerticalContentAlignment=VerticalAlignment.Center)
     let tb = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), Text="Dungeon\n(Completed)")
-    canvasAdd(legendCanvas, tb, dungeonLegendX+35., 0.)
-    canvasAdd(legendCanvas, recorderDestinationButtonCanvas, recorderLegendX, 0.)
+    canvasAdd(legendCanvas, tb, dungeonLegendX+35., 3.)
+    canvasAdd(legendCanvas, recorderDestinationButtonCanvas, recorderLegendX, 3.)
     let tb = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), Text="Recorder\nDestination")
-    canvasAdd(legendCanvas, tb, recorderLegendX+48., 0.)
+    canvasAdd(legendCanvas, tb, recorderLegendX+48., 3.)
     let tb = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), Text="...")
-    let recorderDestinationSettingsButton = new Button(Content=tb)
-    canvasAdd(legendCanvas, recorderDestinationSettingsButton, dotsLegendX, 0.)
+    tb.FontSize <- 12.
+    tb.FontWeight <- FontWeights.Bold
+    tb.TextAlignment <- TextAlignment.Center
+    tb.Padding <- Thickness(0.,0.,0.,2.)
+    let recorderDestinationSettingsButton = new Button(Content=tb, Width=20., Height=18.)
+    Graphics.styleRoundedButton(recorderDestinationSettingsButton)
+    canvasAdd(legendCanvas, recorderDestinationSettingsButton, dotsLegendX, 3.)
     let updateCurrentRecorderDestinationNumeral() =
         dungeonLegendIconCanvas.Children.Clear()
         recorderDestinationButtonCanvas.Children.Clear()
@@ -341,6 +346,24 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
                 popupIsActive <- false
             } |> Async.StartImmediate
         )
+    // hovering shows the whistle (recorder) pattern for this overworld: 1,2,3,...,8 in a first quest overworld, 1,3,2,5,4,6,8,7 in a second quest one
+    let recorderPatternTip = new ToolTip(Background=Brushes.Black, BorderBrush=Brushes.Gray, BorderThickness=Thickness(2.), Padding=Thickness(4.,1.,4.,2.), Placement=Primitives.PlacementMode.Top)
+    recorderDestinationButtonCanvas.ToolTip <- recorderPatternTip
+    ToolTipService.SetInitialShowDelay(recorderDestinationButtonCanvas, 100)
+    ToolTipService.SetShowDuration(recorderDestinationButtonCanvas, 60000)
+    recorderPatternTip.Opened.Add(fun _ ->
+        let isFirst = TrackerModel.owInstance.Quest.IsFirstQuestOW
+        let order = if isFirst then [1;2;3;4;5;6;7;8] else [1;3;2;5;4;6;8;7]
+        let col = new StackPanel(Orientation=Orientation.Vertical)
+        let mk(t:string, size:float) = new TextBlock(Text=t, Foreground=Brushes.Orange, FontSize=size, FontWeight=FontWeights.Bold, HorizontalAlignment=HorizontalAlignment.Center)
+        col.Children.Add(mk((if isFirst then "1Q whistle order" else "2Q whistle order"), 12.)) |> ignore
+        let row = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+        for n in order do
+            let t = mk(string n, 16.)
+            t.Margin <- Thickness(3.,0.,3.,0.)
+            row.Children.Add(t) |> ignore
+        col.Children.Add(row) |> ignore
+        recorderPatternTip.Content <- col)
     recorderDestinationButtonCanvas.MouseEnter.Add(fun _ -> recorderDestinationMouseHoverHighlight.Opacity <- 1.)
     recorderDestinationButtonCanvas.MouseLeave.Add(fun _ -> recorderDestinationMouseHoverHighlight.Opacity <- 0.)
     recorderDestinationButtonCanvas.MouseDown.Add(fun ea ->
@@ -370,18 +393,19 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
     *)
 
     let anyRoadLegendIcon = Graphics.BMPtoImage(Graphics.theFullTileBmpTable.[9].[0])
-    canvasAdd(legendCanvas, anyRoadLegendIcon, 58.+legendShift, 0.)
+    canvasAdd(legendCanvas, anyRoadLegendIcon, 58.+legendShift+3., 3.)   // legend entries 3px down: centered vertically between the map and the item progress icons
     let tb = new TextBox(FontSize=12., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, BorderThickness=Thickness(0.), Text="Any Road\n(Warp)")
-    canvasAdd(legendCanvas, tb, 91.+legendShift, 0.)
+    canvasAdd(legendCanvas, tb, 91.+legendShift+3., 3.)
 
     let legendStartIconButtonCanvas = new Canvas(Background=BG, Width=OMTW*1.45, Height=29.)   // same height as the Custom Waypoint button
     let legendStartIcon = makeStartIcon()
     legendStartIcon.RenderTransform <- new ScaleTransform(0.85, 0.85)   // 31px ring scaled down to fit the shorter button
     canvasAdd(legendStartIconButtonCanvas, legendStartIcon, 0.+4.*OMTW/48., 1.)
-    let tb = new TextBox(FontSize=10., Foreground=Brushes.Orange, Background=BG, IsReadOnly=true, BorderThickness=Thickness(0.), Text="Start\nSpot", IsHitTestVisible=false)
+    let tb = new TextBox(FontSize=10., Foreground=Brushes.Orange, Background=Brushes.Transparent, IsReadOnly=true, BorderThickness=Thickness(0.), Text="Start\nSpot", IsHitTestVisible=false)
     canvasAdd(legendStartIconButtonCanvas, tb, 0.8*OMTW, 0.)
     let legendStartIconButton = new Button(Content=legendStartIconButtonCanvas)
-    canvasAdd(legendCanvas, legendStartIconButton, startLegendX, 0.)
+    Graphics.styleRoundedButton(legendStartIconButton)
+    canvasAdd(legendCanvas, legendStartIconButton, startLegendX, 4.)   // 4px down: centered vertically between the map and the item progress icons
     legendStartButton <- legendStartIconButton
     let makeIconButtonBehavior(prefix, name, makeIcon, iconOffsetX, iconOffsetY, setIconXY) = (fun () ->
         if not popupIsActive then
@@ -463,8 +487,9 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
     customWaypointIcon.RenderTransform <- scaleTrans
     canvasAdd(customWaypointButtonCanvas, customWaypointIcon, 1.3, 1.)
     let customWaypointButton = new Button(Content=customWaypointButtonCanvas)
-    canvasAdd(legendCanvas, customWaypointButton, customWaypointLegendX, 0.)
-    customWaypointButton.Click.Add(fun _ -> customWaypointButtonBehavior())
+    ignore customWaypointLegendX   // (the Custom Waypoint button is no longer shown in the legend)
+    ignore customWaypointButton
+    ignore customWaypointButtonBehavior
 
     recorderDestinationButtonCanvas, anyRoadLegendIcon, dungeonLegendIconArea, updateCurrentRecorderDestinationNumeral, legendCanvas, startIcon, theCustomWaypointIcon
 
@@ -472,11 +497,12 @@ let MakeLegend(cm:CustomComboBoxes.CanvasManager, doUIUpdateEvent:Event<unit>) =
 let mutable itemProgressChanged : unit -> unit = fun () -> ()
 // set by WPFUI: un-collects every marker icon with one of these item ids on the overworld map
 let mutable uncollectMapIcons : int list -> unit = fun _ -> ()
-let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
+let MakeItemProgressBar(_owInstance:OverworldData.OverworldInstance) =
     // item progress
     let itemProgressCanvas = new Canvas(Width=16.*OMTW, Height=30.)
     let tb = Graphics.makeButton("Item Progress", Some(12.), Some(Brushes.Orange))   // same look as the version button next to it
     tb.IsHitTestVisible <- false
+    Graphics.styleRoundedButton(tb)
     itemProgressCanvas.MouseMove.Add(fun ea ->
         let pos = ea.GetPosition(itemProgressCanvas)
         let slot = int (floor ((pos.X - ITEM_PROGRESS_FIRST_ITEM) / 30.))
@@ -517,12 +543,12 @@ let MakeItemProgressBar(owInstance:OverworldData.OverworldInstance) =
     let mutable x, y = ITEM_PROGRESS_FIRST_ITEM, 3.
     let DX = 30.
     let swordsByLevel = Array.init 4 (fun level -> 
-        let sword = Graphics.BMPtoImage(Graphics.swordLevelToBmp(level))
+        let sword = Graphics.BMPtoImage(Graphics.swordLevelToOwBmp(level))
         sword.Opacity <- 0.
         canvasAdd(itemProgressCanvas, sword, x, y)
         sword
         )
-    let sword4 = Graphics.BMPtoImage(Graphics.white_sword4_bmp)   // once a 4th sword has been collected, the white sword shows with a yellow handle
+    let sword4 = Graphics.BMPtoImage(Graphics.ow_sword4_item_bmp)   // once a 4th sword has been collected, the 4th sword icon (blue handle) shows
     sword4.Opacity <- 0.
     canvasAdd(itemProgressCanvas, sword4, x, y)
     x <- x + DX
@@ -848,9 +874,9 @@ let MakeHintDecoderUI(cm:CustomComboBoxes.CanvasManager) =
             elif row = 8 then
                 Graphics.unfoundL9_bmp
             elif row = 9 then
-                Graphics.white_sword_bmp
+                Graphics.ow_sword2_item_bmp
             else
-                Graphics.magical_sword_bmp
+                Graphics.ow_sword3_item_bmp
         let image = Graphics.BMPtoImage bmp
         image.Width <- 32.
         image.Stretch <- Stretch.None
@@ -987,6 +1013,10 @@ let MakeHintDecoderUI(cm:CustomComboBoxes.CanvasManager) =
         fireArrowsCheckBox.Checked.Add(fun _ -> TrackerModel.FireArrowsHintWasGiven <- true)
         fireArrowsCheckBox.Unchecked.Add(fun _ -> TrackerModel.FireArrowsHintWasGiven <- false)
         otherSP.Children.Add(fireArrowsCheckBox) |> ignore
+        let hintCbStyle = new Style(typeof<CheckBox>)
+        hintCbStyle.Setters.Add(new Setter(Control.TemplateProperty, Graphics.roundedCheckBoxTemplate))
+        hintCbStyle.Setters.Add(new Setter(Control.PaddingProperty, Thickness(4.,0.,0.,0.)))
+        otherSP.Resources.Add(typeof<CheckBox>, hintCbStyle)
         otherSP :> UIElement
     let otherSection : UIElement ref = ref null
     let hintBorder = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(8.), Background=Brushes.Black, Child=hintSP)
@@ -1016,6 +1046,14 @@ let MakeHintDecoderUI(cm:CustomComboBoxes.CanvasManager) =
 
 open HotKeys.MyKey
 
+// highlights every overworld tile a recorder / ladder / bomb blocker blocks (even ones already marked); false if this blocker isn't one of those
+let showBlockedTilesLocator(db:TrackerModel.DungeonBlocker) : bool =
+    let inst = TrackerModel.owInstance
+    match db.HardCanonical() with
+    | TrackerModel.DungeonBlocker.RECORDER -> showLocatorInstanceFuncAll(fun (x,y) -> inst.Whistleable(x,y) && not(inst.Ladderable(x,y))); true
+    | TrackerModel.DungeonBlocker.LADDER -> showLocatorInstanceFuncAll(inst.Ladderable); true
+    | TrackerModel.DungeonBlocker.BOMB -> showLocatorInstanceFuncAll(fun (x,y) -> inst.Bombable(x,y) && not(inst.Ladderable(x,y))); true
+    | _ -> false
 let MakeBlockers(cm:CustomComboBoxes.CanvasManager, blockerQueries:ResizeArray<_>, levelTabSelected:Event<int>, blockersHoverEvent:Event<bool>, blockerDungeonSunglasses:FrameworkElement[],
                         contentCanvasMouseEnterFunc, contentCanvasMouseLeaveFunc) =
     // blockers
@@ -1031,7 +1069,7 @@ let MakeBlockers(cm:CustomComboBoxes.CanvasManager, blockerQueries:ResizeArray<_
             match current.HardCanonical() with
             | TrackerModel.DungeonBlocker.BAIT ->           showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.MEAT)
             | TrackerModel.DungeonBlocker.KEY ->            showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.KEY)
-            | TrackerModel.DungeonBlocker.BOMB ->           showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BOMB)
+            | TrackerModel.DungeonBlocker.BOMB | TrackerModel.DungeonBlocker.RECORDER | TrackerModel.DungeonBlocker.LADDER -> showBlockedTilesLocator(current) |> ignore   // the overworld tiles this blocks
             | TrackerModel.DungeonBlocker.BOW_AND_ARROW ->  showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.ARROW)
             | TrackerModel.DungeonBlocker.MONEY ->          showLocatorRupees()
             | _ -> contentCanvasMouseEnterFunc(dungeonIndex+1)   // if nothing specific for this box to show, default to parent's hover behavior
@@ -1048,15 +1086,14 @@ let MakeBlockers(cm:CustomComboBoxes.CanvasManager, blockerQueries:ResizeArray<_
             | _ -> None
             )
         let SetNewValue(db:TrackerModel.DungeonBlocker) = 
-            if db.PlayerCouldBeBlockedByThis() then
-                TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(dungeonIndex, blockerIndex, db)
-            else
-                Graphics.ErrorBeepWithReminderLogText(sprintf "Tried to set blocker %s, but you already have item which unblocks it" (db.AsHotKeyName()))
+            TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(dungeonIndex, blockerIndex, db)   // no collection logic: any blocker may be selected
         let activate(activationDelta) =
             popupIsActive <- true
             let pc, predraw = Views.MakeBlockerCore()
             let popupRedraw(n) =
                 let innerc = predraw(n)
+                // hovering a recorder / ladder / bomb blocker highlights every overworld tile it blocks (including ones already marked)
+                if not(showBlockedTilesLocator(n)) then hideLocator()
                 let s = HotKeys.BlockerHotKeyProcessor.AppendHotKeyToDescription(n.DisplayDescription(), n)
                 let text = new TextBox(Text=s, Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.),
                                             FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center)
@@ -1070,12 +1107,13 @@ let MakeBlockers(cm:CustomComboBoxes.CanvasManager, blockerQueries:ResizeArray<_
             let pos = c.TranslatePoint(Point(), cm.AppMainCanvas)
             async {
                 let! r = CustomComboBoxes.DoModalGridSelect(cm, pos.X, pos.Y, pc, TrackerModel.DungeonBlocker.All |> Array.map (fun db ->
-                                (if db=TrackerModel.DungeonBlocker.NOTHING then upcast Canvas() else upcast Graphics.blockerCurrentDisplay(db)), db.PlayerCouldBeBlockedByThis(), db), 
+                                (if db=TrackerModel.DungeonBlocker.NOTHING then upcast Canvas() else upcast Graphics.blockerCurrentDisplay(db)), true, db), 
                                 System.Array.IndexOf(TrackerModel.DungeonBlocker.All, current), activationDelta, (4, 4, 24, 24), 12., 12., -90., 30., popupRedraw,
                                 (fun (_ea,db) -> CustomComboBoxes.DismissPopupWithResult(db)), [], CustomComboBoxes.ModalGridSelectBrushes.Defaults(), CustomComboBoxes.WarpToCenter, None, "Blocker", None)
                 match r with
                 | Some(db) -> SetNewValue(db)
                 | None -> () 
+                hideLocator()
                 popupIsActive <- false
                 } |> Async.StartImmediate
         let doPanel(pos:Point) =
@@ -1091,6 +1129,8 @@ let MakeBlockers(cm:CustomComboBoxes.CanvasManager, blockerQueries:ResizeArray<_
             border.Resources.Add(typeof<TextBox>, style)
             let style = new Style(typeof<CheckBox>)
             style.Setters.Add(new Setter(CheckBox.HeightProperty, 22.))
+            style.Setters.Add(new Setter(Control.TemplateProperty, Graphics.roundedCheckBoxTemplate))
+            style.Setters.Add(new Setter(Control.PaddingProperty, Thickness(4.,0.,0.,0.)))
             border.Resources.Add(typeof<CheckBox>, style)
             let panel = new StackPanel(Orientation=Orientation.Vertical)
             let hPanel = new System.Windows.Controls.Primitives.UniformGrid(Rows=1, Columns=2)
@@ -1330,9 +1370,10 @@ let MakeZoneOverlay(overworldCanvas:Canvas, ensurePlaceholderFinished, mirrorOve
     zone_checkbox.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.Overworld.Zones.Value
     zone_checkbox.Checked.Add(fun _ -> changeZoneOpacity(TrackerModel.HintZone.UNKNOWN,true); TrackerModelOptions.Overworld.Zones.Value <- true; TrackerModelOptions.writeSettings())
     zone_checkbox.Unchecked.Add(fun _ -> changeZoneOpacity(TrackerModel.HintZone.UNKNOWN,false); TrackerModelOptions.Overworld.Zones.Value <- false; TrackerModelOptions.writeSettings())
-    zone_checkbox.MouseEnter.Add(fun _ -> if not zone_checkbox.IsChecked.HasValue || not zone_checkbox.IsChecked.Value then changeZoneOpacity(TrackerModel.HintZone.UNKNOWN,true))
-    zone_checkbox.MouseLeave.Add(fun _ -> if not zone_checkbox.IsChecked.HasValue || not zone_checkbox.IsChecked.Value then changeZoneOpacity(TrackerModel.HintZone.UNKNOWN,false))
 
+    // 'Hover on zones/coords': the overlay shows while the mouse is over the (unchecked) checkbox
+    zone_checkbox.MouseEnter.Add(fun _ -> if TrackerModelOptions.Overworld.HoverZonesCoords.Value && not(zone_checkbox.IsChecked.HasValue && zone_checkbox.IsChecked.Value) then changeZoneOpacity(TrackerModel.HintZone.UNKNOWN,true))
+    zone_checkbox.MouseLeave.Add(fun _ -> if TrackerModelOptions.Overworld.HoverZonesCoords.Value && not(zone_checkbox.IsChecked.HasValue && zone_checkbox.IsChecked.Value) then changeZoneOpacity(TrackerModel.HintZone.UNKNOWN,false))
     zone_checkbox, addZoneName, changeZoneOpacity, allOwMapZoneBlackCanvases
 
 open OverworldMapTileCustomization

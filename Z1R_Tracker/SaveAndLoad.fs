@@ -48,6 +48,12 @@ type Items() =
     member val WhiteSwordBox : Box = null with get,set
     member val LadderBox : Box = null with get,set
     member val ArmosBox : Box = null with get,set
+    member val MagicalSwordBox : Box = null with get,set   // (older saves do not have these: null)
+    member val LetterBox : Box = null with get,set
+    member val WoodSwordBox : Box = null with get,set
+    member val CustomLevelName : string = null with get,set   // (older saves do not have this)
+    member val ShuffledWoodSwordTiles : string = null with get,set   // "i,j;i,j" overworld tiles whose wood sword cave holds a shuffled item
+    member val HintShopColors : string = null with get,set   // "i,j,color;..." background colors chosen for hint shop tiles (older saves do not have this)
     member val Level2StairBoxEnabled = false with get,set
     member val Level2StairBox : Box = null with get,set
     member val Level9FloorBoxEnabled = false with get,set
@@ -235,7 +241,16 @@ let SaveItems(prefix) =
     SaveBox("    ", TrackerModel.ladderBox)
     lines.Add(sprintf """    }, "ArmosBox": {""")
     SaveBox("    ", TrackerModel.armosBox)
-    lines.Add(sprintf """    }, "Level2StairBoxEnabled": %b, "Level2StairBox": {""" TrackerModel.level2StairBoxEnabled)
+    lines.Add(sprintf """    }, "MagicalSwordBox": {""")
+    SaveBox("    ", TrackerModel.sword3Box)
+    lines.Add(sprintf """    }, "LetterBox": {""")
+    SaveBox("    ", TrackerModel.letterBox)
+    lines.Add(sprintf """    }, "WoodSwordBox": {""")
+    SaveBox("    ", TrackerModel.sword1Box)
+    let shuffledTiles = TrackerModel.shuffledWoodSwordTiles |> Seq.map (fun (i,j) -> sprintf "%d,%d" i j) |> String.concat ";"
+    let customName = TrackerModel.CustomLevelName.Replace("\\", "").Replace("\"", "")
+    let hintColors = TrackerModel.hintShopColors |> Seq.filter (fun kv -> kv.Value <> 0) |> Seq.map (fun kv -> sprintf "%d,%d,%d" (fst kv.Key) (snd kv.Key) kv.Value) |> String.concat ";"
+    lines.Add(sprintf """    }, "ShuffledWoodSwordTiles": "%s", "HintShopColors": "%s", "CustomLevelName": "%s", "Level2StairBoxEnabled": %b, "Level2StairBox": {""" shuffledTiles hintColors customName TrackerModel.level2StairBoxEnabled)
     SaveBox("    ", TrackerModel.level2StairBox)
     lines.Add(sprintf """    }, "Level9FloorBoxEnabled": %b, "Dungeons": [""" TrackerModel.level9FloorBoxEnabled)
     for i = 0 to 8 do

@@ -64,6 +64,7 @@ type ChoiceDomain(name:string,maxUsesArray:int[]) =
     member _this.Changed = ev.Publish
     member _this.Name = name  // just useful for debugging etc
     member _this.MaxKey = uses.Length-1
+    member _this.SetMaxUse(key:int, n:int) = maxUsesArray.[key] <- n   // lets the owner enable/disable a key at runtime (e.g. user-supplied custom icons)
     member this.Renotify(key) = if key <> -1 then ev.Trigger(this,key)   // re-announce a key after the owning Cell has settled on its new state
     member this.RemoveUse(key) =
         if key = -1 then  // since Next/Prev FreeKey can return -1 to mean the implicit empty slot, seems ok to RemoveUse() it, it implicitly has infinity current uses
@@ -237,7 +238,29 @@ module ITEMS =
         "OldKey" , 1
         "BombUpgrade" , 1
         "TriforcePiece" , 9   // a triforce piece in a dungeon item box also marks that dungeon's triforce as collected
+        // 16 slots for the user's ExtraIcons-folder icons (ids 30-45); the domain only allows them once the "add custom icons to menus" option is on
+        "CustomIcon1" , 27
+        "CustomIcon2" , 27
+        "CustomIcon3" , 27
+        "CustomIcon4" , 27
+        "CustomIcon5" , 27
+        "CustomIcon6" , 27
+        "CustomIcon7" , 27
+        "CustomIcon8" , 27
+        "CustomIcon9" , 27
+        "CustomIcon10" , 27
+        "CustomIcon11" , 27
+        "CustomIcon12" , 27
+        "CustomIcon13" , 27
+        "CustomIcon14" , 27
+        "CustomIcon15" , 27
+        "CustomIcon16" , 27
         |]
+    let NumBuiltIn = 30
+    let CUSTOM_BASE = 30
+    let CUSTOM_COUNT = 16
+    let customNames : string[] = Array.init CUSTOM_COUNT (fun i -> sprintf "Custom icon %d" (i+1))
+    let mutable customMenuCount = 0   // how many custom icons the menus currently offer (0 when the option is off)
     let BOOKSHIELD = 0
     let BOOMERANG = 1
     let BOW = 2
@@ -301,6 +324,7 @@ module ITEMS =
         | 27 -> "key"
         | 28 -> "bomb upgrade"
         | 29 -> "triforce"
+        | n when n >= CUSTOM_BASE && n < CUSTOM_BASE + CUSTOM_COUNT -> customNames.[n - CUSTOM_BASE]
         | _ -> failwith "bad ITEMS id"
     let AsHotKeyName(n) =
         if n>=0 && n<itemNamesAndCounts.Length then
@@ -339,6 +363,7 @@ module ITEMS =
         | 27 -> "Key"
         | 28 -> "Bomb Upgrade"
         | 29 -> "Triforce Piece"
+        | n when n >= CUSTOM_BASE && n < CUSTOM_BASE + CUSTOM_COUNT -> customNames.[n - CUSTOM_BASE]
         | _ -> failwith "bad ITEMS id"
 let allItemWithHeartShuffleChoiceDomain = ChoiceDomain("allItemsWithHeartShuffle", ITEMS.itemNamesAndCounts |> Array.map snd)
 
@@ -360,9 +385,9 @@ let overworldTiles(isFirstQuestOverworld, isHDN) = [|
     "AnyRoad2"         , 1                                                  , "Any Road 2",           "Any Road 2/4"
     "AnyRoad3"         , 1                                                  , "Any Road 3",           "Any Road 3/4"
     "AnyRoad4"         , 1                                                  , "Any Road 4",           "Any Road 4/4"
-    "Sword3"           , 1                                                  , "Magical Sword Cave",   "Magical Sword Cave\n(10-14 hearts to lift)"
-    "Sword2"           , 1                                                  , "White Sword Cave",     "'White Sword' Cave\n(4-6 hearts to lift)\nNote: might have\nany item, not just\nwhite sword"
-    "Sword1"           , 1                                                  , "Wood Sword Cave",      "Wood Sword Cave\n(can always lift)"
+    "Sword3"           , 2                                                  , "Magical Sword Cave",   "Magical Sword Cave\n(10-14 hearts to lift)"
+    "Sword2"           , 2                                                  , "White Sword Cave",     "'White Sword' Cave\n(4-6 hearts to lift)\nNote: might have\nany item, not just\nwhite sword"
+    "Sword1"           , 2                                                  , "Wood Sword Cave",      "Wood Sword Cave\n(can always lift)"
     // 1Q has 12 shops, distributed 4,4,3,1                                
     // 2Q has 15 shops, distributed 6,4,4,1     (4 kinds of shops)         
     "ArrowShop"        , 999                                                , "Wood Arrow shop",      "Shop with\nWood Arrows\n(60-100 rupees)"
@@ -383,9 +408,9 @@ let overworldTiles(isFirstQuestOverworld, isHDN) = [|
     "Armos"            , 1                                                  , "Armos",                "Armos Item"
     // white/magical sword cave hint may also be marked as                 
     // a free hint 'shop', so 4 rather than 2                              
-    "HintShop"         , 4                                                  , "Hint Shop",            "Hint Shop\n(10-60 rupees each)\nor free hint for\nwhite/magical\nsword cave"
+    "HintShop"         , 4                                                  , "Hint Shop",            "Hints Shop\nScroll icon on the map\nfor different colors"
     "TakeAny"          , 4                                                  , "Take Any",             "Take Any One\nYou Want"
-    "PotionShop"       , (if isFirstQuestOverworld then 7 else 9)           , "Potion Shop",          "Potion Shop\n(20-60, 48-88 rupees)"
+    "Shop"             , (if isFirstQuestOverworld then 7 else 9)           , "Potion Shop",          "Potion Shop\n(20-60, 48-88 rupees)"
     "DarkX"            , 999                                                , "Don't Care",           "Don't Care"
     "PersonalPref1"    , 999                                                , "Personal Pref 1",      "Personal Preference 1\n(custom marker)"
     "PersonalPref2"    , 999                                                , "Personal Pref 2",      "Personal Preference 2\n(custom marker)"
@@ -687,9 +712,11 @@ type BoxOwner =   // for deciding what Blocker-projections to display in it
     | DungeonIndexAndNth of int*int // { 0-8 for 1-9 or A-H,9 ; 0-2 for first-third box }
     | Dungeon1or4                   // the third box of 1 or 4 depending upon SecondQuestDungeons value
     | None                          // an item box that does not below to a dungeon, e.g. CoastItem
-type Box(stair:StairKind, owner) =
+// the level 9 entry box is only a note, so it gets its own domain (it must not use up items that the real boxes need)
+let level9TriggerDomain = ChoiceDomain("level9Trigger", ITEMS.itemNamesAndCounts |> Array.map (fun _ -> 1000))
+type Box(stair:StairKind, owner, domain:ChoiceDomain) =
     // this contains both a Cell (player-knowing-location-contents), and a bool (whether the players _has_ the thing there)
-    let cell = new Cell(allItemWithHeartShuffleChoiceDomain)
+    let cell = new Cell(domain)
     let mutable playerHas = PlayerHas.NO
     let changed = new Event<_>()
     member _this.Changed = changed.Publish
@@ -718,13 +745,15 @@ type Box(stair:StairKind, owner) =
             | _ -> false
         else
             match stair with
-            | StairKind.LikeL2 -> IsSecondQuestDungeons
+            | StairKind.LikeL2 -> false   // level 2's second item is a floor item (not a basement) in both quests
             | StairKind.LikeL3 -> not(IsSecondQuestDungeons)
             | StairKind.Always -> true
             | StairKind.Never -> false
     member _this.Owner = owner
-    member _this.CellNextFreeKey() = allItemWithHeartShuffleChoiceDomain.NextFreeKey(cell.Current())
-    member _this.CellPrevFreeKey() = allItemWithHeartShuffleChoiceDomain.PrevFreeKey(cell.Current())
+    new(stair, owner) = Box(stair, owner, allItemWithHeartShuffleChoiceDomain)
+    member _this.Domain = domain
+    member _this.CellNextFreeKey() = domain.NextFreeKey(cell.Current())
+    member _this.CellPrevFreeKey() = domain.PrevFreeKey(cell.Current())
     member _this.CellPrev() = 
         cell.Prev()
         dungeonsAndBoxesLastChangedTime.SetNow()
@@ -759,8 +788,11 @@ let sword2Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(P
 let sword3Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in the magical sword cave (this session only, not saved)
 let letterBox = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in the letter cave (this session only, not saved)
 let sword1Box = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // item found in a 'shuffled' wood sword cave (this session only, not saved)
+let hintShopColors = new System.Collections.Generic.Dictionary<int*int, int>()   // overworld tile -> the background color chosen for its hint shop (0 purple, 1 red, 2 green, 3 orange); saved with the tracker
 let shuffledWoodSwordTiles = new System.Collections.Generic.HashSet<int*int>()   // overworld tiles whose wood sword cave holds a shuffled item (this session only)
 // the optional extra 'level 2 staircase' item box (disabled/greyed out until enabled)
+let level9TriggerBox = (let b = Box(StairKind.Never, BoxOwner.None, level9TriggerDomain) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // the level 9 entry rule: empty means the default (all 8 triforces); otherwise the item that opens level 9 (this session only)
+let mutable level9TriforceCount = 8   // how many triforces the default level 9 entry rule needs (scroll the number on the main tracker to change it)
 let level2StairBox = Box(StairKind.Always, BoxOwner.None)   // shows the basement staircase icon like the other basement item slots
 let mutable level2StairBoxEnabled = false
 let level2StairBoxEnabledChanged = new Event<unit>()
@@ -818,13 +850,15 @@ type DungeonTrackerInstance(kind) =
                 for d in getDungeons() do
                     yield! d.Boxes
                     yield d.ExtraFloorBox
+                if kind = DungeonTrackerInstanceKind.DEFAULT then yield finalBoxOf1Or4   // (always include the shared level 1/4 basement box, even if the quest type changed after this list was first built)
+                yield level2StairBox   // the optional extra level 2 staircase slot (its item counts for Item Progress and logic like any other box)
                 yield ladderBox
                 yield armosBox
                 yield sword2Box
                 yield sword3Box
                 yield letterBox
                 yield sword1Box
-                |]
+                |] |> Array.distinct
         allBoxes
     let allBoxProgress = 
         let mutable pct = 0.
@@ -900,7 +934,7 @@ and Dungeon(id,numBoxes) =
         playerComputedStateSummaryForPlayerHasBookChanged.Publish.Add(fun _ -> playerCanSeeMapOfThisDungeonChangeEvent.Trigger())
     member _this.HasBeenLocated() = mapSquareChoiceDomain.NumUses(id) = 1   // WARNING: this being true does NOT mean TrackerModel.mapStateSummary.DungeonLocations.[i] has a legal (non-NOTFOUND) value
     member _this.HasBeenLocatedChanged = hasBeenLocatedChangeEvent.Publish
-    member _this.PlayerHasTriforce() = playerHasTriforce
+    member this.PlayerHasTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE && b.PlayerHas() = PlayerHas.YES))   // (a triforce piece marked as obtained in an item slot counts too)
     member _this.ToggleTriforce() = playerHasTriforce <- not playerHasTriforce; playerHasTriforceChangeEvent.Trigger(playerHasTriforce); dungeonsAndBoxesLastChangedTime.SetNow()
     member _this.PlayerHasTriforceChanged = playerHasTriforceChangeEvent.Publish
     member _this.PlayerHasMapOfThisDungeon with get() = playerHasMap and set(x) = playerHasMap <- x; playerHasMapOfThisDungeonChangeEvent.Trigger(); playerCanSeeMapOfThisDungeonChangeEvent.Trigger()
@@ -925,7 +959,7 @@ and Dungeon(id,numBoxes) =
             let r = 
                 match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
                 | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
-                    if playerHasTriforce then
+                    if this.PlayerHasTriforce() then
                         let mutable numBoxesDone = 0
                         for b in boxes do
                             if b.IsDone() then
@@ -935,7 +969,7 @@ and Dungeon(id,numBoxes) =
                     else
                         false
                 | DungeonTrackerInstanceKind.DEFAULT ->
-                    playerHasTriforce && this.Boxes |> Array.forall (fun b -> b.IsDone()) && (not(this.TriforceIsInItemSlot) || extraFloorBox.IsDone())
+                    this.PlayerHasTriforce() && this.Boxes |> Array.forall (fun b -> b.IsDone()) && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || extraFloorBox.IsDone())   // (the floor item that replaces the triforce only has to be collected if one was recorded)
             let needToNotify = priorComplete <> r
             priorComplete <- r
             if needToNotify then
@@ -1183,11 +1217,27 @@ let decorIconsPack(idents:int list) : int = idents |> List.map (fun i -> (i,fals
 // remove the icon if the tile already has it; otherwise add it (uncollected) if there is room (unchanged when the tile is full)
 let decorIconsToggle(packed:int, ident:int) : int =
     let cur = decorEntriesOf packed
+    // a potion marker draws as two icons (blue and red), so a potion tile holds just one more marker icon, which goes in the middle between them
+    let limit = if ident = ITEMS.BLUEPOTION || (cur |> List.exists (fun (x,_) -> x = ITEMS.BLUEPOTION)) then 2 else MaxDecorIcons
     if ident = ITEMS.HEARTCONTAINER then   // heart containers can repeat on a tile (e.g. a cave with several), each copy checked off separately
-        if cur.Length < MaxDecorIcons then decorEntriesPack (cur @ [(ident,false)]) else packed
+        if cur.Length < limit then decorEntriesPack (cur @ [(ident,false)]) else packed
     elif cur |> List.exists (fun (x,_) -> x = ident) then cur |> List.filter (fun (x,_) -> x <> ident) |> decorEntriesPack
-    elif cur.Length < MaxDecorIcons then decorEntriesPack (cur @ [(ident,false)])
+    elif cur.Length < limit then decorEntriesPack (cur @ [(ident,false)])
     else packed
+// Shop labels: a tile can carry a "SHOP n" text label (n = 1-5), stored in bits 24-26 of the same packed int. The label is just text, not an icon,
+// so it never takes one of the MaxDecorIcons item slots (the shop's items are the normal marker icons on the tile). 0 = no label.
+let MaxShopLabelTiles = 3   // up to 3 tiles per shop number
+let shopLabelOf(packed:int) : int = if packed <= 0 then 0 else (packed >>> 24) &&& 7
+let withShopLabel(packed:int, label:int) : int =
+    let basePacked = if packed <= 0 then 0 else packed &&& 0xFFFFFF
+    let p = basePacked ||| ((label &&& 7) <<< 24)
+    if p = 0 then -1 else p
+let shopLabelCount(label:int) : int =   // how many tiles currently carry this shop label
+    let mutable n = 0
+    for i = 0 to 15 do
+        for j = 0 to 7 do
+            if shopLabelOf owSwordIcons.[i,j] = label then n <- n + 1
+    n
 // collected (checked-off) state of the marker icons on a tile
 let decorIsCollected(packed:int, ident:int) = decorEntriesOf packed |> List.exists (fun (x,c) -> x = ident && c)
 // Some ident: flip that one icon; None: if every icon is collected un-collect them all, otherwise collect them all
@@ -1343,6 +1393,7 @@ let recomputeMapStateSummary() =
                         (owInstance.PowerBraceletable(i,j) && not playerComputedStateSummary.HavePowerBracelet) ||
                         (owInstance.Ladderable(i,j) && not playerComputedStateSummary.HaveLadder) ||
                         (owInstance.Raftable(i,j) && not playerComputedStateSummary.HaveRaft) ||
+                        owInstance.HintLocked(i,j) ||
                         (owInstance.Bombable(i,j) && not(playerProgressAndTakeAnyHearts.PlayerHasBombs.Value())) ||
                         (owInstance.Burnable(i,j) && playerComputedStateSummary.CandleLevel=0) then
                         ()  // not routeworthy, as the player can't uncover the spot... except...
@@ -1687,7 +1738,25 @@ let unreachablePossibleDungeonSpotCount() =
                 if owInstance.Whistleable(x,y) && not(playerComputedStateSummary.HaveRecorder) then
                     count <- count + 1
     count
+// the level 9 entry item the user picked instead of the 8 triforces (-1 = the default rule), and whether it has been collected (any item box holding it, marked as obtained)
+let level9CustomTriggerItem() = (let c = level9TriggerBox.CellCurrent() in if c = ITEMS.TRIFORCE then -1 else c)   // picking the triforce item means the default rule
+let level9TriggerCollected() =
+    let it = level9CustomTriggerItem()
+    it <> -1 &&
+        (DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() |> Array.exists (fun b -> b.CellCurrent() = it && b.PlayerHas() = PlayerHas.YES)
+         || (let sm = playerComputedStateSummary
+             (it = ITEMS.REDRING && sm.RingLevel >= 2) || (it = ITEMS.BLUERING && sm.RingLevel >= 1)   // owned per the item progress (however it was marked)
+             || (it = ITEMS.REDCANDLE && sm.CandleLevel >= 2) || (it = ITEMS.BLUECANDLE && sm.CandleLevel >= 1)
+             || (it = ITEMS.BOW && sm.HaveBow) || (it = ITEMS.SILVERARROW && sm.ArrowLevel >= 2) || (it = ITEMS.WOODARROW && sm.ArrowLevel >= 1)
+             || (it = ITEMS.LADDER && sm.HaveLadder) || (it = ITEMS.RECORDER && sm.HaveRecorder) || (it = ITEMS.RAFT && sm.HaveRaft)
+             || (it = ITEMS.POWERBRACELET && sm.HavePowerBracelet) || (it = ITEMS.KEY && sm.HaveAnyKey) || (it = ITEMS.WAND && sm.HaveWand)
+             || (it = ITEMS.BOOKSHIELD && sm.HaveBookOrShield) || (it = ITEMS.BOOMERANG && sm.BoomerangLevel >= 1) || (it = ITEMS.MAGICBOOMERANG && sm.BoomerangLevel >= 2)
+             || (it = ITEMS.WHITESWORD && sm.SwordLevel >= 2) || (it = ITEMS.MAGICALSWORD && sm.SwordLevel >= 3))
+         || (it >= 0 && it < mapCollectedCount.Length && mapCollectedCount.[it] > 0)   // checked off on the overworld map
+         || [ladderBox; sword2Box; sword3Box; letterBox] |> List.exists (fun b -> b.CellCurrent() = it && b.PlayerHas() = PlayerHas.YES))
 type TriforceAndGoSummary() =
+    let customTrigger = level9CustomTriggerItem() <> -1
+    let customTriggerCollected = level9TriggerCollected()
     // Note: we're just going to assume the player has a sword (or wand in swordless), let's not go nuts with advanced flags and/or unlikely no-sword-but-all-items situations
     let haveBow = playerComputedStateSummary.HaveBow
     let haveSilvers = playerComputedStateSummary.ArrowLevel=2
@@ -1699,11 +1768,16 @@ type TriforceAndGoSummary() =
     let mutable missingDungeonCount = 0
     let tagLevel = 
         for i = 0 to 8 do
-            if not(GetDungeon(i).PlayerHasTriforce()) then
+            if not customTrigger && not(GetDungeon(i).PlayerHasTriforce()) then   // (a custom level 9 entry item replaces the triforce requirement)
                 if not(GetDungeon(i).HasBeenLocated()) then
                     missingDungeonCount <- missingDungeonCount + 1
                 elif i <> 8 then // L9 has no triforce
                     missingTriforceFromLocatedDungeonCount <- missingTriforceFromLocatedDungeonCount + 1
+        // fewer than 8 triforces needed: that many dungeons may be skipped (unlocated ones first)
+        let spare = 8 - level9TriforceCount
+        let skipDungeons = min spare missingDungeonCount
+        missingDungeonCount <- missingDungeonCount - skipDungeons
+        missingTriforceFromLocatedDungeonCount <- max 0 (missingTriforceFromLocatedDungeonCount - (spare - skipDungeons))
         let compute() =
             let mutable score = 100
             score <- score - missingDungeonCount*20                              // big penalty for unlocated dungeon
@@ -1716,7 +1790,9 @@ type TriforceAndGoSummary() =
             if score < 0 then 0 else score
         // you might need e.g. power bracelet or raft to find missing dungeon, so never TAG without being able to locate them all  
         let knowSilvers = haveSilvers || silversKnownToBeInLevel9
-        if missingDungeonCount=0 || unreachableCount=0 then 
+        if customTrigger && not customTriggerCollected then
+            0   // the item that opens level 9 has not been collected yet: nothing to report
+        elif missingDungeonCount=0 || unreachableCount=0 then 
             if haveBow && knowSilvers && haveLadder && haveRecorder then
                 103
             elif haveBow && knowSilvers && haveLadder then
@@ -1727,6 +1803,7 @@ type TriforceAndGoSummary() =
                 compute()
         else
             compute()
+    member _this.CustomTrigger = customTrigger
     member _this.Level = tagLevel  // 103 TAG, 102 probably-TAG, 101 might-be-TAG, 1-100 see features below, 0 not worth reporting
     member _this.HaveBow = haveBow
     member _this.HaveSilvers = haveSilvers
@@ -1777,6 +1854,8 @@ let mutable priorAnyKey = false
 let timelineDataOverworldSpotsRemain = ResizeArray<int*int>()  // (seconds, numSpotsRemain)
 let mutable priorOWSpotsRemain = 0
 // triforce-and-go levels
+let mutable level9EntryAnnouncement = false   // true only while the "level 9 entry rule just became satisfied" announcement is being sent
+let mutable previousLevel9EntryRuleMet = false   // the level 9 entry rule (N triforces, or the item the user picked) was already satisfied at the last check
 let mutable previouslyAnnouncedTriforceAndGo = 0  // 0 = no, 1 = might be, 2 = probably, 3 = certainly triforce-and-go
 let mutable previousCompletedDungeonCount = 0
 let ResetForGroundhogOrRoutersOrFourPlusFourEtc() =
@@ -1799,6 +1878,7 @@ let ResetForGroundhogOrRoutersOrFourPlusFourEtc() =
     priorAnyKey <- false
     // priorOWSpotsRemain // still have
     previouslyAnnouncedTriforceAndGo <- 0
+    previousLevel9EntryRuleMet <- false
     previousCompletedDungeonCount <- 0
     recomputePlayerStateSummary()
 let doesPlayerHaveTriforceAndWhichDungeonIndexIsIt(i) =  // i=0-7, refers to triforce piece 1-8
@@ -1926,6 +2006,17 @@ let allUIEventingLogic(ite : ITrackerEvents) =
         previouslyAnnouncedTriforceAndGo <- tagSummary.Level
         if not justAnnouncedTAG then
             ite.AnnounceTriforceAndGo(triforces, tagSummary)
+            justAnnouncedTAG <- true
+    // the level 9 entry rule has just been satisfied (enough triforces, or the item the user picked was collected): always play the go-time reminder
+    let entryRuleMet = if level9CustomTriggerItem() <> -1 then level9TriggerCollected() else triforces >= level9TriforceCount
+    if entryRuleMet && not previousLevel9EntryRuleMet then
+        level9EntryAnnouncement <- true
+        (try
+            if not justAnnouncedTAG || tagSummary.CustomTrigger then   // (for a custom item, the item + check popup always plays)
+                ite.AnnounceTriforceAndGo(triforces, tagSummary)
+         finally
+            level9EntryAnnouncement <- false)
+    previousLevel9EntryRuleMet <- entryRuleMet
     // blockers - COMBAT
     let calcFromDungeon(item) =
         let mutable fromDungeon = -1

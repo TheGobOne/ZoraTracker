@@ -130,10 +130,28 @@ let TakeAnyNames = [|
     "Contextual_TakeAny_Candle"
     "Contextual_TakeAny_Heart"
     |]
+// the take-any cave's button box (Took Heart / Took Candle / Took Potion / Took Nothing)
+let TakeAnyBoxNames = [|
+    "Contextual_TakeAnyBox_None"
+    "Contextual_TakeAnyBox_Potion"
+    "Contextual_TakeAnyBox_Candle"
+    "Contextual_TakeAnyBox_Heart"
+    |]
+// the Shop flyout (opened from the overworld tile menu): potion shop, then shops 1-4
+let ShopNames = [|
+    "Contextual_Shop_Potion"
+    "Contextual_Shop_1"
+    "Contextual_Shop_2"
+    "Contextual_Shop_3"
+    "Contextual_Shop_4"
+    |]
 let TakeThisNames = [|
     "Contextual_TakeThis_None"
     "Contextual_TakeThis_Candle"
     "Contextual_TakeThis_Sword"
+    "Contextual_TakeThis_ShuffledItem"
+    "Contextual_TakeThis_SwordIcon"
+    "Contextual_TakeThis_Letter"
 |]
 
 [<RequireQualifiedAccess>]
@@ -207,8 +225,8 @@ type GlobalHotkeyTargets =
             let labelChar = if level=9 then '9' elif level=10 then 'S' elif TrackerModel.IsHiddenDungeonNumbers() then (char(int 'A' - 1 + level)) else (char(int '0' + level))
             mkTxt(sprintf "Tab%c" labelChar)
         match this with
-        | GlobalHotkeyTargets.ToggleMagicalSword -> upcast (Graphics.magical_sword_bmp |> Graphics.BMPtoImage)
-        | GlobalHotkeyTargets.ToggleWoodSword    -> upcast (Graphics.brown_sword_bmp |> Graphics.BMPtoImage)
+        | GlobalHotkeyTargets.ToggleMagicalSword -> upcast (Graphics.ow_sword3_item_bmp |> Graphics.BMPtoImage)
+        | GlobalHotkeyTargets.ToggleWoodSword    -> upcast (Graphics.ow_sword1_item_bmp |> Graphics.BMPtoImage)
         | GlobalHotkeyTargets.ToggleBoomBook     -> upcast (Graphics.boom_book_bmp |> Graphics.BMPtoImage)
         | GlobalHotkeyTargets.ToggleBlueCandle   -> upcast (Graphics.blue_candle_bmp |> Graphics.BMPtoImage)
         | GlobalHotkeyTargets.ToggleWoodArrow    -> upcast (Graphics.wood_arrow_bmp |> Graphics.BMPtoImage)
@@ -280,9 +298,10 @@ let OverworldMarkerItems : int[] =
 // 'BookOrShield' is split: the first item slot is now 'Book' (it still displays as the Magical Shield in a boomstick seed); the separate 'Shield' item keeps its own name.
 // (the old 'Item_BookOrShield' name is still accepted in an existing HotKeys.txt)
 // the Item_X hotkeys also work when hovering an overworld tile (toggling that marker icon); the bomb marker is not an item, so it alone gets its own 'OverworldMarker_Bomb' entry
-let OverworldMarkerOwnHotKeys : int[] = [| TrackerModel.DECOR_BOMB |]
+let CLEAR_TILE_HOTKEY = 2000   // pseudo-ident (in the overworld marker hotkey table): hovering a tile and pressing this key clears it completely (marker icons, caves, everything), like the red X in the tile menu
+let OverworldMarkerOwnHotKeys : int[] = [| TrackerModel.DECOR_BOMB; CLEAR_TILE_HOTKEY |]
 let ItemHotKeyName(i:int) = if i = TrackerModel.ITEMS.BOOKSHIELD then "Book" else TrackerModel.ITEMS.AsHotKeyName(i)
-let OverworldMarkerHotKeyName(ident:int) = "OverworldMarker_" + (if ident = TrackerModel.DECOR_BOMB then "Bomb" else ItemHotKeyName(ident))
+let OverworldMarkerHotKeyName(ident:int) = if ident = CLEAR_TILE_HOTKEY then "Overworld_ClearTile" else "OverworldMarker_" + (if ident = TrackerModel.DECOR_BOMB then "Bomb" else ItemHotKeyName(ident))
 let MakeDefaultHotKeyFile(filename:string, isSample) =
     let lines = ResizeArray()
     if isSample then 
@@ -308,8 +327,8 @@ let MakeDefaultHotKeyFile(filename:string, isSample) =
     lines.Add("# ITEMS - these hotkey bindings take effect when mouse-hovering an item box (in the dungeons or the overworld item area),")
     lines.Add("# and also when mouse-hovering an overworld map tile, where they toggle that item's marker icon on the tile (up to 3 per tile)")
     lines.Add("# Note that Book is the first item slot (it shows as the Magical Shield in a boomstick seed); Shield is a separate item. (The old name Item_BookOrShield still works as Item_Book.)")
-    let n = [0..TrackerModel.ITEMS.itemNamesAndCounts.Length-1] |> Seq.map (fun i -> (ItemHotKeyName i).Length + 5) |> Seq.max
-    for i in [0..TrackerModel.ITEMS.itemNamesAndCounts.Length-1] |> List.sortBy (fun i -> (ItemHotKeyName i).ToLowerInvariant()) do
+    let n = [0..TrackerModel.ITEMS.NumBuiltIn-1] |> Seq.map (fun i -> (ItemHotKeyName i).Length + 5) |> Seq.max
+    for i in [0..TrackerModel.ITEMS.NumBuiltIn-1] |> List.sortBy (fun i -> (ItemHotKeyName i).ToLowerInvariant()) do
         lines.Add(pad("Item_" + ItemHotKeyName i,n) + " = ")
     lines.Add(pad("Item_Nothing",n) + " = ")
     lines.Add("")
@@ -345,8 +364,12 @@ let MakeDefaultHotKeyFile(filename:string, isSample) =
         lines.Add(pad(hz.AsHotKeyName(),n) + " = ")
     lines.Add("")
     lines.Add("# CONTEXTUAL CHOICES - these hotkey bindings only take effect when the corresponding menus are on-screen")
-    let n = [ yield! TakeAnyNames; yield! TakeThisNames ] |> Seq.map (fun x -> x.Length) |> Seq.max
+    let n = [ yield! TakeAnyNames; yield! TakeAnyBoxNames; yield! ShopNames; yield! TakeThisNames ] |> Seq.map (fun x -> x.Length) |> Seq.max
     for x in TakeAnyNames do
+        lines.Add(pad(x,n) + " = ")
+    for x in TakeAnyBoxNames do
+        lines.Add(pad(x,n) + " = ")
+    for x in ShopNames do
         lines.Add(pad(x,n) + " = ")
     for x in TakeThisNames do
         lines.Add(pad(x,n) + " = ")
@@ -460,6 +483,8 @@ let HintZoneHotKeyProcessor = new HotKeyProcessor<TrackerModel.HintZone>("HintZo
 // contextual
 let TakeAnyHotKeyProcessor = new HotKeyProcessor<int>("TakeAny")
 let TakeThisHotKeyProcessor = new HotKeyProcessor<int>("TakeThis")
+let TakeAnyBoxHotKeyProcessor = new HotKeyProcessor<int>("TakeAnyBox")
+let ShopHotKeyProcessor = new HotKeyProcessor<int>("Shop")
 // global
 let GlobalHotKeyProcessor = new HotKeyProcessor<GlobalHotkeyTargets>("Global")
 
@@ -487,6 +512,7 @@ let PopulateHotKeyTables() =
         match name with
         | "Item_Nothing"          -> Add(ItemHotKeyProcessor, chOpt, -1)
         | "Overworld_Nothing"     -> Add(OverworldHotKeyProcessor, chOpt, -1)
+        | "Overworld_PotionShop"  -> Add(OverworldHotKeyProcessor, chOpt, TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP)   // old name of Overworld_Shop
         | _ -> 
             let mutable found = false
             for b in TrackerModel.DungeonBlocker.All do
@@ -499,7 +525,7 @@ let PopulateHotKeyTables() =
                         Add(HintZoneHotKeyProcessor, chOpt, hz)
                         found <- true
             if not found then
-                for i = 0 to TrackerModel.ITEMS.itemNamesAndCounts.Length-1 do
+                for i = 0 to TrackerModel.ITEMS.NumBuiltIn-1 do
                     if name = "Item_" + ItemHotKeyName(i) || (i = TrackerModel.ITEMS.BOOKSHIELD && name = "Item_BookOrShield") then
                         Add(ItemHotKeyProcessor, chOpt, i)
                         found <- true
@@ -509,7 +535,7 @@ let PopulateHotKeyTables() =
                         Add(OverworldHotKeyProcessor, chOpt, i)
                         found <- true
             if not found then
-                for ident in OverworldMarkerItems do   // (all names still accepted, for files written by pre-release test builds; they work as extra marker bindings)
+                for ident in Array.append OverworldMarkerItems [| CLEAR_TILE_HOTKEY |] do   // (all names still accepted, for files written by pre-release test builds; they work as extra marker bindings)
                     if name = OverworldMarkerHotKeyName ident then
                         Add(OverworldMarkerHotKeyProcessor, chOpt, ident)
                         found <- true
@@ -536,7 +562,17 @@ let PopulateHotKeyTables() =
                         Add(TakeAnyHotKeyProcessor, chOpt, i)
                         found <- true
             if not found then
-                for i = 0 to 2 do do
+                for i = 0 to 3 do do
+                    if name = TakeAnyBoxNames.[i] then
+                        Add(TakeAnyBoxHotKeyProcessor, chOpt, i)
+                        found <- true
+            if not found then
+                for i = 0 to ShopNames.Length-1 do do
+                    if name = ShopNames.[i] then
+                        Add(ShopHotKeyProcessor, chOpt, i)
+                        found <- true
+            if not found then
+                for i = 0 to TakeThisNames.Length-1 do do
                     if name = TakeThisNames.[i] then
                         Add(TakeThisHotKeyProcessor, chOpt, i)
                         found <- true

@@ -216,11 +216,55 @@ let scaleUpCheckBoxBox(cb:CheckBox, scale) =
 let almostBlack = freeze(new SolidColorBrush(Color.FromRgb(30uy, 30uy, 30uy)))
 let almostBlackHoverFeedback = freeze(new SolidColorBrush(Color.FromRgb(30uy, 50uy, 50uy)))
 let makeButton(text, fontSizeOpt, fgOpt) =
-    let tb = new TextBox(Text=text, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center, BorderThickness=Thickness(0.), Background=almostBlack)   // text vertically centered in every tracker button
+    let tb = new TextBox(Text=text, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center, BorderThickness=Thickness(0.), Background=Brushes.Transparent)   // text vertically centered in every tracker button (transparent: the button's own rounded fill shows through)
     match fontSizeOpt with | None -> () | Some x -> tb.FontSize <- x
     match fgOpt with | None -> () | Some x -> tb.Foreground <- x
     let button = new Button(Content=tb, HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch)
     button
+
+// the rounded dark button look used across the app (thin gray border, 4px corners, dark fill, orange border on hover); border/fill come from the Button's own BorderBrush/Background
+let roundedBorderBrush = freeze(new SolidColorBrush(Color.FromRgb(58uy,58uy,58uy)))
+let roundedButtonTemplate =
+    let xaml = "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'><Border x:Name='bd' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' Padding='{TemplateBinding Padding}' CornerRadius='4' SnapsToDevicePixels='True'><ContentPresenter HorizontalAlignment='{TemplateBinding HorizontalContentAlignment}' VerticalAlignment='{TemplateBinding VerticalContentAlignment}'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='BorderBrush' Value='#FFA31A'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='bd' Property='Background' Value='#241A0A'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter TargetName='bd' Property='Opacity' Value='0.45'/></Trigger></ControlTemplate.Triggers></ControlTemplate>"
+    System.Windows.Markup.XamlReader.Parse(xaml) :?> ControlTemplate
+// rounded checkbox: dark rounded box, orange fill with a dark check when checked, orange dash when indeterminate
+let roundedCheckBoxTemplate =
+    let xaml = "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='CheckBox'><Grid Background='Transparent' SnapsToDevicePixels='True'><Grid.ColumnDefinitions><ColumnDefinition Width='Auto'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions><Border x:Name='box' Width='14' Height='14' CornerRadius='3' BorderThickness='1.5' BorderBrush='#8A8A8A' Background='#171717' VerticalAlignment='Center'><Path x:Name='mark' Data='M 2,5.5 L 4.6,8.2 L 9,2.5' Stroke='#0C0C0C' StrokeThickness='2' Visibility='Collapsed' HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ContentPresenter Grid.Column='1' Margin='{TemplateBinding Padding}' VerticalAlignment='Center' HorizontalAlignment='Left' RecognizesAccessKey='True'/></Grid><ControlTemplate.Triggers><Trigger Property='IsChecked' Value='True'><Setter TargetName='box' Property='Background' Value='#FFA31A'/><Setter TargetName='box' Property='BorderBrush' Value='#FFA31A'/><Setter TargetName='mark' Property='Visibility' Value='Visible'/></Trigger><Trigger Property='IsChecked' Value='{x:Null}'><Setter TargetName='box' Property='Background' Value='#FFA31A'/><Setter TargetName='box' Property='BorderBrush' Value='#FFA31A'/><Setter TargetName='mark' Property='Data' Value='M 2,5.5 L 9,5.5'/><Setter TargetName='mark' Property='Visibility' Value='Visible'/></Trigger><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='box' Property='BorderBrush' Value='#FFA31A'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate>"
+    System.Windows.Markup.XamlReader.Parse(xaml) :?> ControlTemplate
+let roundedTextBoxTemplate =
+    let xaml = "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='TextBox'><Border x:Name='bd' Background='#171717' BorderBrush='#3A3A3A' BorderThickness='1' CornerRadius='6' SnapsToDevicePixels='True'><ScrollViewer x:Name='PART_ContentHost' Focusable='False' HorizontalScrollBarVisibility='Hidden' VerticalScrollBarVisibility='Hidden'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bd' Property='BorderBrush' Value='#FFA31A'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='bd' Property='BorderBrush' Value='#FFA31A'/></Trigger></ControlTemplate.Triggers></ControlTemplate>"
+    System.Windows.Markup.XamlReader.Parse(xaml) :?> ControlTemplate
+let styleRoundedTextBox(t:TextBox) = t.Template <- roundedTextBoxTemplate
+let roundedButtonFill = freeze(new SolidColorBrush(Color.FromRgb(23uy,23uy,23uy)))
+// setters that give a Button the rounded look; also used inside the dialog-specific button styles that replace the app-wide default
+let addRoundedButtonSetters(style:Style) =
+    style.Setters.Add(new Setter(Control.TemplateProperty, roundedButtonTemplate))
+    style.Setters.Add(new Setter(Control.BorderBrushProperty, roundedBorderBrush))
+    style.Setters.Add(new Setter(Control.BackgroundProperty, roundedButtonFill))
+    style.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Orange))
+    style.Setters.Add(new Setter(Control.PaddingProperty, Thickness(0.)))
+    style.Setters.Add(new Setter(FrameworkElement.FocusVisualStyleProperty, null))
+// app-wide defaults: every Button and CheckBox gets the rounded look unless a window / panel provides its own style
+let installAppWideStyles() =
+    let app = System.Windows.Application.Current
+    if not(isNull app) then
+        let bs = new Style(typeof<Button>)
+        addRoundedButtonSetters(bs)
+        app.Resources.[typeof<Button>] <- bs
+        let cs = new Style(typeof<CheckBox>)
+        cs.Setters.Add(new Setter(Control.TemplateProperty, roundedCheckBoxTemplate))
+        cs.Setters.Add(new Setter(Control.PaddingProperty, Thickness(4.,0.,0.,0.)))
+        cs.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Orange))
+        cs.Setters.Add(new Setter(FrameworkElement.FocusVisualStyleProperty, null))
+        app.Resources.[typeof<CheckBox>] <- cs
+let styleRoundedButton(b:Button) =
+    b.Template <- roundedButtonTemplate
+    b.BorderBrush <- roundedBorderBrush
+    b.Background <- freeze(new SolidColorBrush(Color.FromRgb(23uy,23uy,23uy)))
+    match b.Content with
+    | :? TextBox as t -> t.Background <- Brushes.Transparent
+    | :? Canvas as c -> c.Background <- Brushes.Transparent
+    | _ -> ()
 
 let makeColor(rgb) =
     let r = (rgb &&& 0xFF0000) / 0x10000
@@ -812,6 +856,7 @@ let boots_bmp = bmpFromBase64 "iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAABq
 let magical_boots_bmp = bmpFromBase64 "iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAABkElEQVR4nM2UuUpDQRSGv5m5XJcEF0QQFGxMYxHb4AJpfAUVLXwCewt7KwvRIk/gWtvnCYJNELQIgqAIwS2Cy50Zi7lBSCbLFRF/GC53me/8Z+45B/5Cto201p/WWpvP54cAlFJeRuB7+PIGl7egpLsXwKeGsUGYGAFr2xvzQiv3sHUC6V7QFgIJj6+wPg9rC2B+Ap0eh6MNEAJs7NRYCGPn9QwSQbWF2puDgrtqA+kQ+tvzWkOvbmHrFFI9zqGS8PQKa7OwMucCJIYKAaFyqw4Ng85p19XyM+tZ3arL2Mn0f6BSSqGUQtTLo0HeH9VJtVrtQ2vd8n1iqAVyudxUOtV3XS6Xn6vVqrENfZso/SCQgQD293bPi8XiQzabHWwEdg01BvpDKF7A5iFU7k1kjIkKhcJxqVQ6aArugwhcoSsJIjYi46Fy8w53TzJI9UAmk1mMt6x2hEbGASLt5oDge7AIATtnbjZsL5toZrJ5vxc6OgBLOdeavk4SwEcEY8MykJ4DbCo06zv5DhKtCvY39QWjQ6CiSDEc2gAAAABJRU5ErkJggg=="
 let boomerangOrBootsBmp() = if TrackerModel.BootsReplaceBoomerangs then boots_bmp else boomerang_bmp
 let magicBoomerangOrMagicalBootsBmp() = if TrackerModel.BootsReplaceBoomerangs then magical_boots_bmp else magic_boomerang_bmp
+let customItemBmps : System.Drawing.Bitmap[] = Array.zeroCreate 16   // the user's ExtraIcons-folder icons, resized to item-icon size (filled in by DrawingLayer.applyCustomMenuIcons)
 let allItemBMPs = [| book_bmp; boomerang_bmp; bow_bmp; power_bracelet_bmp; ladder_bmp; magic_boomerang_bmp; key_bmp; raft_bmp; recorder_bmp; red_candle_bmp; red_ring_bmp; silver_arrow_bmp; wand_bmp; white_sword_bmp |]
 let allItemBMPsWithHeartShuffle = [| yield! allItemBMPs; for _i = 0 to 8 do yield heart_container_bmp |]
 
@@ -945,6 +990,45 @@ let dontCareBmp = new System.Drawing.Bitmap(5*3,9*3)
 
 // each overworld map tile may have multiple icons that can represent it (e.g. dungeon 1 versus dungeon A)
 // we store a table, where the array index is the mapSquareChoiceDomain index of the general entry type, and the value there is a list of all possible icons
+// The sword cave icons (5x9 art pixels, 3x3 screen pixels each) without the brown cave floor: the number/letter becomes white with a black outline,
+// and the rest of the brown is transparent. Art that has no brown (already restyled) is returned unchanged.
+let restyleSwordCard(bmp:System.Drawing.Bitmap) : System.Drawing.Bitmap =
+    let isBrown(c:System.Drawing.Color) = c.A = 255uy && c.R = 185uy && c.G = 122uy && c.B = 87uy
+    let isBlack(c:System.Drawing.Color) = c.A = 255uy && c.R = 0uy && c.G = 0uy && c.B = 0uy
+    let cw, ch = bmp.Width/3, bmp.Height/3
+    let cell x y = bmp.GetPixel(x*3, y*3)
+    let mutable anyBrown = false
+    for x = 0 to cw-1 do
+        for y = 0 to ch-1 do
+            if isBrown (cell x y) then anyBrown <- true
+    if not anyBrown then bmp
+    else
+        let r = new System.Drawing.Bitmap(bmp.Width, bmp.Height)
+        for x = 0 to cw-1 do
+            for y = 0 to ch-1 do
+                let c = cell x y
+                let nc =
+                    if isBlack c then System.Drawing.Color.White
+                    elif isBrown c then
+                        let mutable nearGlyph = false
+                        for dx = -1 to 1 do
+                            for dy = -1 to 1 do
+                                let nx, ny = x+dx, y+dy
+                                if nx>=0 && nx<cw && ny>=0 && ny<ch && isBlack (cell nx ny) then nearGlyph <- true
+                        if nearGlyph then System.Drawing.Color.Black else System.Drawing.Color.Transparent
+                    else c
+                for dx = 0 to 2 do
+                    for dy = 0 to 2 do
+                        r.SetPixel(x*3+dx, y*3+dy, nc)
+        r
+// a darker copy that keeps transparent pixels transparent
+let darkenKeepAlpha (pct:float) (bmp:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(bmp.Width,bmp.Height)
+    for px = 0 to bmp.Width-1 do
+        for py = 0 to bmp.Height-1 do
+            let c = bmp.GetPixel(px,py)
+            r.SetPixel(px, py, System.Drawing.Color.FromArgb(int c.A, int(float c.R * pct), int(float c.G * pct), int(float c.B * pct)))
+    r
 // MapStateProxy will eventually be responsible for 'decoding' the current tracker state into the appropriate icon
 let theInteriorBmpTable = Array.init (TrackerModel.dummyOverworldTiles.Length) (fun _ -> ResizeArray())
 do
@@ -989,14 +1073,14 @@ do
         theInteriorBmpTable.[i+9].Add(bmp)
         )
     // 13  sword3
-    theInteriorBmpTable.[13].Add(getInteriorIconFromStrip(0))
-    theInteriorBmpTable.[13].Add(getInteriorIconFromStrip(0) |> darkenImpl 0.6)
+    theInteriorBmpTable.[13].Add(restyleSwordCard(getInteriorIconFromStrip(0)))
+    theInteriorBmpTable.[13].Add(restyleSwordCard(getInteriorIconFromStrip(0)) |> darkenKeepAlpha 0.6)
     // 14  sword2
-    theInteriorBmpTable.[14].Add(getInteriorIconFromStrip(1))
-    theInteriorBmpTable.[14].Add(getInteriorIconFromStrip(1) |> darkenImpl 0.6)
+    theInteriorBmpTable.[14].Add(restyleSwordCard(getInteriorIconFromStrip(1)))
+    theInteriorBmpTable.[14].Add(restyleSwordCard(getInteriorIconFromStrip(1)) |> darkenKeepAlpha 0.6)
     // 15  sword1
-    theInteriorBmpTable.[15].Add(getInteriorIconFromStrip(2))
-    theInteriorBmpTable.[15].Add(getInteriorIconFromStrip(2) |> darkenImpl 0.6)
+    theInteriorBmpTable.[15].Add(restyleSwordCard(getInteriorIconFromStrip(2)))
+    theInteriorBmpTable.[15].Add(restyleSwordCard(getInteriorIconFromStrip(2)) |> darkenKeepAlpha 0.6)
     // 16-23  item shops (as single-item icons)
     for i = 0 to TrackerModel.MapSquareChoiceDomainHelper.NUM_ITEMS-1 do
         let bmp = new System.Drawing.Bitmap(5*3,9*3)
@@ -1034,7 +1118,14 @@ do
     theInteriorBmpTable.[28].Add(getInteriorIconFromStrip(12))
     theInteriorBmpTable.[28].Add(getInteriorIconFromStrip(12) |> darkenImpl 0.7)
     // 29  money making game
-    theInteriorBmpTable.[29].Add(getInteriorIconFromStrip(10))
+    // (the brown top and bottom edge of the card is filled in with the card's own light gray)
+    theInteriorBmpTable.[29].Add(
+        let b = getInteriorIconFromStrip(10)
+        for px = 0 to b.Width-1 do
+            for py = 0 to b.Height-1 do
+                let c = b.GetPixel(px,py)
+                if c.R = 185uy && c.G = 122uy && c.B = 87uy then b.SetPixel(px, py, System.Drawing.Color.FromArgb(255, 228, 228, 228))
+        b)
     // 30  letter
     theInteriorBmpTable.[30].Add(getInteriorIconFromStrip(13))
     theInteriorBmpTable.[30].Add(getInteriorIconFromStrip(13) |> darkenImpl 0.7)
@@ -1168,8 +1259,9 @@ do
     theInteriorBmpTable.[34].[0] <- r
 // the overworld sword tile icons (1/2/3), used for the swords in the dungeon item menus
 // the thin, tall overworld cave icon (15x27) scaled to fit the 21-tall item cell: a 12x21 icon centered in the cell, no brown fill around it
-let private swordMenuPixel(c:System.Drawing.Color) = c   // sword icons keep their brown cave background and black number
-let swordIconAsItem(interior:System.Drawing.Bitmap) =
+let private swordMenuPixel(c:System.Drawing.Color) = c
+let swordIconAsItem(interior0:System.Drawing.Bitmap) =
+    let interior = restyleSwordCard interior0
     let r = new System.Drawing.Bitmap(21,21)
     for px = 0 to 20 do
         for py = 0 to 20 do
@@ -1181,7 +1273,8 @@ let swordIconAsItem(interior:System.Drawing.Bitmap) =
             r.SetPixel(4 + x, y, swordMenuPixel(interior.GetPixel(sx, sy)))
     r
 // the same icon at its natural 15x27 size (3x3 screen pixels per art pixel), used in the (taller) top row of the dungeon item menu
-let swordMenuBmp(interior:System.Drawing.Bitmap) =
+let swordMenuBmp(interior0:System.Drawing.Bitmap) =
+    let interior = restyleSwordCard interior0
     let r = new System.Drawing.Bitmap(15,27)
     for x = 0 to 14 do
         for y = 0 to 26 do
@@ -1196,7 +1289,7 @@ let ow_sword3_item_bmp = swordIconAsItem(theInteriorBmpTable.[13].[0])
 // the overworld 4th-sword ('4') and progressive-sword ('P') icons: same pixel art as WPFUI.extraSwordIconBmp
 let private extraSwordInterior(isProg:bool) : System.Drawing.Bitmap =
     let brown = System.Drawing.Color.FromArgb(185,122,87)
-    let blade = if isProg then System.Drawing.Color.FromArgb(29,148,65) else System.Drawing.Color.FromArgb(255,165,0)
+    let blade = if isProg then System.Drawing.Color.FromArgb(29,148,65) else System.Drawing.Color.FromArgb(128,128,255)
     let hilt = if isProg then System.Drawing.Color.FromArgb(136,0,21) else System.Drawing.Color.White
     let glyph = if isProg then [| "abbba"; "ababa"; "abbba"; "abaaa"; "abaaa" |] else [| "ababa"; "ababa"; "abbba"; "aaaba"; "aaaba" |]
     let rows = Array.append (Array.append [| "aaaaa" |] glyph) [| "aaaXa"; "HHHXX"; "aaaXa" |]
@@ -1206,7 +1299,7 @@ let private extraSwordInterior(isProg:bool) : System.Drawing.Bitmap =
             let c = 
                 match rows.[y].[x] with
                 | 'b' -> System.Drawing.Color.Black
-                | 'X' -> blade
+                | 'X' -> (if isProg || (x + y) % 2 = 0 then blade else System.Drawing.Color.FromArgb(0,0,168))   // the 4th sword: checkered light / dark blue on the guard side, white on the left
                 | 'H' -> hilt
                 | _ -> brown
             for dx = 0 to 2 do
@@ -1217,6 +1310,19 @@ let ow_sword4_item_bmp = swordIconAsItem(extraSwordInterior false)
 let ow_progressive_item_bmp = swordIconAsItem(extraSwordInterior true)
 let ow_sword4_menu_bmp = swordMenuBmp(extraSwordInterior false)
 let ow_progressive_menu_bmp = swordMenuBmp(extraSwordInterior true)
+// the full 15x27 sword icons with a grey (instead of black) outline around the number/letter: shown in the sword item boxes
+let swordBoxBmp(menuBmp:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(menuBmp.Width, menuBmp.Height)
+    for x = 0 to r.Width-1 do
+        for y = 0 to r.Height-1 do
+            let c = menuBmp.GetPixel(x, y)
+            r.SetPixel(x, y, (if c.A = 255uy && c.R < 30uy && c.G < 30uy && c.B < 30uy then System.Drawing.Color.FromArgb(150,150,150) else c))
+    r
+let ow_sword1_box_bmp = swordBoxBmp ow_sword1_menu_bmp
+let ow_sword2_box_bmp = swordBoxBmp ow_sword2_menu_bmp
+let ow_sword3_box_bmp = swordBoxBmp ow_sword3_menu_bmp
+let ow_sword4_box_bmp = swordBoxBmp ow_sword4_menu_bmp
+let ow_progressive_box_bmp = swordBoxBmp ow_progressive_menu_bmp
 let theFullTileBmpTable = Array.init theInteriorBmpTable.Length (fun _ -> ResizeArray())
 let initFull() =
     let len = theInteriorBmpTable.Length
@@ -1336,19 +1442,21 @@ do
 
 let swordLevelToBmp(swordLevel) =
     match swordLevel with
-    | 0 -> greyscale magical_sword_bmp
-    | 1 -> brown_sword_bmp
-    | 2 -> white_sword_bmp
-    | 3 -> magical_sword_bmp
+    | 0 -> greyscale ow_sword1_item_bmp
+    | 1 -> ow_sword1_item_bmp
+    | 2 -> ow_sword2_item_bmp
+    | 3 -> ow_sword3_item_bmp
     | _ -> failwith "bad SwordLevel"
 // the white sword with a yellow handle (instead of its usual blue one): shown in the item progress bar once a 4th sword has been collected
-let white_sword4_bmp =
-    let r = new System.Drawing.Bitmap(white_sword_bmp.Width, white_sword_bmp.Height)
-    for x = 0 to r.Width-1 do
-        for y = 0 to r.Height-1 do
-            let c = white_sword_bmp.GetPixel(x, y)
-            r.SetPixel(x, y, (if c.R = 128uy && c.G = 128uy && c.B = 255uy then System.Drawing.Color.FromArgb(255,242,0) else c))
-    r
+let white_sword4_bmp = ow_sword4_item_bmp   // (the overworld sword icons are used everywhere; there are no plain sword pictures)
+// the overworld cave-style sword icons (the 4th sword has a blue handle), used instead of the plain sword pictures in the item progress bar and popouts
+let swordLevelToOwBmp(swordLevel) =
+    match swordLevel with
+    | 0 -> greyscale ow_sword1_item_bmp   // no sword yet: the sword 1 icon, greyed out
+    | 1 -> ow_sword1_item_bmp
+    | 2 -> ow_sword2_item_bmp
+    | 3 -> ow_sword3_item_bmp
+    | _ -> failwith "bad SwordLevel"
 let ringLevelToBmp(ringLevel) =
     match ringLevel with
     | 0 -> greyscale red_ring_bmp
@@ -1364,7 +1472,7 @@ let blockers_gsc = new GradientStopCollection([new GradientStop(Color.FromArgb(2
 let blockers_maybeBG = new LinearGradientBrush(blockers_gsc, Point(0.,0.), Point(1.,1.))
 let blockerHardCanonicalBMP(current) = 
     match current with
-    | TrackerModel.DungeonBlocker.COMBAT -> white_sword_bmp
+    | TrackerModel.DungeonBlocker.COMBAT -> ow_sword2_item_bmp
     | TrackerModel.DungeonBlocker.BOW_AND_ARROW | TrackerModel.DungeonBlocker.MAYBE_BOW_AND_ARROW -> bow_and_arrow_bmp
     | TrackerModel.DungeonBlocker.RECORDER | TrackerModel.DungeonBlocker.MAYBE_RECORDER -> recorder_bmp
     | TrackerModel.DungeonBlocker.LADDER | TrackerModel.DungeonBlocker.MAYBE_LADDER -> ladder_bmp

@@ -188,9 +188,7 @@ let unmarkRemarkBehavior(cm:CustomComboBoxes.CanvasManager, (_i,_j,hk), boxViews
     let dungeon = TrackerModel.GetDungeon(dungeonIndex)
     let blockerLogic(maybe:TrackerModel.DungeonBlocker) =
         let full = maybe.HardCanonical()
-        if not(full.PlayerCouldBeBlockedByThis()) then
-            Graphics.ErrorBeepWithReminderLogText(sprintf "Tried to set blocker %s, but you already have item which unblocks it" (full.AsHotKeyName()))
-        elif dungeonIndex = 8 then  
+        if dungeonIndex = 8 then  
             Graphics.ErrorBeepWithReminderLogText("Blockers cannot be marked for dungeon 9")
         else
             // NOTE: this logic ignores Blockers' AppliesTo info
@@ -247,6 +245,7 @@ let unmarkRemarkBehavior(cm:CustomComboBoxes.CanvasManager, (_i,_j,hk), boxViews
     | Some(Choice1Of4(RoomType.DoubleMoat)) 
     | Some(Choice1Of4(RoomType.LavaMoat)) 
     | Some(Choice1Of4(RoomType.RightMoat)) 
+    | Some(Choice1Of4(RoomType.Tee)) 
     | Some(Choice1Of4(RoomType.TopMoat)) -> 
         blockerLogic(TrackerModel.DungeonBlocker.MAYBE_LADDER)
     | Some(Choice1Of4(RoomType.HungryGoriyaMeatBlock)) -> 
@@ -408,8 +407,10 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
         sp.Children.Add(c) |> ignore
     sp.Margin <- Thickness(SPM)
     // dynamic highlight
-    let line,triangle = Graphics.makeArrow(30.*float dungeonIndex+15., 36.+float(d.Boxes.Length+1)*30., pos.X+21., pos.Y-3., yellow)
-    let rect = new Shapes.Rectangle(Width=36., Height=6.+float(d.Boxes.Length+1+if TrackerModel.IsHiddenDungeonNumbers()then 1 else 0)*30., Stroke=yellow, StrokeThickness=3.)
+    // (level 2's optional staircase slot and level 9's optional floor item slot make the column one slot taller on the main tracker)
+    let extraSlots = (if level = 2 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled && not TrackerModel.level9FloorBoxEnabled then 1 else 0) + (if level = 9 && TrackerModel.level9FloorBoxEnabled then 1 else 0)
+    let line,triangle = Graphics.makeArrow(30.*float dungeonIndex+15., 36.+float(d.Boxes.Length+1+extraSlots)*30., pos.X+21., pos.Y-3., yellow)
+    let rect = new Shapes.Rectangle(Width=36., Height=6.+float(d.Boxes.Length+1+extraSlots+if TrackerModel.IsHiddenDungeonNumbers()then 1 else 0)*30., Stroke=yellow, StrokeThickness=3.)
     line.Opacity <- 0.
     triangle.Opacity <- 0.
     rect.Opacity <- 0.
@@ -695,7 +696,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                     for i=6 to 8 do
                         pressQuestButton(i, true)
             )
-        canvasAdd(dungeonTabsWholeCanvas, fqcb, 402., 0.) 
+        canvasAdd(dungeonTabsWholeCanvas, fqcb, 402., 3.) 
         sqcb.Click.Add(fun _ -> 
             let SI = dungeonTabs.SelectedIndex
             if SI=9 then                                        // pressing SQ on summary tab turns them all on or all off
@@ -711,7 +712,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                     for i=6 to 8 do
                         pressQuestButton(i, false)
             )
-        canvasAdd(dungeonTabsWholeCanvas, sqcb, 426., 0.) 
+        canvasAdd(dungeonTabsWholeCanvas, sqcb, 426., 3.) 
 
     let levelTabs = Array.zeroCreate 9
     let contentCanvasesWithBadYOffsets = Array.zeroCreate 9
@@ -934,7 +935,6 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                     async {
                         let! who = PieMenus.IconChoiceBoxAsync(cm, "", [ "ganon", bigIcon Graphics.ganon_bmp; "zelda", bigIcon Graphics.zelda_bmp ])
                         if not(isNull who) then
-                            let name = if who = "ganon" then "Ganon" else "Zelda"
                             let! dir = PieMenus.IconChoiceBoxAsync(cm, "", [ "NW", dirText "NW"; "NE", dirText "NE"; "SE", dirText "SE"; "SW", dirText "SW"; "none", dirText "Clear" ])
                             if not(isNull dir) then
                                 let q = match dir with | "NW" -> 0 | "NE" -> 1 | "SE" -> 2 | "SW" -> 3 | _ -> -1
@@ -1497,6 +1497,9 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
             w.Content <- sp
             ok.Click.Add(fun _ -> 
                 TrackerModel.CustomLevelName <- tb.Text.Trim().ToUpperInvariant()
+                if TrackerModel.CustomLevelName <> "" then   // (remembered for next time, along with the start screen choices)
+                    TrackerModelOptions.SavedCustomLevelName <- TrackerModel.CustomLevelName
+                    TrackerModelOptions.writeSettings()
                 customLevelNameChanged.Trigger()
                 w.DialogResult <- System.Nullable<bool>(true))
             w.Loaded.Add(fun _ -> tb.Focus() |> ignore; tb.SelectAll())
@@ -1653,6 +1656,37 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                     else false
                                 else false
 
+                            // the Princess Room has unbombable walls on its left, top and right: mark those three doors as solid walls when it is placed
+                            let princessWallsChanged =
+                                if newState.RoomType = RoomType.PrincessRoom && originalState.RoomType <> RoomType.PrincessRoom then
+                                    let walls = [ if i > 0 then yield horizontalDoors.[i-1,j]
+                                                  if i < 7 then yield horizontalDoors.[i,j]
+                                                  if j > 0 then yield verticalDoors.[i,j-1] ]
+                                    let mutable changed = false
+                                    for door in walls do
+                                        if door.State <> Dungeon.DoorState.NO then
+                                            door.State <- Dungeon.DoorState.NO
+                                            changed <- true
+                                    changed
+                                else false
+
+                            // placing a ladder-requiring room (and not having the ladder) puts a ladder in this level's first blocker box
+                            if level >= 1 && level <= 8 && newState.RoomType <> originalState.RoomType && not TrackerModel.playerComputedStateSummary.HaveLadder && not (TrackerModelOptions.isCurrentlyApplyingRemoteUpdate()) then
+                                match newState.RoomType with
+                                | RoomType.Chevy | RoomType.TopMoat | RoomType.RightMoat | RoomType.LavaMoat | RoomType.Tee | RoomType.CircleMoat | RoomType.DoubleMoat ->
+                                    let di = level - 1
+                                    let get(k) = TrackerModel.DungeonBlockersContainer.GetDungeonBlocker(di, k)
+                                    let n = TrackerModel.DungeonBlockersContainer.MAX_BLOCKERS_PER_DUNGEON
+                                    let hasLadder = [0..n-1] |> List.exists (fun k -> get k = TrackerModel.DungeonBlocker.LADDER)
+                                    if not hasLadder then
+                                        let slot =
+                                            if get 0 = TrackerModel.DungeonBlocker.NOTHING || get 0 = TrackerModel.DungeonBlocker.MAYBE_LADDER then Some 0
+                                            else [1..n-1] |> List.tryFind (fun k -> get k = TrackerModel.DungeonBlocker.NOTHING)
+                                        match slot with
+                                        | Some k -> TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, k, TrackerModel.DungeonBlocker.LADDER)
+                                        | None -> ()
+                                | _ -> ()
+
                             //let rendered = roomStates.[i,j].CurrentDisplayEx(usedTransports)
                             //System.Diagnostics.Debug.WriteLine(sprintf "[SetNewValue] Render preview: IsComplete = %b" newState.IsComplete)
 
@@ -1660,7 +1694,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                             redraw()
                             // Only redraw doors when something actually changed: a transport was added/removed
                             // (already causes redrawAllRooms above) or door inference set a new door state.
-                            if removedTransport || addedTransport || doorInferenceChanged then
+                            if removedTransport || addedTransport || doorInferenceChanged || princessWallsChanged then
                                 redrawAllDoors()
                             animateDungeonRoomTile(i,j)
                             if not popupIsActive then
@@ -1753,6 +1787,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                             justUnmarked <- Some(i, j, choice1 roomType)
                                         else
                                             room.RoomType <- roomType
+                                            if roomType = RoomType.BombUpgrade then room.IsComplete <- false   // starts un-collected: blue dot on the level number
                                             urb(Some(choice1 roomType))
                                         SetNewValue(room)
                                     with :? System.InvalidCastException -> ()
@@ -2269,13 +2304,17 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 n.FontSize <- n.FontSize / 3.
                 n.Width <- n.Width / 3.
                 n.Height <- n.Height / 3.
-                canvasAdd(c, n, 0., float(TH/3))
+                let numeralTop = float h / 2. - 60.   // the numeral and the note under it are centered in the cell together
+                canvasAdd(c, n, (float w - n.Width) / 2., numeralTop)
                 canvasAdd(mini, c, 0., 0.)
                 let origNumeralColor = n.Foreground
                 let notFoundText = new TextBox(Text="not yet found",Foreground=origNumeralColor,Background=Brushes.Black,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.),FontSize=12.)
                 let completeText = new TextBox(Text="complete",Foreground=Brushes.Lime,Background=Brushes.Black,IsReadOnly=true,IsHitTestVisible=false,BorderThickness=Thickness(0.))
-                canvasAdd(c, notFoundText, 30., 85.)
-                canvasAdd(c, completeText, 40., 85.)
+                let placeNote(tbx:TextBox) =
+                    tbx.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+                    canvasAdd(c, tbx, (float w - tbx.DesiredSize.Width) / 2., numeralTop + 77.)
+                placeNote notFoundText
+                placeNote completeText
                 let miniContent = new Shapes.Rectangle(Width=float w, Height=float h, Fill=new VisualBrush(contentCanvases.[i]))
                 canvasAdd(c, miniContent, 0., 0.)
                 let decide() =
@@ -2387,13 +2426,13 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                 updateModeText()                    
                 )
             button
-        let text = new TextBox(Text="Dungeon Summary\n\nHover to preview tab\n\nClick to switch tab", Margin=Thickness(3.),
-                               Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.),
-                               FontSize=12., HorizontalContentAlignment=HorizontalAlignment.Center)
-        let dp = new DockPanel(Background=Brushes.Black, LastChildFill=true)
-        DockPanel.SetDock(summaryModeButton, Dock.Top)
+        // the mode button and the three lines of help text, centered in the cell (horizontally and vertically) with even spacing
+        let dp = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
+        summaryModeButton.HorizontalAlignment <- HorizontalAlignment.Center
+        summaryModeButton.Margin <- Thickness(0.,0.,0.,14.)
         dp.Children.Add(summaryModeButton) |> ignore
-        dp.Children.Add(text) |> ignore
+        for line in ["Dungeon Summary"; "Hover to preview tab"; "Click to switch tab"] do
+            dp.Children.Add(new TextBlock(Text=line, Foreground=Brushes.Orange, FontSize=12., TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,0.,0.,14.), IsHitTestVisible=false)) |> ignore
         let tb = new Border(Width=float w, Height=float h, Background=Brushes.Black, Child=dp)
         makeMidiPreviewBehavior(8, tb)
         Graphics.gridAdd(g, tb, 0, 0)

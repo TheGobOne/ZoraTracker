@@ -118,6 +118,23 @@ let ExtraIconsResourceTable =
             anyErrorMessageRelatedToExtraIcons <- if currentFilename<>"" then sprintf "While loading\n%s\nfrom ExtraIcons folder:\n%s" currentFilename (e.ToString()) else (e.ToString())
             [| |]
     dict arr
+// the ExtraIcons-folder icons that can also be offered in the item-box and overworld tile menus (first 16 by name), resized to item-icon size
+let customMenuIconNames = ExtraIconsResourceTable.Keys |> Seq.sortBy (fun k -> k.ToLowerInvariant()) |> Seq.truncate 16 |> Seq.toArray
+let applyCustomMenuIcons() =
+    let n = customMenuIconNames.Length
+    for k = 0 to n-1 do
+        if Graphics.customItemBmps.[k] = null then
+            let src = ExtraIconsResourceTable.[customMenuIconNames.[k]]
+            let dst = new System.Drawing.Bitmap(21, 21, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+            use g = System.Drawing.Graphics.FromImage(dst)
+            g.InterpolationMode <- System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic
+            g.DrawImage(src, 0, 0, 21, 21)
+            Graphics.customItemBmps.[k] <- dst
+        TrackerModel.ITEMS.customNames.[k] <- customMenuIconNames.[k]
+    let on = TrackerModelOptions.Overworld.AddCustomIconsToMenus.Value
+    for k = 0 to TrackerModel.ITEMS.CUSTOM_COUNT-1 do
+        TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(TrackerModel.ITEMS.CUSTOM_BASE + k, (if on && k < n then 27 else 0))
+    TrackerModel.ITEMS.customMenuCount <- (if on then n else 0)
 let ZTrackerResourceTable = 
     [|
         yield! [|
@@ -139,10 +156,10 @@ let ZTrackerResourceTable =
             "MagicShield", Graphics.magic_shield_bmp
             "BoomBook", Graphics.boom_book_bmp
             "PowerBracelet", Graphics.power_bracelet_bmp
-            "WhiteSword", Graphics.white_sword_bmp
+            "WhiteSword", Graphics.ow_sword2_item_bmp
             "Armos", Graphics.ow_key_armos_bmp
-            "WoodSword", Graphics.brown_sword_bmp
-            "MagicalSword", Graphics.magical_sword_bmp
+            "WoodSword", Graphics.ow_sword1_item_bmp
+            "MagicalSword", Graphics.ow_sword3_item_bmp
             "BlueCandle", Graphics.blue_candle_bmp
             "BlueRing", Graphics.blue_ring_bmp
             "Gannon", Graphics.ganon_bmp
@@ -268,7 +285,7 @@ let InteractWithDrawingLayer(cm:CanvasManager, drawingCanvas:Canvas) = async {
 
     let interactionCanvas = new Canvas(Width=cm.AppMainCanvas.Width, Height=cm.AppMainCanvas.Height)
     interactionCanvas.Children.Add(imgHighlightBorder) |> ignore
-    let topCanvasToHoldIcons = new Canvas(Width=cm.AppMainCanvas.Width, Height=OverworldItemGridUI.THRU_BLOCKERS_H, IsHitTestVisible=true)
+    let topCanvasToHoldIcons = new Canvas(Width=cm.AppMainCanvas.Width, Height=OverworldItemGridUI.THRU_MAIN_MAP_AND_ITEM_PROGRESS_H, IsHitTestVisible=true)
     interactionCanvas.Children.Add(topCanvasToHoldIcons) |> ignore
     let mouseCarry = new Border(BorderBrush=Brushes.White, BorderThickness=Thickness(1.), Opacity=0., IsHitTestVisible=false)
     let DIFF = 31.
@@ -278,7 +295,7 @@ let InteractWithDrawingLayer(cm:CanvasManager, drawingCanvas:Canvas) = async {
             | None -> ()
             | Some(_icon, img) ->
                 let pos = ea.GetPosition(cm.AppMainCanvas)
-                if pos.Y < OverworldItemGridUI.THRU_BLOCKERS_H then
+                if pos.Y < OverworldItemGridUI.THRU_MAIN_MAP_AND_ITEM_PROGRESS_H then
                     interactionCanvas.Children.Remove(mouseCarry)
                     interactionCanvas.Children.Add(mouseCarry) |> ignore
                     mouseCarry.Child <- img
@@ -292,7 +309,7 @@ let InteractWithDrawingLayer(cm:CanvasManager, drawingCanvas:Canvas) = async {
             | None -> ()
             | Some(icon, img) ->
                 let pos = ea.GetPosition(cm.AppMainCanvas)
-                if pos.Y < OverworldItemGridUI.THRU_BLOCKERS_H then
+                if pos.Y < OverworldItemGridUI.THRU_MAIN_MAP_AND_ITEM_PROGRESS_H then
                     // left-click = place a stamp
                     if ea.ChangedButton = Input.MouseButton.Left then
                         AllDrawingLayerStamps.Add(icon, int (pos.X-DIFF), int (pos.Y-DIFF), img)
@@ -309,8 +326,8 @@ let InteractWithDrawingLayer(cm:CanvasManager, drawingCanvas:Canvas) = async {
                         ea.Handled <- true
         )
 
-    let bottomCanvas = new Canvas(Width=interactionCanvas.Width, Height=interactionCanvas.Height - OverworldItemGridUI.THRU_BLOCKERS_H, Background = Brushes.Black)
-    canvasAdd(interactionCanvas, bottomCanvas, 0., OverworldItemGridUI.THRU_BLOCKERS_H)
+    let bottomCanvas = new Canvas(Width=interactionCanvas.Width, Height=interactionCanvas.Height - OverworldItemGridUI.THRU_MAIN_MAP_AND_ITEM_PROGRESS_H, Background = Brushes.Black)
+    canvasAdd(interactionCanvas, bottomCanvas, 0., OverworldItemGridUI.THRU_MAIN_MAP_AND_ITEM_PROGRESS_H)
     bottomCanvas.MouseMove.Add(fun _ea ->
         interactionCanvas.Children.Remove(mouseCarry) // if the mouse move into the bottom zone, remove the trailing icon
         )
@@ -371,12 +388,23 @@ let InteractWithDrawingLayer(cm:CanvasManager, drawingCanvas:Canvas) = async {
             )
         extraIconGrid.Children.Add(button) |> ignore
     let X = 460.
+    let customCB = new CheckBox(Content=mkTxtBT("Add custom icons to menus", 0.), IsChecked=System.Nullable(TrackerModelOptions.Overworld.AddCustomIconsToMenus.Value))
+    (customCB.Content :?> UIElement).IsHitTestVisible <- false   // clicks on the label go to the checkbox
+    customCB.ToolTip <- "Adds (up to 16 of) your ExtraIcons icons to the bottom of the item-box menu and the overworld tile marker-icon menu"
+    let onCB() =
+        TrackerModelOptions.Overworld.AddCustomIconsToMenus.Value <- customCB.IsChecked.Value
+        applyCustomMenuIcons()
+        TrackerModelOptions.writeSettings()
+    customCB.Checked.Add(fun _ -> onCB())
+    customCB.Unchecked.Add(fun _ -> onCB())
+    customCB.LayoutTransform <- new ScaleTransform(1.5, 1.5)
+    canvasAdd(bottomCanvas, customCB, X, 72.)
     let openFolderButton = Graphics.makeButton("Open ExtraIcons Folder", Some(12.), Some(Brushes.Orange))
-    canvasAdd(bottomCanvas, openFolderButton, X, 80.)
-    canvasAdd(bottomCanvas, mkTxtBT("<- add .png files here", 0.), X+150., 80.)
-    canvasAdd(bottomCanvas, mkTxtBT("(must re-start ZORA Tracker to reload these icons)", 0.), X, 100.)
-    canvasAdd(bottomCanvas, mkTxtBT("Here are icons found in your ExtraIcons folder:", 0.), X, 120.)
-    canvasAdd(bottomCanvas, extraIconGrid, X, 140.)
+    canvasAdd(bottomCanvas, openFolderButton, X, 110.)
+    canvasAdd(bottomCanvas, mkTxtBT("<- add .png files here", 0.), X+150., 110.)
+    canvasAdd(bottomCanvas, mkTxtBT("(must re-start ZORA Tracker to reload these icons)", 0.), X, 130.)
+    canvasAdd(bottomCanvas, mkTxtBT("Here are icons found in your ExtraIcons folder:", 0.), X, 150.)
+    canvasAdd(bottomCanvas, extraIconGrid, X, 170.)
     openFolderButton.Click.Add(fun _ ->
         let psi = new System.Diagnostics.ProcessStartInfo("Explorer.exe", extraIconsDirectory)
         System.Diagnostics.Process.Start(psi) |> ignore
@@ -385,7 +413,8 @@ let InteractWithDrawingLayer(cm:CanvasManager, drawingCanvas:Canvas) = async {
         let errorTB = mkTxt("Error while loading ExtraIcons:\n" + anyErrorMessageRelatedToExtraIcons)
         bottomCanvas.Children.Add(errorTB) |> ignore
         Canvas.SetLeft(errorTB, X)
-        Canvas.SetBottom(errorTB, 0.)
+        extraIconGrid.Measure(System.Windows.Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+        Canvas.SetTop(errorTB, 170. + extraIconGrid.DesiredSize.Height + 10.)
 
     // when invoked...
 

@@ -161,27 +161,34 @@ let DoMonsterDetailPopup(cm:CanvasManager, boxX, boxY, currentMonsterDetail) = a
     let onClick(_ea,ident) =
         // we're getting a click with mouse event args ea on one of the selectable items in the grid, namely ident. take appropriate action.
         DismissPopupWithResult(ident)
-    let gridX, gridY = 21., -3.
+    // the grid comes up where the room type menu does: same bottom edge, centered on it (the room menu is 7x5 cells of 39x27, shown 4/3 larger); this one is 8x4 cells of 18x18, shown 2x
+    let ST = CustomComboBoxes.borderThickness
+    let roomG = 4./3.
+    let roomW, _roomH = 7.*(39.+2.*ST)*roomG, 5.*(27.+2.*ST)*roomG
+    let roomLeft = 555. - 117. - (roomW - roomW/roomG)
+    let roomBottom = (768. + 60.) - THE_DIFF - 78.
+    let gridW, gridH = (8.*(18.+2.*ST)+2.*ST)*2., (4.*(18.+2.*ST)+2.*ST)*2.
+    let gridX = roomLeft + (roomW - gridW)/2. + 20. - (boxX+3.)   // (nudged 20 to the right)
+    let gridY = roomBottom - gridH - (boxY+3.)
     let redrawTile(ident) =
         // the user has changed the current selection via mousing or scrolling, redraw the preview tile appropriately to display ident
         let innerc = redraw(ident)
         let s = ident.DisplayDescription()
         let s = HotKeys.DungeonRoomHotKeyProcessor.AppendHotKeyToDescription(s, Choice2Of4 ident)
+        // the monster's name goes under the right part of the grid (the shift-drag tip box goes under the left part)
         let text = new TextBox(Text=s, Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.),
-                                    FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center)
+                                    FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center, Width=gridW-170.-6.)
         let textBorder = new Border(BorderThickness=Thickness(3.), Child=text, Background=Brushes.Black, BorderBrush=Brushes.Gray)
+        let (rx, ry, rw, rh) = CustomComboBoxes.MovableGridRect   // (the grid can be moved and resized)
+        let hidden = TrackerModelOptions.HidePopupHintAndLock.Value   // with the tip box and lock bar hidden, the name goes across the whole bottom
+        text.Width <- max 80. (if hidden then rw - 6. else rw - 150. - 6.)
         let dp = new DockPanel(LastChildFill=false)
         dp.Children.Add(textBorder) |> ignore
         innerc.Children.Add(dp) |> ignore
-        DockPanel.SetDock(textBorder, Dock.Right)
-        Canvas.SetTop(dp, -3.)
-        Canvas.SetLeft(dp, 415.)   // right edge of the (now 2x) grid
+        Canvas.SetTop(dp, ry + rh + 8.)
+        Canvas.SetLeft(dp, (if hidden then rx else rx + 150.))   // right-aligned under the grid, the tip box takes the left part
     let extraDecorations = 
-        let text = new TextBox(Text="Select a Monster Detail for this room", Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
-                                    BorderThickness=Thickness(0.), FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center)
-        let textBorder = new Border(BorderThickness=Thickness(3.), Child=text, Background=Brushes.Black, BorderBrush=Brushes.Gray)
         [
-            textBorder :> FrameworkElement, -4., -30.
             dungeonRoomExplainer, -3.-boxX, 342.-boxY-THE_DIFF
         ]
     setOpacity(0.8)
@@ -229,21 +236,18 @@ let DoFloorDropDetailPopup(cm:CanvasManager, boxX, boxY, currentFloorDropDetail)
         let innerc = redraw(ident)
         let s = ident.DisplayDescription()
         let s = HotKeys.DungeonRoomHotKeyProcessor.AppendHotKeyToDescription(s, Choice3Of4 ident)
+        let (rx, ry, rw, rh) = CustomComboBoxes.MovableGridRect   // (the grid can be moved and resized)
+        // the name goes right under the grid (the shift-drag tip box goes under that)
         let text = new TextBox(Text=s, Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.),
-                                    FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center)
+                                    FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center, Width=max 80. (rw-6.))
         let textBorder = new Border(BorderThickness=Thickness(3.), Child=text, Background=Brushes.Black, BorderBrush=Brushes.Gray)
         let dp = new DockPanel(LastChildFill=false)
         dp.Children.Add(textBorder) |> ignore
         innerc.Children.Add(dp) |> ignore
-        DockPanel.SetDock(textBorder, Dock.Right)
-        Canvas.SetTop(dp, -3.)
-        Canvas.SetLeft(dp, 177.)   // right edge of the (now 2x) grid
+        Canvas.SetTop(dp, ry + rh + 8.)
+        Canvas.SetLeft(dp, rx)
     let extraDecorations = 
-        let text = new TextBox(Text="Select a Floor Drop Detail for this room", Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
-                                    BorderThickness=Thickness(0.), FontSize=16., HorizontalContentAlignment=HorizontalAlignment.Center)
-        let textBorder = new Border(BorderThickness=Thickness(3.), Child=text, Background=Brushes.Black, BorderBrush=Brushes.Gray)
         [
-            textBorder :> FrameworkElement, -4., -30.
             dungeonRoomExplainer, -3.-boxX, 342.-boxY-THE_DIFF
         ]
     setOpacity(0.8)
@@ -254,7 +258,6 @@ let DoFloorDropDetailPopup(cm:CanvasManager, boxX, boxY, currentFloorDropDetail)
 let brushes = (new CustomComboBoxes.ModalGridSelectBrushes(Brushes.Lime, Brushes.Lime, Brushes.Red, Brushes.Gray)).Dim(0.6)
 let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomState:DungeonRoomState, usedTransports:_[], setNewValue, positionAtEntranceRoomIcons, gridClickDismissalWarpReturn) = async {
     let tweak(im:Image) = im.Opacity <- 0.65; im
-    let tileSunglasses = 0.75
 
     let popupCanvas = cm.CreatePopup(0.75)
     let workingCopy = originalRoomState.Clone()
@@ -266,7 +269,6 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
         if centered then tb.TextAlignment <- TextAlignment.Center
         tb
 
-    let SCALE = 2.
     let tileX, tileY = 555., 768. + 60.   // (moved down 60 now that the room preview is gone: low enough to clear the UI-reminder overlay at the top, without a big gap above the menu)
     let ST = CustomComboBoxes.borderThickness
     let tileCanvas = new Canvas(Width=1., Height=1.)   // (no room preview is shown any more; this just hosts the captions)
@@ -278,19 +280,18 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
         RoomType.TopMoat; RoomType.Chevy; RoomType.OldManHint; RoomType.VChute; RoomType.HChute; RoomType.StartEnterFromN; RoomType.Zelda;
         RoomType.RightMoat; RoomType.Unmarked; RoomType.MaybePushBlock; RoomType.NonDescript; RoomType.Tee; RoomType.StartEnterFromS; RoomType.LavaMoat;
         RoomType.ItemBasement; RoomType.StaircaseToUnknown; RoomType.Transport1; RoomType.Transport2; RoomType.Transport3; RoomType.StartEnterFromW; RoomType.OffTheMap;
-        RoomType.Transport4; RoomType.Transport5; RoomType.Transport6; RoomType.Transport7; RoomType.Transport8; RoomType.Turnstile; RoomType.Turnstile;
+        RoomType.Transport4; RoomType.Transport5; RoomType.Transport6; RoomType.Transport7; RoomType.Transport8; RoomType.Turnstile; RoomType.PrincessRoom;
         |]
 
     let gridElementsSelectablesAndIDs : (FrameworkElement * bool * RoomType)[] =
-        grid |> Array.mapi (fun i rt ->
+        grid |> Array.mapi (fun _i rt ->
             let isLegal =
                 (rt = originalRoomState.RoomType) ||
                 (match Option.ofNullable (rt.KnownTransportNumber()) with
                  | None -> true
                  | Some n -> usedTransports.[n] <> 2)
 
-            if i = grid.Length-1 then null, false, rt
-            elif rt = RoomType.OldManHint then upcast (let im = Graphics.BMPtoImage(rt.UncompletedBI()) in im.Opacity <- 1.0; im), isLegal, rt   // this icon is naturally dark, so show it undimmed
+            if rt = RoomType.OldManHint then upcast (let im = Graphics.BMPtoImage(rt.UncompletedBI()) in im.Opacity <- 1.0; im), isLegal, rt   // this icon is naturally dark, so show it undimmed
             else upcast tweak(Graphics.BMPtoImage(rt.UncompletedBI())), isLegal, rt
         )
 
@@ -311,12 +312,16 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
 
     let redrawTile(curState:RoomType) =
         tileCanvas.Children.Clear()
-        let textWidth = totalGridWidth + 13.
+        // the caption frame follows the (movable, resizable) grid
+        let (mx, my, mw, mh) = CustomComboBoxes.MovableGridRect
+        let haveRect = mw > 0.
+        let textWidth = if haveRect then mw + 13. else totalGridWidth + 13.
+        let gridH = if haveRect then mh else totalGridHeight
         let topText = Graphics.center(makeCaption("Select a room type", true), int textWidth, 24)
         let s = HotKeys.DungeonRoomHotKeyProcessor.AppendHotKeyToDescription(Z1R_Tracker.Models.Z1R_TrackerInterop.RoomTypeExtensions.DisplayDescription(curState), Choice1Of4 curState)
         let bottomText = Graphics.center(makeCaption(s, true), int textWidth, 49)
 
-        let dp = new DockPanel(Width=textWidth, Height=totalGridHeight+75., LastChildFill=false)
+        let dp = new DockPanel(Width=textWidth, Height=gridH+75., LastChildFill=false)
         DockPanel.SetDock(topText, Dock.Top)
         DockPanel.SetDock(bottomText, Dock.Bottom)
         dp.Children.Add(topText) |> ignore
@@ -324,7 +329,8 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
         let frame = new Border(BorderBrush=Brushes.DimGray, BorderThickness=Thickness(3.), Background=Brushes.Black, Child=dp)
         let sp = new StackPanel(Orientation=Orientation.Vertical)
         sp.Children.Add(frame) |> ignore
-        canvasAdd(tileCanvas, sp, gx+totalGridWidth/2.-textWidth/2., -27.-dp.Height)
+        if haveRect then canvasAdd(tileCanvas, sp, mx+mw/2.-textWidth/2., my+gridH+51.-dp.Height)
+        else canvasAdd(tileCanvas, sp, gx+totalGridWidth/2.-textWidth/2., -27.-dp.Height)
 
     let onClick(ea:Input.MouseButtonEventArgs, curState) = 
         if (ea.ChangedButton = Input.MouseButton.Left || ea.ChangedButton = Input.MouseButton.Right) && ea.ButtonState = Input.MouseButtonState.Pressed then
@@ -335,8 +341,33 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
     let extraDecorations = [| dungeonRoomExplainer, -3.-tileX, 342.-tileY |]
     setOpacity(0.5)
 
+    // where the (possibly moved / resized by the user) grid actually is, so the mouse lands on the right cell
+    let placeScale, placeAbs =
+        let inv = System.Globalization.CultureInfo.InvariantCulture
+        let tryNum(s:string) = match System.Double.TryParse(s, System.Globalization.NumberStyles.Float, inv) with | true, v -> Some v | _ -> None
+        let s =
+            match TrackerModelOptions.MenuLayouts.TryGetValue("DungeonRoomPlacement") with
+            | true, v when not (isNull v) && v.Length = 3 -> (match tryNum v.[2] with | Some c -> max 0.5 (min 4.0 c) | None -> 1.0)
+            | _ -> 1.0
+        let abs =
+            match TrackerModelOptions.MenuLayouts.TryGetValue("DungeonRoomPlacementAbsV2") with
+            | true, v when not (isNull v) && v.Length = 2 ->
+                match tryNum v.[0], tryNum v.[1] with
+                | Some a, Some b ->
+                    let appW, appH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+                    Some((if appW > 0. then max 0. (min a (appW - 80.)) else a), (if appH > 0. then max 50. (min b (appH - 60.)) else b))
+                | _ -> None
+            | _ -> None
+        s, abs
+    let cellPoint(cx:float, cy:float) =
+        match placeAbs with
+        | Some(ax, ay) -> Point(ax + G*placeScale*(ST + cx*(float gcw + ST*2.)), ay + G*placeScale*(ST + cy*(float grh + ST*2.)))
+        | None -> Point(tileX+gx+cx*(float gcw + ST*2.)*G*placeScale, tileY+gy-THE_DIFF+cy*(float grh + ST*2.)*G*placeScale)
     if positionAtEntranceRoomIcons then
-        Graphics.WarpMouseCursorTo(Point(tileX+gx+5.5*(float gcw + ST*2.)*G, tileY+gy+totalGridHeight/2.))
+        if placeAbs.IsNone && placeScale = 1.0 then
+            Graphics.WarpMouseCursorTo(Point(tileX+gx+5.5*(float gcw + ST*2.)*G, tileY+gy+totalGridHeight/2.))
+        else
+            Graphics.WarpMouseCursorTo(cellPoint(5.5, float gnr/2.))
     else
         // the grid may have been rearranged by the user (Shift+drag); find where the current room type is displayed
         let shownIndex =
@@ -347,7 +378,7 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
             | _ -> originalStateIndex
         let x = shownIndex % gnc
         let y = shownIndex / gnc
-        Graphics.WarpMouseCursorTo(Point(tileX+gx+(float x+0.5)*(float gcw + ST*2.)*G, tileY+gy+(float y+0.5)*(float grh + ST*2.)*G-THE_DIFF))
+        Graphics.WarpMouseCursorTo(cellPoint(float x + 0.5, float y + 0.5))
 
     let! r = CustomComboBoxes.DoModalGridSelect(cm, tileX, tileY-THE_DIFF, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
                    float gcw/2., float grh/2., gx, gy, redrawTile, onClick, extraDecorations, brushes, gridClickDismissalWarpReturn, None, "DungeonRoom", None)
@@ -357,7 +388,7 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
     | Some(curState) -> 
         workingCopy.CSharp.IsPreview <- false
         workingCopy.RoomType <- curState
-        workingCopy.IsComplete <- true
+        workingCopy.IsComplete <- (curState <> RoomType.BombUpgrade)   // a placed bomb upgrade room starts un-collected (blue dot on the level number); left click it to clear the dot
         suppressRoomSyncTemporarily <- false
         setNewValue(workingCopy)
         async {
