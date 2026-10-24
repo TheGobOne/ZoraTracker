@@ -1237,7 +1237,7 @@ type MyWindow() as this =
             extrasSP.Children.Add(new DockPanel(Width=10.)) |> ignore
             extrasSP.Children.Add(area) |> ignore
             cb
-        let epbcb = makeExtraBlocksCheckBox("Extra PB Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4")
+        let epbcb = makeExtraBlocksCheckBox("Extra Power Bracelet Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4")
         let erbcb = makeExtraBlocksCheckBox("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16")
         let dwcb = makeExtraBlocksCheckBox("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)")
         let lhcb = makeExtraBlocksCheckBox("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)")
@@ -1417,8 +1417,8 @@ type MyWindow() as this =
                 WPFUI.resetTimerEvent.Trigger()  // takes a few seconds to load everything, reset timer at start
             // the timer sits centered in the right column of the control panel, between its TIMER heading and the Pause/Reset button
             let tbox = OverworldItemGridUI.hmsTimeTextBox
-            tbox.Width <- Layout.PANEL_RW; tbox.Height <- 36.; tbox.FontSize <- 28.; tbox.TextAlignment <- TextAlignment.Center; tbox.VerticalContentAlignment <- VerticalAlignment.Center; tbox.Padding <- Thickness(0.)
-            Graphics.canvasAdd(hmsTimerCanvas, tbox, Layout.PANEL_X1 - 3., 5.)   // (the text sits low in its box, so the box starts a little above the TIMER heading's bottom edge to look centered)
+            tbox.Width <- Layout.PANEL_RW + 6.; tbox.Height <- 44.; tbox.FontSize <- 32.; tbox.TextAlignment <- TextAlignment.Center; tbox.VerticalContentAlignment <- VerticalAlignment.Center; tbox.Padding <- Thickness(0.)
+            Graphics.canvasAdd(hmsTimerCanvas, tbox, Layout.PANEL_X1 - 10., 8.)   // (centered in the open space between the panel divider and the window edge)   // (the text sits low in its box, so the box starts a little above the TIMER heading's bottom edge to look centered)
             Graphics.canvasAdd(hmsTimerCanvas, OverworldItemGridUI.niceTimerBox, Layout.PANEL_X1 - 13., 0.)   // 'Nice timer bro' shows here while the timer is hidden
             OverworldItemGridUI.niceTimerBox.Visibility <- (if OverworldItemGridUI.SHOW_NICE_TIMER_BRO && TrackerModelOptions.HideTimer.Value then Visibility.Visible else Visibility.Hidden)
             gotThruStartup <- true

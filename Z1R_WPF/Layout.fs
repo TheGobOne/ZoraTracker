@@ -104,7 +104,7 @@ let mutable iconShowRun : UIElement = null
 let mutable iconFQSQ : UIElement = null
 let panelHeading(text:string) =
     new TextBlock(Text=text, FontSize=8., FontWeight=FontWeights.SemiBold, Foreground=new SolidColorBrush(Color.FromRgb(143uy,143uy,143uy)), TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
-let panelHeadings = [ panelHeading("TRACK"), PANEL_X0, 0., PANEL_LW; panelHeading("TOOLS"), PANEL_X0, 32., PANEL_LW; panelHeading("TIMER"), PANEL_X1, 0., PANEL_RW; panelHeading("OVERWORLD OPTIONS"), PANEL_X0, 114., PANEL_LW; panelHeading("FILE"), PANEL_X1, 68., PANEL_RW ]
+let panelHeadings = [ panelHeading("TRACK"), PANEL_X0, 0., PANEL_LW; panelHeading("TOOLS"), PANEL_X0, 32., PANEL_LW; panelHeading("TIMER"), PANEL_X1, 0., PANEL_RW; panelHeading("OVERWORLD OPTIONS"), PANEL_X0, 118., PANEL_LW; panelHeading("FILE"), PANEL_X1, 86., PANEL_RW ]
 let panelDivider = new System.Windows.Shapes.Rectangle(Width=1., Height=148., Fill=new SolidColorBrush(Color.FromRgb(38uy,38uy,38uy)), IsHitTestVisible=false)
 let addPanelDecor(add:UIElement -> unit) =
     for tb, _, _, _ in panelHeadings do add(tb)
@@ -173,10 +173,10 @@ let tryLayoutTopLeftIcons() =
                           hotkeysElementForCentering, PANEL_X0, 60.
                           iconLog, PANEL_X0, 78.
                           iconDraw, PANEL_X0, 96.
-                          rightButtonForSizing, PANEL_X1, 46.
-                          iconFQSQ, PANEL_X0, 124.
-                          iconOptions, PANEL_X1, 78.
-                          iconSave, PANEL_X1, 96. ]
+                          rightButtonForSizing, PANEL_X1, 60.
+                          iconFQSQ, PANEL_X0, 128.
+                          iconOptions, PANEL_X1, 96.
+                          iconSave, PANEL_X1, 114. ]
                     for e in [iconSpot; iconShowRun] do (if e <> null then e.Visibility <- Visibility.Collapsed)
                     for e, x, y in items do
                         match e with
@@ -335,11 +335,11 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             hintDecoderElementForCentering <- tb
             hookTopLeftOnSizeChange(tb)
             tryCenterHotkeysUnderHintDecoder(PANEL_X0)
-        member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, racingLink:UIElement) =
+        member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, _racingLink:UIElement) =
             let logoX = 16.*OMTW - kittyWidth - 22. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used, nudged 10px left
             canvasAdd(appMainCanvas, discordLink, logoX - (DiscordLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2.)
             canvasAdd(appMainCanvas, kitty, 0., 0.)   // the ZORA logo sits above the ZORA links (positioned in WPFUI.placeLinkStack)
-        member this.AddExtraSiteLinks(zoraSiteLink, racingSiteLink) =
+        member this.AddExtraSiteLinks(zoraSiteLink, _racingSiteLink) =
             canvasAdd(appMainCanvas, zoraSiteLink, 0., 0.)   // (positioned together with the other links in WPFUI.placeLinkStack)
         member this.AddShowHotKeysButton(showHotKeysButton) = 
             canvasAdd(appMainCanvas, showHotKeysButton, WEBCAM_LINE-41., 128.)
@@ -369,7 +369,7 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
         member this.AddUserCustomContentButton(uccButton) = 
             canvasAdd(appMainCanvas, uccButton, 16.*OMTW - kittyWidth - 50., THRU_MAIN_MAP_H + 42.)
         member this.AddDungeonTabsOverlay(dungeonTabsOverlay) =  // for magnifier
-            canvasAdd(appMainCanvas, dungeonTabsOverlay, 0., START_DUNGEON_AND_NOTES_AREA_H+float(TH))
+            canvasAdd(appMainCanvas, dungeonTabsOverlay, 0., START_DUNGEON_AND_NOTES_AREA_H+float(TH) - 2.)   // (2px up)
         member this.AddDungeonTabs(dungeonTabsWholeCanvas) =
             canvasAdd(appMainCanvas, dungeonTabsWholeCanvas, 0., START_DUNGEON_AND_NOTES_AREA_H)
         member this.GetDungeonY() =
@@ -381,6 +381,10 @@ type ApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(appMainCanvas, seedAndFlagsDisplayCanvas, BLOCKERS_AND_NOTES_OFFSET, THRU_BLOCKERS_H) 
         member this.AddExtraDungeonRightwardStuff(grabModeTextBlock, rightwardCanvas) = 
             canvasAdd(appMainCanvas, grabModeTextBlock, BLOCKERS_AND_NOTES_OFFSET, START_DUNGEON_AND_NOTES_AREA_H) // grab mode instructions
+            // the hover preview of a dungeon summary fills the notes area: tell it how far down the notes start (Tag = top offset, height) and how wide the area is
+            let rwc = rightwardCanvas :?> Canvas
+            rwc.Width <- appMainCanvas.Width - BLOCKERS_AND_NOTES_OFFSET
+            rwc.Tag <- box (THRU_BLOCKERS_H - START_DUNGEON_AND_NOTES_AREA_H, rwc.Height - (THRU_BLOCKERS_H - START_DUNGEON_AND_NOTES_AREA_H))
             canvasAdd(appMainCanvas, rightwardCanvas, BLOCKERS_AND_NOTES_OFFSET, START_DUNGEON_AND_NOTES_AREA_H)   // extra place for dungeonTabs to draw atop blockers/notes, e.g. hover minimaps
         member this.AddOWRemainingScreens(owRemainingScreensTextBox) =
             canvasAdd(appMainCanvas, owRemainingScreensTextBox, OW_SPOTS_LEFT_CENTER_X-58., 0.)   // spots-left text with the per-type breakdown under it, all just above the Max Hearts box
@@ -590,7 +594,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             hintDecoderElementForCentering <- tb
             hookTopLeftOnSizeChange(tb)
             tryCenterHotkeysUnderHintDecoder(PANEL_X0)
-        member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, racingLink:UIElement) =
+        member this.AddKittyAndLogo(kitty:Image, _logoBorder, _ztlogo:Image, discordLink:UIElement, _racingLink:UIElement) =
             let logoX = 16.*OMTW - kittyWidth - 22. + (kittyWidth - kitty.Width)/2.   // centered in the space the old picture used, nudged 10px left
             canvasAdd(upper, discordLink, logoX - (DiscordLinkWidth - kitty.Width)/2., THRU_MAIN_MAP_H + 3. + kitty.Height + 2.)
             // WANT!
@@ -601,7 +605,7 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             kitty.Height <- 45.
             let lowerDiscordLink = MakeDiscordLink("https://discord.gg/zescSjDtme")
             canvasAdd(lower, lowerDiscordLink, afterSoldItemBoxesX+150. + 5. - (DiscordLinkWidth - kitty.Width)/2., 48. + kitty.Height + 1.)
-        member this.AddExtraSiteLinks(zoraSiteLink, racingSiteLink) =
+        member this.AddExtraSiteLinks(zoraSiteLink, _racingSiteLink) =
             canvasAdd(upper, zoraSiteLink, 0., 0.)
         member this.AddShowHotKeysButton(showHotKeysButton) = 
             canvasAdd(upper, showHotKeysButton, WEBCAM_LINE-41., 128.)
@@ -656,6 +660,9 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             canvasAdd(upper, line, 0., 0.)
         member this.AddExtraDungeonRightwardStuff(grabModeTextBlock, rightwardCanvas) = 
             canvasAdd(lower, grabModeTextBlock, BLOCKERS_AND_NOTES_OFFSET, dungeonStart) // grab mode instructions
+            let rwc = rightwardCanvas :?> Canvas
+            rwc.Width <- W - BLOCKERS_AND_NOTES_OFFSET
+            rwc.Tag <- box (notesStart - dungeonStart, rwc.Height - (notesStart - dungeonStart))
             canvasAdd(lower, rightwardCanvas, BLOCKERS_AND_NOTES_OFFSET, dungeonStart)   // extra place for dungeonTabs to draw atop blockers/notes, e.g. hover minimaps
         member this.AddOWRemainingScreens(owRemainingScreensTextBox) =
             canvasAdd(upper, owRemainingScreensTextBox, OW_SPOTS_LEFT_CENTER_X-58., 0.)   // spots-left text with the per-type breakdown under it, all just above the Max Hearts box

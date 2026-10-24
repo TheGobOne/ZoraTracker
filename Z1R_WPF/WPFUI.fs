@@ -134,7 +134,7 @@ let decorSourceBmp(item:int) : System.Drawing.Bitmap =
     elif item = TrackerModel.DECOR_BOMB_DROPPER then bombDropperBmp
     elif item = TrackerModel.ITEMS.BLUEPOTION then (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_blue_potion_bmp else Graphics.blue_potion_bmp)
     elif item = TrackerModel.ITEMS.REDPOTION then (if TrackerModelOptions.UseOldPotionLetterIcons.Value then Graphics.old_red_potion_bmp else Graphics.red_potion_bmp)
-    elif TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(item) >= 1 && TrackerModel.progressiveSwordBoxTier(item) <= 4 then Graphics.ow_progressive_tier_item_bmps.[TrackerModel.progressiveSwordTier()]   // Progressive Items: swords act like the progressive sword (they all show the current tier, P1..P4)
+    elif TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(item) >= 1 && TrackerModel.progressiveSwordBoxTier(item) <= 5 then Graphics.ow_progressive_tier_item_bmps.[TrackerModel.progressiveSwordTier()]   // Progressive Items: swords act like the progressive sword (they all show the current tier, P1..P4)
     elif TrackerModel.progressiveFamily item >= 2 then progressiveFamilyTierBmp(TrackerModel.progressiveFamily item, TrackerModel.progressiveFamilyTier(TrackerModel.progressiveFamily item))   // Progressive Items: rings / candles / arrows show the current tier
     elif item = TrackerModel.ITEMS.WOODSWORD then Graphics.swordLevelToOwBmp(1)   // the same sword icon the item progress bar uses
     elif item = TrackerModel.ITEMS.WHITESWORD then Graphics.swordLevelToOwBmp(2)
@@ -274,9 +274,9 @@ let mutable hintButtonHighlightHook : int -> bool -> unit = fun _ _ -> ()   // z
 let mutable progressiveUpgradeHook : (int*int) list -> System.Drawing.Bitmap -> System.Drawing.Bitmap -> unit = fun _ _ _ -> ()   // upgraded tiles, from icon, to icon
 let mutable progressiveSwordCheckHook : unit -> unit = fun () -> ()   // the progressive sword's tier (P1..P4) may have changed
 let mutable progressiveWired = false
-let progressiveLastTiers : int[] = Array.create 5 1
-let progressivePrevTiers : int[] = Array.create 5 1   // per family: the tier before the latest change
-let progressiveChangedAt : System.DateTime[] = Array.create 5 System.DateTime.MinValue
+let progressiveLastTiers : int[] = Array.create 6 1
+let progressivePrevTiers : int[] = Array.create 6 1   // per family: the tier before the latest change
+let progressiveChangedAt : System.DateTime[] = Array.create 6 System.DateTime.MinValue
 // the tier a family item that was just collected is recorded at: the tier it was showing before it was collected. That is the last tier we saw, unless another handler for this very click
 // already moved the tier up (then it is the tier from before that move)
 let progressiveCollectedTier(family:int) : int =
@@ -299,14 +299,39 @@ let rec setDecorIcons(i:int, j:int, newPacked0:int) =
     let itemsBefore = Array.copy TrackerModel.mapCollectedCount
     TrackerModel.owSwordIcons.[i,j] <- newPacked
     rebuildMapCollected()
+    let swordIds = [ TrackerModel.ITEMS.PROGRESSIVESWORD; TrackerModel.ITEMS.WOODSWORD; TrackerModel.ITEMS.WHITESWORD; TrackerModel.ITEMS.MAGICALSWORD; TrackerModel.ITEMS.WHITESWORD4 ]
+    let woodWasStamped = (match TrackerModel.TimelineItemModel.All.TryGetValue("WoodSword") with | true, tim -> tim.FinishedTotalSeconds <> -1 | _ -> false)
+    let swordCount (es:(int*bool) list) = es |> List.filter (fun (x,c) -> c && List.contains x swordIds) |> List.length
+    // Progressive Items: whichever sword icon is collected, the Nth sword collected is the Nth entry (wood, white, magical, 4th) on the timeline
+    let swordCollectTier = if TrackerModel.ProgressiveItems && swordCount (TrackerModel.decorEntriesOf newPacked) > swordCount oldEntriesForDups then progressiveCollectedTier 1 else 0
     if TrackerModel.ProgressiveItems then
         // remember (or forget) the tier each collected sword was collected at, so its icon keeps showing where the upgrade came from
         let nOf (es:(int*bool) list) id = es |> List.filter (fun (x,c) -> x = id && c) |> List.length
         let newEs = TrackerModel.decorEntriesOf(newPacked)
         for id in [ TrackerModel.ITEMS.PROGRESSIVESWORD; TrackerModel.ITEMS.WOODSWORD; TrackerModel.ITEMS.WHITESWORD; TrackerModel.ITEMS.MAGICALSWORD; TrackerModel.ITEMS.WHITESWORD4
-                    TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW ] do
-            if nOf newEs id > nOf oldEntriesForDups id then TrackerModel.progressiveTileTier.[(i,j,id)] <- progressiveCollectedTier(TrackerModel.progressiveFamily id)
-            elif nOf newEs id < nOf oldEntriesForDups id then TrackerModel.progressiveTileTier.Remove((i,j,id)) |> ignore
+                    TrackerModel.ITEMS.BLUERING; TrackerModel.ITEMS.REDRING; TrackerModel.ITEMS.BLUECANDLE; TrackerModel.ITEMS.REDCANDLE; TrackerModel.ITEMS.WOODARROW; TrackerModel.ITEMS.SILVERARROW; TrackerModel.ITEMS.BOOMERANG; TrackerModel.ITEMS.MAGICBOOMERANG ] do
+            // an upgrade collected on the map also goes on the timeline (the first tier already has its own entry); item boxes have their own entry that shows the tier
+            let tierEntry (f:int) (tier:int) =
+                match f, tier with
+                | 1, 2 -> "WhiteSword" | 1, 3 -> "MagicalSword" | 1, 4 -> "Sword4"
+                | 2, 2 -> "RedRing" | 3, 2 -> "RedCandle" | 4, 2 -> "SilverArrow"
+                | 5, 1 -> "Boomerang" | 5, 2 -> "MagicBoomerang"
+                | _ -> ""
+            if nOf newEs id > nOf oldEntriesForDups id then
+                let tier = progressiveCollectedTier(TrackerModel.progressiveFamily id)
+                TrackerModel.progressiveTileTier.[(i,j,id)] <- tier
+                if TrackerModel.progressiveFamily id <> 1 then   // (swords are stamped below, by how many swords are collected rather than by which icon)
+                    match TrackerModel.TimelineItemModel.All.TryGetValue(tierEntry (TrackerModel.progressiveFamily id) tier) with
+                    | true, tim when tim.FinishedTotalSeconds = -1 -> tim.SetCollectedFromMap(true)
+                    | _ -> ()
+            elif nOf newEs id < nOf oldEntriesForDups id then
+                (match TrackerModel.progressiveTileTier.TryGetValue((i,j,id)) with
+                 | true, tier when TrackerModel.progressiveFamily id <> 1 ->
+                    (match TrackerModel.TimelineItemModel.All.TryGetValue(tierEntry (TrackerModel.progressiveFamily id) tier) with
+                     | true, tim -> tim.Unstamp()
+                     | _ -> ())
+                 | _ -> ())
+                TrackerModel.progressiveTileTier.Remove((i,j,id)) |> ignore
         progressiveSwordCheckHook()
     List.iter2 (fun (id, (prop:TrackerModel.BoolProperty)) wasHad ->
         let has = TrackerModel.mapCollectedCount.[id] > 0
@@ -328,9 +353,19 @@ let rec setDecorIcons(i:int, j:int, newPacked0:int) =
                 | true, tim -> tim.SetCollectedFromMap(heartsAfter >= k)
                 | _ -> ()
     // the other items (boomerang / boots, bow, ladder, ...) checked off on the map are stamped on the timeline too
-    for id = 1 to 13 do
+    if swordCollectTier > 0 then
+        let wanted = match swordCollectTier with | 1 -> "WoodSword" | 2 -> "WhiteSword" | 3 -> "MagicalSword" | _ -> "Sword4"
+        // (a wood sword icon checks off the wood sword box, which stamps the wood sword entry whatever its tier: undo that when it is not the first sword)
+        if wanted <> "WoodSword" && not woodWasStamped then
+            match TrackerModel.TimelineItemModel.All.TryGetValue("WoodSword") with
+            | true, tim when tim.FinishedTotalSeconds <> -1 -> tim.Unstamp()
+            | _ -> ()
+        match TrackerModel.TimelineItemModel.All.TryGetValue(wanted) with
+        | true, tim when tim.FinishedTotalSeconds = -1 -> tim.SetCollectedFromMap(true)
+        | _ -> ()
+    for id in [ 1 .. 13 ] @ [ TrackerModel.ITEMS.CUSTOM_BASE .. TrackerModel.ITEMS.CUSTOM_BASE + 15 ] do   // (the custom icons too)
         let hadIt, hasIt = itemsBefore.[id] > 0, TrackerModel.mapCollectedCount.[id] > 0
-        if hadIt <> hasIt then
+        if hadIt <> hasIt && not (TrackerModel.ProgressiveItems && (id = TrackerModel.ITEMS.WHITESWORD || id = TrackerModel.ITEMS.BOOMERANG || id = TrackerModel.ITEMS.MAGICBOOMERANG)) then
             match TrackerModel.TimelineItemModel.All.TryGetValue(fst TrackerModel.ITEMS.itemNamesAndCounts.[id]) with
             | true, tim -> tim.SetCollectedFromMap(hasIt)
             | _ -> ()
@@ -1343,8 +1378,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     (cell :> FrameworkElement), isSelectable, n
                 let hole : FrameworkElement*bool*int = null, false, -999   // null asks selector to 'leave a hole' here
                 let M = TrackerModel.MapSquareChoiceDomainHelper.DARK_X
-                let darkXCell : FrameworkElement*bool*int = (new Canvas(Width=7.*3., Height=9.*3., Background=Graphics.overworldCommonestFloorColorDarkBrush) :> FrameworkElement), true, M
-                let unmarkedCell : FrameworkElement*bool*int = (new Canvas(Width=7.*3., Height=9.*3., Background=Graphics.overworldCommonestFloorColorBrush) :> FrameworkElement), true, -1
+                let _darkXCell : FrameworkElement*bool*int = (new Canvas(Width=7.*3., Height=9.*3., Background=Graphics.overworldCommonestFloorColorDarkBrush) :> FrameworkElement), true, M
+                let _unmarkedCell : FrameworkElement*bool*int = (new Canvas(Width=7.*3., Height=9.*3., Background=Graphics.overworldCommonestFloorColorBrush) :> FrameworkElement), true, -1
                 // decorative marker icons (ids are offset by 1000 so they cannot be confused with real overworld tile states)
                 // a Take Any cave, or a letter / white sword / magical sword cave, only gets the bomb dropper marker (middle click); other icons only go on a tile where the sword / letter icon was picked instead (that tile is no longer a cave)
                 // (a letter / white / magical sword cave that already holds a shuffled item can take icons: the choice box just crosses out its 'Shuffled Item' option)
@@ -1365,7 +1400,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     // the swords are 15x27 cave-style icons; the dungeon items are shown at full 21x21 size (without the black outline, which is only for the map)
                     let isSword = (ident = TrackerModel.ITEMS.PROGRESSIVESWORD || ident = TrackerModel.ITEMS.WHITESWORD4)
                     let progSword = TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(ident) > 0   // Progressive Items: the sword cells show the current P tier sprite (21x27)
-                    let bmp = if progSword then Graphics.ow_progressive_tier_menu_bmps.[(let t = TrackerModel.progressiveSwordBoxTier(ident) in if t >= 1 && t <= 4 then t else TrackerModel.progressiveSwordTier())] elif isSword then Graphics.swordMenuBmp(decorIconBmp ident) elif TrackerModel.progressiveDisabledIdent ident && TrackerModel.progressiveFamily ident >= 2 then CustomComboBoxes.boxCurrentBMP(ident, None) else decorSourceBmp ident   // (a disabled red ring / candle / silver arrow keeps its own picture)
+                    let bmp = if progSword then Graphics.ow_progressive_tier_menu_bmps.[(let t = TrackerModel.progressiveSwordBoxTier(ident) in if t >= 1 && t <= 4 then t else 0)] elif isSword then Graphics.swordMenuBmp(decorIconBmp ident) elif TrackerModel.progressiveDisabledIdent ident && TrackerModel.progressiveFamily ident >= 2 then CustomComboBoxes.boxCurrentBMP(ident, None) else decorSourceBmp ident   // (a disabled red ring / candle / silver arrow keeps its own picture)
                     let img = Graphics.BMPtoImage(bmp)
                     img.Stretch <- Stretch.Uniform
                     img.Width <- (if progSword then 21. elif isSword then 15. else 21.)
@@ -1421,7 +1456,20 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         cell.Children.Add(new System.Windows.Shapes.Line(X1=x1, Y1=y1, X2=x2, Y2=y2, Stroke=Brushes.Red, StrokeThickness=3.5, StrokeStartLineCap=PenLineCap.Round, StrokeEndLineCap=PenLineCap.Round)) |> ignore
                     (cell :> FrameworkElement), true, CLEAR_ICONS
                 let tailCells = [| yield! (lastRowIdents |> List.map swordIconCell); yield clearIconsCell |]   // (no Don't Care cell: the clear option does it better)
-                let bodyCells = Array.append topRows bottomRows
+                // 'Shops in menu' (a checkbox in the shop window): a row of buttons for the 5 shops (P, 1-4), starting on a new row; they work like picking that shop in the flyout
+                let shopRowCells : (FrameworkElement*bool*int)[] =
+                    if not TrackerModelOptions.ShopsInMenu.Value then [||]
+                    else
+                        [| for n = 0 to 4 do
+                            let lbl = if n = 0 then 5 else n
+                            let cell = new Canvas(Width=7.*3., Height=9.*3., Background=Brushes.Transparent)
+                            let tb = new TextBlock(Text=(if n = 0 then "P" else string n), Foreground=Brushes.Orange, FontSize=22., FontWeight=FontWeights.Bold, Width=7.*3., TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
+                            canvasAdd(cell, tb, 0., 0.)
+                            yield (cell :> FrameworkElement), (not markersBlocked && (n <> 0 || canPlacePotionShop(i,j))), SHOP_LABEL_BASE + lbl |]
+                let bodyCells =
+                    let b0 = Array.append topRows bottomRows
+                    if shopRowCells.Length = 0 then b0
+                    else Array.concat [ b0; Array.create ((GCOL - b0.Length % GCOL) % GCOL) hole; shopRowCells ]
                 let paddedCount = ((bodyCells.Length + tailCells.Length + GCOL - 1) / GCOL) * GCOL
                 let GROW = paddedCount / GCOL
                 let GCOUNT = GCOL*GROW
@@ -1441,7 +1489,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                     tileCanvas.Children.Clear()
                                     canvasAdd(tileCanvas, tileImage, 0., 0.)
                                     let isClearCell = (currentState = CLEAR_ICONS)
-                                    let isShopCell = (currentState = SHOP_MENU)
+                                    let isShopLabelCell = (currentState > SHOP_LABEL_BASE && currentState <= SHOP_LABEL_BASE + 5)
+                                    let isShopCell = (currentState = SHOP_MENU) || isShopLabelCell
                                     let isSwordIcon = currentState >= 1000 && not isClearCell && not isShopCell
                                     if isSwordIcon then
                                         let pbmp = decorIconBmp (currentState-1000)
@@ -1460,8 +1509,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                                 icon.Opacity <- X_OPACITY
                                             canvasAdd(tileCanvas, icon, 0., 0.)
                                     let s = 
-                                        if isSwordIcon then decorDescription(currentState-1000) + "\n(marker icon only)" + (if TrackerModel.progressiveDisabledIdent (currentState-1000) then "\nDisabled Due to Progressive Items" else "")
+                                        if isSwordIcon then decorDescription(currentState-1000) + (if currentState-1000 = TrackerModel.ITEMS.WHITESWORD4 && not TrackerModelOptions.FourthSwordEnabled then "\n4th Sword Not Enabled" else "") + (if TrackerModel.progressiveDisabledIdent (currentState-1000) then "\nDisabled Due to Progressive Items" else "")
                                         elif isClearCell then "Clear this tile\n(removes marker icons and sets it back to unmarked)"
+                                        elif isShopLabelCell then (if currentState = SHOP_LABEL_BASE + 5 then "P Shop\n(potion shop: puts its name at the top of the tile and copies any other P shop)" else sprintf "Shop %d\n(puts the shop's name at the top of the tile and copies its items from any other Shop %d)" (currentState - SHOP_LABEL_BASE) (currentState - SHOP_LABEL_BASE))
                                         elif isShopCell then "Shop...\n(potion shop, or shop 1-4: puts the shop's name at the top of the tile)"
                                         elif currentState = -1 then "Unmarked" 
                                         else let _,_,_,s = TrackerModel.dummyOverworldTiles.[currentState] in s
@@ -1579,7 +1629,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                     redrawOwTileHook(tx, ty)
                                     redrawGridSpot()
                                     (Array.init 5 (fun n -> TrackerModel.shopLabelCount (if n = 0 then 5 else n))), (Array.init 5 shopItemBitmaps)
-                                let addItemToShop(shop:int, ident:int) =
+                                let addItemToShop(shop:int, ident0:int) =
+                                    // Progressive Items: any sword put in a shop is just the progressive sword
+                                    let ident = if TrackerModel.ProgressiveItems && (ident0 = TrackerModel.ITEMS.WOODSWORD || ident0 = TrackerModel.ITEMS.WHITESWORD || ident0 = TrackerModel.ITEMS.MAGICALSWORD || ident0 = TrackerModel.ITEMS.WHITESWORD4) then TrackerModel.ITEMS.PROGRESSIVESWORD else ident0
                                     let lbl = if shop = 0 then 5 else shop
                                     let curLabel = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
                                     let targetHasTile = [ for x in 0..15 do for y in 0..7 do if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = lbl then yield 1 ] |> List.isEmpty |> not
@@ -1790,8 +1842,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             if Input.Keyboard.IsKeyDown(Input.Key.LeftCtrl) || Input.Keyboard.IsKeyDown(Input.Key.RightCtrl) then
                                 // ctrl+left click removes just that one icon from the tile
                                 setDecorIcons(i, j, TrackerModel.decorRemoveNth(TrackerModel.owSwordIcons.[i,j], nearestIdent, copyNumber))
-                            elif nearestIdent = TrackerModel.ITEMS.WHITESWORD || nearestIdent = TrackerModel.ITEMS.MAGICALSWORD then
-                                ()   // the white and magical sword icons can't be checked off as collected by clicking (hovering still shows the purple crosshairs)
+                            elif (nearestIdent = TrackerModel.ITEMS.WHITESWORD || nearestIdent = TrackerModel.ITEMS.MAGICALSWORD) && not TrackerModel.ProgressiveItems then
+                                ()   // the white and magical sword icons can't be checked off as collected by clicking (hovering still shows the purple crosshairs); with Progressive Items they are just upgrades and can be
                             else
                                 setDecorIcons(i, j, TrackerModel.decorToggleCollectedNth(TrackerModel.owSwordIcons.[i,j], nearestIdent, copyNumber))
                             redrawGridSpot()
@@ -2100,7 +2152,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         fqsqPanelButton.Click.Add(fun _ -> moreFQSQoptionsButton.RaiseEvent(new RoutedEventArgs(Primitives.ButtonBase.ClickEvent)))
         layout.AddOverworldOptionsButton(fqsqPanelButton)
         // ZORA Hints: Lost Woods / Lost Hills direction sequences, in the open legend space right of the 1Q/2Q button
-        let makeHintButton(name:string, prefix:string) =
+        let makeHintButton(name:string, _prefix:string) =
             // built like the 1Q/2Q and Start Spot buttons (plain Button, pure-black borderless TextBox content that is not stretched), so the border looks identical
             let tb = new TextBox(Text=name, FontSize=10., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, 
                                     BorderThickness=Thickness(0.), Padding=Thickness(2.,0.,2.,0.), TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center)
@@ -2118,8 +2170,24 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 tb.VerticalContentAlignment <- VerticalAlignment.Center
                 tb.Padding <- (if hint.Value = "" then Thickness(2.,0.,2.,0.) else Thickness(0.))
                 tb.TextAlignment <- TextAlignment.Center
+            // when the matching 'Randomize ...' option is not enabled, hovering shows an orange-outlined note saying so (and the hint menu does not open)
+            let hintOptionEnabled() = (if name = "Dead Woods" then OverworldData.DeadWoodsEnabled else OverworldData.LostHillsEnabled)
+            let noteTB = new TextBox(Text=sprintf "Randomize %s Not Enabled" name, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=14., Foreground=Brushes.Orange, Background=Brushes.Black)
+            let noteTip = new ToolTip(Content=noteTB, Background=Brushes.Black, BorderBrush=Brushes.Orange, BorderThickness=Thickness(2.), Padding=Thickness(4.))
+            btn.ToolTip <- noteTip
+            ToolTipService.SetInitialShowDelay(btn, 0)
+            ToolTipService.SetPlacement(btn, System.Windows.Controls.Primitives.PlacementMode.Bottom)
+            noteTip.Opened.Add(fun _ -> if hintOptionEnabled() then noteTip.IsOpen <- false)
+            btn.ToolTipOpening.Add(fun ea -> if hintOptionEnabled() then ea.Handled <- true)
+            let hoverBorder = new SolidColorBrush(Color.FromRgb(0xFFuy,0xA3uy,0x1Auy))
+            btn.MouseEnter.Add(fun _ -> if not(hintOptionEnabled()) then btn.BorderBrush <- (hoverBorder :> Brush))
+            btn.MouseLeave.Add(fun _ -> if not(hintOptionEnabled()) then btn.BorderBrush <- defaultBorderBrush)
+            // hovering the button shows the tiles that hint is blocking
+            let hintZoneNumber = (if name = "Dead Woods" then 1 else 2)
+            btn.MouseEnter.Add(fun _ -> if hintOptionEnabled() then showLocatorInstanceFuncAll(fun (x,y) -> owInstance.HintZoneOf(x,y) = hintZoneNumber))
+            btn.MouseLeave.Add(fun _ -> if hintOptionEnabled() then hideLocator())
             btn.Click.Add(fun _ ->
-                if not popupIsActive then
+                if not popupIsActive && hintOptionEnabled() then
                     popupIsActive <- true
                     let pos = btn.TranslatePoint(Point(0., btn.ActualHeight + 4.), cm.AppMainCanvas)
                     async {
@@ -2189,7 +2257,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                 ea.Handled <- true
                                 wh.Set() |> ignore)
                         border.Loaded.Add(fun _ -> border.Focus() |> ignore)
-                        do! CustomComboBoxes.DoModal(cm, wh, pos.X, pos.Y, border)
+                        HotKeys.suspendHotKeys <- true   // the hint entry uses the arrow keys itself, so the global hotkeys (cursor movement etc.) must not take them
+                        try
+                            do! CustomComboBoxes.DoModal(cm, wh, pos.X, pos.Y, border)
+                        finally
+                            HotKeys.suspendHotKeys <- false
                         hint.Value <- cur.Value
                         refreshLabel()
                         if name = "Dead Woods" then OverworldData.DeadWoodsHintKnown <- (hint.Value <> "") else OverworldData.LostHillsHintKnown <- (hint.Value <> "")
@@ -2241,7 +2313,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 b.BorderBrush <- (if known then (Brushes.LimeGreen :> Brush) else hintBtnNormalBrush)   // (a button whose hint has been entered keeps its green border)
                 b.BorderThickness <- (if known then Thickness(2.) else hintBtnNormalThickness)
                 b.Effect <- null
-                label.Background <- (Brushes.Black :> Brush)
+                label.Background <- (Brushes.Transparent :> Brush)   // (transparent, so the button's own dark-gray fill shows, like the other buttons)
                 label.Foreground <- (Brushes.Orange :> Brush)
                 label.FontWeight <- FontWeights.Normal)
         lostHillsButton.Margin <- Thickness(4.,0.,0.,0.)
@@ -2284,6 +2356,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         dp.MouseDown.Add(fun ea -> Popouts.makePopout(Popouts.RemainingItemsPoput, not(ea.ChangedButton = Input.MouseButton.Right), ea.ChangedButton = Input.MouseButton.Right, doUIUpdateEvent))
         dp
     layout.AddItemProgress(itemProgressCanvas, itemProgressHoverTarget)
+    MainTrackerTriforcesAndItems.itemProgressSource <- itemProgressCanvas
 
     
     // Version
@@ -2399,7 +2472,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         // a triforce piece marked as obtained in a dungeon item box also lights its piece in the chart
         for b in TrackerModel.GetDungeon(i).Boxes do
             b.Changed.Add(fun _ -> updateQuestRef())
-    layout.AddQuestReferenceChart(questRefBorder, BLOCKERS_AND_NOTES_OFFSET + 108. + 12. - 20. - 9. * questRefH0 / 180. - (questRefH - questRefH0) * 340. / 180., meatBottomY - questRefH + 3.)   // the chart's bottom-left corner (drawn 9/180 of its height in from its edge) lines up with the left side of the first blocker box (blocker column is 108 wide, then a 12px dungeon-number label)   // bottom-aligned with the meat icon
+    layout.AddQuestReferenceChart(questRefBorder, BLOCKERS_AND_NOTES_OFFSET + 108. + 12. - 20. + 12. - 9. * questRefH0 / 180. - (questRefH - questRefH0) * 340. / 180., meatBottomY - questRefH + 3.)   // the chart's bottom-left corner (drawn 9/180 of its height in from its edge) lines up with the left side of the first blocker box (blocker column is 108 wide, then a 12px dungeon-number label)   // bottom-aligned with the meat icon
     // the blue 3-dot box's bottom edge is lined up with the drawn base line of the triforce chart, measured from the real on-screen positions
     // (the chart is a 340x180 drawing whose base line, 2px stroke included, is at y=171, scaled to fit questRefH)
     let alignExtrasWithChart() =
@@ -2437,7 +2510,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         let d = discordLink :?> FrameworkElement
         let zs = zoraSiteLink :?> FrameworkElement
         if d.ActualHeight > 0. && zs.ActualHeight > 0. && not (System.Double.IsNaN(Canvas.GetLeft(d))) then
-            let cx = Canvas.GetLeft(d) + Layout.DiscordLinkWidth / 2.
+            let cx = Canvas.GetLeft(d) + Layout.DiscordLinkWidth / 2. + 4.   // +4: centered over the three boxes below (measured from a screenshot; tweak if still off)
             // top to bottom: ZORA logo, ZORA Site, ZORA Discord; the stack ends at the bottom of the strip of space (the old logo area) to the right of the map
             let place(e:FrameworkElement, y:float) =
                 Canvas.SetTop(e, y)
@@ -2543,17 +2616,36 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         redrawItemProgressBar()
 
         // Progressive Items: each family (1 swords, 2 rings, 3 candles, 4 arrows) has a tier that follows the number collected; when it goes up, the others glow and the alert plays
-        for f in 1..4 do progressiveLastTiers.[f] <- max 1 (TrackerModel.progressiveFamilyTier f)
+        for f in 1..5 do progressiveLastTiers.[f] <- max 1 (TrackerModel.progressiveFamilyTier f)
         let progressiveIdentsOf(f:int) = [ for id in 0..127 do if TrackerModel.progressiveFamily id = f then yield id ]
         let progressiveAutoChecking = ref false
         progressiveSwordCheckHook <- (fun () ->
-            for f in 1..4 do
+            for f in 1..5 do
                 let t = TrackerModel.progressiveFamilyTier f
                 let old = progressiveLastTiers.[f]
                 if t <> old then
                     progressivePrevTiers.[f] <- old
                     progressiveChangedAt.[f] <- System.DateTime.Now
                     progressiveLastTiers.[f] <- t
+                    if t < old then
+                        // an item was un-collected: the ones still collected move down a tier (e.g. the white sword shows as the wood sword again), in the order they were collected
+                        let ids = progressiveIdentsOf f
+                        let recs = ResizeArray<int * (int -> unit)>()
+                        for kv in Seq.toList TrackerModel.progressiveTileTier do
+                            let (_, _, id) = kv.Key
+                            if List.contains id ids then recs.Add((kv.Value, (fun v -> TrackerModel.progressiveTileTier.[kv.Key] <- v)))
+                        for kv in Seq.toList TrackerModel.progressiveBoxTier do
+                            if TrackerModel.progressiveFamily(kv.Key.CellCurrent()) = f && kv.Key.PlayerHas() = TrackerModel.PlayerHas.YES then recs.Add((kv.Value, (fun v -> TrackerModel.progressiveBoxTier.[kv.Key] <- v)))
+                        let unrecorded = max 0 ((t - 1) - recs.Count)   // (collected some other way, e.g. the sword taken at the wood sword cave: those take the lowest tiers)
+                        let cap = if f = 1 then 4 else 2
+                        recs |> Seq.sortBy fst |> Seq.iteri (fun k (_, setter) -> setter (min cap (unrecorded + k + 1)))
+                        // the upgrade entries above the new tier are no longer collected: take them off the timeline (a removed item otherwise leaves its old entry behind)
+                        let staleNames = match f with | 1 -> [ 1, "WoodSword"; 2, "WhiteSword"; 3, "MagicalSword"; 4, "Sword4" ] | 2 -> [ 2, "RedRing" ] | 3 -> [ 2, "RedCandle" ] | 5 -> [ 1, "Boomerang"; 2, "MagicBoomerang" ] | _ -> [ 2, "SilverArrow" ]
+                        for (k, name) in staleNames do
+                            if k >= t then
+                                match TrackerModel.TimelineItemModel.All.TryGetValue(name) with
+                                | true, tim when tim.FinishedTotalSeconds <> -1 -> tim.Unstamp()
+                                | _ -> ()
                     TrackerModel.progressiveTierChanged.Trigger()
                     for x = 0 to 15 do
                         for y = 0 to 7 do
@@ -2579,7 +2671,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             if not progressiveAutoChecking.Value then
                 progressiveAutoChecking.Value <- true
                 try
-                    for f in 1..4 do
+                    for f in 1..5 do
                         let cap = if f = 1 then 4 else 2
                         let ids = progressiveIdentsOf f
                         let boxesAll = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
@@ -2609,13 +2701,16 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     if TrackerModel.ProgressiveItems then
                         let nowF = if ph = TrackerModel.PlayerHas.YES then TrackerModel.progressiveFamily c else 0
                         let wasF = if pph = TrackerModel.PlayerHas.YES then TrackerModel.progressiveFamily pc else 0
-                        if nowF > 0 && (wasF = 0 || pc <> c) then TrackerModel.progressiveBoxTier.[b] <- progressiveCollectedTier nowF
+                        if nowF > 0 && (wasF = 0 || pc <> c) then
+                            TrackerModel.progressiveBoxTier.[b] <- progressiveCollectedTier nowF
+                            TrackerModel.progressiveTierChanged.Trigger()   // draw the box again now that its tier is known (no flash of the wrong tier)
+                            TrackerModel.TimelineItemModel.TriggerTimelineChanged()   // and the timeline entry, which was drawn before the tier was known
                         elif wasF > 0 && nowF = 0 then TrackerModel.progressiveBoxTier.Remove(b) |> ignore
                         if TrackerModel.progressiveFamily pc > 0 || TrackerModel.progressiveFamily c > 0 then progressiveSwordCheckHook())
             // items taken from caves / ticked in Item Progress or the starting items also count toward the tiers
             let pp = TrackerModel.playerProgressAndTakeAnyHearts
             let se = TrackerModel.startingItemsAndExtras
-            for (prop:TrackerModel.BoolProperty) in [ pp.PlayerHasWoodSword; se.PlayerHasWhiteSword; se.PlayerHasMagicalSword; pp.PlayerHasBlueRing; se.PlayerHasRedRing; pp.PlayerHasBlueCandle; se.PlayerHasRedCandle; pp.PlayerHasWoodArrow; se.PlayerHasSilverArrow ] do
+            for (prop:TrackerModel.BoolProperty) in [ pp.PlayerHasWoodSword; se.PlayerHasWhiteSword; se.PlayerHasMagicalSword; pp.PlayerHasBlueRing; se.PlayerHasRedRing; pp.PlayerHasBlueCandle; se.PlayerHasRedCandle; pp.PlayerHasWoodArrow; se.PlayerHasSilverArrow; se.PlayerHasBoomerang; se.PlayerHasMagicBoomerang ] do
                 prop.Changed.Add(fun _ -> if TrackerModel.ProgressiveItems then progressiveSwordCheckHook())
         // Progressive Items: a notification plus a 3 second glow-and-grow of every upgraded item on the map
         progressiveUpgradeHook <- (fun tiles fromBmp toBmp ->
@@ -3894,6 +3989,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     layout.AllDone()
     Popouts.Startup(doUIUpdateEvent)
     if TrackerModelOptions.ShowCustomOnStartup then ShowRunCustom.DoShowRunCustom(refocusMainWindow)   // reopen the custom SHOW windows if they were showing last time
+    MainTrackerTriforcesAndItems.reopenItemProgressWindowIfWasOpen()
     MainTrackerTriforcesAndItems.reopenItemLocationsWindowIfWasOpen()   // like the popouts: reopen at its remembered spot/size if it was open when the program last closed
     do! showProgress("all done")
     return drawTimeline

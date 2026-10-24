@@ -580,6 +580,8 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
     // two option toggles above the shops
     let makeToggle(text:string, opt:TrackerModelOptions.Bool) =
         let t = makeOrangeCheckBox(text, opt.Value)
+        t.FontSize <- 11.   // (smaller, so three fit)
+        t.Margin <- Thickness(5.,3.,5.,3.)
         t.Click.Add(fun _ ->
             opt.Value <- (t.IsChecked = System.Nullable<bool>(true))
             TrackerModelOptions.writeSettings())
@@ -587,6 +589,7 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
     let header = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,2.,0.,0.))
     header.Children.Add(makeToggle("Jump mouse to shop", TrackerModelOptions.JumpMouseToShop)) |> ignore
     header.Children.Add(makeToggle("Hover shop tooltip", TrackerModelOptions.HoverShopTooltip)) |> ignore
+    header.Children.Add(makeToggle("Shops in menu", TrackerModelOptions.ShopsInMenu)) |> ignore   // (applies the next time the overworld menu opens)
     row.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
     let tip = new TextBlock(Text="Right click to enter shops then click (or hotkey) to place on the map. You can also place the shop on the map first and enter items after.",
                             TextWrapping=TextWrapping.Wrap, Foreground=Brushes.Orange, FontSize=12., TextAlignment=TextAlignment.Center, Width=max 200. (row.DesiredSize.Width - 16.), Margin=Thickness(6.,6.,6.,2.))

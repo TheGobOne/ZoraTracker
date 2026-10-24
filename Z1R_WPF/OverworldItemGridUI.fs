@@ -227,10 +227,19 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
             let curState = TrackerModel.playerProgressAndTakeAnyHearts.GetTakeAnyHeart(i)
             if curState=0 then canvasAdd(c, Graphics.BMPtoImage(Graphics.owHeartEmpty_bmp), 0., 0.)
             elif curState=1 then canvasAdd(c, Graphics.BMPtoImage(Graphics.owHeartFull_bmp), 0., 0.)
+            elif TrackerModel.playerProgressAndTakeAnyHearts.GetTakeAnyKind(i)=2 then canvasAdd(c, Graphics.BMPtoImage(Graphics.blue_candle_bmp), 4., 4.)
+            elif TrackerModel.playerProgressAndTakeAnyHearts.GetTakeAnyKind(i)=3 then canvasAdd(c, Graphics.BMPtoImage(Graphics.red_potion_bmp), 4., 4.)
             else canvasAdd(c, Graphics.BMPtoImage(Graphics.owHeartEmpty_bmp), 0., 0.); Graphics.placeSkippedItemXDecoration(c)
         redraw()
         TrackerModel.playerProgressAndTakeAnyHearts.TakeAnyHeartChanged.Add(fun n -> if n=i then redraw())
-        let f b = TrackerModel.playerProgressAndTakeAnyHearts.SetTakeAnyHeart(i, (TrackerModel.playerProgressAndTakeAnyHearts.GetTakeAnyHeart(i) + (if b then 1 else -1) + 3) % 3)
+        // left click cycles empty -> heart -> blue candle -> potion (right click goes back); the take any cave tile follows
+        let f b =
+            let d = if b then 1 else -1
+            let next = (TrackerModel.playerProgressAndTakeAnyHearts.GetTakeAnyKind(i) + d + 4) % 4
+            // while a take any cave is holding this slot, 'empty' is skipped (clear the cave to give it back)
+            let hasCave = OverworldMapTileCustomization.takeAnyTaken.Values |> Seq.exists (fun (s, _, _) -> s = i)
+            let next = if hasCave && next = 0 then (next + d + 4) % 4 else next
+            OverworldMapTileCustomization.setTakeAnySlotKind(i, next)
         c.MouseLeftButtonDown.Add(fun _ -> f true)
         c.MouseRightButtonDown.Add(fun _ -> f false)
         c.MouseWheel.Add(fun x -> f (x.Delta<0))
@@ -380,7 +389,10 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
         Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(c)
         extrasCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(c)
         match timelineID with
-        | Some tid -> timelineItems.Add(new Timeline.TimelineItem(tid, bmpF))
+        | Some tid ->
+            // Progressive Items: the upgraded sword entries show the progressive sword at that tier
+            let progTier = match tid with | Timeline.TimelineID.WhiteSword -> 2 | Timeline.TimelineID.MagicalSword | Timeline.TimelineID.StartingMagicalSword -> 3 | _ -> 0
+            timelineItems.Add(new Timeline.TimelineItem(tid, (fun () -> if progTier > 0 && TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_item_bmps.[progTier] else bmpF())))
         | None -> ()
         c
     let basicBoxImpl(_tts, tid, img, prop, located, superseded) =
@@ -533,9 +545,11 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
 
     // these panels need to be created once, at startup time, as they have side effects that populate the timelineItems set
     // 4th sword and overworld hearts checked off on the map show on the timeline
-    timelineItems.Add(new Timeline.TimelineItem(Timeline.TimelineID.Sword4, fun()->Graphics.ow_sword4_item_bmp))
+    timelineItems.Add(new Timeline.TimelineItem(Timeline.TimelineID.Sword4, fun()-> (if TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_item_bmps.[4] else Graphics.ow_sword4_item_bmp)))
     for k = 1 to 12 do
         timelineItems.Add(new Timeline.TimelineItem(Timeline.TimelineID.OWHeart(k), fun()->Graphics.heart_container_bmp))
+    for k = 1 to 16 do
+        timelineItems.Add(new Timeline.TimelineItem(Timeline.TimelineID.CustomIcon(k), fun()-> (if k-1 < Graphics.customItemBmps.Length then Graphics.customItemBmps.[k-1] else null)))   // custom icons checked off on the map
     TrackerModel.playerHasSword4.Changed.Add(fun _ ->
         match TrackerModel.TimelineItemModel.All.TryGetValue("Sword4") with
         | true, tim -> tim.SetCollectedFromMap(TrackerModel.playerHasSword4.Value = 1)

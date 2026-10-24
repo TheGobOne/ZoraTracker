@@ -136,6 +136,7 @@ let mutable LeftClickDragAutoInverts = Bool(false)
 let mutable HintHoverTooltip = Bool(true)   // the Dead Woods / Lost Hills hint buttons show their hint in a big hover box
 let mutable JumpMouseToShop = Bool(true)   // the shop flyout puts the mouse on the first shop button
 let mutable HoverShopTooltip = Bool(false)   // hovering a shop on the overworld shows its items
+let mutable ShopsInMenu = Bool(false)   // the overworld tile menu gets a row of buttons for the 5 shops
 let mutable OldStyleGrab = Bool(false)   // the dungeon MOVE button works like the old GRAB (click a room to pick up it and every connected room); middle click on the button switches
 let mutable BookForHelpfulHints = Bool(false)
 let mutable ShowMouseMagnifierWindow = Bool(false)
@@ -175,6 +176,7 @@ let mutable InventoryAndHeartsPopout_DisplayedLT = ""
 let mutable RemainingItemsPoput_DisplayedLT = ""
 let mutable ItemLocationsWindow_DisplayedLT = ""
 let mutable ShowCustomOnStartup = false
+let mutable ItemProgressWindow_DisplayedLT = ""
 let mutable DungeonSummaryTabMode = 0
 let mutable PortNumber = "5000"
 let mutable CoopHostSession = false
@@ -274,6 +276,7 @@ type ReadWrite() =
     member val HintHoverTooltip = true with get,set
     member val JumpMouseToShop = true with get,set
     member val HoverShopTooltip = false with get,set
+    member val ShopsInMenu = false with get,set
     member val OldStyleGrab = false with get,set
     member val BookForHelpfulHints = false with get,set
     member val ShowMouseMagnifierWindow = false with get,set
@@ -310,6 +313,7 @@ type ReadWrite() =
     member val RemainingItemsPoput_DisplayedLT = "" with get,set
     member val ItemLocationsWindow_DisplayedLT = "" with get,set
     member val ShowCustomOnStartup = false with get,set
+    member val ItemProgressWindow_DisplayedLT = "" with get,set
     member val DungeonSummaryTabMode = 0 with get,set
 
     member val MyConsoleId = CoopSyncOptions.MyConsoleId with get,set
@@ -419,6 +423,7 @@ let private writeImpl(filename) =
     data.HintHoverTooltip <- HintHoverTooltip.Value
     data.JumpMouseToShop <- JumpMouseToShop.Value
     data.HoverShopTooltip <- HoverShopTooltip.Value
+    data.ShopsInMenu <- ShopsInMenu.Value
     data.OldStyleGrab <- OldStyleGrab.Value
     data.BookForHelpfulHints <- BookForHelpfulHints.Value
     data.ShowMouseMagnifierWindow <- ShowMouseMagnifierWindow.Value
@@ -454,6 +459,7 @@ let private writeImpl(filename) =
     data.RemainingItemsPoput_DisplayedLT <- RemainingItemsPoput_DisplayedLT
     data.ItemLocationsWindow_DisplayedLT <- ItemLocationsWindow_DisplayedLT
     data.ShowCustomOnStartup <- ShowCustomOnStartup
+    data.ItemProgressWindow_DisplayedLT <- ItemProgressWindow_DisplayedLT
     data.DungeonSummaryTabMode <- DungeonSummaryTabMode
     data.MyConsoleId <- CoopSyncOptions.MyConsoleId
     data.TargetConsoleId <- CoopSyncOptions.TargetConsoleId
@@ -573,6 +579,7 @@ let private read(filename) =
         HintHoverTooltip.Value <- data.HintHoverTooltip
         JumpMouseToShop.Value <- data.JumpMouseToShop
         HoverShopTooltip.Value <- data.HoverShopTooltip
+        ShopsInMenu.Value <- data.ShopsInMenu
         OldStyleGrab.Value <- data.OldStyleGrab
         BookForHelpfulHints.Value <- data.BookForHelpfulHints
         ShowMouseMagnifierWindow.Value <- data.ShowMouseMagnifierWindow
@@ -608,6 +615,7 @@ let private read(filename) =
         RemainingItemsPoput_DisplayedLT <- data.RemainingItemsPoput_DisplayedLT
         ItemLocationsWindow_DisplayedLT <- (if isNull data.ItemLocationsWindow_DisplayedLT then "" else data.ItemLocationsWindow_DisplayedLT)
         ShowCustomOnStartup <- data.ShowCustomOnStartup
+        ItemProgressWindow_DisplayedLT <- (if isNull data.ItemProgressWindow_DisplayedLT then "" else data.ItemProgressWindow_DisplayedLT)
         DungeonSummaryTabMode <- data.DungeonSummaryTabMode
 
         AllowItemIconOnNonShopTile.Value <- data.AllowItemIconOnNonShopTile

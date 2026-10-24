@@ -49,7 +49,7 @@ let boxCurrentBMP(boxCellCurrent, timelineOrigin) =
     | 15 -> Graphics.blue_potion_bmp
     | 16 -> Graphics.red_potion_bmp
     | 17 -> Graphics.old_letter_bmp
-    | 18 -> Graphics.ow_progressive_tier_item_bmps.[TrackerModel.progressiveSwordTier()]   // (P1..P4 while Progressive Items is on)
+    | 18 -> Graphics.ow_progressive_tier_item_bmps.[0]   // (the plain P sword; once placed, the box / tile shows the tier sprite)
     | 19 -> Graphics.ow_sword1_item_bmp
     | 20 -> Graphics.ow_sword3_item_bmp
     | 21 -> Graphics.ow_sword4_item_bmp
@@ -428,7 +428,18 @@ let DoModalGridSelect<'State,'Result>
                                 let ic,_,_ = placed.[pos]
                                 if isNull (box ic) then yield pos ]
             if leftovers.Length <= freeSpots.Length then
-                List.iteri (fun i it -> placed.[freeSpots.[i]] <- it) leftovers
+                // several new items (e.g. the shop buttons) stay together in order, starting at the first free row where they all fit side by side; otherwise they take the first free spots
+                let n = leftovers.Length
+                let freeSet = new System.Collections.Generic.HashSet<int>(freeSpots)
+                let rowStart =
+                    if n > 1 && n <= gnc then
+                        [ for r in 0 .. (total / gnc) - 1 do
+                            let st = r * gnc
+                            if [ st .. st + n - 1 ] |> List.forall (fun k -> freeSet.Contains k) then yield st ] |> List.tryHead
+                    else None
+                match rowStart with
+                | Some st -> List.iteri (fun i it -> placed.[st + i] <- it) leftovers
+                | None -> List.iteri (fun i it -> placed.[freeSpots.[i]] <- it) leftovers
                 Array.blit placed 0 items 0 total
         | _ -> ()
     let mutable origIdx = 
@@ -445,10 +456,19 @@ let DoModalGridSelect<'State,'Result>
     let gridScale = if uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail" then 2.0 elif uniqueName = "ItemBox" || uniqueName = "OWGridTile" then 1.25 elif uniqueName = "DungeonRoom" then 4./3. else 1.0
     let gridBorder = new Border(BorderThickness=Thickness(ST), BorderBrush=brushes.BorderBrush, Child=grid)
     // the dungeon-room monster and floor drop menus can be moved (drag the little bar above the grid) and resized (drag the corner grip); the placement is remembered
-    let isMovable = (uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail" || uniqueName = "DungeonRoom")
-    let gripOnLeft = true   // the resize grip is at the bottom-left (the right edge stays put while resizing)
+    let tipUnderGrid = (uniqueName = "MonsterDetail" || uniqueName = "FloorDropDetail" || uniqueName = "DungeonRoom")   // (these menus keep their tip box under the grid)
+    // the item menus (dungeon / overworld item boxes and the overworld tile menu) can be moved and resized too, in 'Jump to mouse' mode: the menu opens at its saved spot, the mouse jumps into it, and jumps back after a choice (like the monster menu).
+    // In 'Anchor to mouse' mode (the original behavior) the menu opens next to the tile you clicked.
+    let isJumpCapable = (uniqueName = "ItemBox" || uniqueName = "OWGridTile")
+    let jumpKey = uniqueName + "Jump"
+    let jumpMode = ref (isJumpCapable && (match TrackerModelOptions.MenuLayouts.TryGetValue(jumpKey) with | true, v when not (isNull v) && v.Length = 1 && v.[0] = "1" -> true | _ -> false))
+    let isMovable = tipUnderGrid || isJumpCapable
+    let moveActive() = not isJumpCapable || jumpMode.Value   // whether dragging the menu to a new spot is on (always, except in 'Anchor to mouse' mode)
+    let gripOnLeft = true   // the resize grip is normally at the bottom-left (the right edge stays put while resizing); it moves to the bottom-right when the left side would be off screen
+    let gripLeft = ref gripOnLeft
+    let gripBusy = ref false   // true while the grip is being dragged (it stays on its side meanwhile)
     let placeKey = uniqueName + "Placement"
-    let isResizable = isMovable || uniqueName = "OWGridTile"   // the overworld tile menu can be resized but not moved or locked (it opens next to the tile you are on)
+    let isResizable = isMovable
     let offX, offY, userScale = ref 0., ref 0., ref 1.0
     if isResizable then
         match TrackerModelOptions.MenuLayouts.TryGetValue(placeKey) with
@@ -477,7 +497,7 @@ let DoModalGridSelect<'State,'Result>
         else gx, gy
     canvasAdd(popupCanvas, gridBorder, gx, gy)
     // a moved menu stays at the same spot on screen (its position is saved absolutely, not relative to the tile you clicked)
-    if isMovable then
+    let applySavedAbs() =
         match TrackerModelOptions.MenuLayouts.TryGetValue(placeKey + "AbsV2") with
         | true, v when not (isNull v) && v.Length = 2 ->
             let inv = System.Globalization.CultureInfo.InvariantCulture
@@ -490,6 +510,7 @@ let DoModalGridSelect<'State,'Result>
                 offX.Value <- a2 - tileX - gx
                 offY.Value <- b2 - tileY - gy
         | _ -> ()
+    if isMovable && moveActive() then applySavedAbs()
     let noteTipText = "Tip: hold Shift and\ndrag an icon to move it\nto your preferred spot.\n(Saved for next time.)"
     let noteTextBlock : TextBlock ref = ref null
     let noteBox = 
@@ -511,6 +532,19 @@ let DoModalGridSelect<'State,'Result>
     lockText.LayoutTransform <- new RotateTransform(-90.)   // the lock bar is a tall vertical strip beside the tip box
     let lockBtn = new Border(Width=24., Background=Brushes.Black, BorderBrush=Brushes.Gray, BorderThickness=Thickness(1.), Cursor=System.Windows.Input.Cursors.Hand,
                                  ToolTip="Lock / unlock this menu's position and size", Child=lockText)
+    // 'Anchor to mouse' (the menu opens next to the tile) / 'Jump to mouse' (the menu opens at its saved spot and the mouse jumps into it, then back to the tile after a choice)
+    let mkModeBtn(text:string, tip:string) =
+        new Border(Background=Brushes.Black, BorderBrush=Brushes.Gray, BorderThickness=Thickness(1.), Padding=Thickness(4.,2.,4.,2.), Cursor=System.Windows.Input.Cursors.Hand, ToolTip=tip,
+                   Child=new TextBlock(Text=text, FontSize=11., Foreground=Brushes.Gainsboro, IsHitTestVisible=false, TextAlignment=TextAlignment.Center))
+    let anchorBtn = mkModeBtn("Anchor to mouse", "The menu opens next to the tile you clicked (the original behavior)")
+    let jumpBtn = mkModeBtn("Jump to mouse", "The menu opens at its saved spot, the mouse jumps into it, and jumps back to the tile after you choose")
+    anchorBtn.Width <- 110.
+    jumpBtn.Width <- 110.
+    let refreshModeLook() =
+        for (b:Border, on) in [ anchorBtn, not jumpMode.Value; jumpBtn, jumpMode.Value ] do
+            b.BorderBrush <- (if on then Brushes.Orange else Brushes.Gray)
+            (b.Child :?> TextBlock).Foreground <- (if on then Brushes.Orange else Brushes.Gainsboro)
+    refreshModeLook()
     let hintText = new TextBlock(Foreground=Brushes.Gray, FontSize=10., HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, IsHitTestVisible=false)
     let headerGrid = new Grid()
     headerGrid.Children.Add(hintText) |> ignore
@@ -519,16 +553,17 @@ let DoModalGridSelect<'State,'Result>
         match noteBox with Some b -> popupCanvas.Children.Remove(b) | None -> ()   // (not just hidden: removed, so nothing of it can show)
     let moveHeader = new Border(Height=14., Background=Brushes.Black, BorderBrush=brushes.BorderBrush, BorderThickness=Thickness(1.), Child=headerGrid)
     let refreshLockLook() =
+        if not (isNull noteTextBlock.Value) && not (moveActive()) then noteTextBlock.Value.Text <- noteTipText
         if isLocked.Value then
             lockText.Text <- "LOCKED"
             lockText.Foreground <- Brushes.Gray
-            if not (isNull noteTextBlock.Value) && isMovable then noteTextBlock.Value.Text <- noteTipText + "\n\nClick LOCKED (the bar) to unlock this menu so it can be moved / resized."
+            if not (isNull noteTextBlock.Value) && isMovable && moveActive() then noteTextBlock.Value.Text <- noteTipText + "\n\nClick LOCKED (the bar) to unlock this menu so it can be moved / resized."
             moveHeader.Cursor <- System.Windows.Input.Cursors.Arrow
             hintText.Text <- ""
         else
             lockText.Text <- "UNLOCKED"
             lockText.Foreground <- Brushes.Orange
-            if not (isNull noteTextBlock.Value) && isMovable then noteTextBlock.Value.Text <- noteTipText + "\n\nUNLOCKED: drag the bar to move this menu, drag the corner grip to resize it."
+            if not (isNull noteTextBlock.Value) && isMovable && moveActive() then noteTextBlock.Value.Text <- noteTipText + "\n\nUNLOCKED: drag the bar to move this menu, drag the corner grip to resize it."
             moveHeader.Cursor <- System.Windows.Input.Cursors.SizeAll
             hintText.Text <- "drag here to move"
     let sizeGrip = new Border(Width=32., Height=32., Background=Brushes.Black, BorderBrush=brushes.BorderBrush, BorderThickness=Thickness(1.), Cursor=(if gripOnLeft then System.Windows.Input.Cursors.SizeNESW else System.Windows.Input.Cursors.SizeNWSE),
@@ -558,10 +593,15 @@ let DoModalGridSelect<'State,'Result>
             moveHeader.Width <- W
             Canvas.SetLeft(moveHeader, X)
             Canvas.SetTop(moveHeader, (if uniqueName = "DungeonRoom" then Y + H + 55. else Y - 16.))   // (the room menu has its caption frame around the grid, so its bar goes under the frame)
-            Canvas.SetLeft(sizeGrip, (if gripOnLeft then X - (if uniqueName = "DungeonRoom" then 42. else 34.) else X + W + 2.))
+            let gripLeftX = X - (if uniqueName = "DungeonRoom" then 42. else 34.)
+            if not gripBusy.Value then
+                gripLeft.Value <- (tileX + gripLeftX >= 0. || (appW > 0. && tileX + X + W + 2. + 32. > appW))   // (X is relative to the tile, so add the tile's position to compare with the window)   // moves to the right side of the menu if the left side would be off screen
+                sizeGrip.Cursor <- (if gripLeft.Value then System.Windows.Input.Cursors.SizeNESW else System.Windows.Input.Cursors.SizeNWSE)
+                (sizeGrip.Child :?> TextBlock).Text <- (if gripLeft.Value then "◣" else "◢")
+            Canvas.SetLeft(sizeGrip, (if gripLeft.Value then gripLeftX else X + W + 2.))
             Canvas.SetTop(sizeGrip, Y + H - 30.)
             match noteBox with
-            | Some b when not isMovable ->
+            | Some b when not tipUnderGrid ->
                 b.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
                 let wasTop = abs (Canvas.GetTop(b) - gy) < 1.
                 if Canvas.GetLeft(b) > gx then
@@ -570,6 +610,31 @@ let DoModalGridSelect<'State,'Result>
                 elif Canvas.GetLeft(b) < gx then
                     Canvas.SetLeft(b, X - b.DesiredSize.Width - 6.)   // it was to the left of the grid; keep it there
                     if wasTop then Canvas.SetTop(b, Y)
+                if isJumpCapable && not hideHintAndLock then
+                    // the lock bar goes beside the tip box; the two mode toggles sit above the grid's top corners
+                    let tipLeft, tipTop = Canvas.GetLeft(b), Canvas.GetTop(b)
+                    lockBtn.Height <- b.DesiredSize.Height
+                    Canvas.SetLeft(lockBtn, (if tipLeft < X - 1. then tipLeft - 30. else tipLeft + b.DesiredSize.Width + 6.))
+                    Canvas.SetTop(lockBtn, tipTop)
+                    if uniqueName = "ItemBox" then
+                        // the item menu: two small buttons along the bottom edge, under the explainer
+                        let decoBottom = extraDecorations |> Seq.map (fun (d, _, dy) -> dy + (if System.Double.IsNaN d.Height then 0. else d.Height)) |> Seq.fold max 0.
+                        let btnTop = (max (decoBottom + offY.Value) (Y + H)) + 4.
+                        let bw = floor ((W - 2.) / 2.)
+                        for (btn:Border) in [ anchorBtn; jumpBtn ] do
+                            btn.Width <- bw
+                            btn.Padding <- Thickness(2.,1.,2.,1.)
+                            (btn.Child :?> TextBlock).FontSize <- 9.
+                        Canvas.SetLeft(anchorBtn, X)
+                        Canvas.SetTop(anchorBtn, btnTop)
+                        Canvas.SetLeft(jumpBtn, X + W - bw)
+                        Canvas.SetTop(jumpBtn, btnTop)
+                    else
+                        let btnTop = (if moveActive() && not isLocked.Value then Y - 46. else Y - 30.)   // right above the grid (above the drag bar while that is showing)
+                        Canvas.SetLeft(anchorBtn, X)
+                        Canvas.SetTop(anchorBtn, btnTop)
+                        Canvas.SetLeft(jumpBtn, X + W - jumpBtn.Width)
+                        Canvas.SetTop(jumpBtn, btnTop)
             | Some b ->
                 let noteTop = (if uniqueName = "DungeonRoom" then Y + H + 75. else Y + H + 8. + (if uniqueName = "FloorDropDetail" then 36. else 0.))
                 Canvas.SetLeft(b, X)
@@ -581,12 +646,17 @@ let DoModalGridSelect<'State,'Result>
                     Canvas.SetLeft(lockBtn, X + b.DesiredSize.Width + 6.)
                     Canvas.SetTop(lockBtn, noteTop)   // under the grid (the floor drop's name goes between)
             | None -> ()
+            if isJumpCapable then
+                // the explainer under the grid moves with it
+                for (d, dx, dy) in extraDecorations do
+                    Canvas.SetLeft(d, dx + offX.Value)
+                    Canvas.SetTop(d, dy + offY.Value)
             MovableGridRect <- (X, Y, W, H)
     let refreshLock() =
         refreshLockLook()
-        sizeGrip.Visibility <- (if isMovable && isLocked.Value then Visibility.Collapsed else Visibility.Visible)
-        moveHeader.Visibility <- (if isLocked.Value || hideHintAndLock then Visibility.Collapsed else Visibility.Visible)
-        lockBtn.Visibility <- (if hideHintAndLock then Visibility.Collapsed else Visibility.Visible)
+        sizeGrip.Visibility <- (if isMovable && isLocked.Value && moveActive() then Visibility.Collapsed else Visibility.Visible)
+        moveHeader.Visibility <- (if isLocked.Value || hideHintAndLock || not (moveActive()) then Visibility.Collapsed else Visibility.Visible)
+        lockBtn.Visibility <- (if hideHintAndLock || not (moveActive()) then Visibility.Collapsed else Visibility.Visible)
     if isResizable then
         Canvas.SetZIndex(moveHeader, 50)
         Canvas.SetZIndex(sizeGrip, 50)
@@ -596,6 +666,21 @@ let DoModalGridSelect<'State,'Result>
         popupCanvas.Children.Add(sizeGrip) |> ignore
         refreshLock()
         layoutMovables()
+        if isJumpCapable && not hideHintAndLock then
+            Canvas.SetZIndex(anchorBtn, 50)
+            Canvas.SetZIndex(jumpBtn, 50)
+            popupCanvas.Children.Add(anchorBtn) |> ignore
+            popupCanvas.Children.Add(jumpBtn) |> ignore
+            let setMode(jump:bool) =
+                jumpMode.Value <- jump
+                TrackerModelOptions.MenuLayouts.[jumpKey] <- [| (if jump then "1" else "0") |]
+                if jump then applySavedAbs() else (offX.Value <- 0.; offY.Value <- 0.)
+                TrackerModelOptions.writeSettings()
+                refreshModeLook()
+                refreshLock()
+                layoutMovables()
+            anchorBtn.MouseLeftButtonDown.Add(fun ea -> setMode false; ea.Handled <- true)
+            jumpBtn.MouseLeftButtonDown.Add(fun ea -> setMode true; ea.Handled <- true)
     let mutable currentState = origIdx   // the only bit of local mutable state during the modal - it ranges from 0..gridElements.Length-1
     let mutable allDoneSoNoLongerNeedToMouseLeaveSnapback = false
     let canvasesToClear = ResizeArray<Canvas>()
@@ -607,6 +692,8 @@ let DoModalGridSelect<'State,'Result>
         popupCanvas.Children.Remove(moveHeader)
         popupCanvas.Children.Remove(lockBtn)
         popupCanvas.Children.Remove(sizeGrip)
+        popupCanvas.Children.Remove(anchorBtn)
+        popupCanvas.Children.Remove(jumpBtn)
         for c in canvasesToClear do
             c.Children.Clear()
     let dismiss() =
@@ -635,7 +722,7 @@ let DoModalGridSelect<'State,'Result>
         let inv = System.Globalization.CultureInfo.InvariantCulture
         let saveMovable() =
             TrackerModelOptions.MenuLayouts.[placeKey] <- [| "0"; "0"; userScale.Value.ToString(inv) |]
-            if isMovable then TrackerModelOptions.MenuLayouts.[placeKey + "AbsV2"] <- [| (tileX + gx + offX.Value).ToString(inv); (tileY + gy + offY.Value).ToString(inv) |]
+            if isMovable && moveActive() then TrackerModelOptions.MenuLayouts.[placeKey + "AbsV2"] <- [| (tileX + gx + offX.Value).ToString(inv); (tileY + gy + offY.Value).ToString(inv) |]
             TrackerModelOptions.writeSettings()
         let relayout() =
             layoutMovables()
@@ -671,8 +758,9 @@ let DoModalGridSelect<'State,'Result>
         let resizing = ref false
         let startX, startScale, startOffX = ref 0., ref 1.0, ref 0.
         sizeGrip.MouseLeftButtonDown.Add(fun ea ->
-            if not (isMovable && isLocked.Value) then
+            if not (isMovable && isLocked.Value && moveActive()) then
                 resizing.Value <- true
+                gripBusy.Value <- true
                 startX.Value <- ea.GetPosition(popupCanvas).X
                 startScale.Value <- userScale.Value
                 startOffX.Value <- offX.Value
@@ -682,13 +770,14 @@ let DoModalGridSelect<'State,'Result>
             if resizing.Value then
                 let dx = ea.GetPosition(popupCanvas).X - startX.Value
                 let w0 = gridPixW*startScale.Value
-                let dw = if gripOnLeft then -dx else dx   // dragging the left grip further left makes it bigger
+                let dw = if gripLeft.Value then -dx else dx   // dragging the left grip further left makes it bigger
                 userScale.Value <- max 0.5 (min 4.0 (startScale.Value * (w0 + dw) / w0))
-                if gripOnLeft then offX.Value <- startOffX.Value - (gridPixW*userScale.Value - w0)   // keep the right edge fixed
+                if gripLeft.Value then offX.Value <- startOffX.Value - (gridPixW*userScale.Value - w0)   // keep the right edge fixed
                 relayout())
         sizeGrip.MouseLeftButtonUp.Add(fun ea ->
             if resizing.Value then
                 resizing.Value <- false
+                gripBusy.Value <- false
                 sizeGrip.ReleaseMouseCapture()
                 saveMovable()
             ea.Handled <- true)
@@ -700,7 +789,13 @@ let DoModalGridSelect<'State,'Result>
         let cx, cy = 0, 0   // the top-left choice
         let sc = gridScale * userScale.Value
         Graphics.WarpMouseCursorTo(Point(tileX + gx + offX.Value + sc*(ST + (float cx + 0.5)*float COLW), tileY + gy + offY.Value + sc*(ST + (float cy + 0.5)*float ROWH)))
-    if activationDelta <> 0 then  
+    // the item menus in 'Jump to mouse' mode bring the mouse into the menu, onto the current choice
+    if isJumpCapable && jumpMode.Value then
+        let sc = gridScale * userScale.Value
+        let cx, cy = origIdx % gnc, origIdx / gnc
+        let yOff = if cy > 0 then float firstRowExtra else float firstRowExtra / 2.
+        Graphics.WarpMouseCursorTo(Point(tileX + gx + offX.Value + sc*(ST + (float cx + 0.5)*float COLW), tileY + gy + offY.Value + sc*(ST + float (cy*ROWH) + yOff + float ROWH / 2.)))
+    if activationDelta <> 0 && not (isJumpCapable && jumpMode.Value) then  
         recenterMouse()
     tileCanvas.MouseWheel.Add(fun x -> recenterMouse(); if x.Delta<0 then next() else prev())
     tileCanvas.MouseDown.Add(fun ea -> 
@@ -834,7 +929,7 @@ let DoModalGridSelect<'State,'Result>
             redraw()
             let mouseWarpDismiss() =
                 allDoneSoNoLongerNeedToMouseLeaveSnapback <- true
-                match gridClickDismissalWarpReturn with
+                match (if isJumpCapable && jumpMode.Value then WarpToCenter else gridClickDismissalWarpReturn) with
                 | WarpTo(pos) -> Graphics.WarpMouseCursorTo(pos)
                 | WarpToCenter -> 
                     let pos = tileCanvas.TranslatePoint(Point(tileCanvas.Width/2.,tileCanvas.Height/2.), cm.AppMainCanvas)
@@ -874,6 +969,7 @@ let DoModalGridSelect<'State,'Result>
         snapBack())
     for (d,x,y) in extraDecorations do
         canvasAdd(popupCanvas, d, x, y)
+    if isJumpCapable && isResizable then layoutMovables()   // (puts the explainer where the moved menu is)
     // initial input
     match activationDelta with
     | -1 -> prev()
@@ -893,15 +989,6 @@ let DoModalGridSelect<'State,'Result>
 
 let itemBoxMouseButtonExplainerDecoration =
     let d = new DockPanel(Height=90., LastChildFill=true, Background=Brushes.Black)
-    let mouseBMP = Graphics.mouseIconButtonColorsBMP
-    let mouse = Graphics.BMPtoImage mouseBMP
-    mouse.Height <- 90.
-    mouse.Width <- float(mouseBMP.Width) * 90. / float(mouseBMP.Height)
-    while (int mouse.Width)%3 <> 0 do
-        mouse.Width <- mouse.Width + 1.   // ensure multiple of 3, so 2/3 size looks good for the panel on the right
-    mouse.Stretch <- Stretch.Uniform
-    d.Children.Add(mouse) |> ignore
-    DockPanel.SetDock(mouse,Dock.Left)
     let sp = new StackPanel(Orientation=Orientation.Vertical)
     d.Children.Add(sp) |> ignore
     for color, text in [yes,"Have it"; skipped,"Don't want it"; no,"Don't have it"] do
@@ -929,8 +1016,9 @@ let swordMenuBmpFor(ident:int) : System.Drawing.Bitmap =
     | 13 -> (if TrackerModel.IsWSMSReplacedByBU() then null elif TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_menu_bmps.[2] else Graphics.ow_sword2_menu_bmp)
     | 20 -> (if TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_menu_bmps.[3] else Graphics.ow_sword3_menu_bmp)
     | 21 -> (if TrackerModel.ProgressiveItems then Graphics.ow_progressive_tier_menu_bmps.[4] else Graphics.ow_sword4_menu_bmp)
-    | 18 -> Graphics.ow_progressive_tier_menu_bmps.[TrackerModel.progressiveSwordTier()]
+    | 18 -> Graphics.ow_progressive_tier_menu_bmps.[0]
     | _ -> null
+let mutable allItemsSelectable = false   // true while the level 9 entry item menu is open: that box is only a note, so every item (even a 'disabled' one) can be picked
 let mutable itemMenuDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain   // DoLocalItemComboBox swaps this for boxes that don't use up items
 let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activationDelta, originalPlayerHas, callerExtraDecorations, gridClickDismissalWarpReturn) = async {
     let innerc = new Canvas(Width=24., Height=24., Background=Brushes.Black)  // just has item drawn on it, not the box
@@ -988,11 +1076,11 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
                         let shownIdent = if f >= 2 && not (TrackerModel.progressiveDisabledIdent ident) then TrackerModel.progressiveFamilyIdent(f, TrackerModel.progressiveFamilyTier f) else ident
                         upcast (boxCurrentBMP(shownIdent, None) |> Graphics.BMPtoImage)
             // Progressive Items: the plain swords are disabled (the progressive sword does their job)
-            let progDisabled = ident <> boxCellCurrent && TrackerModel.progressiveDisabledIdent ident
+            let progDisabled = not allItemsSelectable && ident <> boxCellCurrent && TrackerModel.progressiveDisabledIdent ident
             if progDisabled then
                 fe.ToolTip <- "Disabled Due to Progressive Items"
                 System.Windows.Controls.ToolTipService.SetShowOnDisabled(fe, true)
-            let isSelectable = not progDisabled && (ident = -1 || (ident <> -2 && ident=boxCellCurrent) || (ident <> -2 &&  (itemMenuDomain.CanAddUse(ident) && not (ident = TrackerModel.ITEMS.WHITESWORD4 && not TrackerModelOptions.FourthSwordEnabled))))   // the 4th sword is disabled unless the 4th Sword start option is on
+            let isSelectable = (allItemsSelectable && ident <> -2) || not progDisabled && (ident = -1 || (ident <> -2 && ident=boxCellCurrent) || (ident <> -2 &&  (itemMenuDomain.CanAddUse(ident) && not (ident = TrackerModel.ITEMS.WHITESWORD4 && not TrackerModelOptions.FourthSwordEnabled))))   // the 4th sword is disabled unless the 4th Sword start option is on
             yield fe, isSelectable, ident
         |]
     let originalStateIndex = gridIdents |> Array.tryFindIndex (fun ident -> ident = boxCellCurrent) |> Option.defaultValue emptyCellIdx
@@ -1015,7 +1103,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
     let gridX = if decorationsShouldGoToTheLeft then -179. else 27.   // (the item menu is drawn 1.25x bigger, so the left-hand version starts further left to keep its right edge in place)
     let menuExtraH = 44.   // the 1.25x bigger menu is about 44px taller, so the things below it move down
     let customExtraH = float(gridRows - 6) * 34.   // each custom-icon row makes the menu taller, so the things below it move down
-    let decoX,decoY = if decorationsShouldGoToTheLeft then -179., 108.+menuExtraH+customExtraH+(gridY-wantedGridY) else 27., 108.+menuExtraH+customExtraH+(gridY-wantedGridY)
+    let _decoX,_decoY = if decorationsShouldGoToTheLeft then -179., 108.+menuExtraH+customExtraH+(gridY-wantedGridY) else 27., 108.+menuExtraH+customExtraH+(gridY-wantedGridY)
     let redrawTile(ident) =
         // the user has changed the current selection via mousing or scrolling, redraw the preview tile appropriately to display ident
         let ident = if ident = -2 then -1 else ident   // -2 is a blank padding cell in the menu
@@ -1036,7 +1124,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
             DockPanel.SetDock(textBorder, Dock.Right)
             Canvas.SetTop(dp, -3.)
             Canvas.SetLeft(dp, 165.)
-    let extraDecorations = [yield itemBoxMouseButtonExplainerDecoration, decoX, decoY; yield! callerExtraDecorations]
+    let extraDecorations = [yield! callerExtraDecorations]   // (the 'Have it / Don't want it / Don't have it' explainer box was removed)
     return! DoModalGridSelect(cm, boxX+3., boxY+3., innerc, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (5, gridRows, 21, 21), 
                                 17., 12., gridX, gridY, redrawTile, onClick, extraDecorations, itemBoxModalGridSelectBrushes, gridClickDismissalWarpReturn, None, "ItemBox", None)
     }

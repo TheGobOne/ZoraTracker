@@ -463,6 +463,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
         options2sp.Children.Add(changeVoiceButton) |> ignore
     // Auto-save: how often (1-10 minutes) the tracker writes its auto-save file
     let autoSaveHeader = new TextBox(Text="Auto-save", IsReadOnly=true, FontWeight=FontWeights.Bold, Margin=Thickness(0.,12.,0.,0.)) |> header
+    options2sp.Children.Add(new DockPanel(Height=6.)) |> ignore   // extra space ABOVE the Auto-save heading (a spacer, so this and everything below it moves down 2px)
     options2sp.Children.Add(autoSaveHeader) |> ignore
     let autoSaveLabel = new TextBox(Text=sprintf "Auto-save Interval (Minutes): %d" TrackerModelOptions.AutoSaveMinutes, IsReadOnly=true, Margin=Thickness(0.,4.,0.,0.), Background=Brushes.Transparent)
     options2sp.Children.Add(autoSaveLabel) |> ignore

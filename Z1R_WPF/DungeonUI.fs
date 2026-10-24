@@ -1357,7 +1357,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
             grabHelper.ToggleGrabMode()
             grabRedraw()
             )
-        grabButton.ToolTip <- "Middle click: switch between MOVE (pick rooms one by one, right click to cut, left click to drop) and GRAB (click a room to pick up it and every connected room)"
+        grabButton.ToolTip <- "Middle click: switch MOVE / GRAB\nMOVE: right click cuts, left click drops. GRAB: picks up connected rooms"
         // middle click switches between the new MOVE and the old GRAB; the choice is remembered
         grabButton.PreviewMouseDown.Add(fun ea ->
             if ea.ChangedButton = Input.MouseButton.Middle then
@@ -1686,10 +1686,13 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                 else false
 
                             // the Princess Room has unbombable walls on its left, top and right: mark those three doors as solid walls when it is placed
+                            // (the Old Man (hint) and Bomb Upgrade rooms have an unbombable wall on the top side only)
                             let princessWallsChanged =
-                                if newState.RoomType = RoomType.PrincessRoom && originalState.RoomType <> RoomType.PrincessRoom then
-                                    let walls = [ if i > 0 then yield horizontalDoors.[i-1,j]
-                                                  if i < 7 then yield horizontalDoors.[i,j]
+                                let isPrincess = newState.RoomType = RoomType.PrincessRoom && originalState.RoomType <> RoomType.PrincessRoom
+                                let isTopWallRoom = (newState.RoomType = RoomType.OldManHint || newState.RoomType = RoomType.BombUpgrade) && originalState.RoomType <> newState.RoomType
+                                if isPrincess || isTopWallRoom then
+                                    let walls = [ if isPrincess && i > 0 then yield horizontalDoors.[i-1,j]
+                                                  if isPrincess && i < 7 then yield horizontalDoors.[i,j]
                                                   if j > 0 then yield verticalDoors.[i,j-1] ]
                                     let mutable changed = false
                                     for door in walls do
@@ -2312,12 +2315,25 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
         let summaryMode = TrackerModel.EventingInt(TrackerModelOptions.DungeonSummaryTabMode)   // 0=default, 1=preview, 2=detail
         let makeMidiPreviewBehavior(i, fe:FrameworkElement) =
             // midi at 2/3 size looks fine and covers notes area fine when hovering summary of a dungeon
-            let midi = new Shapes.Rectangle(Width=2.* float w, Height=2.* float h, Fill=new VisualBrush(contentCanvases.[i]))
+            // (the preview fills the whole notes area, as large as fits without distorting the dungeon; the layout tells us where that area is)
+            let midi = new Shapes.Rectangle(Width=2.* float w, Height=2.* float h, Fill=new VisualBrush(contentCanvases.[i], Stretch=Stretch.Uniform))
             let overlay = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(5.), Background=Brushes.Black, IsHitTestVisible=false, Child=midi)
-            Canvas.SetLeft(overlay, 0.)
-            Canvas.SetBottom(overlay, 0.)
+            let placeOverlay() =
+                match rightwardCanvas.Tag with
+                | :? (float*float) as area when not (System.Double.IsNaN rightwardCanvas.Width) ->
+                    let (top, height) = area
+                    overlay.Width <- rightwardCanvas.Width
+                    overlay.Height <- height
+                    midi.Width <- max 10. (rightwardCanvas.Width - 10.)
+                    midi.Height <- max 10. (height - 10.)
+                    Canvas.SetLeft(overlay, 0.)
+                    Canvas.SetTop(overlay, top)
+                | _ ->
+                    Canvas.SetLeft(overlay, 0.)
+                    Canvas.SetBottom(overlay, 0.)
             fe.MouseEnter.Add(fun _ ->
                 rightwardCanvas.Children.Clear()
+                placeOverlay()
                 rightwardCanvas.Children.Add(overlay) |> ignore
                 levelTabSelected.Trigger(i+1)
                 contentCanvasMouseEnterFunc(10+i+1)

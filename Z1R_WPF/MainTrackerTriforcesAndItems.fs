@@ -142,6 +142,66 @@ let openItemLocationsWindow() = openItemLocationsWindowImpl(true)
 // called at startup (after the tracker is set up): reopens the window if it was left open when the program last closed
 let reopenItemLocationsWindowIfWasOpen() = openItemLocationsWindowImpl(false)
 
+// a popout window that mirrors the Item Progress bar (a live picture of the bar; set 'itemProgressSource' to the bar's canvas)
+let mutable itemProgressSource : FrameworkElement = null
+let mutable itemProgressWindow : Window = null
+let openItemProgressWindowImpl(userClick) =
+    let m = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ItemProgressWindow_DisplayedLT, itemLocationsRegex)
+    let validPos = m.Success && not(float m.Groups.[2].Value < ITEMLOC_MINIMIZED)
+    if itemProgressSource = null then ()
+    elif itemProgressWindow <> null then
+        itemProgressWindow.Activate() |> ignore
+    elif userClick || (validPos && m.Groups.[1].Value = "1") then
+        let itemsW, itemsH = 15.*30., 30.
+        // (a picture of the whole bar, shifted left so only the item slots show; the plain whole-visual brush is the reliable way to mirror a live element)
+        // a brush maps the visual's *content bounds* onto the picture, so give the bar an invisible full-size child: then the bounds are always exactly the whole bar (1:1), however many items are showing
+        (match itemProgressSource with
+         | :? Canvas as c when not(c.Tag = box "mirrorPad") ->
+            c.Tag <- box "mirrorPad"
+            c.Children.Add(new Shapes.Rectangle(Width=c.Width, Height=c.Height, Fill=Brushes.Transparent, IsHitTestVisible=false)) |> ignore
+         | _ -> ())
+        let full = new Shapes.Rectangle(Width=itemProgressSource.Width, Height=itemsH, IsHitTestVisible=false, Fill=new VisualBrush(itemProgressSource))
+        let rect = new Canvas(Width=itemsW, Height=itemsH, ClipToBounds=true, Background=Brushes.Black, IsHitTestVisible=false)
+        Canvas.SetLeft(full, -OverworldItemGridUI.ITEM_PROGRESS_FIRST_ITEM + 6.)   // (+6 so the first icon isn't clipped at the left edge)
+        rect.Children.Add(full) |> ignore
+        let vb = new Viewbox(Child=rect, Stretch=Stretch.Uniform, StretchDirection=StretchDirection.DownOnly)
+        let w = new Window(Title="Item Progress", ResizeMode=ResizeMode.CanResizeWithGrip, SizeToContent=SizeToContent.WidthAndHeight, Background=Brushes.Black, ShowActivated=false, Content=vb)
+        let savedW, savedH = (if m.Success && m.Groups.[4].Success && m.Groups.[5].Success && float m.Groups.[4].Value >= 100. && float m.Groups.[5].Value >= 30. then (float m.Groups.[4].Value, float m.Groups.[5].Value) else (0., 0.))
+        if savedW > 0. then
+            w.SizeToContent <- SizeToContent.Manual
+            w.Width <- savedW
+            w.Height <- savedH
+        if validPos then
+            w.WindowStartupLocation <- WindowStartupLocation.Manual
+            w.Left <- float m.Groups.[2].Value
+            w.Top <- float m.Groups.[3].Value
+        let mainClosing = ref false
+        let save(isOpen) =
+            let bounds = if w.Left < ITEMLOC_MINIMIZED then w.RestoreBounds else Rect(w.Left, w.Top, w.ActualWidth, w.ActualHeight)
+            TrackerModelOptions.ItemProgressWindow_DisplayedLT <- sprintf "%d,%d,%d,%d,%d" (if isOpen then 1 else 0) (int bounds.Left) (int bounds.Top) (int bounds.Width) (int bounds.Height)
+            TrackerModelOptions.writeSettings()
+        let saveTimer = new System.Windows.Threading.DispatcherTimer(Interval=System.TimeSpan.FromMilliseconds(600.))
+        saveTimer.Tick.Add(fun _ -> saveTimer.Stop(); save(true))
+        w.LocationChanged.Add(fun _ -> if w.IsLoaded then (saveTimer.Stop(); saveTimer.Start()))
+        w.SizeChanged.Add(fun _ -> if w.IsLoaded && w.SizeToContent = SizeToContent.Manual then (saveTimer.Stop(); saveTimer.Start()))
+        w.ContentRendered.Add(fun _ ->
+            if w.SizeToContent <> SizeToContent.Manual then
+                let aw, ah = w.ActualWidth, w.ActualHeight
+                w.SizeToContent <- SizeToContent.Manual
+                w.Width <- aw
+                w.Height <- ah
+            vb.StretchDirection <- StretchDirection.Both)
+        Application.Current.MainWindow.Closed.Add(fun _ -> mainClosing.Value <- true; try w.Close() with _ -> ())   // (stays 'open' in the settings, so it reappears next time)
+        w.Closed.Add(fun _ ->
+            itemProgressWindow <- null
+            saveTimer.Stop()
+            if not mainClosing.Value then save(false))   // the user closed it themselves: don't reopen it next time
+        itemProgressWindow <- w
+        w.Show()
+        if userClick then save(true)
+let openItemProgressWindow() = openItemProgressWindowImpl(true)
+let reopenItemProgressWindowIfWasOpen() = openItemProgressWindowImpl(false)
+
 let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldInstance, layout:Layout.IApplicationLayoutBase, kind:TrackerModel.DungeonTrackerInstanceKind) =
     let mainTrackerGrid = makeGrid(9, 5, 30, 30)
     let mainTrackerCanvas = new Canvas()
@@ -190,7 +250,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                                 prop.Set(true)
                                 weCheckedIt.Value <- true
                                 TrackerModel.TimelineItemModel.UnstampByIdentifier(linkedTimelineName(id))   // (this box's own entry stays)
-                            else
+                            elif not TrackerModel.ProgressiveItems then   // (Progressive Items: a second copy is an upgrade, so this box keeps its own entry)
                                 TrackerModel.timelineSuppressedBoxes.Add(box) |> ignore
                                 TrackerModel.TimelineItemModel.UnstampByIdentifier(tid.Identifier)   // (the item's own entry stays)
                 TrackerModel.recomputePlayerStateSummary())
@@ -230,7 +290,12 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                         dungeon.ToggleTriforce()
                 wasObtainedTriforcePiece.Value <- now)
         | None -> ()
-        timelineItems.Add(new Timeline.TimelineItem(tid, fun()->CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), Some(tid))))
+        timelineItems.Add(new Timeline.TimelineItem(tid, fun()->
+            // Progressive Items: a collected upgrade shows the tier it was collected at (e.g. the red ring)
+            let f = TrackerModel.progressiveFamily(box.CellCurrent())
+            match (if f > 0 && box.PlayerHas() = TrackerModel.PlayerHas.YES then TrackerModel.progressiveBoxTier.TryGetValue(box) else (false, 0)) with
+            | true, v -> (if f = 1 then Graphics.ow_progressive_tier_item_bmps.[min 4 (max 1 v)] else CustomComboBoxes.boxCurrentBMP(TrackerModel.progressiveFamilyIdent(f, min 2 (max 1 v)), None))
+            | _ -> CustomComboBoxes.boxCurrentBMP(box.CellCurrent(), Some(tid))))
         c
     if TrackerModel.IsHiddenDungeonNumbers() then
         for i = 0 to 8 do
@@ -532,7 +597,9 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 x8.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
                 contentW <- 32. + 22. + x8.DesiredSize.Width - 3.   // the real width of the "xN" text
             else
-                let img = Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(item, None))
+                // (the progressive sword shows the tier it had when picked, not the live tier, so upgrades never change this box)
+                let bmp = if item = TrackerModel.ITEMS.PROGRESSIVESWORD then Graphics.ow_progressive_tier_item_bmps.[max 1 (min 4 TrackerModel.level9TriggerSwordTier)] else CustomComboBoxes.boxCurrentBMP(item, None)
+                let img = Graphics.BMPtoImage(bmp)
                 img.Width <- 21.
                 img.Height <- 21.
                 canvasAdd(trigArea, img, 0., 4.)
@@ -557,7 +624,12 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 let pos = trigArea.TranslatePoint(Point(0.,0.), cm.AppMainCanvas)
                 popupIsActive <- true
                 async {
-                    do! OverworldMapTileCustomization.DoLocalItemComboBox(cm, 0, TrackerModel.level9TriggerBox, pos)
+                    CustomComboBoxes.allItemsSelectable <- true   // this box is only a note: any item can be chosen
+                    try
+                        do! OverworldMapTileCustomization.DoLocalItemComboBox(cm, 0, TrackerModel.level9TriggerBox, pos)
+                    finally
+                        CustomComboBoxes.allItemsSelectable <- false
+                    if TrackerModel.level9TriggerBox.CellCurrent() = TrackerModel.ITEMS.PROGRESSIVESWORD then TrackerModel.level9TriggerSwordTier <- max 1 (TrackerModel.progressiveSwordTier())
                     // this spot is only a note of what it takes to enter level 9: it is never itself "collected" (so it counts for nothing)
                     if TrackerModel.level9TriggerBox.PlayerHas() <> TrackerModel.PlayerHas.SKIPPED then
                         TrackerModel.level9TriggerBox.SetPlayerHas(TrackerModel.PlayerHas.SKIPPED)
@@ -603,9 +675,10 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                             if cb.IsChecked = System.Nullable<bool>(true) then openIt() else closeIt()
                             cb.IsChecked <- System.Nullable<bool>(isOpen()))
                         sp.Children.Add(cb) |> ignore
-                    entry("Item Locations", (fun () -> itemLocationsWindow <> null), (fun () -> openItemLocationsWindow()), (fun () -> if itemLocationsWindow <> null then itemLocationsWindow.Close()))
-                    entry("Spot Summary", (fun () -> Popouts.isPopoutOpen(Popouts.SpotSummaryPopout)), (fun () -> Popouts.openPopout(Popouts.SpotSummaryPopout)), (fun () -> Popouts.closePopout(Popouts.SpotSummaryPopout)))
                     entry("Inventory and Max Hearts", (fun () -> Popouts.isPopoutOpen(Popouts.InventoryAndHeartsPopout)), (fun () -> Popouts.openPopout(Popouts.InventoryAndHeartsPopout)), (fun () -> Popouts.closePopout(Popouts.InventoryAndHeartsPopout)))
+                    entry("Item Locations", (fun () -> itemLocationsWindow <> null), (fun () -> openItemLocationsWindow()), (fun () -> if itemLocationsWindow <> null then itemLocationsWindow.Close()))
+                    entry("Item Progress", (fun () -> itemProgressWindow <> null), (fun () -> openItemProgressWindow()), (fun () -> if itemProgressWindow <> null then itemProgressWindow.Close()))
+                    entry("Spot Summary", (fun () -> Popouts.isPopoutOpen(Popouts.SpotSummaryPopout)), (fun () -> Popouts.openPopout(Popouts.SpotSummaryPopout)), (fun () -> Popouts.closePopout(Popouts.SpotSummaryPopout)))
                     entry("Uncollected Items", (fun () -> Popouts.isPopoutOpen(Popouts.RemainingItemsPoput)), (fun () -> Popouts.openPopout(Popouts.RemainingItemsPoput)), (fun () -> Popouts.closePopout(Popouts.RemainingItemsPoput)))
                     sp.Children.Add(new DockPanel(Background=Brushes.Gray, Height=1., Margin=Thickness(6.,6.,6.,4.))) |> ignore
                     let showCustomCb = PieMenus.makeOrangeCheckBox("Show Custom", ShowRunCustom.areShowWindowsOpen())
@@ -686,7 +759,10 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 let header = mainTrackerCanvases.[i,1]
                 let innerc : Canvas = triforceInnerCanvases.[i]
                 let boxes = d.Boxes
-                let slotIndex = boxes |> Array.tryFindIndex (fun b -> b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE)
+                let slotIndex =
+                    match boxes |> Array.tryFindIndex (fun b -> b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE) with
+                    | Some k -> Some k
+                    | None -> if i = 1 && TrackerModel.level2StairBoxEnabled && TrackerModel.level2StairBox.CellCurrent() = TrackerModel.ITEMS.TRIFORCE then Some 2 else None   // the extra level 2 staircase slot shares level 2's bottom cell
                 // detach from wherever it currently is
                 header.Children.Remove(innerc)
                 for j = 2 to 4 do
@@ -712,7 +788,9 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 if isInSlot && ea.ChangedButton <> System.Windows.Input.MouseButton.Left then
                     ea.Handled <- true
                     if not popupIsActive then
-                        match d.Boxes |> Array.tryFind (fun b -> b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE) with
+                        match (match d.Boxes |> Array.tryFind (fun b -> b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE) with
+                               | Some b -> Some b
+                               | None -> if i = 1 && TrackerModel.level2StairBox.CellCurrent() = TrackerModel.ITEMS.TRIFORCE then Some TrackerModel.level2StairBox else None) with
                         | Some(b) -> 
                             match boxActivators.TryGetValue(b) with
                             | true, f -> f()
@@ -723,6 +801,8 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                 b.Changed.Add(fun _ -> RefreshTriforceHeaderOrSlot())
         if not (TrackerModel.IsHiddenDungeonNumbers()) then
             TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.FinalBoxOf1Or4.Changed.Add(fun _ -> RefreshTriforceHeaderOrSlot())
+            TrackerModel.level2StairBox.Changed.Add(fun _ -> RefreshTriforceHeaderOrSlot())   // a triforce piece in the extra level 2 staircase slot moves the numbered triforce there too
+            TrackerModel.level2StairBoxEnabledChanged.Publish.Add(fun _ -> RefreshTriforceHeaderOrSlot())
         RefreshTriforceHeaderOrSlot()
         OptionsMenu.secondQuestDungeonsOptionChanged.Publish.Add(fun _ -> 
             RedrawForSecondQuestDungeonToggle()

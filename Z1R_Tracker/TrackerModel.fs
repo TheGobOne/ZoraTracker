@@ -409,7 +409,7 @@ let overworldTiles(isFirstQuestOverworld, isHDN) = [|
     "Armos"            , 1                                                  , "Armos",                "Armos Item"
     // white/magical sword cave hint may also be marked as                 
     // a free hint 'shop', so 4 rather than 2                              
-    "HintShop"         , 4                                                  , "Hint Shop",            "Hints Shop\nScroll icon on the map\nfor different colors"
+    "HintShop"         , 99                                                 , "Hint Shop",            "Hints Shop\nScroll icon on the map\nfor different colors"
     "TakeAny"          , 4                                                  , "Take Any",             "Take Any One\nYou Want"
     "Shop"             , (if isFirstQuestOverworld then 7 else 9)           , "Potion Shop",          "Potion Shop\n(20-60, 48-88 rupees)"
     "DarkX"            , 999                                                , "Don't Care",           "Don't Care"
@@ -612,9 +612,19 @@ type PlayerProgressAndTakeAnyHearts() =
     let playerHasDefeatedGanon = BoolProperty(false,fun()->playerProgressLastChangedTime.SetNow())
     let playerHasRescuedZelda  = BoolProperty(false,fun()->playerProgressLastChangedTime.SetNow())
     let playerHasBombs         = BoolProperty(false,fun()->playerProgressLastChangedTime.SetNow())
+    let takeAnyKinds = [| 0; 0; 0; 0 |]   // what was taken in the slot: 0 = unknown / nothing, 1 = heart, 2 = blue candle, 3 = potion (this session only)
     let takeAnyHeartChanged = new Event<_>()
     member _this.GetTakeAnyHeart(i) = takeAnyHearts.[i]
+    member _this.GetTakeAnyKind(i) = takeAnyKinds.[i]
+    member _this.SetTakeAnyKind(i,k) =
+        takeAnyKinds.[i] <- k
+        takeAnyHearts.[i] <- (if k = 0 then 0 elif k = 1 then 1 else 2)
+        playerProgressLastChangedTime.SetNow()
+        takeAnyHeartChanged.Trigger(i)
     member _this.SetTakeAnyHeart(i,v) =
+        if v = 0 then takeAnyKinds.[i] <- 0
+        elif v = 1 then takeAnyKinds.[i] <- 1
+        elif takeAnyKinds.[i] < 2 then takeAnyKinds.[i] <- 0
         if takeAnyHearts.[i] <> v then
             takeAnyHearts.[i] <- v
             playerProgressLastChangedTime.SetNow()
@@ -794,6 +804,7 @@ let hintShopColors = new System.Collections.Generic.Dictionary<int*int, int>()  
 let shuffledWoodSwordTiles = new System.Collections.Generic.HashSet<int*int>()   // overworld tiles whose wood sword cave holds a shuffled item (this session only)
 // the optional extra 'level 2 staircase' item box (disabled/greyed out until enabled)
 let level9TriggerBox = (let b = Box(StairKind.Never, BoxOwner.None, level9TriggerDomain) in b.SetPlayerHas(PlayerHas.SKIPPED); b)   // the level 9 entry rule: empty means the default (all 8 triforces); otherwise the item that opens level 9 (this session only)
+let mutable level9TriggerSwordTier = 1   // when the entry item is the progressive sword: the tier it showed when picked (fixed; the picture does not follow later upgrades)
 let mutable level9TriforceCount = 8   // how many triforces the default level 9 entry rule needs (scroll the number on the main tracker to change it)
 let level2StairBox = Box(StairKind.Always, BoxOwner.None)   // shows the basement staircase icon like the other basement item slots
 let mutable level2StairBoxEnabled = false
@@ -936,7 +947,7 @@ and Dungeon(id,numBoxes) =
         playerComputedStateSummaryForPlayerHasBookChanged.Publish.Add(fun _ -> playerCanSeeMapOfThisDungeonChangeEvent.Trigger())
     member _this.HasBeenLocated() = mapSquareChoiceDomain.NumUses(id) = 1   // WARNING: this being true does NOT mean TrackerModel.mapStateSummary.DungeonLocations.[i] has a legal (non-NOTFOUND) value
     member _this.HasBeenLocatedChanged = hasBeenLocatedChangeEvent.Publish
-    member this.PlayerHasTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE && b.PlayerHas() = PlayerHas.YES))   // (a triforce piece marked as obtained in an item slot counts too)
+    member this.PlayerHasTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE && b.PlayerHas() = PlayerHas.YES)) || (id=1 && level2StairBoxEnabled && level2StairBox.CellCurrent() = ITEMS.TRIFORCE && level2StairBox.PlayerHas() = PlayerHas.YES)   // (a triforce piece marked as obtained in an item slot counts too)
     member _this.ToggleTriforce() = playerHasTriforce <- not playerHasTriforce; playerHasTriforceChangeEvent.Trigger(playerHasTriforce); dungeonsAndBoxesLastChangedTime.SetNow()
     member _this.PlayerHasTriforceChanged = playerHasTriforceChangeEvent.Publish
     member _this.PlayerHasMapOfThisDungeon with get() = playerHasMap and set(x) = playerHasMap <- x; playerHasMapOfThisDungeonChangeEvent.Trigger(); playerCanSeeMapOfThisDungeonChangeEvent.Trigger()
@@ -952,7 +963,7 @@ and Dungeon(id,numBoxes) =
             else
                 boxes
     member _this.ExtraFloorBox = extraFloorBox
-    member this.TriforceIsInItemSlot = this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE)
+    member this.TriforceIsInItemSlot = this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE) || (id=1 && level2StairBoxEnabled && level2StairBox.CellCurrent() = ITEMS.TRIFORCE)
     member this.IsComplete = 
         if currentlyReentrant then
             priorComplete
@@ -1066,6 +1077,7 @@ let progressiveFamily(ident:int) : int =
     elif ident = ITEMS.BLUERING || ident = ITEMS.REDRING then 2
     elif ident = ITEMS.BLUECANDLE || ident = ITEMS.REDCANDLE then 3
     elif ident = ITEMS.WOODARROW || ident = ITEMS.SILVERARROW then 4
+    elif ident = ITEMS.BOOMERANG || ident = ITEMS.MAGICBOOMERANG then 5   // (boomerangs, or the boots / magical boots that replace them)
     else 0
 // the item (base = tier 1, upgraded = tier 2) that stands for a family tier; swords use their own sprites instead
 let progressiveFamilyIdent(family:int, tier:int) : int =
@@ -1073,6 +1085,7 @@ let progressiveFamilyIdent(family:int, tier:int) : int =
     | 2 -> (if tier >= 2 then ITEMS.REDRING else ITEMS.BLUERING)
     | 3 -> (if tier >= 2 then ITEMS.REDCANDLE else ITEMS.BLUECANDLE)
     | 4 -> (if tier >= 2 then ITEMS.SILVERARROW else ITEMS.WOODARROW)
+    | 5 -> (if tier >= 2 then ITEMS.MAGICBOOMERANG else ITEMS.BOOMERANG)
     | _ -> ITEMS.PROGRESSIVESWORD
 // the current tier of a family: 1 + how many of its items have been collected (on the map or in item boxes), 2 at most for rings / candles / arrows
 let progressiveFamilyTier(family:int) : int =
@@ -1084,12 +1097,13 @@ let progressiveFamilyTier(family:int) : int =
             match family with
             | 2 -> [ITEMS.BLUERING; ITEMS.REDRING], (if startingItemsAndExtras.PlayerHasRedRing.Value() then 2 elif playerProgressAndTakeAnyHearts.PlayerHasBlueRing.Value() then 1 else 0)
             | 3 -> [ITEMS.BLUECANDLE; ITEMS.REDCANDLE], (if startingItemsAndExtras.PlayerHasRedCandle.Value() then 2 elif playerProgressAndTakeAnyHearts.PlayerHasBlueCandle.Value() then 1 else 0)
+            | 5 -> [ITEMS.BOOMERANG; ITEMS.MAGICBOOMERANG], (if startingItemsAndExtras.PlayerHasMagicBoomerang.Value() then 2 elif startingItemsAndExtras.PlayerHasBoomerang.Value() then 1 else 0)
             | _ -> [ITEMS.WOODARROW; ITEMS.SILVERARROW], (if startingItemsAndExtras.PlayerHasSilverArrow.Value() then 2 elif playerProgressAndTakeAnyHearts.PlayerHasWoodArrow.Value() then 1 else 0)
         let n = (ids |> List.sumBy (fun id -> mapCollectedCount.[id])) + (try DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() |> Array.filter (fun b -> List.contains (b.CellCurrent()) ids && b.PlayerHas() = PlayerHas.YES) |> Array.length with _ -> 0)
         min 2 (1 + max n propLevel)
 // items that the option disables in the pickers: the plain swords (use the progressive sword) and the second tier of rings, candles and arrows
 let progressiveDisabledIdent(ident:int) : bool =
-    ProgressiveItems && ((progressiveSwordBoxTier(ident) >= 1 && progressiveSwordBoxTier(ident) <= 4) || ident = ITEMS.REDRING || ident = ITEMS.REDCANDLE || ident = ITEMS.SILVERARROW)
+    ProgressiveItems && ((progressiveSwordBoxTier(ident) >= 1 && progressiveSwordBoxTier(ident) <= 4) || ident = ITEMS.REDRING || ident = ITEMS.REDCANDLE || ident = ITEMS.SILVERARROW || ident = ITEMS.MAGICBOOMERANG)
 let recomputePlayerStateSummary() =
     let mutable haveRecorder,haveLadder,haveAnyKey,haveCoastItem,haveWhiteSwordItem,havePowerBracelet,haveRaft,playerHearts = false,false,false,false,false,false,false,3
     let mutable swordLevel,candleLevel,ringLevel,haveBow,arrowLevel,haveWand,haveBookOrShield,boomerangLevel = 0,0,0,false,0,false,false,0
@@ -1219,6 +1233,7 @@ let recomputePlayerStateSummary() =
         candleLevel <- max candleLevel (lvl (famCount [ITEMS.BLUECANDLE; ITEMS.REDCANDLE]))
         ringLevel <- max ringLevel (lvl (famCount [ITEMS.BLUERING; ITEMS.REDRING]))
         arrowLevel <- max arrowLevel (lvl (famCount [ITEMS.WOODARROW; ITEMS.SILVERARROW]))
+        boomerangLevel <- max boomerangLevel (lvl (famCount [ITEMS.BOOMERANG; ITEMS.MAGICBOOMERANG]))
     if mapHas ITEMS.BOOMERANG then boomerangLevel <- max boomerangLevel 1
     if mapHas ITEMS.MAGICBOOMERANG then boomerangLevel <- 2
     if mapHas ITEMS.BOW then haveBow <- true
@@ -1825,7 +1840,8 @@ let level9TriggerCollected() =
              || (it = ITEMS.LADDER && sm.HaveLadder) || (it = ITEMS.RECORDER && sm.HaveRecorder) || (it = ITEMS.RAFT && sm.HaveRaft)
              || (it = ITEMS.POWERBRACELET && sm.HavePowerBracelet) || (it = ITEMS.KEY && sm.HaveAnyKey) || (it = ITEMS.WAND && sm.HaveWand)
              || (it = ITEMS.BOOKSHIELD && sm.HaveBookOrShield) || (it = ITEMS.BOOMERANG && sm.BoomerangLevel >= 1) || (it = ITEMS.MAGICBOOMERANG && sm.BoomerangLevel >= 2)
-             || (it = ITEMS.WHITESWORD && sm.SwordLevel >= 2) || (it = ITEMS.MAGICALSWORD && sm.SwordLevel >= 3))
+             || (it = ITEMS.WHITESWORD && sm.SwordLevel >= 2) || (it = ITEMS.MAGICALSWORD && sm.SwordLevel >= 3)
+             || (it = ITEMS.WOODSWORD && sm.SwordLevel >= 1) || (it = ITEMS.PROGRESSIVESWORD && progressiveSwordTier() > level9TriggerSwordTier) || (it = ITEMS.WHITESWORD4 && (sm.SwordLevel >= 4 || playerHasSword4.Value = 1)))
          || (it >= 0 && it < mapCollectedCount.Length && mapCollectedCount.[it] > 0)   // checked off on the overworld map
          || [ladderBox; sword2Box; sword3Box; letterBox] |> List.exists (fun b -> b.CellCurrent() = it && b.PlayerHas() = PlayerHas.YES))
 type TriforceAndGoSummary() =
@@ -2285,6 +2301,8 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         all.Add(TimelineItemDescription.MapCollected "Sword4")
         for i = 1 to 12 do
             all.Add(TimelineItemDescription.MapCollected(sprintf "OWHeart%d" i))
+        for i = 1 to 16 do
+            all.Add(TimelineItemDescription.MapCollected(sprintf "CustomIcon%d" i))
         // take any hearts
         for i = 0 to 3 do
             all.Add(TimelineItemDescription.TakeAnyHeart i)
@@ -2333,6 +2351,10 @@ let initializeAll(instance:OverworldData.OverworldInstance, kind) =
         for j = 0 to 7 do
             if owInstance.AlwaysEmpty(i,j) then
                 overworldMapMarks.[i,j].Set(MapSquareChoiceDomainHelper.DARK_X)   // set to 'X'
+    // Extra Power Bracelet Blocks: the four any roads start out in their vanilla places (1 in H10, 2 in B14, 3 in C4, 4 in E10), same as 'Place Vanilla Any Roads' in the overworld menu
+    if OverworldData.ExtraPBBlocks then
+        for (state, col, row) in [ (MapSquareChoiceDomainHelper.WARP_1, 10, 7); (MapSquareChoiceDomainHelper.WARP_2, 14, 1); (MapSquareChoiceDomainHelper.WARP_3, 4, 2); (MapSquareChoiceDomainHelper.WARP_4, 10, 4) ] do
+            if not (owInstance.AlwaysEmpty(col-1, row)) then overworldMapMarks.[col-1, row].Set(state)
     recomputeMapStateSummary()
     TimelineItemModel.MakeAll()
 

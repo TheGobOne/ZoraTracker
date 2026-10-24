@@ -78,11 +78,12 @@ do
         boundHotKeyUniverse.Add((SingleKeyboardModifier.NoModifier, convertAlpha_NumToKey(c)),0)
     
 
+let mutable suspendHotKeys = false   // set while a popup wants the raw keys itself (e.g. the Dead Woods / Lost Hills hint entry uses the arrow keys, which may be bound to cursor movement)
 let InitializeWindow(w:Window, notesTextBox:System.Windows.Controls.TextBox) =
     w.Focusable <- true
     w.PreviewKeyDown.Add(fun ea ->
         let x = Input.Mouse.DirectlyOver
-        if x <> null && not(notesTextBox.IsKeyboardFocused) then
+        if x <> null && not suspendHotKeys && not(notesTextBox.IsKeyboardFocused) then
             match SingleKeyboardModifier.GetCurrent() with
             | SingleKeyboardModifier.Unsupported -> ()
             | SingleKeyboardModifier.Alt ->

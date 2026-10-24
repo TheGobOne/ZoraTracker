@@ -108,6 +108,8 @@ let uncollectedTierLetter(ident:int) : string option =
     elif ident = TrackerModel.ITEMS.WOODARROW then Some "W"
     elif ident = TrackerModel.ITEMS.REDRING || ident = TrackerModel.ITEMS.REDCANDLE then Some "R"
     elif ident = TrackerModel.ITEMS.SILVERARROW then Some "S"
+    elif ident = TrackerModel.ITEMS.BOOMERANG then Some (if TrackerModel.BootsReplaceBoomerangs then "B" else "W")   // boomerang W / boots B
+    elif ident = TrackerModel.ITEMS.MAGICBOOMERANG then Some "M"   // magic boomerang / magical boots
     else None
 let makeTierLetter(letter:string, size:float) : FrameworkElement =
     // the colored letter with a 1px white outline (the same letter in white drawn behind it, shifted one pixel in every direction)
@@ -363,12 +365,20 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
                 let overlay = makeProgressiveGlow(colored, 22.)
                 Panel.SetZIndex(overlay, 1000)
                 canvasAdd(c, overlay, 4., 4.)
-                let oldZ = Panel.GetZIndex(c)
-                Panel.SetZIndex(c, 5000)   // the whole box rises above its neighbours while it glows, so they don't cover the growing item
+                // the box and each container it sits in rise above their neighbours while it glows, so nothing (dungeon tiles included) covers the growing item
+                let raised = ResizeArray<FrameworkElement*int>()
+                let mutable cur : DependencyObject = upcast c
+                while not (isNull cur) do
+                    match cur with
+                    | :? FrameworkElement as fe when (fe.Parent :? Panel) || obj.ReferenceEquals(fe, c) ->
+                        raised.Add((fe, Panel.GetZIndex(fe)))
+                        Panel.SetZIndex(fe, 5000)
+                    | _ -> ()
+                    cur <- (match cur with :? Visual -> System.Windows.Media.VisualTreeHelper.GetParent(cur) | _ -> null)
                 async {
                     do! Async.Sleep 3000
                     c.Children.Remove(overlay)
-                    Panel.SetZIndex(c, oldZ)
+                    for (fe, z) in raised do Panel.SetZIndex(fe, z)
                 } |> Async.StartImmediate)
     let innerCanvasStairwayHider = new Canvas(Background=Brushes.Black, Width=21., Height=21.)
     let redraw() =
@@ -463,11 +473,12 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
                     match box.Owner with
                     | TrackerModel.BoxOwner.DungeonIndexAndNth(i,_) when i <= 7 -> Some i
                     | TrackerModel.BoxOwner.Dungeon1or4 -> Some(if TrackerModel.IsSecondQuestDungeons then 3 else 0)
-                    | _ -> [0..7] |> List.tryFind (fun i -> obj.ReferenceEquals(TrackerModel.GetDungeon(i).ExtraFloorBox, box))
+                    | _ -> if obj.ReferenceEquals(TrackerModel.level2StairBox, box) then Some 1   // the optional extra level 2 staircase slot belongs to level 2
+                           else [0..7] |> List.tryFind (fun i -> obj.ReferenceEquals(TrackerModel.GetDungeon(i).ExtraFloorBox, box))
                 match dIdx with
                 | Some i ->
                     let d = TrackerModel.GetDungeon(i)
-                    let candidates = Array.append d.Boxes [| d.ExtraFloorBox |]
+                    let candidates = Array.append d.Boxes [| yield d.ExtraFloorBox; yield! (if i = 1 && TrackerModel.level2StairBoxEnabled then [| TrackerModel.level2StairBox |] else [||]) |]
                     match candidates |> Array.tryFind (fun b -> not(obj.ReferenceEquals(b, box)) && b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE) with
                     | Some(other) ->
                         let had = (other.PlayerHas() = TrackerModel.PlayerHas.YES)

@@ -118,7 +118,9 @@ let clearWoodSwordCaveItems(i, j) =
     let pp = TrackerModel.playerProgressAndTakeAnyHearts
     let si = TrackerModel.startingItemsAndExtras
     TrackerModel.recomputePlayerStateSummary()
-    if ex = sw1 then
+    if ex = sw1 && TrackerModel.ProgressiveItems then
+        pp.PlayerHasWoodSword.Set(false)   // (Progressive Items: the cave only ever gave the first sword; any other swords are separate)
+    elif ex = sw1 then
         let n = max 0 (TrackerModel.playerComputedStateSummary.SwordLevel - 1)
         pp.PlayerHasWoodSword.Set(n>=1)
         si.PlayerHasWhiteSword.Set(n>=2)
@@ -145,6 +147,31 @@ let clearTakeAnyItems(i, j) =
         TrackerModel.recomputePlayerStateSummary()
         TrackerModel.forceUpdate()
     | _ -> ()
+// the take any hearts on the main screen were clicked: kind 0 = empty, 1 = heart, 2 = blue candle, 3 = potion. Keeps the take any cave tile(s) tied to that slot in sync
+let setTakeAnySlotKind(slot:int, kind:int) =
+    let pp = TrackerModel.playerProgressAndTakeAnyHearts
+    let prevKind = pp.GetTakeAnyKind(slot)
+    let caves = takeAnyTaken |> Seq.filter (fun kv -> (let (s,_,_) = kv.Value in s = slot)) |> Seq.map (fun kv -> kv.Key) |> List.ofSeq
+    if kind = 0 && not caves.IsEmpty then
+        // emptied: the cave is no longer 'taken' (this also gives back the candle if the cave had given it)
+        for (i,j) in caves do
+            clearTakeAnyItems(i, j)
+            TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY, 0)
+    else
+        pp.SetTakeAnyKind(slot, kind)
+        if caves.IsEmpty then
+            if kind = 2 && prevKind <> 2 then pp.PlayerHasBlueCandle.Set(true)
+            elif kind <> 2 && prevKind = 2 then pp.PlayerHasBlueCandle.Set(false)
+        else
+            for (i,j) in caves do
+                let (s, candle, _) = takeAnyTaken.[(i,j)]
+                let candle2 = if kind = 2 then true elif prevKind = 2 then false else candle
+                if kind = 2 && prevKind <> 2 then pp.PlayerHasBlueCandle.Set(true)
+                elif kind <> 2 && prevKind = 2 then pp.PlayerHasBlueCandle.Set(false)
+                takeAnyTaken.[(i,j)] <- (s, candle2, kind)
+    if kind = 0 then pp.SetTakeAnyKind(slot, 0)
+    TrackerModel.recomputePlayerStateSummary()
+    TrackerModel.forceUpdate()
 let SHUFFLED_ITEM = 2000   // extra-data value of a white / magical sword cave tile that holds a shuffled item
 // true if some tile on the map already holds the shuffled item for this kind of cave (collected or not), so 'Shuffled Item' is crossed out for any other tile of that kind
 let shuffledItemAlreadyPlaced(state:int) =
@@ -178,7 +205,7 @@ let overworldAcceleratorTable = new System.Collections.Generic.Dictionary<_,_>()
 // put back what was taken at a take any cave (after its chooser was opened again and dismissed without choosing)
 let restoreTakeAny(i:int, j:int, slot:int, candle:bool, kind:int, extra:int) =
     let pp = TrackerModel.playerProgressAndTakeAnyHearts
-    pp.SetTakeAnyHeart(slot, (if kind = 1 then 1 else 2))
+    pp.SetTakeAnyKind(slot, kind)
     if candle then pp.PlayerHasBlueCandle.Set(true)
     takeAnyTaken.[(i,j)] <- (slot, candle, kind)
     TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY, extra)
@@ -207,6 +234,7 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY,
             for h in 0..3 do
                 if pp.GetTakeAnyHeart(h) <> heartsBefore.[h] && not(takeAnyTaken.ContainsKey((i,j))) then
                     takeAnyTaken.[(i,j)] <- (h, (not candleBefore && pp.PlayerHasBlueCandle.Value()), PieMenus.lastTakeAnyKind)
+                    pp.SetTakeAnyKind(h, PieMenus.lastTakeAnyKind)
             TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY, if shouldMarkTakeAnyAsComplete then TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY else 0)
     }))
 overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,i,j) -> async {
@@ -219,8 +247,14 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
     let candleTakenElsewhere =
         seq { for x in 0..15 do for y in 0..7 do yield (x,y) }
         |> Seq.exists (fun (x,y) -> (x,y) <> (i,j) && TrackerModel.overworldMapMarks.[x,y].Current() = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.getOverworldMapExtraData(x,y,TrackerModel.MapSquareChoiceDomainHelper.SWORD1) = CANDLE_TAKEN)
-    if TrackerModel.shuffledWoodSwordTiles.Count > 0 || candleTakenElsewhere then PieMenus.crossedOutChoices <- ["Shuffled Item"; "Took Candle"]
-    elif hadShuffled then PieMenus.crossedOutChoices <- ["Shuffled Item"]
+    // and the wood sword can only be taken once
+    let swordTakenElsewhere =
+        seq { for x in 0..15 do for y in 0..7 do yield (x,y) }
+        |> Seq.exists (fun (x,y) -> (x,y) <> (i,j) && TrackerModel.overworldMapMarks.[x,y].Current() = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.getOverworldMapExtraData(x,y,TrackerModel.MapSquareChoiceDomainHelper.SWORD1) = TrackerModel.MapSquareChoiceDomainHelper.SWORD1)
+    let crossedBase = (if swordTakenElsewhere then ["Took Sword"] else [])
+    if TrackerModel.shuffledWoodSwordTiles.Count > 0 || candleTakenElsewhere then PieMenus.crossedOutChoices <- crossedBase @ ["Shuffled Item"; "Took Candle"]
+    elif hadShuffled then PieMenus.crossedOutChoices <- crossedBase @ ["Shuffled Item"]
+    elif swordTakenElsewhere then PieMenus.crossedOutChoices <- crossedBase
     // one box of 4 buttons; it also supports the Contextual_TakeThis_* hotkeys (sword / candle / none)
     let! choice =
         if TrackerModelOptions.Overworld.UseOldPopups.Value then async {
@@ -236,7 +270,7 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
     PieMenus.crossedOutChoices <- []   // (the old pie menu path doesn't consume it)
     let mutable doneValue = 0   // 0 = not taken yet, SWORD1 = took the sword, CANDLE_TAKEN = took the candle
     match choice with
-    | "Took Sword" ->
+    | "Took Sword" when not swordTakenElsewhere ->
         let n = if TrackerModel.ProgressiveItems then 1 else min 3 (s.SwordLevel + 1)   // (Progressive Items: the tier logic does the upgrading, so this just records the sword)
         pp.PlayerHasWoodSword.Set(n>=1)
         si.PlayerHasWhiteSword.Set(n>=2)
@@ -859,9 +893,26 @@ let ToggleOverworldTileIfItIsToggleable(i, j, state) =
         if state=TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && ex=CANDLE_TAKEN then
             ()   // the candle was taken here: left click does nothing (clear the tile to take it back)
         elif ex<>0 && ex=state then
-            TrackerModel.setOverworldMapExtraData(i,j,state,0)
+            if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 then clearWoodSwordCaveItems(i, j)   // un-collecting the cave's sword takes it back (item progress goes with it)
+            else TrackerModel.setOverworldMapExtraData(i,j,state,0)
         else
-            TrackerModel.setOverworldMapExtraData(i,j,state,state)
+            if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && not(TrackerModel.shuffledWoodSwordTiles.Contains((i,j))) then
+                // collecting it again gives the sword again (only one wood sword can be taken)
+                let swordTakenElsewhere =
+                    seq { for x in 0..15 do for y in 0..7 do yield (x,y) }
+                    |> Seq.exists (fun (x,y) -> (x,y) <> (i,j) && TrackerModel.overworldMapMarks.[x,y].Current() = state && TrackerModel.getOverworldMapExtraData(x,y,state) = state)
+                if not swordTakenElsewhere then
+                    let pp = TrackerModel.playerProgressAndTakeAnyHearts
+                    let si = TrackerModel.startingItemsAndExtras
+                    let n = if TrackerModel.ProgressiveItems then 1 else min 3 (TrackerModel.playerComputedStateSummary.SwordLevel + 1)
+                    pp.PlayerHasWoodSword.Set(n>=1)
+                    si.PlayerHasWhiteSword.Set(n>=2)
+                    si.PlayerHasMagicalSword.Set(n>=3)
+                    TrackerModel.setOverworldMapExtraData(i,j,state,state)
+                    TrackerModel.recomputePlayerStateSummary()
+                    TrackerModel.forceUpdate()
+            else
+                TrackerModel.setOverworldMapExtraData(i,j,state,state)
 
 let mutable goToDungeon = fun (_idx:int) -> ()
 
@@ -1250,7 +1301,7 @@ let MakeRemainderSummaryDisplayEx(_freeWidth:bool) =   // Spot Summary (freeWidt
                 im
             elif multi = TrackerModel.MapSquareChoiceDomainHelper.HINT_SHOP then Graphics.BMPtoImage(hintShopMenuBmp(if hintShopColorChosen || (hintShopColors.Values |> Seq.exists (fun v -> v <> 0)) then lastHintShopColor else 4))
             else Graphics.BMPtoImage(MapStateProxy(multi).DefaultInteriorBmp())
-        if multi = 33 then countCell(icon, usedCount, -1)   // the hearts show just the uncollected count, no "/13"
+        if multi = 33 || multi = TrackerModel.MapSquareChoiceDomainHelper.HINT_SHOP then countCell(icon, usedCount, -1)   // the hearts show just the uncollected count, no "/13"; hint shops are unlimited, so just how many are placed
         else countCell(icon, min usedCount mx, mx)
     // row: doors, money making game, and the hint shops right beside it
     addRow [ multiCell 28; multiCell 29; multiCell 32 ]

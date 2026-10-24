@@ -1289,8 +1289,8 @@ let ow_sword3_item_bmp = swordIconAsItem(theInteriorBmpTable.[13].[0])
 // the overworld 4th-sword ('4') and progressive-sword ('P') icons: same pixel art as WPFUI.extraSwordIconBmp
 let private extraSwordInterior(isProg:bool) : System.Drawing.Bitmap =
     let brown = System.Drawing.Color.FromArgb(185,122,87)
-    let blade = if isProg then System.Drawing.Color.FromArgb(29,148,65) else System.Drawing.Color.FromArgb(128,128,255)
-    let hilt = if isProg then System.Drawing.Color.FromArgb(136,0,21) else System.Drawing.Color.White
+    let blade = if isProg then System.Drawing.Color.FromArgb(255,242,0) else System.Drawing.Color.FromArgb(128,128,255)
+    let hilt = if isProg then System.Drawing.Color.White else System.Drawing.Color.White
     let glyph = if isProg then [| "abbba"; "ababa"; "abbba"; "abaaa"; "abaaa" |] else [| "ababa"; "ababa"; "abbba"; "aaaba"; "aaaba" |]
     let rows = Array.append (Array.append [| "aaaaa" |] glyph) [| "aaaXa"; "HHHXX"; "aaaXa" |]
     let bmp = new System.Drawing.Bitmap(5*3, 9*3)
@@ -1373,6 +1373,7 @@ let private progressiveTierItemBmp(interior:System.Drawing.Bitmap) =
             let sy = min 26 (int ((float y + 0.5) * 27. / 21.))
             r.SetPixel(3 + x, y, interior.GetPixel(sx, sy))
     r
+// index 0 is the plain 'P' sword (shown in the menus); 1..4 are the tier sprites shown once an item is placed
 let ow_progressive_tier_item_bmps = [| yield ow_progressive_item_bmp; for t in 1..4 do yield progressiveTierItemBmp(progressiveTierSwordBmp t) |]
 let ow_progressive_tier_menu_bmps = [| yield ow_progressive_menu_bmp; for t in 1..4 do yield progressiveTierSwordBmp t |]
 let theFullTileBmpTable = Array.init theInteriorBmpTable.Length (fun _ -> ResizeArray())

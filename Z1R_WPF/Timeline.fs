@@ -58,6 +58,7 @@ type TimelineID =
     // checked off on the overworld map
     | Sword4
     | OWHeart of int
+    | CustomIcon of int   // a custom icon (1-16) checked off on the overworld map
     // custom
     | UserCustom of string
     static member Triforce(n) =
@@ -117,6 +118,7 @@ type TimelineID =
         | TakeAnyHeart4 -> "TakeAnyHeart4"
         | Sword4 -> "Sword4"
         | OWHeart n -> sprintf "OWHeart%d" n
+        | CustomIcon n -> sprintf "CustomIcon%d" n
         | UserCustom s -> "UserCustom_" + s
 
 type TimelineItem(tid : TimelineID, f) =

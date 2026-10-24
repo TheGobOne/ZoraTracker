@@ -22,7 +22,7 @@ let MakeMagnifier(mirrorOverworldFEs:ResizeArray<FrameworkElement>, owMapNum, ow
     let POP = 1  // width of entrance border
     let BT = 2.  // border thickness of the interior 3x3 grid of tiles
     let dungeonTabsOverlay = new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(5.), Background=Brushes.Black, Opacity=0., IsHitTestVisible=false,
-                                    Width=3.+39.*8.+12.*7.+3.+42.+6., Height=float(2*DungeonUI.TH + 3 + 27*8 + 12*7 + 3 + 6 - DungeonUI.TH + 1))  // exactly covers the dungeon tab area beneath it
+                                    Width=3.+39.*8.+12.*7.+3.+42.+6., Height=float(2*DungeonUI.TH + 3 + 27*8 + 12*7 + 3 + 6 - DungeonUI.TH + 2))  // exactly covers the dungeon tab area beneath it
     let DTOCW,DTOCH = 3.*16.*ENLARGE + 4.*BT, 3.*11.*ENLARGE + 4.*BT
     let dungeonTabsOverlayContent = new Canvas(Width=DTOCW, Height=DTOCH)
     if owMapNum=4 then  // disable magnifier on blank/custom map
