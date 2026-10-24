@@ -1132,18 +1132,20 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta12"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta14"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))
     let nums = main.Split('.') |> Array.map (fun p -> match System.Int32.TryParse(p) with | true, v -> v | _ -> 0) |> Array.toList
     let nums = nums @ List.replicate (max 0 (4 - nums.Length)) 0
     let preKey =
-        if pre = "" then (1, "", 0)   // a final release sorts after any beta/rc of the same number
+        if pre = "" then (1, "", 0, "")   // a final release sorts after any beta/rc of the same number
         else
             let letters = new string(pre |> Seq.takeWhile (fun c -> not (System.Char.IsDigit c)) |> Seq.toArray)
             let digits = pre.Substring(letters.Length)
-            (0, letters.ToLowerInvariant(), (match System.Int32.TryParse(digits) with | true, v -> v | _ -> 0))
+            // (digits, then any suffix such as '-hotfix1': a suffixed tag sorts after the plain one, so beta13-hotfix1 is newer than beta13)
+            let numText = new string(digits |> Seq.takeWhile System.Char.IsDigit |> Seq.toArray)
+            (0, letters.ToLowerInvariant(), (match System.Int32.TryParse(numText) with | true, v -> v | _ -> 0), digits.Substring(numText.Length).ToLowerInvariant())
     nums, preKey
 let isNewerRelease(candidateTag:string, currentLabel:string) = parseTagForCompare candidateTag > parseTagForCompare currentLabel
 let mutable updateAvailable : (string*string) option = None   // (tag, release page url) of a newer release, once one has been found
@@ -1248,19 +1250,6 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
     // shows the current release (e.g. "v2.2-b3" for 2.2.0-beta3), so it only needs updating via CurrentReleaseLabel
     let shortLabel = CurrentReleaseLabel.Replace(".0-","-").Replace("-beta","-b")
     let vb = Graphics.makeButton(sprintf "v%s" shortLabel, Some(12.), Some(Brushes.Orange))
-    // rainbow glow until the user has opened the notes for this version
-    if TrackerModelOptions.LastSeenVersionNotes <> CurrentReleaseLabel then
-        let glow = new System.Windows.Media.Effects.DropShadowEffect(ShadowDepth=0., BlurRadius=16., Opacity=1., Color=Colors.Red)
-        let anim = new System.Windows.Media.Animation.ColorAnimationUsingKeyFrames()
-        let rainbow = [ Colors.Red; Colors.Yellow; Colors.Lime; Colors.Cyan; Colors.Blue; Colors.Magenta; Colors.Red ]
-        let n = rainbow.Length - 1
-        rainbow |> List.iteri (fun k c ->
-            anim.KeyFrames.Add(new System.Windows.Media.Animation.LinearColorKeyFrame(c, System.Windows.Media.Animation.KeyTime.FromPercent(float k / float n))) |> ignore)
-        anim.Duration <- new Duration(System.TimeSpan.FromSeconds(3.))
-        anim.RepeatBehavior <- System.Windows.Media.Animation.RepeatBehavior.Forever
-        glow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.ColorProperty, anim)
-        vb.Effect <- glow
-        versionGlowClearers.Add(fun () -> vb.Effect <- null)
     // a green glow plus tooltip when a newer release is available on GitHub
     let showUpdateGlow(tag:string, _url:string) =
         vb.ToolTip <- sprintf "Update available: %s (click for details)" tag

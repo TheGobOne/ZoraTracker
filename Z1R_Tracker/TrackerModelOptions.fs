@@ -176,6 +176,7 @@ let mutable InventoryAndHeartsPopout_DisplayedLT = ""
 let mutable RemainingItemsPoput_DisplayedLT = ""
 let mutable ItemLocationsWindow_DisplayedLT = ""
 let mutable ShowCustomOnStartup = false
+let mutable SwapMouseButtons = false   // swap the left and right mouse buttons everywhere in the tracker (Popout Windows menu)
 let mutable ItemProgressWindow_DisplayedLT = ""
 let mutable DungeonSummaryTabMode = 0
 let mutable PortNumber = "5000"
@@ -313,6 +314,7 @@ type ReadWrite() =
     member val RemainingItemsPoput_DisplayedLT = "" with get,set
     member val ItemLocationsWindow_DisplayedLT = "" with get,set
     member val ShowCustomOnStartup = false with get,set
+    member val SwapMouseButtons = false with get,set
     member val ItemProgressWindow_DisplayedLT = "" with get,set
     member val DungeonSummaryTabMode = 0 with get,set
 
@@ -459,6 +461,7 @@ let private writeImpl(filename) =
     data.RemainingItemsPoput_DisplayedLT <- RemainingItemsPoput_DisplayedLT
     data.ItemLocationsWindow_DisplayedLT <- ItemLocationsWindow_DisplayedLT
     data.ShowCustomOnStartup <- ShowCustomOnStartup
+    data.SwapMouseButtons <- SwapMouseButtons
     data.ItemProgressWindow_DisplayedLT <- ItemProgressWindow_DisplayedLT
     data.DungeonSummaryTabMode <- DungeonSummaryTabMode
     data.MyConsoleId <- CoopSyncOptions.MyConsoleId
@@ -615,6 +618,7 @@ let private read(filename) =
         RemainingItemsPoput_DisplayedLT <- data.RemainingItemsPoput_DisplayedLT
         ItemLocationsWindow_DisplayedLT <- (if isNull data.ItemLocationsWindow_DisplayedLT then "" else data.ItemLocationsWindow_DisplayedLT)
         ShowCustomOnStartup <- data.ShowCustomOnStartup
+        SwapMouseButtons <- data.SwapMouseButtons
         ItemProgressWindow_DisplayedLT <- (if isNull data.ItemProgressWindow_DisplayedLT then "" else data.ItemProgressWindow_DisplayedLT)
         DungeonSummaryTabMode <- data.DungeonSummaryTabMode
 

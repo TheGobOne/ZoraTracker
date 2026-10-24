@@ -550,14 +550,18 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
         b.HorizontalContentAlignment <- HorizontalAlignment.Stretch
         b.VerticalContentAlignment <- VerticalAlignment.Stretch
         if enabled then
-            b.Click.Add(fun _ -> result.Value <- value; wh.Set() |> ignore)
-            // right click: pick a marker icon from the overworld menu's icons to add to this shop
-            b.PreviewMouseRightButtonUp.Add(fun ea ->
-                ea.Handled <- true
+            // ('Swap left/right click': left click adds items to the shop and right click places it)
+            let place() = result.Value <- value; wh.Set() |> ignore
+            let addItems() =
                 async {
                     let! ident = pickItem()
                     if ident >= 0 then applyItem(value, ident)
-                    } |> Async.StartImmediate)
+                    } |> Async.StartImmediate
+            b.Click.Add(fun _ -> if TrackerModelOptions.SwapMouseButtons then addItems() else place())
+            // right click: pick a marker icon from the overworld menu's icons to add to this shop
+            b.PreviewMouseRightButtonUp.Add(fun ea ->
+                ea.Handled <- true
+                if TrackerModelOptions.SwapMouseButtons then place() else addItems())
         else b.Opacity <- 0.4
         if enabled then hoverButtons.Add((b, value))
         row.Children.Add(b) |> ignore
@@ -590,14 +594,25 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
     header.Children.Add(makeToggle("Jump mouse to shop", TrackerModelOptions.JumpMouseToShop)) |> ignore
     header.Children.Add(makeToggle("Hover shop tooltip", TrackerModelOptions.HoverShopTooltip)) |> ignore
     header.Children.Add(makeToggle("Shops in menu", TrackerModelOptions.ShopsInMenu)) |> ignore   // (applies the next time the overworld menu opens)
+    let swapToggle =
+        let t = makeOrangeCheckBox("Swap L/R click: left adds items, right places", TrackerModelOptions.SwapMouseButtons)
+        t.FontSize <- 11.
+        t.Margin <- Thickness(5.,3.,5.,3.)
+        t.HorizontalAlignment <- HorizontalAlignment.Center
+        t.Click.Add(fun _ ->
+            TrackerModelOptions.SwapMouseButtons <- (t.IsChecked = System.Nullable<bool>(true))
+            TrackerModelOptions.writeSettings())
+        t
+    swapToggle.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
     row.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
     let tip = new TextBlock(Text="Right click to enter shops then click (or hotkey) to place on the map. You can also place the shop on the map first and enter items after.",
                             TextWrapping=TextWrapping.Wrap, Foreground=Brushes.Orange, FontSize=12., TextAlignment=TextAlignment.Center, Width=max 200. (row.DesiredSize.Width - 16.), Margin=Thickness(6.,6.,6.,2.))
     tip.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
     header.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
-    let headerH = tip.DesiredSize.Height + tip.Margin.Top + tip.Margin.Bottom + header.DesiredSize.Height + 2.
+    let headerH = tip.DesiredSize.Height + tip.Margin.Top + tip.Margin.Bottom + header.DesiredSize.Height + swapToggle.DesiredSize.Height + swapToggle.Margin.Top + swapToggle.Margin.Bottom + 2.
     let stack = new StackPanel(Orientation=Orientation.Vertical)
     stack.Children.Add(tip) |> ignore
+    stack.Children.Add(swapToggle) |> ignore
     stack.Children.Add(header) |> ignore
     stack.Children.Add(row) |> ignore
     let b = new Border(Child=stack, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray)

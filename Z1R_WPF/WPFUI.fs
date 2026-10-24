@@ -228,18 +228,30 @@ let currentMaxHeartsTextBox = new TextBox(Padding=Thickness(0.), VerticalContent
 // drawn inside a plain Button (not hit-testable; the wrapper border below handles the mouse) so its border has the same look as the Hint Decoder and the other main-screen buttons
 let currentMaxHeartsButton = new Button(Content=currentMaxHeartsTextBox, Width=112., Height=28., HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch, IsHitTestVisible=false, Focusable=false)   // 112x28 overall, so it ends right at the top of the map
 Graphics.styleRoundedButton(currentMaxHeartsButton)
+// duplicated markers (copy + paste of a tile's marker icons): source tile -> the tiles it was pasted onto
+let dupLinks = new System.Collections.Generic.Dictionary<(int*int), ResizeArray<(int*int)>>()
 // heart containers marked 'collected' on the map count toward the player's max hearts; every change to a tile's icons goes through here
 let rebuildMapCollected() =
     System.Array.Clear(TrackerModel.mapCollectedCount, 0, TrackerModel.mapCollectedCount.Length)
     // (with Progressive Items, a shop shown on several tiles is still one shop: its swords / rings / candles / arrows count once, however many tiles carry it)
     let shopCounted = new System.Collections.Generic.HashSet<int*int>()   // (shop label, item)
+    // (every tile with the same shop label is the same shop: a heart container collected there is one heart however many tiles show it, so a shop counts the most hearts any one of its tiles has collected)
+    let shopHearts = new System.Collections.Generic.Dictionary<int,int>()
     for i = 0 to 15 do
         for j = 0 to 7 do
             let label = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
             for (ident, col) in TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j]) do
                 if col && ident >= 0 && ident < TrackerModel.mapCollectedCount.Length then
                     let isRepeat = label > 0 && TrackerModel.progressiveFamily ident > 0 && not (shopCounted.Add((label, ident)))
-                    if not isRepeat then TrackerModel.mapCollectedCount.[ident] <- TrackerModel.mapCollectedCount.[ident] + 1
+                    if ident = TrackerModel.ITEMS.HEARTCONTAINER && label > 0 then
+                        () // (counted per shop below)
+                    elif not isRepeat then TrackerModel.mapCollectedCount.[ident] <- TrackerModel.mapCollectedCount.[ident] + 1
+            if label > 0 then
+                let n = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j]) |> List.filter (fun (id,col) -> col && id = TrackerModel.ITEMS.HEARTCONTAINER) |> List.length
+                let cur = match shopHearts.TryGetValue(label) with | true, v -> v | _ -> 0
+                if n > cur then shopHearts.[label] <- n
+    for kv in shopHearts do
+        TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.HEARTCONTAINER] <- TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.HEARTCONTAINER] + kv.Value
 let mutable copiedMarkerIdents : int list = []
 let mutable copiedMarkerPacked : int = -1   // same, including each icon's collected state   // shift+left-click on a tile that has only item markers copies them; shift+left-click on an unmarked tile pastes them
 let mutable decorStateChanged = fun () -> ()   // set once the main UI exists: refreshes the item progress bar etc.
@@ -256,7 +268,6 @@ let canPlacePotionShop(i:int, j:int) =
         n < TrackerModel.mapSquareChoiceDomain.MaxUses(TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP)
 // duplicated markers (copy + paste of a tile's marker icons): source tile -> the tiles it was pasted onto. A duplicate leaves out the items already collected on the original;
 // when one of those is later un-collected on the original, it shows up on the duplicates.
-let dupLinks = new System.Collections.Generic.Dictionary<(int*int), ResizeArray<(int*int)>>()
 let mutable copiedMarkerSource = (-1, -1)
 let mutable copiedMarkerBomb = false   // the copied tile was a bomb shop (the paste makes a bomb shop too)
 let mutable redrawOwTileHook = fun (_i:int, _j:int) -> ()   // set once the map exists: redraws one overworld tile
@@ -404,13 +415,44 @@ let rec setDecorIcons(i:int, j:int, newPacked0:int) =
     | _ -> ()
 OverworldMapTileCustomization.setDecorIconsHook <- setDecorIcons
 // set (1-5) or remove (0) the tile's "SHOP n" text label
+// a duplicated item keeps the tier the original was collected at (otherwise its collected icon would show the current, higher tier)
+let copyTileTiers(src:int*int, dst:int*int) =
+    for kv in Seq.toList TrackerModel.progressiveTileTier do
+        let (sx, sy, id) = kv.Key
+        if (sx, sy) = src then TrackerModel.progressiveTileTier.[(fst dst, snd dst, id)] <- kv.Value
+let linkDuplicate(src:int*int, dst:int*int) =
+    match dupLinks.TryGetValue(src) with
+    | true, l -> if not (l.Contains(dst)) then l.Add(dst)
+    | _ ->
+        let nl = new ResizeArray<(int*int)>()
+        nl.Add(dst)
+        dupLinks.[src] <- nl
 let setShopLabel(i:int, j:int, label:int) =
     let old = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
     if old > 0 && label <> old && TrackerModel.shopLabelCount(old) = 1 then
         // this was the last tile of that shop: its items stay in the shop window
         TrackerModel.shopStash.[old] <- TrackerModel.decorEntriesPack(TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons.[i,j]))
     TrackerModel.owSwordIcons.[i,j] <- TrackerModel.withShopLabel(TrackerModel.owSwordIcons.[i,j], label)
-    if label > 0 && label <> old && TrackerModel.shopLabelCount(label) = 1 && TrackerModel.shopStash.[label] > 0 then
+    if old > 0 && label > 0 && label <> old then
+        // a shop tile changed into another shop (menu or hotkey): it holds that shop's items now, not the old shop's
+        let others = [ for x in 0..15 do
+                         for y in 0..7 do
+                             if (x,y) <> (i,j) && TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = label then yield (x,y) ]
+        for kv in Seq.toList TrackerModel.progressiveTileTier do
+            let (tx, ty, _) = kv.Key
+            if (tx, ty) = (i, j) then TrackerModel.progressiveTileTier.Remove(kv.Key) |> ignore
+        match others with
+        | src :: _ ->
+            TrackerModel.owSwordIcons.[i,j] <- TrackerModel.withShopLabel(TrackerModel.owSwordIcons.[fst src, snd src], label)
+            copyTileTiers(src, (i,j))
+            linkDuplicate(src, (i,j))
+        | [] ->
+            if TrackerModel.shopStash.[label] > 0 then
+                TrackerModel.owSwordIcons.[i,j] <- TrackerModel.withShopLabel(TrackerModel.shopStash.[label], label)
+                TrackerModel.shopStash.[label] <- -1
+            else TrackerModel.owSwordIcons.[i,j] <- TrackerModel.withShopLabel(-1, label)
+        rebuildMapCollected()
+    elif label > 0 && label <> old && TrackerModel.shopLabelCount(label) = 1 && TrackerModel.shopStash.[label] > 0 then
         // the first tile of a shop picks up the items already entered in its shop window
         TrackerModel.owSwordIcons.[i,j] <- TrackerModel.withShopLabel(TrackerModel.shopStash.[label], label)
         TrackerModel.shopStash.[label] <- -1
@@ -625,7 +667,12 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 // (highlighting ALL open caves is no longer meaningful, but...)
                 if TrackerModel.armosBox.CellCurrent() = -1 then
                     // Second, if your armos box is still empty, highlight the armos
-                    (fun (x,y) -> owInstance.HasArmos(x,y) && not(owInstance.HintLocked(x,y)) && TrackerModel.overworldMapMarks.[x,y].Current() = -1)
+                    (fun (x,y) -> owInstance.HasArmos(x,y) && not(owInstance.HintLocked(x,y)) && TrackerModel.overworldMapMarks.[x,y].Current() = -1
+                                  // (not an armos screen the player can't get to yet: raft / ladder / power bracelet / recorder blocked without that item)
+                                  && not(owInstance.Raftable(x,y) && not TrackerModel.playerComputedStateSummary.HaveRaft)
+                                  && not(owInstance.Ladderable(x,y) && not TrackerModel.playerComputedStateSummary.HaveLadder)
+                                  && not(owInstance.PowerBraceletable(x,y) && not TrackerModel.playerComputedStateSummary.HavePowerBracelet)
+                                  && not(owInstance.Whistleable(x,y) && not TrackerModel.playerComputedStateSummary.HaveRecorder))
                 else
                     NoCyan
             else
@@ -1329,6 +1376,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             if OverworldMapTileCustomization.acceleratorCancelled then TrackerModel.overworldMapMarks.[i,j].Set(originalState)   // dismissed without choosing: put the tile back
                             Graphics.WarpMouseCursorTo(pos)
                         | _ -> ()
+                        if TrackerModel.ProgressiveItems then progressiveSwordCheckHook()   // (a sword taken at the wood sword cave counts once its tile is recorded)
                         redrawGridSpot()
                         if originalState = -1 && currentState <> -1 then OverworldRouteDrawing.routeDrawingLayer.GetHighlightTile(i,j).Hide()  // dismiss any green/yellow highlight on this tile
                         animateOverworldTileIfOptionIsChecked(i,j)
@@ -1561,6 +1609,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             else
                                 let source = src.Head
                                 setDecorIcons(i, j, TrackerModel.owSwordIcons.[fst source, snd source])   // (the packed value carries the shop label too)
+                                copyTileTiers(source, (i,j))
                                 let ok, l = dupLinks.TryGetValue(source)
                                 if ok then
                                     if not (l.Contains((i,j))) then l.Add((i,j))
@@ -1727,6 +1776,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             redrawGridSpot()
                         elif currentState = 1000 + TrackerModel.DECOR_BOMB
                                 && (originalState = -1 || originalState = TrackerModel.MapSquareChoiceDomainHelper.DARK_X)
+                                && TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) = 0   // (on a SHOP n tile the bomb is just a marker icon in the shop, like the hotkey does)
                                 && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.mapSquareChoiceDomain.CanAddUse(TrackerModel.MapSquareChoiceDomainHelper.BOMB) then
                             // a bomb marker means a bomb shop: place the bomb shop tile
                             do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.BOMB, originalState)
@@ -1799,7 +1849,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                 nl.Add((i,j))
                                 dupLinks.[copiedMarkerSource] <- nl
                     async {
-                        setDecorIcons(i, j, copiedMarkerPacked)   // just the duplicated markers: the tile itself is left as it was (a copied bomb shop makes this a bomb shop too)
+                        setDecorIcons(i, j, copiedMarkerPacked)
+                        if copiedMarkerSource <> (-1, -1) then copyTileTiers(copiedMarkerSource, (i,j))   // just the duplicated markers: the tile itself is left as it was (a copied bomb shop makes this a bomb shop too)
                         if copiedMarkerBomb && TrackerModel.mapSquareChoiceDomain.CanAddUse(TrackerModel.MapSquareChoiceDomainHelper.BOMB) then
                             do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.BOMB, -1)
                         elif not copiedMarkerBomb then
@@ -2301,7 +2352,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             // a bright red glow, a thick red border, and a red-filled label, so it is obvious which button the hovered tile is waiting on
             let b = if zone = 1 then deadWoodsButton else lostHillsButton
             let label = b.Content :?> TextBox
-            if on then
+            let known0 = (if zone = 1 then OverworldData.DeadWoodsHintKnown else OverworldData.LostHillsHintKnown)
+            if on && not known0 then   // (once the hint has been entered the tiles are no longer waiting on it: no red highlight)
                 b.BorderBrush <- (Brushes.Red :> Brush)
                 b.BorderThickness <- Thickness(3.)
                 b.Effect <- new System.Windows.Media.Effects.DropShadowEffect(Color=Colors.Red, BlurRadius=18., ShadowDepth=0., Opacity=1.)
@@ -3988,6 +4040,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     Graphics.PlaySoundForSpeechRecognizedAndUsedToMark()  // the very first call to this lags the system for some reason, so get it out of the way at startup
     layout.AllDone()
     Popouts.Startup(doUIUpdateEvent)
+    TrackerModel.swordCaveTakenFunc <- (fun () ->
+        seq { for x in 0..15 do for y in 0..7 do yield (x,y) }
+        |> Seq.exists (fun (x,y) -> TrackerModel.overworldMapMarks.[x,y].Current() = TrackerModel.MapSquareChoiceDomainHelper.SWORD1
+                                    && TrackerModel.getOverworldMapExtraData(x,y,TrackerModel.MapSquareChoiceDomainHelper.SWORD1) = TrackerModel.MapSquareChoiceDomainHelper.SWORD1
+                                    && not (TrackerModel.shuffledWoodSwordTiles.Contains((x,y)))))
     if TrackerModelOptions.ShowCustomOnStartup then ShowRunCustom.DoShowRunCustom(refocusMainWindow)   // reopen the custom SHOW windows if they were showing last time
     MainTrackerTriforcesAndItems.reopenItemProgressWindowIfWasOpen()
     MainTrackerTriforcesAndItems.reopenItemLocationsWindowIfWasOpen()   // like the popouts: reopen at its remembered spot/size if it was open when the program last closed

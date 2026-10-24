@@ -211,7 +211,9 @@ let spotSummaryContent(doUIUpdateEvent:Event<unit>) =
     let dp = new DockPanel(Background=Brushes.Black)
     let redraw() =
         dp.Children.Clear()
-        dp.Children.Add(OverworldMapTileCustomization.MakeRemainderSummaryDisplay()) |> ignore
+        let summary = OverworldMapTileCustomization.MakeRemainderSummaryDisplay()
+        summary.BorderThickness <- Thickness(0.)   // no grey border in the popout window
+        dp.Children.Add(summary) |> ignore
     redraw()
     TrackerModel.mapStateSummaryComputedEvent.Publish.Add(fun _ -> 
 //        printfn "redraw spot summary"
@@ -219,7 +221,7 @@ let spotSummaryContent(doUIUpdateEvent:Event<unit>) =
         )
     // also redraw as items get collected (the summary dims potions/letter/swords once collected)
     doUIUpdateEvent.Publish.Add(fun _ -> redraw())
-    dp  // already has a border
+    dp
 let inventoryAndHeartsContent(doUIUpdateEvent:Event<unit>) =
     let dp = new DockPanel(Background=Brushes.Black)
     let redraw() =
@@ -242,7 +244,7 @@ let remainingItemsContent(doUIUpdateEvent:Event<unit>) =
 //        printfn "redraw remaining items"
         redraw()
         )
-    let border = new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.), Background=Brushes.Black)
+    let border = new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(0.), Background=Brushes.Black)
     border.PreviewMouseWheel.Add(fun e ->
         if System.Windows.Input.Keyboard.Modifiers = System.Windows.Input.ModifierKeys.Control then
             e.Handled <- true

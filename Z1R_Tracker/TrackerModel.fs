@@ -1061,6 +1061,7 @@ let progressiveSwordBoxTier(ident:int) : int =
 let progressiveTileTier = new System.Collections.Generic.Dictionary<int*int*int, int>()   // (tile x, tile y, item) -> tier
 let progressiveBoxTier = new System.Collections.Generic.Dictionary<Box, int>(HashIdentity.Reference)
 let mutable progressiveTierOverride = -1   // while set, drawing code asks for this tier instead of the current one
+let mutable swordCaveTakenFunc : unit -> bool = fun () -> false   // set by the UI: true when the sword was taken at a wood sword cave on the map
 let progressiveSwordTier() : int =
     if not ProgressiveItems then 0
     elif progressiveTierOverride >= 1 then progressiveTierOverride
@@ -1069,7 +1070,9 @@ let progressiveSwordTier() : int =
         let onMap = [ ITEMS.PROGRESSIVESWORD; ITEMS.WOODSWORD; ITEMS.WHITESWORD; ITEMS.MAGICALSWORD; ITEMS.WHITESWORD4 ] |> List.sumBy (fun id -> mapCollectedCount.[id])   // (swords on the map, in shops too, act like progressive swords)
         // the wood sword cave's 'Took Sword' (and starting swords) also count: the sword level the player has, when higher than what the icons and boxes account for
         let level = if startingItemsAndExtras.PlayerHasMagicalSword.Value() then 3 elif startingItemsAndExtras.PlayerHasWhiteSword.Value() then 2 elif playerProgressAndTakeAnyHearts.PlayerHasWoodSword.Value() then 1 else 0
-        min 4 (1 + max (onMap + inBoxes) level)
+        // (the sword taken at the wood sword cave is one more sword on top of any sword icons / boxes; the sword level from the checkboxes can otherwise be the same sword as an icon)
+        let total = if swordCaveTakenFunc() then onMap + inBoxes + 1 else max (onMap + inBoxes) level
+        min 4 (1 + total)
 // Progressive Items: families of items that upgrade each other. 1 = swords, 2 = rings, 3 = candles, 4 = arrows (0 = not part of one, or the option is off)
 let progressiveFamily(ident:int) : int =
     if not ProgressiveItems then 0

@@ -557,8 +557,10 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                     gridAdd(mainTrackerGrid, l9host.Value, 8, 4)
             elif not(isNull l9host.Value) then
                 mainTrackerGrid.Children.Remove(l9host.Value)
-            mainTrackerGrid.Children.Remove(extrasImage)
-            gridAdd(mainTrackerGrid, extrasImage, 8, (if enabled then 0 else 4))
+            // (the Extras image is later moved out of this grid into the legend: leave it there, since adding it here again would throw 'already the logical child of another element')
+            if isNull extrasImage.Parent || obj.ReferenceEquals(extrasImage.Parent, mainTrackerGrid) then
+                mainTrackerGrid.Children.Remove(extrasImage)
+                gridAdd(mainTrackerGrid, extrasImage, 8, (if enabled then 0 else 4))
             level9ColorCanvas.Visibility <- (if enabled then Visibility.Hidden else Visibility.Visible)
         TrackerModel.level9FloorBoxEnabledChanged.Publish.Add(fun _ -> refreshL9Slot())
         refreshL9Slot()
