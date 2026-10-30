@@ -721,7 +721,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
                         // make hard save
                         let filename = makeManualSave()
                         let filename = System.IO.Path.GetFileName(filename)  // remove directory info (could have username in path, don't display PII on-screen)
-                        let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Information, sprintf "ZORA Tracker data saved to file\n%s\nThe tracker will now be reset." filename, ["Ok"])
+                        let! r = CustomComboBoxes.DoModalMessageBox(cm, null, sprintf "ZORA Tracker data saved to file\n%s\nThe tracker will now be reset." filename, ["Ok"])
                         ignore r
                         // remove triforces
                         for i = 0 to 7 do
@@ -976,11 +976,28 @@ let MakeFQSQStuff(cm, _isMixed, owLocatorTilesZone:Graphics.TileHighlightRectang
                         )
                     changeOWSP.Children.Add(btn) |> ignore
                 sp.Children.Add(changeOWSP) |> ignore
-                // Shop prices popout
-                let shopPricesTxt = mkTxt("Shop price notes:")
-                shopPricesTxt.Margin <- Thickness(0.,10.,0.,2.)
-                let shopRow = new DockPanel(LastChildFill=true)
-                let hideQuestPanel = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Bottom, Margin=Thickness(10.,0.,10.,4.))
+                // extra raft / power bracelet blocks: can be switched on and off at any time (saved with the save file)
+                let blocksTxt = mkTxt("Extra blocks and hints (change any time, saved with your save file):")
+                blocksTxt.Margin <- Thickness(0.,10.,0.,2.)
+                sp.Children.Add(blocksTxt) |> ignore
+                let blocksRow = new StackPanel(Orientation=Orientation.Horizontal)
+                let mkBlocksCB(label:string, tip:string, getV:unit->bool, setV:bool->unit) =
+                    let t = mkTxt(label)
+                    t.FontSize <- 14.
+                    let cb = new CheckBox(Content=t, IsChecked=System.Nullable<bool>(getV()), Margin=Thickness(6.,2.,14.,2.), ToolTip=tip)
+                    cb.Click.Add(fun _ ->
+                        setV(cb.IsChecked.HasValue && cb.IsChecked.Value)
+                        TrackerModel.recomputeMapStateSummary()
+                        TrackerModel.forceUpdate()
+                        OptionsMenu.requestRedrawOverworldEvent.Trigger()
+                        refreshUIAfterOverworldTemplateChange())
+                    cb
+                blocksRow.Children.Add(mkBlocksCB("Extra Power Bracelet Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4", (fun () -> OverworldData.ExtraPBBlocks), (fun v -> OverworldData.ExtraPBBlocks <- v))) |> ignore
+                blocksRow.Children.Add(mkBlocksCB("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16", (fun () -> OverworldData.ExtraRaftBlocks), (fun v -> OverworldData.ExtraRaftBlocks <- v))) |> ignore
+                let hintsRow = new StackPanel(Orientation=Orientation.Horizontal)
+                hintsRow.Children.Add(mkBlocksCB("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)", (fun () -> OverworldData.DeadWoodsEnabled), (fun v -> OverworldData.DeadWoodsEnabled <- v))) |> ignore
+                hintsRow.Children.Add(mkBlocksCB("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)", (fun () -> OverworldData.LostHillsEnabled), (fun v -> OverworldData.LostHillsEnabled <- v))) |> ignore
+                let hideQuestPanel = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Top, Margin=Thickness(10.,0.,10.,0.))
                 DockPanel.SetDock(hideQuestPanel, Dock.Right)
                 if nowMixed then
                     (hideFirstQuestCheckBox.Content :?> TextBox).Text <- "Hide 1st Quest"
@@ -991,7 +1008,18 @@ let MakeFQSQStuff(cm, _isMixed, owLocatorTilesZone:Graphics.TileHighlightRectang
                     hideSecondQuestCheckBox.Margin <- Thickness(0.,2.,0.,2.)
                     hideQuestPanel.Children.Add(hideFirstQuestCheckBox) |> ignore
                     hideQuestPanel.Children.Add(hideSecondQuestCheckBox) |> ignore
-                shopRow.Children.Add(hideQuestPanel) |> ignore
+                let blocksCol = new StackPanel(Orientation=Orientation.Vertical)
+                blocksCol.Children.Add(blocksRow) |> ignore
+                blocksCol.Children.Add(hintsRow) |> ignore
+                // the Hide 1st / 2nd Quest checkboxes (mixed overworlds only) sit in a third column, level with the four checkboxes
+                let blocksArea = new DockPanel(LastChildFill=true)
+                blocksArea.Children.Add(hideQuestPanel) |> ignore
+                blocksArea.Children.Add(blocksCol) |> ignore
+                sp.Children.Add(blocksArea) |> ignore
+                // Shop prices popout
+                let shopPricesTxt = mkTxt("Shop price notes:")
+                shopPricesTxt.Margin <- Thickness(0.,10.,0.,2.)
+                let shopRow = new DockPanel(LastChildFill=true)
                 let shopLeft = new StackPanel(Orientation=Orientation.Vertical)
                 shopRow.Children.Add(shopLeft) |> ignore
                 sp.Children.Add(shopRow) |> ignore

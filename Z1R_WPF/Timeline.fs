@@ -139,7 +139,9 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
     let iconAreaHeight = float numRows*(iconSize+ICON_SPACING)
     let timelineCanvas = new Canvas(Height=iconAreaHeight+BIG_HASH, Width=lineWidth)
     let graphCanvas = new Canvas(Height=iconAreaHeight+BIG_HASH, Width=lineWidth)
-    let owAxisLabel = new TextBox(Text="Overworld Completion and Collection Timeline", Foreground=Brushes.DarkCyan, Background=Brushes.Transparent, TextAlignment=TextAlignment.Center, BorderThickness=Thickness(0.0), FontSize=12.0, FontWeight=FontWeights.Bold, IsHitTestVisible=false, IsReadOnly=true)
+    let owAxisLabel = new TextBox(Text="Overworld and Collection Timeline", Foreground=Brushes.DarkCyan, Background=Brushes.Transparent, TextAlignment=TextAlignment.Center, BorderThickness=Thickness(0.0), FontSize=12.0, FontWeight=FontWeights.Bold, IsHitTestVisible=false, IsReadOnly=true)
+    let seedLabel = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Transparent, BorderThickness=Thickness(0.0), FontSize=12.0, FontWeight=FontWeights.Bold, IsHitTestVisible=false, IsReadOnly=true)   // top left of the timeline: seed (all digits)
+    let flagsLabel = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Transparent, BorderThickness=Thickness(0.0), FontSize=12.0, FontWeight=FontWeights.Bold, IsHitTestVisible=false, IsReadOnly=true, TextAlignment=TextAlignment.Right)   // top right of the timeline: flags (letters and digits)
     let itemCanvas = new Canvas(Height=iconAreaHeight+BIG_HASH, Width=lineWidth)
     let timeToolTip = new TextBox(Foreground=Brushes.Orange, Background=Brushes.Black, BorderThickness=Thickness(3.0), FontSize=16.0, IsHitTestVisible=false)
     let line1 = new Shapes.Line(X1=0., Y1=iconAreaHeight+BIG_HASH/2., X2=lineWidth, Y2=iconAreaHeight+BIG_HASH/2., Stroke=TLC, StrokeThickness=LINE_THICKNESS)
@@ -164,8 +166,30 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
         canvasAdd(timelineCanvas, graphCanvas, 0., 0.)
         owAxisLabel.Width <- lineWidth   // horizontal title, centered across the top of the timeline
         Canvas.SetLeft(owAxisLabel, 0.)
-        Canvas.SetTop(owAxisLabel, 0.)
+        Canvas.SetTop(owAxisLabel, 6.)
         graphCanvas.Children.Add(owAxisLabel) |> ignore
+        Canvas.SetLeft(seedLabel, 0.)
+        Canvas.SetTop(seedLabel, 6.)
+        Canvas.SetRight(flagsLabel, 0.)
+        Canvas.SetTop(flagsLabel, 6.)
+        graphCanvas.Children.Add(seedLabel) |> ignore
+        graphCanvas.Children.Add(flagsLabel) |> ignore
+        let refreshSeedAndFlags() =
+            let show = TrackerModelOptions.DisplaySeedAndFlags.Value
+            seedLabel.Text <- (if show && SaveAndLoad.lastKnownSeed <> "" then "Seed: " + SaveAndLoad.lastKnownSeed else "")
+            flagsLabel.Text <- (if show && SaveAndLoad.lastKnownFlags <> "" then "Flags: " + SaveAndLoad.lastKnownFlags else "")
+            // the title is centered in the open space between the seed (left) and the flags (right)
+            let textWidth(t:string) =
+                if t = "" then 0.
+                else (new FormattedText(t, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                                        new Typeface(seedLabel.FontFamily, seedLabel.FontStyle, FontWeights.Bold, seedLabel.FontStretch),
+                                        12., Brushes.Orange, new NumberSubstitution(), TextFormattingMode.Display, VisualTreeHelper.GetDpi(timelineCanvas).PixelsPerDip)).Width + 10.   // (+10: the text box's own padding)
+            let leftEdge = if seedLabel.Text = "" then 0. else textWidth(seedLabel.Text) + 10.
+            let rightEdge = if flagsLabel.Text = "" then 0. else textWidth(flagsLabel.Text) + 10.
+            Canvas.SetLeft(owAxisLabel, leftEdge)
+            owAxisLabel.Width <- max 0. (lineWidth - leftEdge - rightEdge)
+        refreshSeedAndFlags()
+        SaveAndLoad.seedAndFlagsUpdated.Publish.Add(fun _ -> refreshSeedAndFlags())
         canvasAdd(timelineCanvas, itemCanvas, 0., 0.)
         for i = 0 to numTicks do
             if i%(2*ticksPerHash)=0 then
@@ -221,6 +245,8 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
             // draw it
             graphCanvas.Children.Clear()
             graphCanvas.Children.Add(owAxisLabel) |> ignore
+            graphCanvas.Children.Add(seedLabel) |> ignore
+            graphCanvas.Children.Add(flagsLabel) |> ignore
             let y(r) = (iconAreaHeight / float maxOverworldRemain) * float r
             for i = 1 to curTick do
                 if remainPerTick.[i-1] <> -1 && remainPerTick.[i] <> -1 then
@@ -242,8 +268,13 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
             | Sword4 -> 4
             | _ -> 0
         let topSwordRank = timelineItems |> Seq.filter (fun ti -> ti.IsDone) |> Seq.map (fun ti -> swordRank ti.TID) |> Seq.fold max 0
+        // (one icon for the top sword: the starting-item flag and the cave's item box can both be stamped for the same sword, so show just the earliest)
+        let topSwordItem = if topSwordRank = 0 then None else timelineItems |> Seq.filter (fun ti -> ti.IsDone && swordRank ti.TID = topSwordRank) |> Seq.sortBy (fun ti -> ti.FinishedTotalSeconds) |> Seq.tryHead
+        let swordBoxHoldsSword = TrackerModel.sword3Box.IsDone() && TrackerModel.sword3Box.CellCurrent() = TrackerModel.ITEMS.MAGICALSWORD
         for ti in timelineItems do
-            if ti.IsDone && (swordRank ti.TID = 0 || swordRank ti.TID = topSwordRank) then
+            // (the magical sword cave's item box already shows that sword on the timeline: its 'have the sword' flag would draw it a second time)
+            let dupOfCaveBox = swordBoxHoldsSword && (match ti.TID with | MagicalSword | StartingMagicalSword -> true | _ -> false)
+            if ti.IsDone && not dupOfCaveBox && (swordRank ti.TID = 0 || (match topSwordItem with | Some t -> obj.ReferenceEquals(t, ti) | None -> false)) then
                 let tick = float ti.FinishedTotalSeconds/(60.*float minutesPerTick) |> int
                 if not(buckets.ContainsKey(tick)) then
                     buckets.Add(tick, ResizeArray())

@@ -159,6 +159,17 @@ let shopItemBitmapsGlobal(n:int) : (System.Drawing.Bitmap*bool) list =
                       let bmp = decorSourceBmp ident
                       if bmp <> null then yield (bmp, collected) ]
         if n = 0 then List.truncate 1 all else all
+// index (within the item list shopItemBitmapsGlobal gives) of the key in numbered shop n, or -1 if that shop holds no key
+let shopKeyIndexGlobal(n:int) : int =
+    let label = if n = 0 then 5 else n
+    let src = [ for x in 0..15 do
+                  for y in 0..7 do
+                      if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = label && not (TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[x,y]).IsEmpty) then yield (x,y) ]
+    let packed = (match src with | (sx,sy) :: _ -> TrackerModel.owSwordIcons.[sx,sy] | [] -> TrackerModel.shopStash.[label])
+    let idents = [ for (ident, _) in TrackerModel.decorEntriesOf(packed) do if decorSourceBmp ident <> null then yield ident ]
+    match idents |> List.tryFindIndex isKeyDecor with
+    | Some k -> k
+    | None -> -1
 // Progressive Items: every sword (and the progressive sword) shows the current tier, so its cached picture depends on the tier
 let progressiveSwordCacheOffset(item:int) =
     let f = TrackerModel.progressiveFamily item
@@ -487,6 +498,7 @@ let owSpotTypesPanel =
                 sp.Margin <- Thickness(6.,0.,0.,0.)
         // hovering a type highlights its unmarked spots on the map, like hovering the matching item in the Item Progress bar
         sp.MouseEnter.Add(fun _ ->
+            if TrackerModelOptions.RaceMode.Value then () else   // Race Mode: no per-type spot highlighting
             let inst = TrackerModel.owInstance
             match k with
             | 0 -> showLocatorInstanceFunc(inst.Burnable)
@@ -514,23 +526,58 @@ let owSpotTypesPanel =
             sp.Children.Add(new TextBlock(FontSize=14., Foreground=Brushes.Orange, VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(3.,0.,0.,0.), Text="open")) |> ignore
         wp.Children.Add(cell) |> ignore
     wp
+// the Race Mode summary box (shown at startup while Race Mode is on, and whenever the RACE MODE stamp is clicked); its checkbox is the saved "do not show at startup" setting
+let showRaceModeNotice(owner:Window) =
+    let w = new Window(Title="Race Mode", SizeToContent=SizeToContent.WidthAndHeight, ResizeMode=ResizeMode.NoResize, ShowInTaskbar=false, Background=Brushes.Black)
+    if obj.ReferenceEquals(owner, null) then
+        w.WindowStartupLocation <- WindowStartupLocation.CenterScreen
+    else
+        w.Owner <- owner
+        w.WindowStartupLocation <- WindowStartupLocation.CenterOwner
+    let sp = new StackPanel(Margin=Thickness(24.))
+    let tb(text:string, size:float, brush:Brush, bottom:float) =
+        sp.Children.Add(new TextBlock(Text=text, FontSize=size, Foreground=brush, TextWrapping=TextWrapping.Wrap, MaxWidth=420., Margin=Thickness(0.,0.,0.,bottom))) |> ignore
+    tb((if TrackerModelOptions.RaceMode.Value then "Race Mode is ON" else "Race Mode"), 22., Brushes.Orange, 12.)
+    tb("While Race Mode is on:", 14., Brushes.White, 6.)
+    tb("\u2022  The overworld spot counts by item (and open) read n/a", 14., Brushes.White, 3.)
+    tb("\u2022  No routes are drawn on the overworld", 14., Brushes.White, 3.)
+    tb("\u2022  Audio is muted", 14., Brushes.White, 3.)
+    tb("\u2022  The 'go time' / 'triforce and go' reminders are off", 14., Brushes.White, 12.)
+    tb("Turn it off any time in the Options menu.", 12., Brushes.Gray, 14.)
+    let cb = new CheckBox(Content=new TextBlock(Text="Do not show this at startup", Foreground=Brushes.White, FontSize=13.), Margin=Thickness(0.,0.,0.,14.), HorizontalAlignment=HorizontalAlignment.Left)
+    cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.RaceModeNoticeHidden.Value
+    sp.Children.Add(cb) |> ignore
+    let ok = new Button(Content="OK", Width=90., Height=28., HorizontalAlignment=HorizontalAlignment.Center, IsDefault=true)
+    ok.Click.Add(fun _ -> w.Close())
+    sp.Children.Add(ok) |> ignore
+    w.Content <- sp
+    w.Closed.Add(fun _ -> TrackerModelOptions.RaceModeNoticeHidden.Value <- (cb.IsChecked.HasValue && cb.IsChecked.Value))
+    w.ShowDialog() |> ignore
 let owRemainingScreensTextBoxContainerPanelThatSeesMouseEvents = 
     let dp = new StackPanel(Background=Brushes.Black, Orientation=Orientation.Vertical)
     let inner = new StackPanel(Background=Brushes.Black, Orientation=Orientation.Vertical)
     inner.Children.Add(owRemainingNumbersTextBox) |> ignore
     inner.Children.Add(owRemainingScreensTextBox) |> ignore
     inner.Children.Add(owSpotTypesPanel) |> ignore
-    dp.Children.Add(inner) |> ignore
-    // Race Mode: the OW spot counts are hidden and this text stands in for them
-    // (two lines, centered in the block)
-    let raceTB = new Border(Width=116., Height=86., Margin=Thickness(0.,20.,0.,0.), IsHitTestVisible=false,
-                            Child=new TextBlock(Text="Race\nMode", FontSize=32., LineHeight=34., LineStackingStrategy=LineStackingStrategy.BlockLineHeight, Foreground=Brushes.Orange, TextAlignment=TextAlignment.Center,
-                                                HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, IsHitTestVisible=false))
-    dp.Children.Add(raceTB) |> ignore
+    // Race Mode: the totals stay, the per-item counts read n/a (dimmed), and a "RACE MODE" stamp is laid across the block
+    let stamp = new Border(Width=78., Height=21., Margin=Thickness(0.,73.5,0.,0.), HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Top,
+                           BorderBrush=new SolidColorBrush(Color.FromRgb(217uy,130uy,0uy)), BorderThickness=Thickness(2.), CornerRadius=CornerRadius(3.),
+                           Background=new SolidColorBrush(Color.FromArgb(217uy,0uy,0uy,0uy)), IsHitTestVisible=true, Cursor=System.Windows.Input.Cursors.Hand, ToolTip="Click to see what Race Mode does",
+                           RenderTransformOrigin=Point(0.5,0.5), RenderTransform=new RotateTransform(-35.),
+                           Child=new TextBlock(Text="RACE MODE", FontSize=11., FontWeight=FontWeights.ExtraBold, Foreground=new SolidColorBrush(Color.FromRgb(217uy,130uy,0uy)),
+                                               HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, IsHitTestVisible=false))
+    stamp.MouseLeftButtonDown.Add(fun ea -> ea.Handled <- true; showRaceModeNotice(Application.Current.MainWindow))
+    let overlay = new Grid(Background=Brushes.Black)
+    overlay.Children.Add(inner) |> ignore
+    overlay.Children.Add(stamp) |> ignore
+    dp.Children.Add(overlay) |> ignore
     let applyRace() =
         let race = TrackerModelOptions.RaceMode.Value
-        inner.Visibility <- (if race then Visibility.Collapsed else Visibility.Visible)
-        raceTB.Visibility <- (if race then Visibility.Visible else Visibility.Collapsed)
+        stamp.Visibility <- (if race then Visibility.Visible else Visibility.Collapsed)
+        owSpotTypesPanel.Opacity <- (if race then 0.4 else 1.0)
+        for k in 0..6 do
+            if race then owSpotTypeCountTBs.[k].Text <- "n/a"
+            elif k < TrackerModel.owSpotTypeCounts.Length then owSpotTypeCountTBs.[k].Text <- string TrackerModel.owSpotTypeCounts.[k]
     applyRace()
     OptionsMenu.raceModeChanged.Publish.Add(fun () -> applyRace())
     dp
@@ -643,6 +690,12 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     CoopSync.subscribeToBlockersChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId)
     DrawingLayer.applyCustomMenuIcons()
     OverworldMapTileCustomization.shopItemBitmapsHook <- shopItemBitmapsGlobal
+    PieMenus.shopKeyIndexHook <- shopKeyIndexGlobal
+    PieMenus.cheapKeysChangedHook <- (fun () ->
+        for x = 0 to 15 do
+            for y = 0 to 7 do
+                let l = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y])
+                if l >= 1 && l <= 4 then redrawOwTileHook(x,y))
     OverworldMapTileCustomization.decorBitmapHook <- decorSourceBmp
     CoopSync.subscribeToDungeonMapsChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId)
     CoopSync.subscribeToHiddenDungeonColorLabelChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId)
@@ -655,6 +708,46 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     if not heartShuffle then
         for i = 0 to 7 do
             TrackerModel.GetDungeon(i).Boxes.[0].Set(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO)
+    // Heart Shuffle 'Intra': each of dungeons 1-8 holds exactly one heart, in one of its item slots (floor or basement). Once every other slot of a
+    // dungeon holds a non-heart item, the last open slot is filled with an uncollected heart. A dungeon with 3 slots (1 or 4, 8, or 2 with the 4th
+    // sword) only counts the other items once they are collected, so a placed but uncollected item does not give the heart away.
+    if TrackerModel.HeartShuffleMode = 1 && not(TrackerModel.IsHiddenDungeonNumbers()) then
+        let autoHearts = System.Collections.Generic.HashSet<TrackerModel.Box>(HashIdentity.Reference)
+        let busy = ref false
+        let isHeart(b:TrackerModel.Box) = b.CellCurrent() = TrackerModel.ITEMS.HEARTCONTAINER
+        let slotsOf(i:int) =
+            [| yield! TrackerModel.GetDungeon(i).Boxes
+               if i = 1 && TrackerModel.level2StairBoxEnabled then yield TrackerModel.level2StairBox |]
+        let reconcile(i:int) =
+            if not busy.Value then
+                busy.Value <- true
+                try
+                    let slots = slotsOf i
+                    let needCollected = slots.Length >= 3
+                    let filled(b:TrackerModel.Box) = b.CellCurrent() <> -1 && not(isHeart b) && (not needCollected || b.PlayerHas() = TrackerModel.PlayerHas.YES || b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE)   // (a triforce placed in a slot counts even before it is collected)
+                    let othersFilled(b:TrackerModel.Box) = slots |> Array.forall (fun o -> obj.ReferenceEquals(o, b) || filled o)
+                    for b in slots do
+                        if autoHearts.Contains b then
+                            if not(isHeart b && b.PlayerHas() = TrackerModel.PlayerHas.NO) then
+                                autoHearts.Remove b |> ignore   // (the player changed it)
+                            elif not(othersFilled b) then
+                                autoHearts.Remove b |> ignore
+                                b.Set(-1, TrackerModel.PlayerHas.NO)   // (the item that implied this heart was removed)
+                    if not(slots |> Array.exists isHeart) then
+                        match slots |> Array.filter (fun b -> b.IsEmptyRedBox) with
+                        | [| b |] when othersFilled b ->
+                            if b.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO) then autoHearts.Add b |> ignore
+                        | _ -> ()
+                finally
+                    busy.Value <- false
+        for i = 0 to 7 do
+            let boxes =
+                [| yield! TrackerModel.GetDungeon(i).Boxes
+                   if i = 0 || i = 3 then yield TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.FinalBoxOf1Or4
+                   if i = 1 then yield TrackerModel.level2StairBox |] |> Array.distinct
+            for b in boxes do
+                b.Changed.Add(fun _ -> reconcile i)
+            if i = 1 then TrackerModel.level2StairBoxEnabledChanged.Publish.Add(fun _ -> reconcile 1)
     let spokenOWTiles = TrackerModel.overworldTiles(owInstance.Quest.IsFirstQuestOW,TrackerModel.IsHiddenDungeonNumbers()) |> Array.map (fun (_,_,s,_) -> s)
 
     // make the entire UI
@@ -662,7 +755,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         if highlightOpenCavesCheckBox<>null && highlightOpenCavesCheckBox.IsChecked.HasValue && highlightOpenCavesCheckBox.IsChecked.Value then
             // There are 2 reasons to highlight some open caves.
             // First, you might be looking for wood sword cave to obtain free wood sword (or candle)
-            if (TrackerModel.playerComputedStateSummary.SwordLevel > 0 && TrackerModel.playerComputedStateSummary.CandleLevel > 0)
+            // (the white sword or the letter already taken means the free item came from elsewhere, so there is nothing left to hunt the wood sword cave for)
+            let tookWhiteSwordOrLetter = TrackerModel.playerComputedStateSummary.SwordLevel >= 2 || TrackerModel.letterBox.PlayerHas() = TrackerModel.PlayerHas.YES || TrackerModel.mapCollectedCount.[TrackerModel.ITEMS.LETTER] > 0
+            if (TrackerModel.playerComputedStateSummary.SwordLevel > 0 && (TrackerModel.playerComputedStateSummary.CandleLevel > 0 || tookWhiteSwordOrLetter))
                         || TrackerModel.mapStateSummary.Sword1Location <> TrackerModel.NOTFOUND then
                 // (highlighting ALL open caves is no longer meaningful, but...)
                 if TrackerModel.armosBox.CellCurrent() = -1 then
@@ -1203,7 +1298,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     let midCollected = match mid with | Some h -> (entries |> List.exists (fun (x,col) -> x = h && col)) | None -> false
                     for k in 0..2 do
                         let size, x, y = decorSlotC(true, bombAsSlot, big, 3, k)
-                        if k = 1 && mid.IsNone then
+                        if k = 1 && TrackerModel.LegacyMode then ()   // (Legacy Mode: the potion shop only holds the two potions, so no '?' middle slot)
+                        elif k = 1 && mid.IsNone then
                             let q = new TextBlock(Text="?", Foreground=Brushes.White, FontSize=size, FontWeight=FontWeights.Bold, Width=size, Height=size, TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
                             canvasAdd(c, q, x, y - 3.)
                         else
@@ -1268,6 +1364,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             img.Width <- size
                             img.Height <- size
                             canvasAdd(c, img, x, y)
+                            if shopLabelNow >= 1 && shopLabelNow <= 4 && TrackerModel.cheapKeyShops.[shopLabelNow] && isKeyDecor ident then   // the cheaper key shop's key
+                                canvasAdd(c, new System.Windows.Shapes.Rectangle(Width=size, Height=size, Stroke=Brushes.Yellow, StrokeThickness=1.5, IsHitTestVisible=false), x, y)
                             if Views.itemIsHintDashed ident then canvasAdd(c, Views.makeHintDashedRect(size, size), x, y)
                             if collected && not justDim then
                                 let ck = decorCheckmark(size)
@@ -1277,14 +1375,14 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     let labelTB = new TextBlock(Text=(if shopLabelNow = 5 then "P SHOP" else sprintf "SHOP %d" shopLabelNow), Foreground=Brushes.Gold, FontSize=9., FontWeight=FontWeights.Bold, TextAlignment=TextAlignment.Center,
                                                 Width=OMTW, Height=11., Background=Brushes.Black, IsHitTestVisible=false)
                     canvasAdd(c, labelTB, 0., 0.)
-                // the bomb dropper badge: its own layer in the top-right corner of the tile (never an item slot); the icon carries its own red outline
+                // the bomb dropper badge: its own layer in the top-left corner of the tile (never an item slot); the icon carries its own red outline
                 if TrackerModel.owBombDroppers.[i,j] then
                     let badge = Graphics.BMPtoImage(bombDropperOutlinedBmp)
                     badge.Stretch <- Stretch.Uniform
                     badge.Width <- 12.
                     badge.Height <- 12.
                     badge.IsHitTestVisible <- false
-                    canvasAdd(c, badge, OMTW - 12., 0.)
+                    canvasAdd(c, badge, 0., 0.)
             Views.hintDashedItemsChanged.Publish.Add(fun _ -> redrawGridSpot())
             // the letter / white sword / magical sword cave once the user has picked 'Took ...' there
             let tookCaveItem(state) =
@@ -1346,7 +1444,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 // picking the same sword / letter cave again while it holds a shuffled item re-opens its choice box (so the icon, or 'took it', can still be placed; the shuffled item is crossed out)
                 let holdsShuffledItem =
                     currentState = originalState &&
-                    ((currentState = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.shuffledWoodSwordTiles.Contains((i,j)))
+                    ((TrackerModel.LegacyMode && currentState = TrackerModel.MapSquareChoiceDomainHelper.SWORD3)   // (Legacy Mode: clicking the magical sword cave again toggles its sword collected)
+                     || (currentState = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.shuffledWoodSwordTiles.Contains((i,j)))
                      || ((currentState = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || currentState = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || currentState = TrackerModel.MapSquareChoiceDomainHelper.SWORD3)
                          && TrackerModel.getOverworldMapExtraData(i,j,currentState) = OverworldMapTileCustomization.SHUFFLED_ITEM))
                 if holdsShuffledItem then
@@ -1713,10 +1812,12 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                 let pickItemForShop() : Async<int> =
                                     let idents = [ TrackerModel.ITEMS.WOODSWORD; TrackerModel.ITEMS.WHITESWORD; TrackerModel.ITEMS.MAGICALSWORD; TrackerModel.ITEMS.WHITESWORD4; TrackerModel.ITEMS.PROGRESSIVESWORD ] @ [ for ident in markerIdentList do if ident <> SHOP_MENU then yield ident ] @ [ for k = 0 to TrackerModel.ITEMS.customMenuCount-1 do yield TrackerModel.ITEMS.CUSTOM_BASE + k ]
                                     let isProgressiveDisabled(ident:int) = TrackerModel.progressiveDisabledIdent ident
+                                    // Legacy Mode: a shop only holds a wood arrow, blue candle, regular key, bombs, meat, book or shield (so no swords either)
+                                    let isLegacyDisabled(ident:int) = TrackerModel.LegacyMode && not (PieMenus.legacyShopAllows ident)
                                     let items = [ for ident in idents do
                                                     let (cell, enabled, _) = swordIconCell ident
-                                                    if enabled || isProgressiveDisabled ident then yield (ident, cell) ]
-                                    PieMenus.itemPickerDisabledTip <- (fun ident -> if isProgressiveDisabled ident then "Disabled Due to Progressive Items" else null)
+                                                    if enabled || isProgressiveDisabled ident || isLegacyDisabled ident then yield (ident, cell) ]
+                                    PieMenus.itemPickerDisabledTip <- (fun ident -> if isLegacyDisabled ident then "Disabled In Legacy Mode" elif isProgressiveDisabled ident then "Disabled Due to Progressive Items" else null)
                                     PieMenus.ItemPickerAsync(cm, items, 9)
                                 let! pick = PieMenus.ShopFlyoutAsync(cm, counts, TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]), shopItems, canPlacePotionShop(i,j), addItemToShop, pickItemForShop)
                                 if pick = 0 then return Some(SHOP_LABEL_BASE + 5)   // the P shop is shop label 5
@@ -1893,8 +1994,6 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             if Input.Keyboard.IsKeyDown(Input.Key.LeftCtrl) || Input.Keyboard.IsKeyDown(Input.Key.RightCtrl) then
                                 // ctrl+left click removes just that one icon from the tile
                                 setDecorIcons(i, j, TrackerModel.decorRemoveNth(TrackerModel.owSwordIcons.[i,j], nearestIdent, copyNumber))
-                            elif (nearestIdent = TrackerModel.ITEMS.WHITESWORD || nearestIdent = TrackerModel.ITEMS.MAGICALSWORD) && not TrackerModel.ProgressiveItems then
-                                ()   // the white and magical sword icons can't be checked off as collected by clicking (hovering still shows the purple crosshairs); with Progressive Items they are just upgrades and can be
                             else
                                 setDecorIcons(i, j, TrackerModel.decorToggleCollectedNth(TrackerModel.owSwordIcons.[i,j], nearestIdent, copyNumber))
                             redrawGridSpot()
@@ -2027,7 +2126,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     let iconSize = (if label = 5 || items.Length <= 3 then 48. else 36.)
                     sp.Children.Add(new TextBlock(Text=(if label = 5 then "P SHOP" else sprintf "SHOP %d" label), FontSize=22., FontWeight=FontWeights.Bold, Foreground=Brushes.Orange, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
                     let wp = new WrapPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,6.,0.,0.))
-                    let addImg(bmp:System.Drawing.Bitmap, collected:bool) =
+                    let addImgB(bmp:System.Drawing.Bitmap, collected:bool, boxed:bool) =
                         let img = Graphics.BMPtoImage(bmp)
                         img.Stretch <- Stretch.Uniform
                         img.Width <- iconSize
@@ -2035,7 +2134,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         img.Margin <- Thickness(2.)
                         RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor)
                         if collected then img.Opacity <- 0.4
-                        wp.Children.Add(img) |> ignore
+                        if boxed then wp.Children.Add(new Border(BorderBrush=Brushes.Yellow, BorderThickness=Thickness(2.), Child=img)) |> ignore   // the cheaper key shop's key
+                        else wp.Children.Add(img) |> ignore
+                    let addImg(bmp:System.Drawing.Bitmap, collected:bool) = addImgB(bmp, collected, false)
+                    let keyIdx = if label >= 1 && label <= 4 && TrackerModel.cheapKeyShops.[label] then shopKeyIndexGlobal label else -1
                     if label = 5 then
                         addImg(decorSourceBmp TrackerModel.ITEMS.BLUEPOTION, false)
                         (match items with
@@ -2043,7 +2145,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                          | [] -> wp.Children.Add(new TextBlock(Text="?", FontSize=40., FontWeight=FontWeights.Bold, Foreground=Brushes.White, Width=iconSize + 4., TextAlignment=TextAlignment.Center)) |> ignore)
                         addImg(decorSourceBmp TrackerModel.ITEMS.REDPOTION, false)
                     else
-                        for it in items do addImg it
+                        items |> List.iteri (fun idx (bmp, col) -> addImgB(bmp, col, (idx = keyIdx)))
                     sp.Children.Add(wp) |> ignore
                     let big = new Border(Child=sp, Background=Brushes.Black, BorderBrush=Brushes.DarkGray, BorderThickness=Thickness(3.), Width=200., Height=112., IsHitTestVisible=false)
                     let ctr = centerOf(i,j)
@@ -2199,7 +2301,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     // (a default Button around a 29px-high black canvas) so height and border match; it forwards its click to the real 1Q/2Q button
     if isStandardHyrule && moreFQSQoptionsButton <> null then
         // (the 1Q/2Q button now lives in the control panel at the top, under the OVERWORLD OPTIONS heading; it forwards its click to the real 1Q/2Q button)
-        let fqsqPanelButton = Graphics.makeButton("1Q / 2Q", Some(11.), Some(Brushes.Orange))
+        let fqsqPanelButton = Graphics.makeButton("1Q/2Q/Blocks", Some(11.), Some(Brushes.Orange))
         fqsqPanelButton.Click.Add(fun _ -> moreFQSQoptionsButton.RaiseEvent(new RoutedEventArgs(Primitives.ButtonBase.ClickEvent)))
         layout.AddOverworldOptionsButton(fqsqPanelButton)
         // ZORA Hints: Lost Woods / Lost Hills direction sequences, in the open legend space right of the 1Q/2Q button
@@ -2229,6 +2331,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             ToolTipService.SetInitialShowDelay(btn, 0)
             ToolTipService.SetPlacement(btn, System.Windows.Controls.Primitives.PlacementMode.Bottom)
             noteTip.Opened.Add(fun _ -> if hintOptionEnabled() then noteTip.IsOpen <- false)
+            btn.ToolTipOpening.Add(fun _ -> noteTB.Text <- (if TrackerModel.LegacyMode then "Disabled In Legacy Mode" else sprintf "Randomize %s Not Enabled" name))
             btn.ToolTipOpening.Add(fun ea -> if hintOptionEnabled() then ea.Handled <- true)
             let hoverBorder = new SolidColorBrush(Color.FromRgb(0xFFuy,0xA3uy,0x1Auy))
             btn.MouseEnter.Add(fun _ -> if not(hintOptionEnabled()) then btn.BorderBrush <- (hoverBorder :> Brush))
@@ -2525,6 +2628,22 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         for b in TrackerModel.GetDungeon(i).Boxes do
             b.Changed.Add(fun _ -> updateQuestRef())
     layout.AddQuestReferenceChart(questRefBorder, BLOCKERS_AND_NOTES_OFFSET + 108. + 12. - 20. + 12. - 9. * questRefH0 / 180. - (questRefH - questRefH0) * 340. / 180., meatBottomY - questRefH + 3.)   // the chart's bottom-left corner (drawn 9/180 of its height in from its edge) lines up with the left side of the first blocker box (blocker column is 108 wide, then a 12px dungeon-number label)   // bottom-aligned with the meat icon
+    // Legacy Mode: LEGACY up the left slanted side of the chart and MODE down the right slanted side (just outside the triangle; not clickable)
+    let legacyOverlay = new Canvas(Width=questRefH * 340. / 180., Height=questRefH, IsHitTestVisible=false)
+    let legacySide(txt:string, cx:float, cy:float, angle:float) =
+        let tb = new TextBlock(Text=txt, Foreground=Brushes.Orange, FontSize=10., FontWeight=FontWeights.Bold, Width=60., Height=14., TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
+        tb.RenderTransformOrigin <- Point(0.5, 0.5)
+        tb.RenderTransform <- new RotateTransform(angle)
+        Canvas.SetLeft(tb, cx - 30.)
+        Canvas.SetTop(tb, cy - 7.)
+        legacyOverlay.Children.Add(tb) |> ignore
+    let legacyScale = questRefH / 180.
+    legacySide("LEGACY", 85. * legacyScale - 7., 86. * legacyScale - 7., -45.)
+    legacySide("MODE", 255. * legacyScale + 7., 86. * legacyScale - 7., 45.)
+    let updateLegacyOverlay() = legacyOverlay.Visibility <- (if TrackerModel.LegacyMode then Visibility.Visible else Visibility.Collapsed)
+    updateLegacyOverlay()
+    TrackerModel.overworldQuestChanged.Publish.Add(fun _ -> updateLegacyOverlay())
+    layout.AddQuestReferenceChart(legacyOverlay, BLOCKERS_AND_NOTES_OFFSET + 108. + 12. - 20. + 12. - 9. * questRefH0 / 180. - (questRefH - questRefH0) * 340. / 180., meatBottomY - questRefH + 3.)
     // the blue 3-dot box's bottom edge is lined up with the drawn base line of the triforce chart, measured from the real on-screen positions
     // (the chart is a 340x180 drawing whose base line, 2px stroke included, is at y=171, scaled to fit questRefH)
     let alignExtrasWithChart() =
@@ -2581,12 +2700,52 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             popupIsActive <- true
             async {
                 try
-                    let filename = MakeManualSave()
-                    let filename = System.IO.Path.GetFileName(filename)  // remove directory info (could have username in path, don't display PII on-screen)
-                    let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Information, sprintf "ZORA Tracker data saved to file\n%s" filename, ["Ok"])
-                    ignore r
-                    popupIsActive <- false
+                    // ask for an optional name for the save file (blank = the usual date-time name; clicking outside the box or Cancel saves nothing)
+                    let nameWh = new System.Threading.ManualResetEvent(false)
+                    let chosen : string option ref = ref None
+                    let nameTitle = new TextBox(IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=16., Margin=Thickness(3.), Foreground=Brushes.Orange, Background=Brushes.Black, Text="Name this save (optional)\nBlank uses the date and time")
+                    let nameTB = new TextBox(FontSize=16., Foreground=Brushes.Orange, Background=Brushes.Black, CaretBrush=Brushes.Orange, MaxLength=60, Width=360., Margin=Thickness(3.,6.,3.,6.))
+                    let nameSaveBtn = new Button(Content=" Save ", Margin=Thickness(3.), Focusable=false)
+                    let nameCancelBtn = new Button(Content=" Cancel ", Margin=Thickness(3.), Focusable=false)
+                    let finishName() =
+                        chosen.Value <- Some(nameTB.Text)
+                        nameWh.Set() |> ignore
+                    nameSaveBtn.Click.Add(fun _ -> finishName())
+                    nameCancelBtn.Click.Add(fun _ -> nameWh.Set() |> ignore)
+                    nameTB.KeyDown.Add(fun ea ->
+                        if ea.Key = System.Windows.Input.Key.Enter then
+                            ea.Handled <- true
+                            finishName()
+                        elif ea.Key = System.Windows.Input.Key.Escape then
+                            ea.Handled <- true
+                            nameWh.Set() |> ignore)
+                    nameTB.Loaded.Add(fun _ -> nameTB.Focus() |> ignore)
+                    let nameButtons = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Right)
+                    nameButtons.Children.Add(nameSaveBtn) |> ignore
+                    nameButtons.Children.Add(nameCancelBtn) |> ignore
+                    let nameSp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(6.))
+                    nameSp.Children.Add(nameTitle) |> ignore
+                    nameSp.Children.Add(nameTB) |> ignore
+                    nameSp.Children.Add(nameButtons) |> ignore
+                    let nameBorder = new Border(Child=nameSp, Background=Brushes.Black, BorderThickness=Thickness(4.), BorderBrush=Brushes.Gray)
+                    nameBorder.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+                    let npx = max 0. ((cm.AppMainCanvas.Width - nameBorder.DesiredSize.Width) / 2.)
+                    let npy = max 0. ((cm.AppMainCanvas.Height - nameBorder.DesiredSize.Height) / 2.)
+                    HotKeys.suspendHotKeys <- true   // typing a name: the global hotkeys (letters, numbers) must not take the keys
+                    do! CustomComboBoxes.DoModal(cm, nameWh, npx, npy, nameBorder)
+                    HotKeys.suspendHotKeys <- false
+                    match chosen.Value with
+                    | None -> popupIsActive <- false
+                    | Some typedName ->
+                        SaveAndLoad.pendingManualSaveName <- typedName
+                        let filename = MakeManualSave()
+                        let filename = System.IO.Path.GetFileName(filename)  // remove directory info (could have username in path, don't display PII on-screen)
+                        let! r = CustomComboBoxes.DoModalMessageBox(cm, null, sprintf "ZORA Tracker data saved to file\n%s" filename, ["Ok"])
+                        ignore r
+                        popupIsActive <- false
                 with e ->
+                    HotKeys.suspendHotKeys <- false
+                    SaveAndLoad.pendingManualSaveName <- ""
                     let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, sprintf "ZORA Tracker was unable to save the\ntracker state to a file\nError:\n%s" e.Message, ["Ok"])
                     ignore r
                     popupIsActive <- false
@@ -2784,7 +2943,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 owRemainingNumbersTextBox.Text <- sprintf "%d/%d" gettable remain   // gettable / total
                 owGettableScreensTextBox.Text <- sprintf "%d gettable" gettable
                 for k in 0..6 do
-                    owSpotTypeCountTBs.[k].Text <- string TrackerModel.owSpotTypeCounts.[k]
+                    owSpotTypeCountTBs.[k].Text <- (if TrackerModelOptions.RaceMode.Value then "n/a" else string TrackerModel.owSpotTypeCounts.[k])   // (Race Mode: n/a)
             member _this.DungeonLocation(i,x,y,hasTri,isCompleted) =
                 owUpdateFunctions.[x,y] 0 null
             member _this.AnyRoadLocation(i,x,y) = ()
@@ -2849,6 +3008,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             member _this.AnnounceFoundDungeonCount(n) = RemindFoundDungeonCount(n)
             member _this.AnnounceTriforceCount(n) = RemindTriforceCount(n, AsyncBrieflyHighlightAnOverworldLocation)
             member _this.AnnounceTriforceAndGo(triforceCount, tagSummary) = 
+                if TrackerModelOptions.RaceMode.Value then () else   // Race Mode: no go-time alerts
                 // even once the way into level 9 is satisfied, the bow and silver arrows are still needed (both can be inside level 9 itself)
                 let stillNeed = [
                     if not tagSummary.HaveBow then
@@ -2892,7 +3052,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 | 0 ->
                     // nothing else worth reporting, but if the level 9 entry rule is satisfied still say so
                     if not tagSummary.CustomTrigger && triforceCount >= TrackerModel.level9TriforceCount then
-                        SendReminder(TrackerModel.ReminderCategory.DungeonFeedback, sprintf "You have the %d triforces needed to enter level 9%s" TrackerModel.level9TriforceCount stillNeedText,
+                        SendReminder(TrackerModel.ReminderCategory.DungeonFeedback, (if TrackerModel.level9TriforceCount = 0 then sprintf "Level 9 needs no triforces%s" stillNeedText else sprintf "You have the %d triforces needed to enter level 9%s" TrackerModel.level9TriforceCount stillNeedText),
                                         [yield upcb(Graphics.fullOrangeTriforce_bmp); yield upcb(Graphics.iconCheckMark_bmp); yield! stillNeedIcons])
                 | _ -> SendReminder(TrackerModel.ReminderCategory.DungeonFeedback, (sprintf "You need %s to be " (if needSomeThingsicons.Length>1 then "some things" else "something"))+go, icons)
             member _this.RemindUnblock(blockerType, dungeons, detail) =
@@ -3053,11 +3213,6 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         notesTextBox.Text <- System.IO.File.ReadAllText(notesFilename)
     let seedAndFlagsDisplayCanvas = new Canvas(Width=notesTextBox.Width, Height=notesTextBox.Height)
     layout.AddNotesSeedsFlags(notesTextBox, seedAndFlagsDisplayCanvas)
-    let seedAndFlagsTB = new TextBox(FontSize=16., Background=Brushes.Transparent, Foreground=Brushes.Orange, 
-                                        IsHitTestVisible=false, IsReadOnly=true, Focusable=false, Text="\n", BorderThickness=Thickness(0.))
-    Canvas.SetRight(seedAndFlagsTB, 44.)   // leaves room for the font size button in the corner
-    Canvas.SetBottom(seedAndFlagsTB, 3.)
-    seedAndFlagsDisplayCanvas.Children.Add(seedAndFlagsTB) |> ignore
     // font size button at the bottom right of the notes box: opens a small slider to pick the size of the notes text
     let notesFontButton = Graphics.makeButton("Aa", Some(14.), Some(Brushes.Orange))
     notesFontButton.Width <- 36.
@@ -3092,12 +3247,6 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 TrackerModelOptions.writeSettings()
                 popupIsActive <- false
             } |> Async.StartImmediate)
-    SaveAndLoad.seedAndFlagsUpdated.Publish.Add(fun _ ->
-        if TrackerModelOptions.DisplaySeedAndFlags.Value then
-            seedAndFlagsTB.Text <- sprintf "Seed & Flags: %s\n%s" SaveAndLoad.lastKnownSeed SaveAndLoad.lastKnownFlags
-        else
-            seedAndFlagsTB.Text <- "\n"
-        )
 
     grabModeTextBlock.Opacity <- 0.
     grabModeTextBlock.Width <- notesTextBox.Width
@@ -3132,6 +3281,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     // current max hearts
     let currentMaxHeartsTextBoxClickable = new Border(Background=Brushes.Black, Child=currentMaxHeartsButton, BorderThickness=Thickness(0.))
     layout.AddCurrentMaxHearts(currentMaxHeartsTextBoxClickable)
+    Broadcast.maxHeartsForBroadcast <- currentMaxHeartsButton
     currentMaxHeartsTextBoxClickable.MouseEnter.Add(fun _ -> currentMaxHeartsButton.BorderBrush <- Brushes.DarkTurquoise)
     currentMaxHeartsTextBoxClickable.MouseLeave.Add(fun _ -> currentMaxHeartsButton.BorderBrush <- Graphics.roundedBorderBrush)
     currentMaxHeartsTextBoxClickable.ToolTip <- "Left-click: add a heart\nRight-click: remove a heart"
@@ -3625,9 +3775,14 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 optionsCanvas.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
                 let owBottom = (try overworldCanvas.TranslatePoint(Point(0., overworldCanvas.ActualHeight), cm.AppMainCanvas).Y with _ -> 0.)
                 let popupY = max 0. (min owBottom (cm.Height - optionsCanvas.DesiredSize.Height))
+                OptionsMenu.closeOptionsPopupHook <- (fun () -> wh.Set() |> ignore)
                 do! CustomComboBoxes.DoModal(cm, wh, 0., popupY, optionsCanvas)
+                OptionsMenu.closeOptionsPopupHook <- (fun () -> ())
                 TrackerModelOptions.writeSettings()
                 popupIsActive <- false
+                if OptionsMenu.optionsTourRequested then
+                    OptionsMenu.optionsTourRequested <- false
+                    OptionsMenu.runGuidedTour(cm, OptionsMenu.mainScreenTourSteps)
                 } |> Async.StartImmediate
         )
     layout.AddTimeline(theTimeline1.Canvas, theTimeline2.Canvas, theTimeline3.Canvas)
@@ -3665,6 +3820,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         let screenshotTimelineFilename = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "most-recent-completion-timeline.png")
         let screenshotFullFilename = System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "most-recent-completion-full-screenshot.png")
         TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasRescuedZelda.Changed.Add(fun b -> 
+            if b then TrackerModel.LastChangedTime.PauseAll() else TrackerModel.LastChangedTime.ResumeAll()   // (rescuing Zelda, by the icon or the global hotkey, stops the timer)
             if b then
                 postgameDecorationCanvas.Opacity <- 1.
                 if not(Timeline.isCurrentlyLoadingASave) then
@@ -3738,6 +3894,11 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     | Some(data) ->
         // Overworld
         TrackerModel.MirrorOverworld <- data.Overworld.MirrorOverworld
+        if data.Overworld.ExtraBlocks >= 0 then   // (older saves do not have this: they keep what the start screen chose)
+            OverworldData.ExtraPBBlocks <- (data.Overworld.ExtraBlocks &&& 1) <> 0
+            OverworldData.ExtraRaftBlocks <- (data.Overworld.ExtraBlocks &&& 2) <> 0
+            OverworldData.DeadWoodsEnabled <- (data.Overworld.ExtraBlocks &&& 4) <> 0
+            OverworldData.LostHillsEnabled <- (data.Overworld.ExtraBlocks &&& 8) <> 0
         TrackerModel.startIconX <- data.Overworld.StartIconX
         TrackerModel.startIconY <- data.Overworld.StartIconY
         TrackerModel.customWaypointX <- data.Overworld.CustomWaypointX
@@ -3757,6 +3918,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         let label = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
                         let packed = TrackerModel.decorEntriesPack(es |> List.filter (fun (id,_) -> id <> TrackerModel.DECOR_BOMB_DROPPER))
                         TrackerModel.owSwordIcons.[i,j] <- (if label > 0 then TrackerModel.withShopLabel(packed, label) else packed)
+            for k = 0 to 5 do TrackerModel.cheapKeyShops.[k] <- false
+            if data.Overworld.CheapKeyShops <> null && data.Overworld.CheapKeyShops.Length = 6 then
+                for k = 0 to 5 do TrackerModel.cheapKeyShops.[k] <- (data.Overworld.CheapKeyShops.[k] = 1)
             for k = 0 to 5 do TrackerModel.shopStash.[k] <- -1
             if data.Overworld.ShopStash <> null && data.Overworld.ShopStash.Length = 6 then
                 for k = 0 to 5 do TrackerModel.shopStash.[k] <- data.Overworld.ShopStash.[k]

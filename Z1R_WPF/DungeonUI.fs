@@ -1819,7 +1819,7 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                             justUnmarked <- Some(i, j, choice1 roomType)
                                         else
                                             room.RoomType <- roomType
-                                            if roomType = RoomType.BombUpgrade then room.IsComplete <- false   // starts un-collected: blue dot on the level number
+                                            if roomType = RoomType.BombUpgrade || roomType = RoomType.HungryGoriyaMeatBlock then room.IsComplete <- false   // starts un-collected: blue dot on the level number (meat-blocked room: no green check yet)
                                             urb(Some(choice1 roomType))
                                         SetNewValue(room)
                                     with :? System.InvalidCastException -> ()

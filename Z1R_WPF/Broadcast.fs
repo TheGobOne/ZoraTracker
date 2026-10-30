@@ -40,13 +40,15 @@ let makeViewRectImpl(upperLeft:Point, lowerRight:Point, c) =
     bwRect.Fill <- vb
     bwRect
 
+// the Max Hearts button (set by WPFUI); the dungeon-hover view of the broadcast window shows a live copy of it under the take-any hearts, since the original is hidden behind the map there
+let mutable maxHeartsForBroadcast : FrameworkElement = null
 let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas, blockerGrid:Grid, dungeonTabsOverlayContent:Canvas, refocusMainWindow) =
     let appMainCanvas = cm.AppMainCanvas
     let makeBroadcastWindow(size, showOverworldMagnifier) =
         let W = 768.
         let scaleSize = if size=1 then 256. elif size=2 then 512. else 768.
         let broadcastWindow = new Window()
-        broadcastWindow.Title <- "ZORATracker broadcast"
+        broadcastWindow.Title <- "Z-Tracker broadcast"
         broadcastWindow.ResizeMode <- ResizeMode.CanResize   // resizable: the content scales (via a Viewbox) to fit the window
         broadcastWindow.SizeToContent <- SizeToContent.Manual
         broadcastWindow.WindowStartupLocation <- WindowStartupLocation.Manual
@@ -55,7 +57,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
                                         Background=Graphics.freeze(new SolidColorBrush(Color.FromRgb(120uy, 30uy, 30uy))), Width=scaleSize, Opacity=0.0)
         let tb = new TextBox(Text="The broadcast window is at least partially off-screen.  Streaming software like OBS cannot capture display updates to off-screen windows.  " +
                                     "Re-position this window so that it is entirely within the bounds of a screen.  It is ok for this window to be BEHIND another window, " +
-                                    "such as behind the main ZORATracker application window.  See the ZORATracker documentation for details.",
+                                    "such as behind the main Z-Tracker application window.  See the Z-Tracker documentation for details.",
                                     Foreground=Brushes.White, Background=Brushes.Transparent, 
                                     IsReadOnly=true, BorderThickness=Thickness(0.), FontSize=14., VerticalAlignment=VerticalAlignment.Center, TextWrapping=TextWrapping.Wrap)
         topBar.Children.Add(tb) |> ignore
@@ -83,7 +85,7 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
 
         let makeViewRect(upperLeft:Point, lowerRight:Point) = makeViewRectImpl(upperLeft, lowerRight, appMainCanvas)
         let dealWithPopups(topViewboxRelativeToApp, topViewboxRelativeToThisBroadcast, c) =
-            let popups = new System.Collections.Generic.Stack<_>()
+            let popups = new System.Collections.Generic.Dictionary<Canvas, Shapes.Rectangle>(HashIdentity.Reference)   // (keyed by popup layer, so closing popups out of order removes the right copy)
             let popupCanvasArea = new Canvas()
             canvasAdd(c, popupCanvasArea, 0., 0.)
             cm.AfterCreatePopupCanvas.Add(fun pc ->
@@ -93,13 +95,15 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
                 vb.Stretch <- Stretch.None
                 let bwRect = new Shapes.Rectangle(Width=vb.Viewbox.Width, Height=vb.Viewbox.Height)
                 bwRect.Fill <- vb
-                popups.Push(bwRect)
+                popups.[pc] <- bwRect
                 canvasAdd(popupCanvasArea, bwRect, 0., topViewboxRelativeToThisBroadcast - topViewboxRelativeToApp)
                 )
-            cm.BeforeDismissPopupCanvas.Add(fun _pc ->
-                if popups.Count > 0 then   // we can underflow if the user turns on the broadcast window mid-game, as the options window was a popup when the broadcast began
-                    let bwRect = popups.Pop()
+            cm.BeforeDismissPopupCanvas.Add(fun pc ->
+                match popups.TryGetValue(pc) with   // (no entry if the user turned on the broadcast window mid-game, as the options window was a popup when the broadcast began)
+                | true, bwRect ->
+                    popups.Remove(pc) |> ignore
                     popupCanvasArea.Children.Remove(bwRect)
+                | _ -> ()
                 )
 
         let timeline = makeViewRect(Point(0.,START_TIMELINE_H), Point(W,THRU_TIMELINE_H))
@@ -128,15 +132,18 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         let drawingOverTop = makeViewRectImpl(Point(0.,0.), Point(afterSoldItemBoxesX,150.), drawingCanvas)
         let dun = makeViewRect(Point(0.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H), Point(W,START_TIMELINE_H))
         let tri = makeViewRect(Point(0.,0.), Point(W,150.))
-        let pro = makeViewRect(Point(ITEM_PROGRESS_FIRST_ITEM,THRU_MAP_AND_LEGEND_H), 
+        let pro = makeViewRect(Point(ITEM_PROGRESS_FIRST_ITEM,THRU_MAP_AND_LEGEND_H+4.), 
                                 Point(ITEM_PROGRESS_FIRST_ITEM + 15.*30.-11.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H))  // -11. because 'Hint decoder' button infringes into empty space by Magic Key 
         pro.HorizontalAlignment <- HorizontalAlignment.Left
-        pro.Margin <- Thickness(20.,0.,0.,0.)
+        pro.Margin <- Thickness(10.,4.,0.,0.)   // (the view starts 4px below the legend row so the bottom edge of the Dead Woods / Lost Hills buttons does not show; the margin keeps the layout height)
+        let proScale = new ScaleTransform(0.88, 0.88)   // shrunk so the whole strip ends before the map
+        if proScale.CanFreeze then proScale.Freeze()
+        pro.RenderTransform <- proScale
         let owm = makeViewRect(Point(0.,150.), Point(W,THRU_MAIN_MAP_H))
         let sp = new StackPanel(Orientation=Orientation.Vertical)
         sp.Children.Add(tri) |> ignore
-        sp.Children.Add(pro) |> ignore
         sp.Children.Add(new DockPanel(Height=50.)) |> ignore
+        sp.Children.Add(pro) |> ignore   // the item progress strip sits right above the dungeon panels
         sp.Children.Add(dun) |> ignore
         let bottomc = new Canvas(Width=W, Height=H)
         canvasAdd(bottomc, sp, 0., 0.)
@@ -147,6 +154,10 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
             scaleTrans.Freeze()
         owm.RenderTransform <- scaleTrans
         canvasAdd(bottomc, owm, afterSoldItemBoxesX, 95.)
+        if not (isNull maxHeartsForBroadcast) then
+            let mh = new Shapes.Rectangle(Width=maxHeartsForBroadcast.Width, Height=maxHeartsForBroadcast.Height, Fill=new VisualBrush(maxHeartsForBroadcast))
+            let heartsCenterX = OW_ITEM_GRID_LOCATIONS.OFFSET + 60.   // the four take-any hearts span 4 cells of 30px from the grid's left edge
+            canvasAdd(bottomc, mh, heartsCenterX - maxHeartsForBroadcast.Width/2., 152.)   // centered just under the hearts, left of the map
         // WANT!
         canvasAdd(bottomc, drawingOverTop, 0., 0.)
         dealWithPopups(THRU_MAIN_MAP_AND_ITEM_PROGRESS_H, 230., bottomc)
@@ -167,7 +178,6 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         dp.Children.Add(timeline) |> ignore
         dp.Children.Add(topc) |> ignore
         
-        let timerX = OMTW*16. - 200. - 44. + 127. - 3.   // the same spot and size as the timer in the main window's control panel (right column, under the TIMER heading)
         let factor = if size=1 then 0.333333 elif size=2 then 0.666666 else 1.0   // only the initial window size; the content is always laid out at full size and scaled by the Viewbox below
         if size=1 || size=2 then
             broadcastWindow.Height <- H*factor + 40.
@@ -176,11 +186,12 @@ let MakeBroadcastWindow(cm:CustomComboBoxes.CanvasManager, drawingCanvas:Canvas,
         c.UseLayoutRounding <- true
         c.Children.Add(dp) |> ignore
         OverworldItemGridUI.broadcastTimeTextBox.Parent :?> Canvas |> (fun c -> if c <> null then c.Children.Remove(OverworldItemGridUI.broadcastTimeTextBox))  // deparent from prior window
+        // the timer sits centered in the right-hand column of the control panel (the same spot as in the main window), clear of the Popout Windows button
+        let bt = OverworldItemGridUI.broadcastTimeTextBox
+        bt.Width <- 120.; bt.Height <- 44.; bt.FontSize <- 26.; bt.TextAlignment <- TextAlignment.Center; bt.VerticalContentAlignment <- VerticalAlignment.Center; bt.Padding <- Thickness(0.)
+        canvasAdd(c, bt, OverworldItemGridUI.OMTW*16. - 200. - 44. + 114. + 13. - 10., 8.)
         topBar.Width <- W
         c.Children.Add(topBar) |> ignore
-        let bt = OverworldItemGridUI.broadcastTimeTextBox
-        bt.Width <- 114.; bt.Height <- 46.; bt.FontSize <- 28.; bt.TextAlignment <- TextAlignment.Center; bt.VerticalContentAlignment <- VerticalAlignment.Center; bt.Padding <- Thickness(0.)
-        canvasAdd(c, bt, timerX, 0.)   // (added after the top bar so the bar's black background cannot cover the top of the digits)
         broadcastWindow.Content <- new Viewbox(Stretch=Stretch.Uniform, StretchDirection=StretchDirection.Both, Child=c)
         broadcastWindow.MinWidth <- 160.
         broadcastWindow.MinHeight <- 100.

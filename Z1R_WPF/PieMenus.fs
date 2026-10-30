@@ -368,6 +368,9 @@ let takeThisOtherPanel() =
     c.Children.Add(b) |> ignore
     c, fun x -> b.BorderBrush <- x
 
+let mutable cheapKeysChangedHook : unit -> unit = fun () -> ()   // set by the main UI: redraws the overworld tiles when a shop's 'cheap keys' box changes
+let mutable shopKeyIndexHook : int -> int = fun _ -> -1   // set by the main UI: index of the key in the items shown for numbered shop n, or -1 if that shop has no key
+let mutable legacyDisabledChoices : string list = []   // set with crossedOutChoices: the crossed-out choices that are off because of Legacy Mode (they get a 'Disabled In Legacy Mode' tooltip; the box clears it)
 let mutable crossedOutChoices : string list = []   // set by the caller just before opening a cave choice box: these choices are shown crossed out and can't be picked (the box clears it)
 // a giant red X over a panel, to show it is crossed out (disabled)
 let addGiantRedX(c:Canvas) =
@@ -403,6 +406,8 @@ let TakeThisChoicePieMenuAsync(cm,h) =
 let TakeThisButtonBoxAsync(cm:CustomComboBoxes.CanvasManager) = async {
     let crossed = crossedOutChoices
     crossedOutChoices <- []
+    let legacyOff = legacyDisabledChoices
+    legacyDisabledChoices <- []
     let hkp = HotKeys.TakeThisHotKeyProcessor
     let wh = new System.Threading.ManualResetEvent(false)
     let result : string ref = ref null
@@ -416,6 +421,7 @@ let TakeThisButtonBoxAsync(cm:CustomComboBoxes.CanvasManager) = async {
         if List.contains value crossed then
             (b.Content :?> TextBox).TextDecorations <- TextDecorations.Strikethrough
             b.Opacity <- 0.5
+            if List.contains value legacyOff then b.ToolTip <- "Disabled In Legacy Mode"
         else
             b.Click.Add(fun _ -> result.Value <- value; wh.Set() |> ignore)
         col.Children.Add(b) |> ignore
@@ -498,6 +504,10 @@ let makeOrangeCheckBox(text:string, isOn:bool) : System.Windows.Controls.CheckBo
     cb.Template <- (System.Windows.Markup.XamlReader.Parse(xaml) :?> ControlTemplate)
     cb.IsChecked <- System.Nullable<bool>(isOn)
     cb
+// Legacy Mode: the numbered shops can only hold these items (wood arrow, blue candle, blue ring, regular key, bombs, meat, book, shield)
+let legacyShopAllows(ident:int) =
+    ident = TrackerModel.ITEMS.WOODARROW || ident = TrackerModel.ITEMS.BLUECANDLE || ident = TrackerModel.ITEMS.OLDKEY || ident = TrackerModel.ITEMS.BLUERING || ident = TrackerModel.DECOR_BOMB
+    || ident = TrackerModel.ITEMS.MEAT || ident = TrackerModel.ITEMS.BOOKSHIELD || ident = TrackerModel.ITEMS.SHIELD
 let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:int, shopItems:(System.Drawing.Bitmap*bool) list[], potionOk:bool, addItem:(int*int -> int[] * (System.Drawing.Bitmap*bool) list[]), pickItem:(unit -> Async<int>)) = async {
     let wh = new System.Threading.ManualResetEvent(false)
     let result = ref -1
@@ -506,17 +516,25 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
     // (hotkey indexes: 0 = P shop, 1-4 = that numbered shop)
     let itemPanels = new ResizeArray<int*StackPanel>()   // (shop index, the row showing what is in that shop), refreshed when an item is added
     let countBlocks : TextBlock[] = Array.zeroCreate 5
+    let cheapBoxes : System.Windows.Controls.CheckBox[] = Array.zeroCreate 5   // the 'cheap keys' checkboxes of shops 1-4 (shown once a key is in that shop)
+    let latestItems : (System.Drawing.Bitmap*bool) list[] = Array.copy shopItems
     let fillItems(n:int, panel:StackPanel, items:(System.Drawing.Bitmap*bool) list) =
         panel.Children.Clear()
-        let addImg(bmp:System.Drawing.Bitmap, collected:bool) =
+        let addImgB(bmp:System.Drawing.Bitmap, collected:bool, boxed:bool) =
             let img = Graphics.BMPtoImage(bmp)
             img.Stretch <- Stretch.Uniform
             img.Width <- 21.
             img.Height <- 21.
             img.Margin <- Thickness(1.)
             if collected then img.Opacity <- 0.4
-            panel.Children.Add(img) |> ignore
-        if n = 0 then
+            if boxed then panel.Children.Add(new Border(BorderBrush=Brushes.Yellow, BorderThickness=Thickness(2.), Child=img)) |> ignore   // the cheaper key shop's key
+            else panel.Children.Add(img) |> ignore
+        let addImg(bmp:System.Drawing.Bitmap, collected:bool) = addImgB(bmp, collected, false)
+        if n = 0 && TrackerModel.LegacyMode then
+            // Legacy Mode: the P shop is just the two potions, with no item between them
+            addImg(Graphics.blue_potion_bmp, false)
+            addImg(Graphics.red_potion_bmp, false)
+        elif n = 0 then
             // the P shop always shows the blue potion, then its one item (a ? until something is placed), then the red potion
             addImg(Graphics.blue_potion_bmp, false)
             match List.tryHead items with
@@ -524,19 +542,37 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
             | None -> panel.Children.Add(new TextBlock(Text="?", Foreground=Brushes.White, FontSize=16., FontWeight=FontWeights.Bold, Width=23., Height=23., TextAlignment=TextAlignment.Center)) |> ignore
             addImg(Graphics.red_potion_bmp, false)
         else
-            for (bmp, collected) in items do addImg(bmp, collected)
+            let keyIdx = if n >= 1 && n <= 4 && TrackerModel.cheapKeyShops.[n] then shopKeyIndexHook n else -1
+            items |> List.iteri (fun i (bmp, collected) -> addImgB(bmp, collected, (i = keyIdx)))
+    // shows the 'cheap keys' checkbox of each numbered shop that holds a key (and drops the setting from one that no longer does), and redraws the key's box
+    let refreshCheapBoxes() =
+        for n = 1 to 4 do
+            let cb = cheapBoxes.[n]
+            if not (isNull cb) then
+                let hasKey = shopKeyIndexHook n >= 0
+                if not hasKey then
+                    TrackerModel.cheapKeyShops.[n] <- false
+                    cb.IsChecked <- System.Nullable<bool>(false)
+                cb.Visibility <- (if hasKey then Visibility.Visible else Visibility.Collapsed)   // (collapsed: no key, no gap, so the icons center between the title and the bottom)
+                for (m, panel) in itemPanels do
+                    if m = n then fillItems(m, panel, latestItems.[m])
     let applyItem(shop:int, ident:int) =
         // the item goes into that shop right away and the menu stays open (clicking a shop or its hotkey is what closes it)
-        let (newCounts, newItems) = addItem(shop, ident)
-        for (n, panel) in itemPanels do fillItems(n, panel, newItems.[n])
-        for n = 0 to 4 do countBlocks.[n].Text <- sprintf "x%d" newCounts.[n]
+        if TrackerModel.LegacyMode && shop <> 0 && not (legacyShopAllows ident) then
+            Graphics.ErrorBeepWithReminderLogText("Legacy Mode: a shop can only hold a wood arrow, blue candle, blue ring, regular key, bombs, meat, book or shield")
+        elif not(TrackerModel.LegacyMode && shop = 0) then   // (Legacy Mode: the P shop holds only its two potions, no item)
+            let (newCounts, newItems) = addItem(shop, ident)
+            for n = 0 to 4 do latestItems.[n] <- newItems.[n]
+            for (n, panel) in itemPanels do fillItems(n, panel, newItems.[n])
+            for n = 0 to 4 do countBlocks.[n].Text <- sprintf "x%d" newCounts.[n]
+            refreshCheapBoxes()
     let hoverButtons = new ResizeArray<Button*int>()   // (button, shop index) of the enabled ones, to find which shop an item hotkey is meant for
     let addButton(content:UIElement, value:int, enabled:bool) =
         // the content sits centered in the top part and the hotkey label is pinned to the bottom, so it lines up across all the buttons
         let g = new Grid()
         g.RowDefinitions.Add(new RowDefinition(Height=GridLength(1., GridUnitType.Star)))
         g.RowDefinitions.Add(new RowDefinition(Height=GridLength.Auto))
-        (content :?> FrameworkElement).VerticalAlignment <- VerticalAlignment.Center
+        (content :?> FrameworkElement).VerticalAlignment <- VerticalAlignment.Stretch
         Grid.SetRow(content, 0)
         g.Children.Add(content) |> ignore
         match hkp.AsPrettyHotKeyOpt(value) with
@@ -557,11 +593,12 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
                     let! ident = pickItem()
                     if ident >= 0 then applyItem(value, ident)
                     } |> Async.StartImmediate
-            b.Click.Add(fun _ -> if TrackerModelOptions.SwapMouseButtons then addItems() else place())
+            let overCheap() = cheapBoxes |> Array.exists (fun c -> not (isNull c) && c.IsMouseOver)   // (clicks on a 'cheap keys' box are not clicks on the shop)
+            b.Click.Add(fun _ -> if not (overCheap()) then (if TrackerModelOptions.SwapMouseButtons then addItems() else place()))
             // right click: pick a marker icon from the overworld menu's icons to add to this shop
             b.PreviewMouseRightButtonUp.Add(fun ea ->
                 ea.Handled <- true
-                if TrackerModelOptions.SwapMouseButtons then place() else addItems())
+                if not (overCheap()) then (if TrackerModelOptions.SwapMouseButtons then place() else addItems()))
         else b.Opacity <- 0.4
         if enabled then hoverButtons.Add((b, value))
         row.Children.Add(b) |> ignore
@@ -569,15 +606,37 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
     let firstButton : Button ref = ref null
     for n = 0 to 4 do
         do
-            let sp = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center)
-            sp.Children.Add(new TextBlock(Text=(if n = 0 then "P" else string n), Foreground=Brushes.Orange, FontSize=24., FontWeight=FontWeights.Bold, HorizontalAlignment=HorizontalAlignment.Center)) |> ignore
-            let cb = new TextBlock(Text=sprintf "x%d" counts.[n], Foreground=Brushes.Orange, FontSize=10., HorizontalAlignment=HorizontalAlignment.Center)
+            let sp = new Grid(HorizontalAlignment=HorizontalAlignment.Center, MinHeight=108.)   // (the same shop window height as before 'cheap keys' was added)
+            sp.RowDefinitions.Add(new RowDefinition(Height=GridLength.Auto))
+            sp.RowDefinitions.Add(new RowDefinition(Height=GridLength(1., GridUnitType.Star)))
+            let top = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Top)   // (title + 'cheap keys' on top; the items are centered in the space under them)
+            sp.Children.Add(top) |> ignore
+            // the shop's title: its number, with how many tiles carry it right beside it
+            let titleRow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+            titleRow.Children.Add(new TextBlock(Text=(if n = 0 then "P" else string n), Foreground=Brushes.Orange, FontSize=24., FontWeight=FontWeights.Bold, VerticalAlignment=VerticalAlignment.Center)) |> ignore
+            let cb = new TextBlock(Text=sprintf "x%d" counts.[n], Foreground=Brushes.Orange, FontSize=10., VerticalAlignment=VerticalAlignment.Bottom, Margin=Thickness(6.,0.,0.,6.))
             countBlocks.[n] <- cb
-            sp.Children.Add(cb) |> ignore
+            titleRow.Children.Add(cb) |> ignore
+            top.Children.Add(titleRow) |> ignore
+            if n >= 1 then
+                // 'cheap keys': appears under the title once a key is in this shop; checked = that key gets a yellow box (it is the cheaper of the key shops)
+                let cheapCb = makeOrangeCheckBox("cheap keys", TrackerModel.cheapKeyShops.[n])
+                cheapCb.FontSize <- 10.
+                cheapCb.Margin <- Thickness(0.,0.,0.,2.)
+                cheapCb.HorizontalAlignment <- HorizontalAlignment.Center
+                cheapCb.Visibility <- (if shopKeyIndexHook n >= 0 then Visibility.Visible else Visibility.Collapsed)
+                cheapCb.Click.Add(fun _ ->
+                    TrackerModel.cheapKeyShops.[n] <- (cheapCb.IsChecked = System.Nullable<bool>(true))
+                    for (m, panel) in itemPanels do
+                        if m = n then fillItems(m, panel, latestItems.[m])
+                    cheapKeysChangedHook())
+                cheapBoxes.[n] <- cheapCb
+                top.Children.Add(cheapCb) |> ignore
             // the items placed in this shop (collected ones are dimmed), a row under the count
-            let items = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,4.,0.,0.), MinHeight=23., MinWidth=72.)
+            let items = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(0.,2.,0.,2.), MinHeight=27., MinWidth=(if n = 0 && TrackerModel.LegacyMode then 0. else 72.))
             fillItems(n, items, shopItems.[n])
             itemPanels.Add((n, items))
+            Grid.SetRow(items, 1)
             sp.Children.Add(items) |> ignore
             let btn = addButton(sp, n, (n <> 0 || potionOk))   // the P shop is greyed out once all the potion shops are placed
             if n = 0 then firstButton.Value <- btn
@@ -745,6 +804,8 @@ let TakeAnyButtonBoxAsync(cm:CustomComboBoxes.CanvasManager) = async {
 let CaveChoiceBoxAsync(cm:CustomComboBoxes.CanvasManager, labels:string list) = async {
     let crossed = crossedOutChoices
     crossedOutChoices <- []
+    let legacyOff = legacyDisabledChoices
+    legacyDisabledChoices <- []
     let wh = new System.Threading.ManualResetEvent(false)
     let result : string ref = ref null
     let col = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, Margin=Thickness(16.))
@@ -762,6 +823,7 @@ let CaveChoiceBoxAsync(cm:CustomComboBoxes.CanvasManager, labels:string list) = 
             (b.Content :?> TextBox).TextDecorations <- TextDecorations.Strikethrough
             b.Opacity <- 0.5
             if label = "Took Sword" && TrackerModel.ProgressiveItems then b.ToolTip <- "Disabled Due to Progressive Items"
+            if List.contains label legacyOff then b.ToolTip <- "Disabled In Legacy Mode"
         else
             b.Click.Add(fun _ -> result.Value <- label; wh.Set() |> ignore)
         col.Children.Add(b) |> ignore

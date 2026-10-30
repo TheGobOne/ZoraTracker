@@ -18,6 +18,9 @@ type Overworld() =
     member val SwordIcons : int[] = null with get,set
     member val BombDroppers : int[] = null with get,set
     member val ShopStash : int[] = null with get,set
+    member val CheapKeyShops : int[] = null with get,set
+    member val LegacyMode = -1 with get,set   // 1 = the game was in Legacy Mode, 0 = it was not, -1 = older save: keep what the start screen chose
+    member val ExtraBlocks = -1 with get,set   // bit 0 = extra power bracelet blocks, bit 1 = extra raft blocks, bit 2 = Dead Woods hint, bit 3 = Lost Hills hint (-1 = older save: keep what the start screen chose)
 
 [<AllowNullLiteral>]
 type Box() =
@@ -217,6 +220,9 @@ let SaveOverworld(prefix) =
     lines.Add(sprintf """    "SwordIcons": [%s],""" (System.String.Join(",", [| for j = 0 to 7 do for i = 0 to 15 do yield string TrackerModel.owSwordIcons.[i,j] |])))
     lines.Add(sprintf """    "BombDroppers": [%s],""" (System.String.Join(",", [| for j = 0 to 7 do for i = 0 to 15 do yield (if TrackerModel.owBombDroppers.[i,j] then "1" else "0") |])))
     lines.Add(sprintf """    "ShopStash": [%s],""" (System.String.Join(",", [| for k = 0 to 5 do yield string TrackerModel.shopStash.[k] |])))
+    lines.Add(sprintf """    "CheapKeyShops": [%s],""" (System.String.Join(",", [| for k = 0 to 5 do yield (if TrackerModel.cheapKeyShops.[k] then "1" else "0") |])))
+    lines.Add(sprintf """    "LegacyMode": %d,""" (if TrackerModel.LegacyMode then 1 else 0))
+    lines.Add(sprintf """    "ExtraBlocks": %d,""" ((if OverworldData.ExtraPBBlocks then 1 else 0) + (if OverworldData.ExtraRaftBlocks then 2 else 0) + (if OverworldData.DeadWoodsEnabled then 4 else 0) + (if OverworldData.LostHillsEnabled then 8 else 0)))
     lines.Add(sprintf """    "Map": [""")
     for j = 0 to 7 do
         let sb = new System.Text.StringBuilder("        ")
@@ -358,19 +364,22 @@ let seedAndFlagsUpdated = new Event<_>()
 let seedAndFlagsRegex = new System.Text.RegularExpressions.Regex("_(\d+)_([a-zA-Z0-9!]+)", System.Text.RegularExpressions.RegexOptions.None)
 let MaybePollSeedAndFlags() =
     if TrackerModelOptions.SnoopSeedAndFlags.Value then
-        let procs = System.Diagnostics.Process.GetProcesses()
+        let procs = (try System.Diagnostics.Process.GetProcesses() with _ -> [||])
         for p in procs do
-            let title = p.MainWindowTitle
+            // (reading a window title can throw for system / exited processes: that must not stop the scan of the others)
+            let title = (try p.MainWindowTitle with _ -> null)
             if not(System.String.IsNullOrEmpty(title)) then
                 let m = seedAndFlagsRegex.Match(title)
                 if m.Success then
                     let seed = m.Groups.[1].Value
                     let flags = m.Groups.[2].Value
                     if seed.Length > 6 && flags.Length > 6 then   // just a guess-filter
-                        lastKnownSeed <- seed
-                        lastKnownFlags <- flags
-                        seedAndFlagsUpdated.Trigger()
+                        if seed <> lastKnownSeed || flags <> lastKnownFlags then
+                            lastKnownSeed <- seed
+                            lastKnownFlags <- flags
+                            seedAndFlagsUpdated.Trigger()
 
+let mutable pendingManualSaveName = ""   // set by the Save button's name popup just before a manual save; used once, then cleared (blank = date-time name)
 let SaveAll(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:string[], drawingLayerJsonLines:string[], 
                 alternativeOverworldMapFilename, shouldInitiallyHideOverworldMap:bool, currentRecorderDestinationIndex, isBoomstickSeed, isAtlasSeed, saveType) =  // can throw
     MaybePollSeedAndFlags()
@@ -429,7 +438,22 @@ let SaveAll(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:str
         |]
     let filename = 
         match saveType with
-        | ManualSave -> System.IO.Path.Combine(SavesDirectory, "zt-save-manual-" + System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".json")
+        | ManualSave ->
+            let invalid = System.IO.Path.GetInvalidFileNameChars()
+            let typed = (System.String(pendingManualSaveName |> Seq.filter (fun c -> not (Array.contains c invalid)) |> Seq.toArray)).Trim()
+            pendingManualSaveName <- ""
+            let typed = if typed.ToLowerInvariant().EndsWith(".json") then typed.Substring(0, typed.Length-5) else typed
+            let typed = typed.Trim().TrimEnd('.')
+            if typed = "" then
+                System.IO.Path.Combine(SavesDirectory, "zt-save-manual-" + System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".json")
+            else
+                // the file is just <name>.json; if that name is already taken, add -2, -3, ... rather than overwrite
+                let mutable p = System.IO.Path.Combine(SavesDirectory, typed + ".json")
+                let mutable n = 2
+                while System.IO.File.Exists(p) do
+                    p <- System.IO.Path.Combine(SavesDirectory, sprintf "%s-%d.json" typed n)
+                    n <- n + 1
+                p
         | FinishedSave -> System.IO.Path.Combine(SavesDirectory, "zt-save-completed-" + System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".json")
         | AutoSave -> AutoSaveFilename
     //let filename = "J:\\-impossiblesdkgfjhsdg;kdahfskjgfdhsgfh;lahjds;ljfdhs;ljfhldashfldashlfadshgflhjdgflajdgfjkl"  // test errors

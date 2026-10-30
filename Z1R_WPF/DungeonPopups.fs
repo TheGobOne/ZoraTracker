@@ -164,7 +164,7 @@ let DoMonsterDetailPopup(cm:CanvasManager, boxX, boxY, currentMonsterDetail) = a
     // the grid comes up where the room type menu does: same bottom edge, centered on it (the room menu is 7x5 cells of 39x27, shown 4/3 larger); this one is 8x4 cells of 18x18, shown 2x
     let ST = CustomComboBoxes.borderThickness
     let roomG = 4./3.
-    let roomW, _roomH = 7.*(39.+2.*ST)*roomG, 5.*(27.+2.*ST)*roomG
+    let roomW, roomH = 7.*(39.+2.*ST)*roomG, 5.*(27.+2.*ST)*roomG
     let roomLeft = 555. - 117. - (roomW - roomW/roomG)
     let roomBottom = (768. + 60.) - THE_DIFF - 78.
     let gridW, gridH = (8.*(18.+2.*ST)+2.*ST)*2., (4.*(18.+2.*ST)+2.*ST)*2.
@@ -284,7 +284,7 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
         |]
 
     let gridElementsSelectablesAndIDs : (FrameworkElement * bool * RoomType)[] =
-        grid |> Array.mapi (fun _i rt ->
+        grid |> Array.mapi (fun i rt ->
             let isLegal =
                 (rt = originalRoomState.RoomType) ||
                 (match Option.ofNullable (rt.KnownTransportNumber()) with
@@ -388,7 +388,7 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
     | Some(curState) -> 
         workingCopy.CSharp.IsPreview <- false
         workingCopy.RoomType <- curState
-        workingCopy.IsComplete <- (curState <> RoomType.BombUpgrade)   // a placed bomb upgrade room starts un-collected (blue dot on the level number); left click it to clear the dot
+        workingCopy.IsComplete <- (curState <> RoomType.BombUpgrade && curState <> RoomType.HungryGoriyaMeatBlock)   // a placed bomb upgrade room starts un-collected (blue dot on the level number); left click it to clear the dot. A placed meat-blocked room starts without its green check; left click it to add the check
         suppressRoomSyncTemporarily <- false
         setNewValue(workingCopy)
         async {
@@ -401,6 +401,6 @@ let DoDungeonRoomSelectPopup(cm:CustomComboBoxes.CanvasManager, originalRoomStat
         //setNewValue(originalRoomState)
 
     popupCanvas.Children.Clear()
-    cm.DismissPopup()
+    cm.DismissPopupCanvas(popupCanvas)
 
 }

@@ -227,6 +227,204 @@ let showCoopHostSettingsWindow(cm: CustomComboBoxes.CanvasManager) =
 
 
 
+// ---------------- Guided Tour ----------------
+// A step-by-step tour: the screen is dimmed except one section, which is outlined and described. Sections are found by the text of the labels in them
+// (so no screen has to hand its controls over): each step is (label texts, title, description); the highlight covers all of the labels it finds.
+let private tourTextOf(d:DependencyObject) : string =
+    match d with
+    | :? TextBox as t -> t.Text
+    | :? TextBlock as t -> t.Text
+    | _ -> null
+let private tourFind(root:DependencyObject, pattern:string) : FrameworkElement option =
+    let pat = pattern.Trim()
+    let exact : FrameworkElement option ref = ref None
+    let prefix : FrameworkElement option ref = ref None
+    let rec walk (d:DependencyObject) =
+        if exact.Value.IsNone then
+            let t = tourTextOf d
+            if not (isNull t) then
+                let fe = d :?> FrameworkElement
+                if fe.IsVisible && fe.ActualWidth > 0. then
+                    let tt = t.Trim()
+                    if tt = pat then exact.Value <- Some fe
+                    elif prefix.Value.IsNone && tt.StartsWith(pat) then prefix.Value <- Some fe
+            for k in 0 .. VisualTreeHelper.GetChildrenCount(d) - 1 do
+                walk (VisualTreeHelper.GetChild(d, k))
+    walk root
+    match exact.Value with
+    | Some _ -> exact.Value
+    | None -> prefix.Value
+// a label inside a button or checkbox: use the whole control (so the checkbox square is inside the highlight)
+let private tourWholeControl(fe:FrameworkElement) : FrameworkElement =
+    let rec up (d:DependencyObject) (n:int) : FrameworkElement =
+        if isNull d || n > 5 then fe
+        else
+            match d with
+            | :? Primitives.ButtonBase as b -> (b :> FrameworkElement)
+            | _ -> up (VisualTreeHelper.GetParent d) (n + 1)
+    up (VisualTreeHelper.GetParent fe) 0
+// the in-app Options popup closes itself (set by the main window) so the main window tour can start
+let mutable optionsTourRequested = false
+let mutable closeOptionsPopupHook : unit -> unit = fun () -> ()
+// the start screen tour ends by starting a run, then the main window tour follows (the hook starts the run; Program.fs sets it)
+let mutable startBlankRunHook : unit -> unit = fun () -> ()
+let mutable mainTourAfterStart = false
+// (continueLabel: when not empty, the last step's button has this label and, once clicked, onContinue runs after the tour closes)
+let runGuidedTourCore(cm:CustomComboBoxes.CanvasManager, steps:(string list * string * string) list, continueLabel:string, onContinue:unit -> unit) =
+    if not CustomComboBoxes.GlobalFlag.popupIsActive then
+        let found =
+            steps |> List.choose (fun (pats, title, body) ->
+                let rects =
+                    pats |> List.choose (fun p ->
+                        // "@x0,y0,x1,y1" is a region given as fractions of the whole window (for parts of the screen that have no label text)
+                        if p.StartsWith("@") then
+                            try
+                                let v = p.Substring(1).Split(',') |> Array.map (fun t -> System.Double.Parse(t, System.Globalization.CultureInfo.InvariantCulture))
+                                let cw, ch = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+                                Some (Rect(v.[0] * cw, v.[1] * ch, (v.[2] - v.[0]) * cw, (v.[3] - v.[1]) * ch))
+                            with _ -> None
+                        else
+                            match tourFind(cm.AppMainCanvas, p) with
+                            | Some fe ->
+                                let w = tourWholeControl fe
+                                (try
+                                    let t = w.TransformToAncestor(cm.AppMainCanvas)
+                                    Some (t.TransformBounds(Rect(0., 0., w.ActualWidth, w.ActualHeight)))
+                                 with _ -> None)
+                            | None -> None)
+                if rects.IsEmpty then None else Some (List.reduce (fun a b -> Rect.Union(a, b)) rects, title, body))
+            |> Array.ofList
+        if found.Length > 0 then
+            CustomComboBoxes.GlobalFlag.popupIsActive <- true
+            async {
+                let continued = ref false
+                try
+                    let wh = new System.Threading.ManualResetEvent(false)
+                    let W, H = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+                    let overlay = new Canvas(Width=W, Height=H, Background=Brushes.Transparent)
+                    let idx = ref 0
+                    let mkButton (text:string) =
+                        new Button(Content=text, Margin=Thickness(3.), Padding=Thickness(10.,2.,10.,2.), Focusable=false, FontSize=15., Background=Brushes.Black, Foreground=Brushes.Orange, BorderBrush=Brushes.Orange)
+                    let rec show () =
+                        overlay.Children.Clear()
+                        let (r, title, body) = found.[idx.Value]
+                        let pad = 5.
+                        let hx, hy = max 0. (r.X - pad), max 0. (r.Y - pad)
+                        let hole = Rect(hx, hy, min (W - hx) (r.Width + 2.*pad), min (H - hy) (r.Height + 2.*pad))
+                        let geo = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(Rect(0., 0., W, H)), new RectangleGeometry(hole))
+                        overlay.Children.Add(new System.Windows.Shapes.Path(Data=geo, Fill=Brushes.Black, Opacity=0.75, IsHitTestVisible=false)) |> ignore
+                        let frame = new System.Windows.Shapes.Rectangle(Width=hole.Width, Height=hole.Height, Stroke=Brushes.Orange, StrokeThickness=3., RadiusX=4., RadiusY=4., IsHitTestVisible=false)
+                        Canvas.SetLeft(frame, hole.X)
+                        Canvas.SetTop(frame, hole.Y)
+                        overlay.Children.Add(frame) |> ignore
+                        let sp = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(10.))
+                        sp.Children.Add(new TextBlock(Text=title, Foreground=Brushes.Orange, FontSize=20., FontWeight=FontWeights.Bold, TextWrapping=TextWrapping.Wrap)) |> ignore
+                        sp.Children.Add(new TextBlock(Text=body, Foreground=Brushes.White, FontSize=15., TextWrapping=TextWrapping.Wrap, Margin=Thickness(0.,6.,0.,8.))) |> ignore
+                        let buttons = new DockPanel(LastChildFill=false)
+                        let counter = new TextBlock(Text=sprintf "%d / %d" (idx.Value + 1) found.Length, Foreground=Brushes.Gray, FontSize=14., VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(0.,0.,12.,0.))
+                        let skipBtn = mkButton (if idx.Value = found.Length - 1 then " Close " else " Skip tour ")
+                        let backBtn = mkButton " Back "
+                        let nextBtn = mkButton (if idx.Value = found.Length - 1 then (if continueLabel <> "" then continueLabel else " Done ") else " Next ")
+                        backBtn.IsEnabled <- idx.Value > 0
+                        skipBtn.Click.Add(fun _ -> wh.Set() |> ignore)
+                        backBtn.Click.Add(fun _ -> idx.Value <- idx.Value - 1; show ())
+                        nextBtn.Click.Add(fun _ ->
+                            if idx.Value >= found.Length - 1 then
+                                if continueLabel <> "" then continued.Value <- true
+                                wh.Set() |> ignore
+                            else
+                                idx.Value <- idx.Value + 1
+                                show ())
+                        DockPanel.SetDock(counter, Dock.Left)
+                        DockPanel.SetDock(nextBtn, Dock.Right)
+                        DockPanel.SetDock(backBtn, Dock.Right)
+                        DockPanel.SetDock(skipBtn, Dock.Right)
+                        buttons.Children.Add(counter) |> ignore
+                        buttons.Children.Add(nextBtn) |> ignore
+                        buttons.Children.Add(backBtn) |> ignore
+                        buttons.Children.Add(skipBtn) |> ignore
+                        sp.Children.Add(buttons) |> ignore
+                        let callout = new Border(Child=sp, Background=Brushes.Black, BorderBrush=Brushes.Orange, BorderThickness=Thickness(3.), Width=430.)
+                        callout.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+                        let cw, ch = callout.DesiredSize.Width, callout.DesiredSize.Height
+                        let clampX x = max 0. (min (W - cw) x)
+                        let clampY y = max 0. (min (H - ch) y)
+                        let gap = 12.
+                        // below the highlight if it fits, else above, else beside it, else at the roomier end of the screen
+                        let cx, cy =
+                            if hole.Bottom + gap + ch <= H then (clampX hole.X, hole.Bottom + gap)
+                            elif hole.Top - gap - ch >= 0. then (clampX hole.X, hole.Top - gap - ch)
+                            elif hole.Right + gap + cw <= W then (hole.Right + gap, clampY hole.Y)
+                            elif hole.Left - gap - cw >= 0. then (hole.Left - gap - cw, clampY hole.Y)
+                            else (clampX hole.X, (if hole.Top > H - hole.Bottom then 0. else H - ch))
+                        Canvas.SetLeft(callout, cx)
+                        Canvas.SetTop(callout, cy)
+                        overlay.Children.Add(callout) |> ignore
+                    show ()
+                    do! CustomComboBoxes.DoModalOpa(cm, wh, 0., 0., overlay, 0.0)
+                finally
+                    CustomComboBoxes.GlobalFlag.popupIsActive <- false
+                if continued.Value then onContinue ()
+            } |> Async.StartImmediate
+let runGuidedTour(cm:CustomComboBoxes.CanvasManager, steps:(string list * string * string) list) =
+    runGuidedTourCore(cm, steps, "", (fun () -> ()))
+
+// the main window tour. ("@x0,y0,x1,y1" regions are fractions of the window, for parts with no label text)
+let mainScreenTourSteps : (string list * string * string) list =
+    [ ["@0.0,0.0,0.358,0.063"], "Triforce and levels",
+        "The dungeon level numbers and triforce pieces along the top. Mark each dungeon as you finish it."
+      ["@0.0,0.063,0.358,0.154"], "Dungeon item boxes",
+        "One row of boxes for each dungeon, holding what you found there. Click a box to set its item; a green border means collected."
+      ["@0.363,0.03,0.572,0.156"], "Items and hearts",
+        "The items you have found, your hearts, and Max Hearts. Click to mark what you own."
+      ["@0.572,0.004,0.684,0.13"], "Counters",
+        "Progress counters: how many overworld spots are left to check, plus counts of items and open spots."
+      ["Popout Windows"; "1Q/2Q/Blocks"], "Tools",
+        "Popout Windows opens extra windows, Hint Decoder helps with hints, Hotkeys lists the keyboard shortcuts, Log shows the reminders that have played, Draw/Custom Icons lets you draw on the map, and 1Q/2Q/Blocks sets the quest and block options."
+      ["TIMER"; "Save"], "Timer and file",
+        "Pause/Reset timer controls the run clock. Options opens the settings (and this tour). Save writes a save file you can load later."
+      ["@0.0,0.154,1.0,0.43"], "Overworld map",
+        "Click a tile to mark what is there: caves, shops, dungeon entrances and more. Right click for more choices, and fill in the details as you explore."
+      ["Any Road"; "Lost Hills"], "Marker legend",
+        "The special spots you can place on the map: Any Road (warp), completed dungeons, the recorder destination, your Start Spot, Dead Woods and Lost Hills."
+      ["@0.0,0.467,0.726,0.495"], "Item Progress",
+        "A quick view of the items and upgrades you have collected so far."
+      ["@0.0,0.496,0.586,0.517"], "Dungeon tabs",
+        "Tabs for dungeons 1 to 9, and S for the summary. Click one to open that dungeon's map. 1Q and 2Q switch between the first and second quest layouts."
+      ["@0.0,0.517,0.586,0.867"], "Dungeon boards",
+        "A small map of each dungeon. Hover to preview a dungeon's tab, and click to switch to it."
+      ["@0.591,0.496,1.0,0.607"], "Blockers",
+        "Note what is blocking each dungeon, so you remember what you still need."
+      ["Notes"; "Aa"], "Notes",
+        "Free text notes for the run. The Aa button changes the text size."
+      ["@0.0,0.873,1.0,1.0"], "Timeline",
+        "The Overworld and Collection Timeline: when you found each item and how the overworld filled in over the run, with the seed and flags along the top." ]
+
+// the start screen tour: (labels that mark the section, title, description)
+let startScreenTourSteps : (string list * string * string) list =
+    [ ["Pick Overworld (Start Game)"], "Start a new run",
+        "Click here and pick which overworld the seed uses to begin a new run. The checkboxes below it are set before you start."
+      ["Heart Shuffle"; "Full"], "Heart Shuffle",
+        "Set this to match how the seed shuffled the heart containers: Off, Intra or Full."
+      ["Legacy Mode"; "Mark Bomb Droppers"], "Startup options",
+        "Check the ones your seed uses. Legacy Mode limits shops to the original game's items, Hide Dungeon Numbers hides the level numbers, Mirrored Overworld flips the map, and Mark Bomb Droppers lets you mark bomb-dropper spots."
+      ["ZORA Extras"; "Progressive Items"], "ZORA Extras",
+        "Extra randomizer options that only some seeds use, such as 4th Sword, Boots Replace Boomerangs and Progressive Items. Check the ones your seed uses."
+      ["Load Save"; "Recently loaded saves:"], "Load a save",
+        "Resume an earlier run from a save file, or pick one from the recently loaded list."
+      ["Overworld Settings"; "Use Old Popups"], "Overworld settings",
+        "How the map behaves: route drawing, highlighting nearby tiles, the magnifier and popups. Most of these can be changed later from the Options button."
+      ["Dungeon Settings"; "Hide Lock And Hints"], "Dungeon settings",
+        "How the dungeon screens behave and look: hint icons, BOARD instead of LEVEL, basement info, door inference and more."
+      ["Reminders"; "Change Voice"], "Reminders",
+        "Volume, which voice and visual reminders you get (dungeon feedback, sword hearts, coast item and more), how often they repeat, and which voice speaks them."
+      ["Auto-save"; "Auto-save Interval"], "Auto-save",
+        "How often the tracker saves your run by itself, in minutes."
+      ["Other"; "Race Mode"], "Other options",
+        "General settings: animations, remembering your startup choices, update checks, seed and flags, listening for speech, the broadcast window, the timer and Race Mode."
+      ["Co-Op Client Settings"; "Guided Tour"], "Co-Op, crash log and this tour",
+        "Co-Op Client and Host settings are for tracking together with a partner. Show Crash Log opens the log file to send along when reporting a problem. Guided Tour starts this walkthrough again. Click Continue to start a new run (1st Quest Overworld) and tour the main screen." ]
+
 let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, isStandardHyrule) = 
     let width = cm.AppMainCanvas.Width
     let all = new Border(BorderThickness=Thickness(2.), BorderBrush=Brushes.DarkGray, Background=Brushes.Black)
@@ -894,6 +1092,21 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     coopHostSettingsButton.Click.Add(fun _ -> showCoopHostSettingsWindow(cm))
     options3sp.Children.Add(coopHostSettingsButton) |> ignore
     options3sp.Children.Add(crashLogButton) |> ignore
+    do
+        let tourButton = Graphics.makeButton(" Guided Tour ",None,None)
+        tourButton.HorizontalAlignment <- HorizontalAlignment.Left
+        tourButton.Margin <- Thickness(0.,6.,0.,0.)
+        tourButton.ToolTip <- "Walk through each section of this screen and see what it does"
+        if includePopupExplainer then
+            tourButton.Click.Add(fun _ ->   // (closes this menu first, then the main window tour starts)
+                optionsTourRequested <- true
+                closeOptionsPopupHook ())
+        else
+            tourButton.Click.Add(fun _ ->
+                runGuidedTourCore(cm, startScreenTourSteps, " Continue to main screen ", (fun () ->
+                    mainTourAfterStart <- true
+                    startBlankRunHook ())))
+        options3sp.Children.Add(tourButton) |> ignore
 
     optionsAllsp.Children.Add(options3sp) |> ignore
 

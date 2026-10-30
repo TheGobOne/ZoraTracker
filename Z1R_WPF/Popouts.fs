@@ -93,23 +93,40 @@ let makeFauxItemsAndHeartsHUD() =
     copyWorse(57,64,40,55,true)  // worse shows potion letter, maybeErased below
     maybeErase(57,64,40,55,TrackerModel.havePotionLetter.Value)
     maybeErase(83,86,40,55,TrackerModel.playerComputedStateSummary.HaveWand)
-    // add hearts display
+    // add hearts display (at the left edge, with the current sword to their right)
+    // (the hearts and the sword are centered together: 8 hearts of width 8, a gap of 8, and the 10-wide sword)
+    let swordLvl = min 3 TrackerModel.playerComputedStateSummary.SwordLevel
+    let groupW = 8*8 + (if swordLvl >= 1 then 8 + 10 else 0)
+    let heartsX = (98 - groupW) / 2
     if TrackerModel.playerComputedStateSummary.PlayerHearts > 8 then
         // top row
         for i = 0 to TrackerModel.playerComputedStateSummary.PlayerHearts - 9 do
             for dx = 0 to 7 do
                 for dy = 0 to 7 do
-                    r.SetPixel(12+i*8+dx, 63+dy, Graphics.empty_small_heart_bmp.GetPixel(dx,dy))
+                    r.SetPixel(heartsX+i*8+dx, 63+dy, Graphics.empty_small_heart_bmp.GetPixel(dx,dy))
     // bottom row, 3 red
     for i = 0 to (min TrackerModel.playerComputedStateSummary.PlayerHearts 3)-1 do
         for dx = 0 to 7 do
             for dy = 0 to 7 do
-                r.SetPixel(12+i*8+dx, 71+dy, Graphics.filled_small_heart_bmp.GetPixel(dx,dy))
+                r.SetPixel(heartsX+i*8+dx, 71+dy, Graphics.filled_small_heart_bmp.GetPixel(dx,dy))
     // bottom row rest
     for i = 3 to (min TrackerModel.playerComputedStateSummary.PlayerHearts 8) - 1 do
         for dx = 0 to 7 do
             for dy = 0 to 7 do
-                r.SetPixel(12+i*8+dx, 71+dy, Graphics.empty_small_heart_bmp.GetPixel(dx,dy))
+                r.SetPixel(heartsX+i*8+dx, 71+dy, Graphics.empty_small_heart_bmp.GetPixel(dx,dy))
+    // the current sword (wood / white / magical), centered in the room to the right of the hearts: the 15x27 menu icon sampled down to its 5x9 art pixels
+    if swordLvl >= 1 then
+        let sb = (match swordLvl with | 1 -> Graphics.ow_sword1_menu_bmp | 2 -> Graphics.ow_sword2_menu_bmp | _ -> Graphics.ow_sword3_menu_bmp)
+        // (drawn at twice the heart pixel size: 10x18, filling the 18 rows under the items)
+        let swordX = heartsX + 8*8 + 8
+        let swordY = 61
+        for ax = 0 to 4 do
+            for ay = 0 to 8 do
+                let c = sb.GetPixel(ax*3+1, ay*3+1)
+                if int c.A > 0 && (int c.R + int c.G + int c.B) > 40 then
+                    for dx = 0 to 1 do
+                        for dy = 0 to 1 do
+                            r.SetPixel(swordX+ax*2+dx, swordY+ay*2+dy, c)
     // maybe change green to white/red based on ring? given randomize tunic colors, seems frivolous, so naah
     r
 let MakeInventoryAndHearts() =
@@ -126,10 +143,6 @@ let MakeInventoryAndHearts() =
     if TrackerModel.playerComputedStateSummary.BoomerangLevel=2 && not(playerKnowsLocationOfWoodBoomer) then
         let tb = new TextBox(FontSize=14., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), 
                                 Text="Note: having magical boomerang may make\n   it hard to notice wooden boomerang pick up")
-        sp.Children.Add(tb) |> ignore
-    if TrackerModel.playerComputedStateSummary.SwordLevel=3 && not(playerKnowsLocationOfWhiteSword) then
-        let tb = new TextBox(FontSize=14., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), 
-                                Text="Note: having magical sword may make it\n   hard to notice if white sword picked up")
         sp.Children.Add(tb) |> ignore
     sp
 // Ctrl+mouse wheel over the Uncollected Items window grows / shrinks its icons
@@ -158,7 +171,14 @@ let MakeRemainingItemsDisplay() =
     // This correctly handles presets where all items are pre-placed but not yet obtained (PlayerHas=NO).
     let allBoxes = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
     // (an item whose marker icon has been checked off as collected on the overworld map also counts as obtained)
-    let isObtained(i) = (allBoxes |> Array.exists (fun box -> box.CellCurrent() = i && box.IsDone())) || TrackerModel.mapCollectedCount.[i] > 0
+    // (an item the Item Progress bar says the player owns also counts, however it was marked: clicked in the progress bar, a starting item, a hotkey)
+    let sm = TrackerModel.playerComputedStateSummary
+    let ownedPerProgress(i) =
+        (i = TrackerModel.ITEMS.BOW && sm.HaveBow) || (i = TrackerModel.ITEMS.SILVERARROW && sm.ArrowLevel >= 2) || (i = TrackerModel.ITEMS.LADDER && sm.HaveLadder)
+        || (i = TrackerModel.ITEMS.RECORDER && sm.HaveRecorder) || (i = TrackerModel.ITEMS.RAFT && sm.HaveRaft) || (i = TrackerModel.ITEMS.POWERBRACELET && sm.HavePowerBracelet)
+        || (i = TrackerModel.ITEMS.KEY && sm.HaveAnyKey) || (i = TrackerModel.ITEMS.WAND && sm.HaveWand) || (i = TrackerModel.ITEMS.BOOKSHIELD && sm.HaveBookOrShield)
+        || (i = TrackerModel.ITEMS.MAGICBOOMERANG && sm.BoomerangLevel >= 2)   // (the wood boomerang is left alone: owning the magical one does not mean the wood one was found)
+    let isObtained(i) = (allBoxes |> Array.exists (fun box -> box.CellCurrent() = i && box.IsDone())) || TrackerModel.mapCollectedCount.[i] > 0 || ownedPerProgress(i)
     // same order as the Item Progress bar: swords first (every sword level not yet reached)
     let swordLevel = TrackerModel.playerComputedStateSummary.SwordLevel
     if swordLevel < 1 then hsp.Children.Add(swordImg(Graphics.swordLevelToOwBmp(1))) |> ignore
@@ -232,7 +252,7 @@ let inventoryAndHeartsContent(doUIUpdateEvent:Event<unit>) =
 //        printfn "redraw inventory and hearts"
         redraw()
         )
-    new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.))
+    new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(0.))   // no grey border in the popout window
 let remainingItemsContent(doUIUpdateEvent:Event<unit>) =
     remainingItemsIconScale <- TrackerModelOptions.RemainingItemsIconScale   // remembered from last time
     let dp = new DockPanel(Background=Brushes.Black)
@@ -312,7 +332,7 @@ let makePopout(kind, isLeftClick, isRightClick, doUIUpdateEvent:Event<unit>) =
             if theInventoryAndHeartsPopoutWindow <> null then
                 theInventoryAndHeartsPopoutWindow.Close()
             theInventoryAndHeartsPopoutWindow <- w
-            w.Title <- "Inventory and Max Hearts popout"
+            w.Title <- "Current Equipment"
             w.Content <- scalable(inventoryAndHeartsContent(doUIUpdateEvent))
             save <- (fun() ->
                 if w.Left < MINIMIZED_THRESHOLD then // minimized or closing
@@ -488,7 +508,7 @@ let showShopPricesWindow() =
             rowIdx <- rowIdx + 1
         sp.Children.Add(grid) |> ignore
     let sv = new ScrollViewer(Content=sp, VerticalScrollBarVisibility=ScrollBarVisibility.Auto, MaxHeight=600.)
-    let border = new Border(Child=sv, BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.), Background=Brushes.Black)
+    let border = new Border(Child=sv, BorderBrush=Brushes.Gray, BorderThickness=Thickness(0.), Background=Brushes.Black)   // no grey border in the popout window
     ShowRunCustom.makeScalable(w, border)
     // remember where the window was left (and how big)
     let m = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ShopPricesWindowLTWH, """^(-?\d+),(-?\d+),(\d+),(\d+)$""")

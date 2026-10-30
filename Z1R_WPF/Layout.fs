@@ -575,16 +575,19 @@ type ShorterApplicationLayout(cm:CustomComboBoxes.CanvasManager) =
             centerVerticallyAt(itemProgressTB, SWORD_ICON_CENTER_Y)
             let pro = Broadcast.makeViewRectImpl(Point(ITEM_PROGRESS_FIRST_ITEM,THRU_MAP_AND_LEGEND_H), 
                                 Point(ITEM_PROGRESS_FIRST_ITEM + 15.*30.-11.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H), upper)  // -11. because 'Hint decoder' button infringes into empty space by Magic Key 
-            canvasAdd(lower, pro, 20., 150.+20.)
+            let proScale = new ScaleTransform(0.88, 0.88)   // shrunk so the whole strip ends before the map
+            if proScale.CanFreeze then proScale.Freeze()
+            pro.RenderTransform <- proScale
+            canvasAdd(lower, pro, 10., dungeonStart - RED_LINE - 30.*0.88 - 4.)   // just above the dungeon panels
             let tb = new TextBox(Text="Move mouse above red line for overworld view", Foreground=Brushes.Orange, Background=Brushes.Black, 
-                                            IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=16., VerticalAlignment=VerticalAlignment.Center)
-            canvasAdd(lower, tb, 50., 180.+20.)
+                                            IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=14., VerticalAlignment=VerticalAlignment.Center)
+            canvasAdd(lower, tb, 50., 152.)
             let lineCenter = dungeonStart - RED_LINE/2.
             let line = new Shapes.Line(X1=0., X2=W, Y1=lineCenter, Y2=lineCenter, Stroke=Brushes.Red, StrokeThickness=3.)
             canvasAdd(lower, line, 0., 0.)
         member this.AddVersionButton(_vb) =   // the version button is no longer shown on the main screen
             let v = Broadcast.makeViewRectImpl(Point(0.,THRU_MAP_AND_LEGEND_H), Point(50.,THRU_MAIN_MAP_AND_ITEM_PROGRESS_H), upper)
-            canvasAdd(lower, v, 0., 180.+20.)
+            ignore v   // (the version button is gone; its old slot is where the item progress strip used to sit)
         member this.AddOverworldOptionsButton(fqsqButton) =
             canvasAdd(upper, fqsqButton, PANEL_X1, 78.)
             iconFQSQ <- fqsqButton

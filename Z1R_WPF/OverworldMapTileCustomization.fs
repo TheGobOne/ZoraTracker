@@ -132,6 +132,7 @@ let clearWoodSwordCaveItems(i, j) =
     if TrackerModel.shuffledWoodSwordTiles.Contains((i,j)) then
         TrackerModel.sword1Box.Set(-1, TrackerModel.PlayerHas.SKIPPED)
         TrackerModel.shuffledWoodSwordTiles.Remove((i,j)) |> ignore
+    TrackerModel.progressiveTileTier.Remove((i,j,sw1)) |> ignore
     TrackerModel.setOverworldMapExtraData(i,j,sw1,0)
     TrackerModel.recomputePlayerStateSummary()   // the item that was found here no longer counts
     TrackerModel.forceUpdate()
@@ -251,10 +252,11 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
     let swordTakenElsewhere =
         seq { for x in 0..15 do for y in 0..7 do yield (x,y) }
         |> Seq.exists (fun (x,y) -> (x,y) <> (i,j) && TrackerModel.overworldMapMarks.[x,y].Current() = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.getOverworldMapExtraData(x,y,TrackerModel.MapSquareChoiceDomainHelper.SWORD1) = TrackerModel.MapSquareChoiceDomainHelper.SWORD1)
-    let crossedBase = (if swordTakenElsewhere then ["Took Sword"] else [])
+    PieMenus.legacyDisabledChoices <- (if TrackerModel.LegacyMode then ["Shuffled Item"; "Sword Icon"] else [])
+    let crossedBase = (if swordTakenElsewhere then ["Took Sword"] else []) @ (if TrackerModel.LegacyMode then ["Shuffled Item"; "Sword Icon"] else [])   // (Legacy Mode: no shuffled item in the wood sword cave)
     if TrackerModel.shuffledWoodSwordTiles.Count > 0 || candleTakenElsewhere then PieMenus.crossedOutChoices <- crossedBase @ ["Shuffled Item"; "Took Candle"]
     elif hadShuffled then PieMenus.crossedOutChoices <- crossedBase @ ["Shuffled Item"]
-    elif swordTakenElsewhere then PieMenus.crossedOutChoices <- crossedBase
+    elif swordTakenElsewhere || TrackerModel.LegacyMode then PieMenus.crossedOutChoices <- crossedBase
     // one box of 4 buttons; it also supports the Contextual_TakeThis_* hotkeys (sword / candle / none)
     let! choice =
         if TrackerModelOptions.Overworld.UseOldPopups.Value then async {
@@ -268,9 +270,11 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
             }
         else PieMenus.TakeThisButtonBoxAsync(cm)
     PieMenus.crossedOutChoices <- []   // (the old pie menu path doesn't consume it)
+    PieMenus.legacyDisabledChoices <- []
     let mutable doneValue = 0   // 0 = not taken yet, SWORD1 = took the sword, CANDLE_TAKEN = took the candle
     match choice with
     | "Took Sword" when not swordTakenElsewhere ->
+        if TrackerModel.ProgressiveItems then TrackerModel.progressiveTileTier.[(i,j,TrackerModel.MapSquareChoiceDomainHelper.SWORD1)] <- TrackerModel.progressiveSwordTier()   // (the tile keeps the tier this sword was collected at: P2 when another sword came first)
         let n = if TrackerModel.ProgressiveItems then 1 else min 3 (s.SwordLevel + 1)   // (Progressive Items: the tier logic does the upgrading, so this just records the sword)
         pp.PlayerHasWoodSword.Set(n>=1)
         si.PlayerHasWhiteSword.Set(n>=2)
@@ -308,11 +312,14 @@ let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float
     (fun (cm:CustomComboBoxes.CanvasManager,c:Canvas,i,j) -> async {
         acceleratorCancelled <- false
         let hadShuffled = TrackerModel.getOverworldMapExtraData(i,j,state) = SHUFFLED_ITEM
-        PieMenus.crossedOutChoices <- [ if hadShuffled || shuffledItemAlreadyPlaced state then yield "Shuffled Item"   // this cave, or another one of the same kind, already holds a shuffled item
+        PieMenus.legacyDisabledChoices <- (if TrackerModel.LegacyMode then (if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 then ["Shuffled Item"; "Sword Icon"] else ["Sword Icon"]) else [])   // (Legacy Mode: no sword in a shop)
+        PieMenus.crossedOutChoices <- [ if hadShuffled || shuffledItemAlreadyPlaced state || (TrackerModel.LegacyMode && state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3) then yield "Shuffled Item"   // this cave, or another one of the same kind, already holds a shuffled item (Legacy Mode: the magical sword cave never does)
+                                        if TrackerModel.LegacyMode then yield "Sword Icon"
                                         if TrackerModel.ProgressiveItems then yield "Took Sword" ]   // Progressive Items: the white and magical swords are not separate items
         // an item already put in this cave's item box (that is not just the cave's own sword) is its shuffled item: no menu, the cave starts out holding it (collected or not as the box says)
         let preplaced = box.CellCurrent() <> -1 && box.CellCurrent() <> decorIdent && not hadShuffled && not (shuffledItemAlreadyPlaced state)
-        let! choice = if preplaced then async { return "Preplaced" } else PieMenus.CaveChoiceBoxAsync(cm, ["Took Sword"; "Shuffled Item"; "Sword Icon"])
+        let autoTake = TrackerModel.LegacyMode && state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 && not TrackerModel.ProgressiveItems   // (Legacy Mode: the magical sword cave only ever holds the sword, so no menu)
+        let! choice = if autoTake then async { return "Placed" } elif preplaced then async { return "Preplaced" } else PieMenus.CaveChoiceBoxAsync(cm, ["Took Sword"; "Shuffled Item"; "Sword Icon"])
         let mutable doneValue = 0   // 0 = nothing yet, state = took the sword, SHUFFLED_ITEM = the cave holds a shuffled item
         match choice with
         | "Took Sword" ->
@@ -324,6 +331,9 @@ let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float
                 box.AttemptToSet((if state = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 then TrackerModel.ITEMS.WHITESWORD else TrackerModel.ITEMS.MAGICALSWORD), TrackerModel.PlayerHas.YES) |> ignore
                 TrackerModel.forceUpdate()
             doneValue <- state
+        | "Placed" ->   // Legacy Mode magical sword cave: placed like a cave holding a shuffled item - the cave with its item box showing the sword, not collected yet (a click collects it, matching the item box)
+            if box.CellCurrent() <> decorIdent then box.AttemptToSet(decorIdent, TrackerModel.PlayerHas.NO) |> ignore
+            doneValue <- SHUFFLED_ITEM
         | "Preplaced" -> doneValue <- SHUFFLED_ITEM
         | "Shuffled Item" ->
             doneValue <- SHUFFLED_ITEM
@@ -585,6 +595,18 @@ let takenSwordCheck() : Canvas * float * float =
     let host = new Canvas(Width=ck.Width, Height=ck.Height, IsHitTestVisible=false)   // (a Canvas, like the other tile decorations)
     host.Children.Add(ck) |> ignore
     host, OMTW/2. - ck.Width/2., 33./2. - ck.Height/2.
+// Progressive Items: the sword taken at a wood sword cave is drawn as its tier sprite (P1, or P2 when another sword was collected first) with the check
+let takenProgressiveSwordCheck(i:int, j:int) : Canvas * float * float =
+    let tier = (match TrackerModel.progressiveTileTier.TryGetValue((i,j,TrackerModel.MapSquareChoiceDomainHelper.SWORD1)) with | true, v -> max 1 (min 4 v) | _ -> 1)
+    let host = new Canvas(Width=21., Height=27., Background=Brushes.Black, IsHitTestVisible=false)   // (black, to cover the plain sword on the cave tile)
+    let img = Graphics.BMPtoImage(Graphics.ow_progressive_tier_menu_bmps.[tier])
+    img.Stretch <- Stretch.Uniform
+    img.Width <- 21.
+    img.Height <- 27.
+    host.Children.Add(img) |> ignore
+    let ck = caveCheckmark(27.)
+    canvasAdd(host, ck, (21. - ck.Width)/2., (27. - ck.Height)/2.)
+    host, (OMTW - 21.)/2., 3.
 let sword3LeftSideFullTileBmp = makeSwordLeftSideFullTileBmp(TrackerModel.MapSquareChoiceDomainHelper.SWORD3)
 
 // in a shop tile, the bomb (item 1) is drawn as the real bomb icon fitted to its slot rather than from the thin 3x7 item strip
@@ -800,7 +822,7 @@ let GetIconBMPAndExtraDecorations(cm, ms:MapStateProxy,i,j) =   // returns: (sho
             candleCanvas.MouseDown.Add(fun ea -> ea.Handled <- true)   // clicking the candle does nothing
             ShouldHide(ms.State,i,j), sword1LeftSideDarkFullTileBmp, [candleCanvas, 20., 2.]
         elif ex = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 then
-            ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[0], [takenSwordCheck()]   // (the sword stays bright, with a check)
+            ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[0], [(if TrackerModel.ProgressiveItems then takenProgressiveSwordCheck(i,j) else takenSwordCheck())]   // (the sword stays bright, with a check; Progressive Items: as its P tier sprite)
         else
             false, Graphics.theFullTileBmpTable.[ms.State].[0], []
     // hint shop default to being light, user can darken if bought all, or if was white/magic sword hint they already saw
@@ -832,6 +854,10 @@ let GetIconBMPAndExtraDecorations(cm, ms:MapStateProxy,i,j) =   // returns: (sho
             false, sword3LeftSideFullTileBmp, [fst(Views.MakeBoxItemWithExtraDecorations(Some(cm), TrackerModel.sword3Box, false, Some extraDecorationsF)), OMTW-30., 1.]
         elif ex = SHUFFLED_ITEM then
             ShouldHide(ms.State,i,j), sword3LeftSideFullTileBmp, [makeCaveItemBesideSword(TrackerModel.sword3Box), 20., 2.]
+        elif TrackerModel.LegacyMode then
+            // Legacy Mode: the check mirrors the item box (collected = checked), so the two always match
+            let taken = TrackerModel.sword3Box.IsDone()
+            (if taken then ShouldHide(ms.State,i,j) else false), Graphics.theFullTileBmpTable.[ms.State].[0], (if taken then [takenSwordCheck()] else [])
         elif ex = ms.State || TrackerModel.sword3Box.IsDone() || TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasMagicalSword.Value() then
             ShouldHide(ms.State,i,j), Graphics.theFullTileBmpTable.[ms.State].[(if ex = ms.State then 0 else 1)], (if ex = ms.State then [takenSwordCheck()] else [])
         else
@@ -904,6 +930,7 @@ let ToggleOverworldTileIfItIsToggleable(i, j, state) =
                 if not swordTakenElsewhere then
                     let pp = TrackerModel.playerProgressAndTakeAnyHearts
                     let si = TrackerModel.startingItemsAndExtras
+                    if TrackerModel.ProgressiveItems then TrackerModel.progressiveTileTier.[(i,j,state)] <- TrackerModel.progressiveSwordTier()
                     let n = if TrackerModel.ProgressiveItems then 1 else min 3 (TrackerModel.playerComputedStateSummary.SwordLevel + 1)
                     pp.PlayerHasWoodSword.Set(n>=1)
                     si.PlayerHasWhiteSword.Set(n>=2)
@@ -984,6 +1011,18 @@ let DoLeftClick(cm:CustomComboBoxes.CanvasManager,msp:MapStateProxy,i,j,pos:Poin
             | None -> false, false
         popupIsActive <- false
         return r
+    elif TrackerModel.LegacyMode && msp.State = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 && not TrackerModel.ProgressiveItems then
+        // Legacy Mode: left click on the magical sword cave toggles its sword collected, in step with the item box
+        let box = TrackerModel.sword3Box
+        if box.IsDone() then
+            TrackerModel.startingItemsAndExtras.PlayerHasMagicalSword.Set(false)
+            box.AttemptToSet(TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.PlayerHas.NO) |> ignore
+        else
+            TrackerModel.startingItemsAndExtras.PlayerHasMagicalSword.Set(true)
+            box.AttemptToSet(TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.PlayerHas.YES) |> ignore
+        TrackerModel.setOverworldMapExtraData(i, j, msp.State, SHUFFLED_ITEM)
+        TrackerModel.forceUpdate()
+        return true, false
     else
         if toggleables |> Array.contains msp.State then
             // left click to toggle it 'used'
@@ -1352,14 +1391,16 @@ let MakeRemainderSummaryDisplayEx(_freeWidth:bool) =   // Spot Summary (freeWidt
             let col = new StackPanel(Orientation=Orientation.Vertical, HorizontalAlignment=HorizontalAlignment.Center)
             col.Children.Add(top) |> ignore
             let row = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
-            for (bmp, collected) in items do
+            let keyIdx = if n >= 1 && n <= 4 && TrackerModel.cheapKeyShops.[n] then PieMenus.shopKeyIndexHook n else -1
+            items |> List.iteri (fun idx (bmp, collected) ->
                 let img = Graphics.BMPtoImage(bmp)
                 img.Stretch <- Stretch.Uniform
                 img.Width <- 15.
                 img.Height <- 15.
                 img.Margin <- Thickness(1.)
                 if collected then img.Opacity <- 0.4
-                row.Children.Add(img) |> ignore
+                if idx = keyIdx then row.Children.Add(new Border(BorderBrush=Brushes.Yellow, BorderThickness=Thickness(1.), Child=img)) |> ignore   // the cheaper key shop's key
+                else row.Children.Add(img) |> ignore)
             col.Children.Add(row) |> ignore
             col :> FrameworkElement
     flushRows()
@@ -1500,5 +1541,5 @@ let MakeMappedHotKeysDisplay() =
         let args = sprintf "/Select, \"%s\"" fileToSelect
         let psi = new System.Diagnostics.ProcessStartInfo("Explorer.exe", args)
         System.Diagnostics.Process.Start(psi) |> ignore
-    total=0, new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(3.), Background=Brushes.Black, Child=all)
+    total=0, new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(0.), Background=Brushes.Black, Child=all)   // (only shown in the hotkeys popout: no grey border there)
 

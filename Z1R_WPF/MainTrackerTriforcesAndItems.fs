@@ -53,11 +53,13 @@ let doUIUpdateEvent = new Event<unit>()
 // the 'Item Locations' window: a read-only mirror of the dungeon columns (triforce and item boxes of levels 1-9), and below them the armos / letter / ladder / white sword / magical sword boxes
 let mutable itemLocationsWindow : Window = null
 let ITEMLOC_MINIMIZED = ShowRunCustom.MINIMIZED_THRESHOLD
-let itemLocationsRegex = """^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$"""
+let itemLocationsRegex = """^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+)(?:,(0|1))?)?$"""
+let mutable itemLocationsHorizontal = false   // the window's layout: false = each dungeon is a column (Vertical), true = each dungeon is a row (Horizontal); remembered with the window's position
 // userClick=true: the button was pressed; false: automatic reopen at startup (only if the window was left open last time)
 let openItemLocationsWindowImpl(userClick) =
     let m = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ItemLocationsWindow_DisplayedLT, itemLocationsRegex)
     let validPos = m.Success && not(float m.Groups.[2].Value < ITEMLOC_MINIMIZED)
+    if m.Success && m.Groups.[6].Success then itemLocationsHorizontal <- (m.Groups.[6].Value = "1")
     if itemLocationsWindow <> null then
         itemLocationsWindow.Activate() |> ignore
     elif userClick || (validPos && m.Groups.[1].Value = "1") then
@@ -67,9 +69,49 @@ let openItemLocationsWindowImpl(userClick) =
             let c = new Canvas(Width=30., Height=30.)
             c.Children.Add(view) |> ignore
             c
-        let build() =
-            content.Children.Clear()
-            let row1 = new StackPanel(Orientation=Orientation.Horizontal)
+        let layoutCB = new CheckBox(Margin=Thickness(0.,6.,2.,0.), HorizontalAlignment=HorizontalAlignment.Right, Cursor=System.Windows.Input.Cursors.Hand)
+        let layoutLabel = new TextBlock(Foreground=Brushes.Orange, FontSize=12., Margin=Thickness(2.,0.,0.,0.))
+        layoutCB.Content <- layoutLabel
+        let buildHorizontal() =
+            // each dungeon is a row: its triforce, then its item boxes to the right (the armos / letter / ladder / sword boxes become a column on the far right, each icon beside its box)
+            let left = new StackPanel(Orientation=Orientation.Vertical)
+            for i = 0 to 8 do
+                let d = TrackerModel.GetDungeon(i)
+                let row = new StackPanel(Orientation=Orientation.Horizontal, Margin=Thickness(0.,3.,0.,3.))
+                if TrackerModel.IsHiddenDungeonNumbers() then
+                    row.Children.Add(Views.MakeColorNumberCanvasForHDN(i)) |> ignore
+                let tf = (if i < 8 then Views.MakeTriforceDisplayView(None, i, None) else Views.MakeLevel9View(None))
+                (tf :> FrameworkElement).VerticalAlignment <- VerticalAlignment.Center
+                row.Children.Add(tf) |> ignore
+                // (every dungeon's boxes sit left-justified in the same fixed-width area, so the first boxes line up in a clean column whether a dungeon has 2 or 3)
+                let boxesSP = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Left, VerticalAlignment=VerticalAlignment.Center)
+                for box in d.Boxes do
+                    boxesSP.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, box, false, None)))) |> ignore
+                if i = 1 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled then
+                    boxesSP.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, TrackerModel.level2StairBox, false, None)))) |> ignore
+                if i = 8 && TrackerModel.level9FloorBoxEnabled then
+                    boxesSP.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, d.ExtraFloorBox, false, None)))) |> ignore
+                row.Children.Add(new Border(Width=98., Child=boxesSP)) |> ignore
+                left.Children.Add(row) |> ignore
+            let right = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(18.,0.,0.,0.), VerticalAlignment=VerticalAlignment.Center)   // (centered against the dungeon rows)
+            let letterBmp = CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.LETTER, None)
+            for box, icon in [| TrackerModel.armosBox, Graphics.ow_key_armos_bmp; TrackerModel.letterBox, letterBmp; TrackerModel.ladderBox, Graphics.ladder_bmp
+                                TrackerModel.sword2Box, Graphics.ow_sword2_item_bmp; TrackerModel.sword3Box, Graphics.ow_sword3_item_bmp |] do
+                let row = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,3.,0.,3.))
+                row.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, box, false, None)))) |> ignore
+                let ic = new Canvas(Width=30., Height=30.)
+                canvasAdd(ic, Graphics.BMPtoImage icon, 4., 4.)
+                row.Children.Add(ic) |> ignore
+                right.Children.Add(row) |> ignore
+            layoutCB.Margin <- Thickness(0.,16.,0.,0.)
+            layoutCB.HorizontalAlignment <- HorizontalAlignment.Center
+            right.Children.Add(layoutCB) |> ignore   // (the layout switch is centered under the column of boxes)
+            let both = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+            both.Children.Add(left) |> ignore
+            both.Children.Add(right) |> ignore
+            content.Children.Add(both) |> ignore
+        let buildVertical() =
+            let row1 = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
             for i = 0 to 8 do
                 let d = TrackerModel.GetDungeon(i)
                 let col = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(3.,0.,3.,0.))
@@ -84,7 +126,7 @@ let openItemLocationsWindowImpl(userClick) =
                     col.Children.Add(box30(fst(Views.MakeBoxItemWithExtraDecorations(None, d.ExtraFloorBox, false, None)))) |> ignore
                 row1.Children.Add(col) |> ignore
             content.Children.Add(row1) |> ignore
-            let row2 = new StackPanel(Orientation=Orientation.Horizontal, Margin=Thickness(0.,12.,0.,0.))
+            let row2 = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,12.,0.,0.))
             // (each box has its icon below it, as on the main tracker)
             let letterBmp = CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.LETTER, None)
             for box, icon in [| TrackerModel.armosBox, Graphics.ow_key_armos_bmp; TrackerModel.letterBox, letterBmp; TrackerModel.ladderBox, Graphics.ladder_bmp
@@ -96,6 +138,19 @@ let openItemLocationsWindowImpl(userClick) =
                 col.Children.Add(ic) |> ignore
                 row2.Children.Add(col) |> ignore
             content.Children.Add(row2) |> ignore
+            // (the layout switch is centered under the boxes)
+            layoutCB.Margin <- Thickness(0.,10.,0.,2.)
+            layoutCB.HorizontalAlignment <- HorizontalAlignment.Center
+            content.Children.Add(layoutCB) |> ignore
+        let build() =
+            // (the switch is re-parented by each layout)
+            (match layoutCB.Parent with | :? Panel as pn -> pn.Children.Remove(layoutCB) | _ -> ())
+            layoutCB.VerticalAlignment <- VerticalAlignment.Top
+            content.Children.Clear()
+            // its label names the layout the window is in now, and clicking it switches to the other one
+            layoutLabel.Text <- (if itemLocationsHorizontal then "Horizontal" else "Vertical")
+            layoutCB.IsChecked <- System.Nullable<bool>(itemLocationsHorizontal)
+            if itemLocationsHorizontal then buildHorizontal() else buildVertical()
         build()
         let vb = new Viewbox(Child=content, Stretch=Stretch.Uniform, StretchDirection=StretchDirection.DownOnly)
         w.Content <- vb
@@ -112,8 +167,21 @@ let openItemLocationsWindowImpl(userClick) =
         let mainClosing = ref false
         let save(isOpen) =
             let bounds = if w.Left < ITEMLOC_MINIMIZED then w.RestoreBounds else Rect(w.Left, w.Top, w.ActualWidth, w.ActualHeight)
-            TrackerModelOptions.ItemLocationsWindow_DisplayedLT <- sprintf "%d,%d,%d,%d,%d" (if isOpen then 1 else 0) (int bounds.Left) (int bounds.Top) (int bounds.Width) (int bounds.Height)
+            TrackerModelOptions.ItemLocationsWindow_DisplayedLT <- sprintf "%d,%d,%d,%d,%d,%d" (if isOpen then 1 else 0) (int bounds.Left) (int bounds.Top) (int bounds.Width) (int bounds.Height) (if itemLocationsHorizontal then 1 else 0)
             TrackerModelOptions.writeSettings()
+        layoutCB.Click.Add(fun _ ->
+            itemLocationsHorizontal <- not itemLocationsHorizontal
+            build()
+            // the window re-fits its content for the new layout
+            w.SizeToContent <- SizeToContent.WidthAndHeight
+            vb.StretchDirection <- StretchDirection.DownOnly
+            w.UpdateLayout()
+            let aw, ah = w.ActualWidth, w.ActualHeight
+            w.SizeToContent <- SizeToContent.Manual
+            w.Width <- aw
+            w.Height <- ah
+            vb.StretchDirection <- StretchDirection.Both
+            save(true))
         let saveTimer = new System.Windows.Threading.DispatcherTimer(Interval=System.TimeSpan.FromMilliseconds(600.))
         saveTimer.Tick.Add(fun _ -> saveTimer.Stop(); save(true))
         w.LocationChanged.Add(fun _ -> if w.IsLoaded then (saveTimer.Stop(); saveTimer.Start()))
@@ -617,7 +685,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
             ea.Handled <- true
             if not popupIsActive && TrackerModel.level9CustomTriggerItem() = -1 then
                 let n = TrackerModel.level9TriforceCount + (if ea.Delta > 0 then 1 else -1)
-                TrackerModel.level9TriforceCount <- max 1 (min 8 n)
+                TrackerModel.level9TriforceCount <- max 0 (min 8 n)   // (0 = level 9 needs no triforces)
                 redrawEntry()
                 TrackerModel.forceUpdate())
         trigArea.MouseRightButtonDown.Add(fun ea ->
@@ -642,19 +710,6 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                     } |> Async.StartImmediate)
         gridAdd(mainTrackerGrid, entry, 4, 4)
         Grid.SetColumnSpan(entry, 3)
-        // Race Mode: the level 9 entry rule is hidden and this text stands in for it
-        let raceText = new Canvas(Width=90., Height=30., Background=Brushes.Black, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center)
-        let raceTB = new TextBlock(Text="Race Mode", FontSize=16., Foreground=Brushes.Orange, IsHitTestVisible=false)
-        raceTB.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
-        canvasAdd(raceText, raceTB, (90. - raceTB.DesiredSize.Width) / 2., (30. - raceTB.DesiredSize.Height) / 2.)   // centered in the space
-        gridAdd(mainTrackerGrid, raceText, 4, 4)
-        Grid.SetColumnSpan(raceText, 3)
-        let applyRace() =
-            let race = TrackerModelOptions.RaceMode.Value
-            entry.Visibility <- (if race then Visibility.Collapsed else Visibility.Visible)
-            raceText.Visibility <- (if race then Visibility.Visible else Visibility.Collapsed)
-        applyRace()
-        OptionsMenu.raceModeChanged.Publish.Add(fun () -> applyRace())
     // 'Item Locations' button: the top button of the Save / Hint Decoder / Hotkeys column (the layout sizes and places it)
     do
         // (made with Graphics.makeButton, so it has the same look and border as the other tracker buttons; use that helper for new buttons)
@@ -677,7 +732,7 @@ let setup(cm:CustomComboBoxes.CanvasManager, owInstance:OverworldData.OverworldI
                             if cb.IsChecked = System.Nullable<bool>(true) then openIt() else closeIt()
                             cb.IsChecked <- System.Nullable<bool>(isOpen()))
                         sp.Children.Add(cb) |> ignore
-                    entry("Inventory and Max Hearts", (fun () -> Popouts.isPopoutOpen(Popouts.InventoryAndHeartsPopout)), (fun () -> Popouts.openPopout(Popouts.InventoryAndHeartsPopout)), (fun () -> Popouts.closePopout(Popouts.InventoryAndHeartsPopout)))
+                    entry("Current Equipment", (fun () -> Popouts.isPopoutOpen(Popouts.InventoryAndHeartsPopout)), (fun () -> Popouts.openPopout(Popouts.InventoryAndHeartsPopout)), (fun () -> Popouts.closePopout(Popouts.InventoryAndHeartsPopout)))
                     entry("Item Locations", (fun () -> itemLocationsWindow <> null), (fun () -> openItemLocationsWindow()), (fun () -> if itemLocationsWindow <> null then itemLocationsWindow.Close()))
                     entry("Item Progress", (fun () -> itemProgressWindow <> null), (fun () -> openItemProgressWindow()), (fun () -> if itemProgressWindow <> null then itemProgressWindow.Close()))
                     entry("Spot Summary", (fun () -> Popouts.isPopoutOpen(Popouts.SpotSummaryPopout)), (fun () -> Popouts.openPopout(Popouts.SpotSummaryPopout)), (fun () -> Popouts.closePopout(Popouts.SpotSummaryPopout)))

@@ -39,6 +39,8 @@ type ReminderCategory =
 
 let mutable IsSecondQuestDungeons = false
 let mutable ProgressiveItems = false   // ZORA Extras: collecting a base item (blue candle / blue ring / wood arrow / sword) upgrades the rest of that item marked on the map to the next level
+let mutable HeartShuffleMode = 2   // startup Heart Shuffle: 0 = Off (a heart is pre-placed in the first slot of dungeons 1-8), 1 = Intra (one heart somewhere in each dungeon 1-8, filled in as items are placed), 2 = Full
+let mutable LegacyMode = false   // startup Legacy Mode: every ZORA Extra is off and locked
 let mutable MarkBombDroppers = false   // Startup Options checkbox: middle-clicking an overworld tile marks it as a bomb dropper screen
 let mutable BootsReplaceBoomerangs = false   // ZORA Extras startup option (behavior still to be decided)
 let mutable CustomLevelName = ""   // up to 7 chars (uppercase); if non-empty, replaces 'LEVEL-n' in each dungeon map header
@@ -729,8 +731,10 @@ type Box(stair:StairKind, owner, domain:ChoiceDomain) =
     // this contains both a Cell (player-knowing-location-contents), and a bool (whether the players _has_ the thing there)
     let cell = new Cell(domain)
     let mutable playerHas = PlayerHas.NO
+    let mutable lockedItem = -1   // Legacy Mode: the letter / magical sword boxes keep their item; it can be collected or uncollected, but never removed or swapped
     let changed = new Event<_>()
     member _this.Changed = changed.Publish
+    member _this.LockedItem with get() = lockedItem and set(v:int) = lockedItem <- v
     member _this.PlayerHas() = playerHas           // note that the state (cell = -1, playerHas = SKIPPED) is used to mean 'white-highlighted box' in the UI
     member this.IsEmptyRedBox = this.PlayerHas() = PlayerHas.NO && this.CellCurrent() = -1
     member _this.Stair = stair
@@ -766,21 +770,24 @@ type Box(stair:StairKind, owner, domain:ChoiceDomain) =
     member _this.CellNextFreeKey() = domain.NextFreeKey(cell.Current())
     member _this.CellPrevFreeKey() = domain.PrevFreeKey(cell.Current())
     member _this.CellPrev() = 
+      if lockedItem = -1 then
         cell.Prev()
         dungeonsAndBoxesLastChangedTime.SetNow()
         changed.Trigger()
     member _this.CellNext() = 
+      if lockedItem = -1 then
         cell.Next()
         dungeonsAndBoxesLastChangedTime.SetNow()
         changed.Trigger()
     member _this.CellCurrent() = cell.Current()
     member _this.Set(v,ph) = 
+        let (v, ph) = if lockedItem <> -1 then (lockedItem, (if ph = PlayerHas.YES then PlayerHas.YES else PlayerHas.NO)) else (v, ph)
         cell.Set(v)
         playerHas <- ph
         dungeonsAndBoxesLastChangedTime.SetNow()
         changed.Trigger()
     member _this.AttemptToSet(v,ph) = 
-        if cell.AttemptToSet(v) then
+        if (lockedItem = -1 || v = lockedItem) && cell.AttemptToSet(v) then
             playerHas <- ph
             dungeonsAndBoxesLastChangedTime.SetNow()
             changed.Trigger()
@@ -1289,6 +1296,7 @@ let overworldQuestChanged = new Event<unit>()   // fired when reinitializeOverwo
 
 let mapLastChangedTime = new LastChangedTime()
 let shopStash : int[] = Array.create 6 -1   // items entered in a shop window (index = shop label 1-5) while no tile of that shop is on the map: packed like a tile's icons, picked up by the first tile that becomes that shop
+let cheapKeyShops : bool[] = Array.create 6 false   // numbered shops (index = shop label 1-4) whose key is the cheaper one of the key shops: its key is drawn in a yellow box
 let owBombDroppers = Array2D.create 16 8 false   // bomb dropper screens: their own layer (a small badge in the tile's corner), independent of the marker icons / shops
 let owSwordIcons = Array2D.create 16 8 -1   // decorative marker icons per overworld tile: up to 3 packed into one int (see decorIconsOf/decorIconsPack below), -1 means none
 let DECOR_BOMB_DROPPER = 101   // marker-icon id for a screen whose enemies drop bombs
@@ -2019,6 +2027,8 @@ let allUIEventingLogic(ite : ITrackerEvents) =
                 if owInstance.Raftable(i,j) then owSpotTypeCounts.[4] <- owSpotTypeCounts.[4] + 1
                 if owInstance.Whistleable(i,j) then owSpotTypeCounts.[5] <- owSpotTypeCounts.[5] + 1
                 if owInstance.Nothingable(i,j) then owSpotTypeCounts.[6] <- owSpotTypeCounts.[6] + 1
+    // F16 (the coast item) is always empty on the map, so the loop above skips it, but it is a ladder block until that item is collected
+    if not playerComputedStateSummary.HaveCoastItem then owSpotTypeCounts.[3] <- owSpotTypeCounts.[3] + 1
     ite.OverworldSpotsRemaining(mapStateSummary.OwSpotsRemain, remain)
     if mapStateSummary.OwSpotsRemain <> priorOWSpotsRemain then
         priorOWSpotsRemain <- mapStateSummary.OwSpotsRemain

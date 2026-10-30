@@ -141,6 +141,7 @@ let mutable OldStyleGrab = Bool(false)   // the dungeon MOVE button works like t
 let mutable BookForHelpfulHints = Bool(false)
 let mutable ShowMouseMagnifierWindow = Bool(false)
 let mutable HideTimer = Bool(false)
+let mutable RaceModeNoticeHidden = Bool(false)   // "Do not show this again" on the notice that appears at startup when Race Mode is on
 let mutable ShowBroadcastWindow = Bool(false)
 let mutable BroadcastWindowSize = 3
 let mutable BroadcastWindowIncludesOverworldMagnifier = Bool(false)
@@ -282,6 +283,7 @@ type ReadWrite() =
     member val BookForHelpfulHints = false with get,set
     member val ShowMouseMagnifierWindow = false with get,set
     member val HideTimer = false with get,set
+    member val RaceModeNoticeHidden = false with get,set
     member val ShowBroadcastWindow = false with get,set
     member val BroadcastWindowSize = 3 with get,set
     member val BroadcastWindowIncludesOverworldMagnifier = false with get,set
@@ -430,6 +432,7 @@ let private writeImpl(filename) =
     data.BookForHelpfulHints <- BookForHelpfulHints.Value
     data.ShowMouseMagnifierWindow <- ShowMouseMagnifierWindow.Value
     data.HideTimer <- HideTimer.Value
+    data.RaceModeNoticeHidden <- RaceModeNoticeHidden.Value
     data.ShowBroadcastWindow <- ShowBroadcastWindow.Value
     data.BroadcastWindowSize <- BroadcastWindowSize
     data.BroadcastWindowIncludesOverworldMagnifier <- BroadcastWindowIncludesOverworldMagnifier.Value
@@ -587,6 +590,8 @@ let private read(filename) =
         BookForHelpfulHints.Value <- data.BookForHelpfulHints
         ShowMouseMagnifierWindow.Value <- data.ShowMouseMagnifierWindow
         HideTimer.Value <- data.HideTimer
+        RaceModeNoticeHidden.Value <- data.RaceModeNoticeHidden
+        RaceMode.Value <- data.RaceMode   // (it was saved but never loaded back)
         ShowBroadcastWindow.Value <- data.ShowBroadcastWindow
         BroadcastWindowSize <- max 1 (min 3 data.BroadcastWindowSize)
         BroadcastWindowIncludesOverworldMagnifier.Value <- data.BroadcastWindowIncludesOverworldMagnifier

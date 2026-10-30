@@ -207,6 +207,7 @@ type MyWindow() as this =
     let mutable updateTimeline = fun _ -> ()
     let mutable lastUpdateMinute = 0
     let mutable lastUpdateSecond = 0
+    let mutable lastSnoopPoll = DateTime.MinValue
     //                             items  ow map  prog  dungeon tabs                                    timeline   
     let HEIGHT_SANS_CHROME = float(30*5 + 11*3*9 + 30 + OverworldItemGridUI.TH + 30 + 27*8 + 12*7 + 3 + OverworldItemGridUI.TCH + 6)
     let WIDTH_SANS_CHROME = float(16*16*3)  // ow map width
@@ -1117,13 +1118,39 @@ type MyWindow() as this =
             explainerLine.Opacity <- 0.
 
         let checkboxSP = new WrapPanel(Orientation=Orientation.Horizontal, VerticalAlignment=VerticalAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, MaxWidth=WIDTH, Margin=Thickness(0.,4.,0.,0.))   // the three startup options sit side by side (same gap under the header as the ZORA Extras section)
-        let hscb = new CheckBox(Content=new TextBox(Text="Full Shuffle",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
-        Graphics.scaleUpCheckBoxBox(hscb, 1.66)
-        hscb.IsChecked <- System.Nullable.op_Implicit true
-        hscb.Checked.Add(fun _ -> turnHeartShuffleOn())
-        hscb.Unchecked.Add(fun _ -> turnHeartShuffleOff())
-        let hsArea = new Border(Style=Layout.optionBorderStyle, BorderThickness=Thickness(1.), Child=hscb)
-        hsArea.MouseEnter.Add(fun _ -> hoverExplain(hsArea,"This checkbox corresponds to the randomizer setting:\n\nDungeon Items (tab)\n - Shuffle Dungeon Hearts (checkbox)"))
+        // Heart Shuffle: Off / Intra / Full, radio-style (index = TrackerModel.HeartShuffleMode: 0 Off, 1 Intra, 2 Full)
+        let makeHsCheckBox(text:string) =
+            let c = new CheckBox(Content=new TextBox(Text=text,IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)), Margin=Thickness(0.,0.,10.,0.))
+            Graphics.scaleUpCheckBoxBox(c, 1.66)
+            c
+        let hsBoxes = [| makeHsCheckBox "Off"; makeHsCheckBox "Intra"; makeHsCheckBox "Full" |]
+        let hsSetting = ref false
+        let selectHeartMode(m:int) =
+            hsSetting.Value <- true
+            for k = 0 to 2 do
+                let on = (k = m)
+                hsBoxes.[k].IsChecked <- System.Nullable.op_Implicit on
+            hsSetting.Value <- false
+            if m = 0 then turnHeartShuffleOff() else turnHeartShuffleOn()
+        let heartModeSelected() =
+            match hsBoxes |> Array.tryFindIndex (fun c -> c.IsChecked.HasValue && c.IsChecked.Value) with
+            | Some k -> k
+            | None -> 0
+        for k = 0 to 2 do
+            hsBoxes.[k].Checked.Add(fun _ -> if not hsSetting.Value then selectHeartMode k)
+            hsBoxes.[k].Unchecked.Add(fun _ -> if not hsSetting.Value then selectHeartMode k)   // (clicking the selected one keeps it selected)
+        selectHeartMode 2
+        let hsTitle = new TextBox(Text="Heart Shuffle",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.), HorizontalAlignment=HorizontalAlignment.Center, TextAlignment=TextAlignment.Center)
+        let hsDivider = new Border(Height=1., Background=Brushes.DarkGray, Margin=Thickness(2.,2.,2.,4.))
+        let hsRow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+        for c in hsBoxes do
+            hsRow.Children.Add(c) |> ignore
+        let hsStack = new StackPanel(Orientation=Orientation.Vertical)
+        hsStack.Children.Add(hsTitle) |> ignore
+        hsStack.Children.Add(hsDivider) |> ignore
+        hsStack.Children.Add(hsRow) |> ignore
+        let hsArea = new Border(Style=Layout.optionBorderStyle, BorderThickness=Thickness(1.), Child=hsStack)
+        hsArea.MouseEnter.Add(fun _ -> hoverExplain(hsArea,"These correspond to the randomizer setting:\n\nDungeon Items (tab)\n - Shuffle Dungeon Hearts (checkbox)\n\nOff: each dungeon's heart is already marked in its first item slot.\nIntra: each dungeon (not 9) has one heart, in its floor or basement slot. When you place another item, the open slot fills with an uncollected heart. Dungeons with 3 slots wait until the other two items are collected.\nFull: hearts can be anywhere."))
         hsArea.MouseLeave.Add(fun _ -> explainHide())
         // Mirrored Overworld checkbox, directly under Full Shuffle (same look); sets the same flag the old mirror icon toggled
         let mocb = new CheckBox(Content=new TextBox(Text="Mirrored Overworld",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
@@ -1136,6 +1163,15 @@ type MyWindow() as this =
         moArea.MouseLeave.Add(fun _ -> explainHide())
         hsArea.VerticalAlignment <- VerticalAlignment.Top
         checkboxSP.Children.Add(hsArea) |> ignore
+        // Legacy Mode (under Heart Shuffle): turns off every ZORA Extra and locks them; the wiring is below, once the extras exist
+        let lmcb = new CheckBox(Content=new TextBox(Text="Legacy Mode",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
+        Graphics.scaleUpCheckBoxBox(lmcb, 1.66)
+        lmcb.IsChecked <- System.Nullable.op_Implicit false
+        let lmArea = new Border(Style=Layout.optionBorderStyle, BorderThickness=Thickness(1.), Child=lmcb, VerticalAlignment=VerticalAlignment.Top)
+        lmArea.MouseEnter.Add(fun _ -> hoverExplain(lmArea,"For non-ZORA seeds"))
+        lmArea.MouseLeave.Add(fun _ -> explainHide())
+        checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
+        checkboxSP.Children.Add(lmArea) |> ignore
 
         checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
 
@@ -1264,14 +1300,27 @@ type MyWindow() as this =
             if want then fourthSwordLevel.Value <- 2   // checking everything puts the 4th Sword in level 2
             settingExtras.Value <- false
             syncMaster())
+        let applyLegacyMode() =
+            let on = isOn lmcb
+            settingExtras.Value <- true
+            for cb in extrasCheckBoxes do
+                if on then cb.IsChecked <- System.Nullable.op_Implicit false
+                cb.IsEnabled <- not on
+            if on then allExtrasCB.IsChecked <- System.Nullable.op_Implicit false
+            allExtrasCB.IsEnabled <- not on
+            settingExtras.Value <- false
+            fsPopup.IsOpen <- false
+        lmcb.Checked.Add(fun _ -> applyLegacyMode())
+        lmcb.Unchecked.Add(fun _ -> applyLegacyMode())
         // 'Remember startup selection' (Other options): bring back the checkboxes that were checked when the last game was started
         let rememberedCheckBoxes : (string * CheckBox) list =
-            [ "full", hscb; "hdn", hdcb; "mirror", mocb; "bomb", mbcb; "4th", fscb; "cln", clncb; "boots", brcb; "epb", epbcb; "erb", erbcb; "dw", dwcb; "lh", lhcb; "prog", pricb ]
+            [ "legacy", lmcb; "hdn", hdcb; "mirror", mocb; "bomb", mbcb; "4th", fscb; "cln", clncb; "boots", brcb; "epb", epbcb; "erb", erbcb; "dw", dwcb; "lh", lhcb; "prog", pricb ]
         if TrackerModelOptions.RememberStartupSelection.Value then
             let saved = TrackerModelOptions.SavedStartupSelection.Split([|','|], System.StringSplitOptions.RemoveEmptyEntries) |> Set.ofArray
             if saved.Count > 0 then
                 for (key, cb) in rememberedCheckBoxes do
                     cb.IsChecked <- System.Nullable.op_Implicit (saved.Contains key)
+                selectHeartMode (if saved.Contains "full" then 2 elif saved.Contains "hsintra" then 1 else 0)
                 fsPopup.IsOpen <- false   // (checking '4th Sword' pops its menu up; not when it is only being restored)
                 fourthSwordLevel.Value <- (if saved.Contains "4th" && saved.Contains "4th9" then 9 else 2)
                 clnTextBox.Text <- TrackerModelOptions.SavedCustomLevelName
@@ -1326,11 +1375,20 @@ type MyWindow() as this =
             if loadData.IsNone && TrackerModelOptions.RememberStartupSelection.Value then
                 let keys = [ for (key, cb) in rememberedCheckBoxes do if cb.IsChecked.HasValue && cb.IsChecked.Value then yield key ]
                 let keys = if List.contains "4th" keys && fourthSwordLevel.Value = 9 then keys @ ["4th9"] else keys
+                let keys = keys @ (match heartModeSelected() with | 2 -> ["full"] | 1 -> ["hsintra"] | _ -> [])
                 TrackerModelOptions.SavedStartupSelection <- String.concat "," keys
                 TrackerModelOptions.SavedCustomLevelName <- clnTextBox.Text.Trim().ToUpperInvariant()
                 TrackerModelOptions.writeSettings()
             // loadData takes precedence over user selections
-            let heartShuffle = loadData.IsSome || (hscb.IsChecked.HasValue && hscb.IsChecked.Value)
+            // (a loaded save restores whether it was Legacy Mode; older saves do not say, so they follow the start screen checkbox)
+            let legacyMode =
+                match loadData with
+                | Some d when not (isNull d.Overworld) && d.Overworld.LegacyMode >= 0 -> d.Overworld.LegacyMode = 1
+                | _ -> isOn lmcb
+            TrackerModel.LegacyMode <- legacyMode
+            let heartMode = heartModeSelected()
+            TrackerModel.HeartShuffleMode <- heartMode   // (a loaded save follows the startup checkbox too, like Progressive Items)
+            let heartShuffle = loadData.IsSome || heartMode <> 0
             let kind = 
                 if loadData.IsSome then
                     if loadData.Value.Items.HiddenDungeonNumbers then 
@@ -1365,8 +1423,8 @@ type MyWindow() as this =
             OverworldData.LostHillsHintKnown <- false
             TrackerModel.MarkBombDroppers <- mbcb.IsChecked.HasValue && mbcb.IsChecked.Value
             TrackerModel.ProgressiveItems <- pricb.IsChecked.HasValue && pricb.IsChecked.Value
-            // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade)
-            for (id, n) in [ TrackerModel.ITEMS.PROGRESSIVESWORD, (if TrackerModel.ProgressiveItems then 4 else 3); TrackerModel.ITEMS.BLUERING, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.BLUECANDLE, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.WOODARROW, (if TrackerModel.ProgressiveItems then 2 else 1) ] do TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, n)
+            // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
+            for (id, n) in [ TrackerModel.ITEMS.PROGRESSIVESWORD, (if TrackerModel.ProgressiveItems then 4 else 3); TrackerModel.ITEMS.BLUERING, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.BLUECANDLE, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.WOODARROW, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.BOOMERANG, (if TrackerModel.ProgressiveItems then 2 else 1) ] do TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, n)
             TrackerModel.CustomLevelName <- 
                 if clncb.IsChecked.HasValue && clncb.IsChecked.Value then clnTextBox.Text.Trim().ToUpperInvariant() else ""
             let mutable speechRecognitionInstance = null
@@ -1409,6 +1467,9 @@ type MyWindow() as this =
             | _ -> ()
             let! u = WPFUI.makeAll(this, cm, drawingCanvas, n, heartShuffle, kind, loadData, showProgress, speechRecognitionInstance)
             updateTimeline <- u
+            if legacyMode then   // Legacy Mode: the letter and magical sword stay in their boxes (they can be collected / uncollected, not removed)
+                if TrackerModel.letterBox.CellCurrent() = TrackerModel.ITEMS.LETTER then TrackerModel.letterBox.LockedItem <- TrackerModel.ITEMS.LETTER
+                if TrackerModel.sword3Box.CellCurrent() = TrackerModel.ITEMS.MAGICALSWORD then TrackerModel.sword3Box.LockedItem <- TrackerModel.ITEMS.MAGICALSWORD
             displayStartupTimeDiagnostics(sprintf "total startup took %dms" totalsw.ElapsedMilliseconds)
             appMainCanvas.Children.Remove(mainDock)  // remove for good
             HotKeys.InitializeWindow(this, OverworldItemGridUI.notesTextBox)
@@ -1421,6 +1482,12 @@ type MyWindow() as this =
             Graphics.canvasAdd(hmsTimerCanvas, tbox, Layout.PANEL_X1 - 10., 8.)   // (centered in the open space between the panel divider and the window edge)   // (the text sits low in its box, so the box starts a little above the TIMER heading's bottom edge to look centered)
             Graphics.canvasAdd(hmsTimerCanvas, OverworldItemGridUI.niceTimerBox, Layout.PANEL_X1 - 13., 0.)   // 'Nice timer bro' shows here while the timer is hidden
             OverworldItemGridUI.niceTimerBox.Visibility <- (if OverworldItemGridUI.SHOW_NICE_TIMER_BRO && TrackerModelOptions.HideTimer.Value then Visibility.Visible else Visibility.Hidden)
+            // Race Mode notice: once the app is up, tell the user what Race Mode does (unless they ticked "Do not show this again")
+            if TrackerModelOptions.RaceMode.Value && not TrackerModelOptions.RaceModeNoticeHidden.Value then
+                let showRaceNotice() : unit = WPFUI.showRaceModeNotice(this)
+                let noticeTimer = new System.Windows.Threading.DispatcherTimer(Interval=System.TimeSpan.FromMilliseconds(400.))   // (one-shot: lets startup finish first)
+                noticeTimer.Tick.Add(fun _ -> noticeTimer.Stop(); showRaceNotice())
+                noticeTimer.Start()
             gotThruStartup <- true
             if promptedCrashRecovery then
                 finishCrashInfoImpl("prompted for crash recovery, user chose not to, successfully started")
@@ -1510,13 +1577,19 @@ type MyWindow() as this =
                     startButtonHasBeenClicked <- false
                 else
                     do! doStartup(n,loadData)
+                    if OptionsMenu.mainTourAfterStart then
+                        // the start screen tour continues on the main screen, once it has been laid out
+                        OptionsMenu.mainTourAfterStart <- false
+                        this.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                                                    new System.Action(fun () -> OptionsMenu.runGuidedTour(cm, OptionsMenu.mainScreenTourSteps))) |> ignore
             } |> Async.StartImmediate
+        OptionsMenu.startBlankRunHook <- (fun () -> startButtonBehavior(0))   // (the start screen tour's Continue starts a 1st Quest Overworld run)
         let quests = [|
             0, "1st Quest Overworld"
             1, "2nd Quest Overworld"
             2, "Mixed - 1st Quest Overworld"
             3, "Mixed - 2nd Quest Overworld"
-            999, "Load Save State"
+            999, "Load Save"
             |]
         let addQuestExplainer(startButton:FrameworkElement) =
             startButton.MouseEnter.Add(fun _ -> hoverExplain(startButton,"Choose the start button that matches the randomizer setting:\n\nOverworld Quest (dropdown)"))
@@ -1621,7 +1694,6 @@ type MyWindow() as this =
                     )
                 moreOptionsButton <- otherButton
             startButtons.[n] <- startButton
-            if n<=3 then addQuestExplainer(startButton)
             startButton.Click.Add(fun _ -> startButtonBehavior(n))
 
         // layout: [1st Quest | Mixed 1st]  ---  [2nd Quest | Mixed 2nd]  ---  [More options]  ---  [saved state]
@@ -1637,24 +1709,55 @@ type MyWindow() as this =
             g.Children.Add(a) |> ignore
             g.Children.Add(b) |> ignore
             g
-        let topDivider = divider()
-        topDivider.Margin <- Thickness(0.,27.,0.,7.)   // 20px lower than the usual dividers
-        stackPanel.Children.Add(topDivider) |> ignore   // a divider above the quest buttons
-        stackPanel.Children.Add(topSpacer) |> ignore
-        stackPanel.Children.Add(pairRow(startButtons.[0], startButtons.[2])) |> ignore
-        stackPanel.Children.Add(divider()) |> ignore
-        stackPanel.Children.Add(pairRow(startButtons.[1], startButtons.[3])) |> ignore
-        stackPanel.Children.Add(divider()) |> ignore
-        // 'Randomized quest' does exactly what 'Mixed - 2nd Quest Overworld' does; it's just its own button, next to 'More options...'
+        let topDivider = divider()   // (no longer shown; the start spacing code below still measures it)
+        // the overworld choices now live in a 'Start Game' menu button at the top of the Startup Options column
         let randomizedQuestButton = Graphics.makeButton("Randomized Quest", None, None)
         Layout.styleStartupButton(randomizedQuestButton)
-        randomizedQuestButton.Click.Add(fun _ -> startButtonBehavior(3))
-        addQuestExplainer(randomizedQuestButton)
-        stackPanel.Children.Add(pairRow(randomizedQuestButton, moreOptionsButton)) |> ignore
+        randomizedQuestButton.Click.Add(fun _ -> startButtonBehavior(3))   // 'Randomized quest' does exactly what 'Mixed - 2nd Quest Overworld' does; it's just its own entry
+        let overworldButton = Graphics.makeButton("Pick Overworld (Start Game)", None, None)
+        Layout.styleStartupButton(overworldButton)
+        overworldButton.Margin <- Thickness(0.,19.,0.,12.)   // (room above and below, so it stands apart from the header line and Heart Shuffle)
+        overworldButton.HorizontalAlignment <- HorizontalAlignment.Stretch
+        addQuestExplainer(overworldButton)
+        let overworldPopup = new System.Windows.Controls.Primitives.Popup(PlacementTarget=overworldButton, Placement=System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen=false)
+        let popupButtons = [ startButtons.[0]; startButtons.[2]; startButtons.[1]; startButtons.[3]; randomizedQuestButton; moreOptionsButton ]
+        do
+            let sp = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black)
+            addDarkTheme(sp.Resources)   // (a popup is its own window, so it does not inherit the dark theme)
+            for b in popupButtons do
+                b.Margin <- Thickness(4.)
+                b.Width <- 540.
+                b.Height <- 50.
+                (match b.Content with
+                 | :? TextBox as t -> t.FontSize <- 24.
+                 | _ -> ())
+                b.Click.Add(fun _ -> overworldPopup.IsOpen <- false)
+                sp.Children.Add(b) |> ignore
+            overworldPopup.Child <- new Border(Child=sp, BorderBrush=Brushes.SaddleBrown, BorderThickness=Thickness(2.), Background=Brushes.Black)
+        overworldButton.Click.Add(fun _ ->
+            // the popup is its own window, so it is not scaled with the rest of the UI: scale its buttons by the same factor, to match Start Game on screen
+            let sc =
+                try
+                    let t = overworldButton.TransformToAncestor(this)
+                    (t.Transform(Point(100., 0.)).X - t.Transform(Point(0., 0.)).X) / 100.
+                with _ -> 1.
+            let sc = if sc > 0.1 then sc else 1.
+            let fs = (match overworldButton.Content with | :? TextBox as t -> t.FontSize | _ -> 16.) * sc
+            for b in popupButtons do
+                b.Width <- max 100. (overworldButton.ActualWidth * sc - 12.)   // (minus the menu border and button margins)
+                b.Height <- overworldButton.ActualHeight * sc
+                (match b.Content with
+                 | :? TextBox as t -> t.FontSize <- fs
+                 | _ -> ())
+            overworldPopup.IsOpen <- true)
+        leftCol.Children.Insert(2, overworldButton)   // right under the 'Startup Options' header line, above Heart Shuffle
+        // Load Save and the recently loaded saves box sit side by side, centered along the bottom, just above the options section
+        let raiseBottom : (bool -> unit) ref = ref (fun _ -> ())   // raises the bottom section above the rest only while the recent saves list is open (set once that section exists)
+        let loadRow = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0.,0.,0.,10.))
         startButtons.[999].Width <- 300.
-        startButtons.[999].HorizontalAlignment <- HorizontalAlignment.Left
-        startButtons.[999].Margin <- Thickness(0.,8.,0.,0.)
-        leftCol.Children.Add(startButtons.[999]) |> ignore   // Load Save State sits under the startup options
+        startButtons.[999].VerticalAlignment <- VerticalAlignment.Bottom
+        startButtons.[999].Margin <- Thickness(0.,0.,10.,4.)
+        loadRow.Children.Add(startButtons.[999]) |> ignore
 
         // box listing the save files loaded before, for fast re-selection
         do
@@ -1694,6 +1797,7 @@ type MyWindow() as this =
             toggleHost.MouseLeftButtonUp.Add(fun _ ->
                 let nowOpen = scroll.Visibility <> Visibility.Visible
                 scroll.Visibility <- (if nowOpen then Visibility.Visible else Visibility.Collapsed)
+                raiseBottom.Value nowOpen
                 arrow.RenderTransform <- new RotateTransform(if nowOpen then 180. else 0.))
             let recentsSP = new StackPanel(Orientation=Orientation.Vertical)
             recentsSP.Children.Add(toggleHost) |> ignore
@@ -1703,12 +1807,15 @@ type MyWindow() as this =
             recentBox.HorizontalAlignment <- HorizontalAlignment.Left
             // the list opens over the quest buttons instead of pushing them down: it sits in a canvas that only takes up the collapsed box's height
             recentBox.Background <- Brushes.Black
-            let recentHost = new Canvas(Height=48., Width=300., HorizontalAlignment=HorizontalAlignment.Left)
+            let recentHost = new Canvas(Height=46., Width=300., VerticalAlignment=VerticalAlignment.Bottom)
             Canvas.SetLeft(recentBox, 0.)
-            Canvas.SetTop(recentBox, 4.)
+            Canvas.SetBottom(recentBox, 4.)   // anchored at the bottom, so the opened list grows upward over the empty space above
             recentHost.Children.Add(recentBox) |> ignore
-            leftCol.Children.Add(recentHost) |> ignore
-            Panel.SetZIndex(hsPanel, 50)   // (so the opened list is drawn on top of the quest buttons)
+            // the Load Save button takes the same height as the (collapsed) recent saves box, so the two match
+            recentBox.SizeChanged.Add(fun _ ->
+                if scroll.Visibility <> Visibility.Visible && recentBox.ActualHeight > 0. then
+                    startButtons.[999].Height <- recentBox.ActualHeight)
+            loadRow.Children.Add(recentHost) |> ignore
 
         stackPanel.Children.Add(finalChildTipArea) |> ignore  // finalChildTipArea still used for explainer arrows on startup options
 
@@ -1723,6 +1830,7 @@ type MyWindow() as this =
         tipsp.Children.Add(tb) |> ignore
         let _tip = new Border(Child=tipsp, BorderThickness=Thickness(1.), Padding=Thickness(5.), BorderBrush=Brushes.Orange, Width=WIDTH*2./3., Margin=Thickness(0.,4.,0.,4.), HorizontalAlignment=HorizontalAlignment.Center)
         //bottomSP.Children.Add(tip) |> ignore   // random tip box removed from the startup screen
+        bottomSP.Children.Add(loadRow) |> ignore
         bottomSP.Children.Add(new Shapes.Rectangle(HorizontalAlignment=HorizontalAlignment.Stretch, Fill=Brushes.Black, Height=2., Margin=spacing)) |> ignore
         let tb = new TextBox(Text="Settings (most can be changed later, using 'Options' button above timeline):", HorizontalAlignment=HorizontalAlignment.Center,
                                 Margin=Thickness(0.,0.,0.,5.), BorderThickness=Thickness(0.))
@@ -1744,6 +1852,7 @@ type MyWindow() as this =
             optionsWithVersion.Children.Add(vb) |> ignore
         bottomSP.Children.Add(optionsWithVersion) |> ignore
         mainDock.Children.Add(bottomSP) |> ignore
+        raiseBottom.Value <- (fun on -> Panel.SetZIndex(bottomSP, (if on then 100 else 0)))   // (so the opened recent-saves list is drawn over the startup options above it, while the hover explainer stays on top the rest of the time)
         DockPanel.SetDock(bottomSP, Dock.Bottom)
 
         mainDock.Children.Add(mainStackPanel) |> ignore
@@ -1801,6 +1910,12 @@ type MyWindow() as this =
         
     override this.Update(f10Press) =
         base.Update(f10Press)
+        // once Zelda is rescued (the princess icon or its global hotkey), the timer stops; un-marking her resumes it
+        if TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasRescuedZelda.Value() then TrackerModel.LastChangedTime.PauseAll()
+        // Snoop For Seed&flags: look in the other windows' titles every 10 seconds (not only when saving or pausing the timer)
+        if TrackerModelOptions.SnoopSeedAndFlags.Value && (DateTime.Now - lastSnoopPoll).TotalSeconds >= 10. then
+            lastSnoopPoll <- DateTime.Now
+            SaveAndLoad.MaybePollSeedAndFlags()
         // update time
         let ts = DateTime.Now - this.StartTime.Time
         let curSecond = int ts.TotalSeconds

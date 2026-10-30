@@ -124,6 +124,25 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
     let beforeDismissPopupCanvas = new Event<_>()
     let width = rootCanvas.Width
     let sunglasses = new Canvas(Width=width, Height=rootCanvas.Height, Background=Brushes.Black, IsHitTestVisible=false)
+    // a one-line note in the crash log whenever the popup layers get out of step (so a report of a stuck gray screen says when it began)
+    let logPopupNote(msg:string) =
+        try System.IO.File.AppendAllText(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_crash_log.txt"), sprintf "\n\nPOPUP NOTE -- %s -- %s\n" (System.DateTime.Now.ToString("yyyy-MM-dd-HH:mm:ss")) msg)
+        with _ -> ()
+    // removes every popup layer and the dimming layer (only used to recover from a layer that was left behind)
+    let clearAllPopups() =
+        while popupCanvasStack.Count > 0 do
+            let pc = popupCanvasStack.Pop()
+            (try beforeDismissPopupCanvas.Trigger(pc) with _ -> ())
+            rootCanvas.Children.Remove(pc)
+            if opacityStack.Count > 0 then opacityStack.Pop() |> ignore
+        opacityStack.Clear()
+        if not (isNull sunglasses.Parent) then (sunglasses.Parent :?> Canvas).Children.Remove(sunglasses)
+    do
+        // a click when no popup is supposed to be open but a popup layer is still there: remove the leftover layer so the tracker is usable again
+        rootCanvas.PreviewMouseDown.Add(fun _ ->
+            if popupCanvasStack.Count > 0 && not popupIsActive then
+                logPopupNote(sprintf "%d leftover popup layer(s) with no popup active; removed on click" popupCanvasStack.Count)
+                clearAllPopups())
     member _this.Width = width
     member _this.Height = rootCanvas.Height
     member _this.SetHeight(h) = 
@@ -161,6 +180,27 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
         if rootCanvas.Children.Count-2 >= 0 then
             sunglasses.Opacity <- opacityStack |> Seq.max
             (rootCanvas.Children.[rootCanvas.Children.Count-2] :?> Canvas).Children.Add(sunglasses) |> ignore
+    // removes this particular popup's layer, even if popups were closed out of order (DismissPopup() always removes the top one)
+    member _this.DismissPopupCanvas(pc:Canvas) =
+        if popupCanvasStack.Count > 0 && obj.ReferenceEquals(popupCanvasStack.Peek(), pc) then
+            _this.DismissPopup()
+        elif popupCanvasStack.Contains(pc) then
+            logPopupNote("a popup was closed out of order; its own layer was removed")
+            (try beforeDismissPopupCanvas.Trigger(pc) with _ -> ())
+            let cs = popupCanvasStack.ToArray()    // top first
+            let os = opacityStack.ToArray()
+            popupCanvasStack.Clear()
+            opacityStack.Clear()
+            for i = cs.Length-1 downto 0 do
+                if not (obj.ReferenceEquals(cs.[i], pc)) then
+                    popupCanvasStack.Push(cs.[i])
+                    opacityStack.Push(os.[i])
+            if not (isNull sunglasses.Parent) then (sunglasses.Parent :?> Canvas).Children.Remove(sunglasses)
+            rootCanvas.Children.Remove(pc)
+            if rootCanvas.Children.Count-2 >= 0 && opacityStack.Count > 0 then
+                sunglasses.Opacity <- opacityStack |> Seq.max
+                (rootCanvas.Children.[rootCanvas.Children.Count-2] :?> Canvas).Children.Add(sunglasses) |> ignore
+        // else: this layer was already removed (e.g. by the leftover-layer cleanup); nothing to do
     // and here is how the broadcast window can listen for popup activity
     member _this.AfterCreatePopupCanvas = afterCreatePopupCanvas.Publish
     member _this.BeforeDismissPopupCanvas = beforeDismissPopupCanvas.Publish
@@ -184,37 +224,43 @@ let DoModalCore(cm:CanvasManager, wh:System.Threading.ManualResetEvent, placeEle
         failwith "DoModalCore: popupIsActive was not set, which indicates programming error where a re-entrant UI thread may crash the program"
     // rather than use MouseCapture() API, just draw a canvas over entire window which will intercept all mouse gestures
     let c = cm.CreatePopup(blackSunglassesOpacity)
-    // place the element
-    placeElementOntoCanvas(c, element)
-    // catch mouse clicks outside the element
-    c.MouseDown.Add(fun ea ->
-        let pos = ea.GetPosition(element)
-        if (pos.X < 0. || pos.X > element.ActualWidth) || (pos.Y < 0. || pos.Y > element.ActualHeight) then
-            if ea.ButtonState = Input.MouseButtonState.Pressed &&
-                    (ea.ChangedButton = Input.MouseButton.Left || ea.ChangedButton = Input.MouseButton.Middle || ea.ChangedButton = Input.MouseButton.Right) then
-                ea.Handled <- true
-                wh.Set() |> ignore
-        )
-    // hotkeys are routed to whatever the mouse is directly over; when the mouse is over the dimmed backdrop instead of the popup (e.g. a centered menu),
-    // pass the key on to the popup so its hotkeys (like the wood sword cave's Took Sword / Took Candle) still work
-    let forwarding = ref false
-    c.MyKeyAdd(fun ea ->
-        if not forwarding.Value then
-            forwarding.Value <- true
-            try
-                let skm, k = ea.Key
-                element.RaiseEvent(new MyKeyRoutedEventArgs(skm, k))
-            finally
-                forwarding.Value <- false
-            ea.Handled <- true)
-    let ctxt = System.Threading.SynchronizationContext.Current
-    ensureEscapeHandler()
-    modalDismissStack.Push(wh)
-    let! _ = Async.AwaitWaitHandle(wh)
-    do! Async.SwitchToContext(ctxt)
-    if modalDismissStack.Count > 0 then modalDismissStack.Pop() |> ignore
-    removeElementFromCanvas(c, element)
-    cm.DismissPopup()
+    try
+      // place the element
+      placeElementOntoCanvas(c, element)
+      // catch mouse clicks outside the element
+      c.MouseDown.Add(fun ea ->
+          let pos = ea.GetPosition(element)
+          if (pos.X < 0. || pos.X > element.ActualWidth) || (pos.Y < 0. || pos.Y > element.ActualHeight) then
+              if ea.ButtonState = Input.MouseButtonState.Pressed &&
+                      (ea.ChangedButton = Input.MouseButton.Left || ea.ChangedButton = Input.MouseButton.Middle || ea.ChangedButton = Input.MouseButton.Right) then
+                  ea.Handled <- true
+                  wh.Set() |> ignore
+          )
+      // hotkeys are routed to whatever the mouse is directly over; when the mouse is over the dimmed backdrop instead of the popup (e.g. a centered menu),
+      // pass the key on to the popup so its hotkeys (like the wood sword cave's Took Sword / Took Candle) still work
+      let forwarding = ref false
+      c.MyKeyAdd(fun ea ->
+          if not forwarding.Value then
+              forwarding.Value <- true
+              try
+                  let skm, k = ea.Key
+                  element.RaiseEvent(new MyKeyRoutedEventArgs(skm, k))
+              finally
+                  forwarding.Value <- false
+              ea.Handled <- true)
+      let ctxt = System.Threading.SynchronizationContext.Current
+      ensureEscapeHandler()
+      modalDismissStack.Push(wh)
+      let! _ = Async.AwaitWaitHandle(wh)
+      do! Async.SwitchToContext(ctxt)
+    finally
+      // (always runs, even if something above threw: take this popup's own layer off, so a failed popup can't leave a gray screen behind)
+      if modalDismissStack.Contains(wh) then
+          let keep = modalDismissStack.ToArray() |> Array.filter (fun w -> not (obj.ReferenceEquals(w, wh)))   // top first
+          modalDismissStack.Clear()
+          for k = keep.Length-1 downto 0 do modalDismissStack.Push(keep.[k])
+      (try removeElementFromCanvas(c, element) with _ -> ())
+      cm.DismissPopupCanvas(c)
     }
 
 let DoModalOpa(cm:CanvasManager, wh:System.Threading.ManualResetEvent, x, y, element, opa) =
@@ -1132,7 +1178,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta14"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta17-hotfix1"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))
@@ -1229,12 +1275,45 @@ let downloadAndStageUpdate(zipUrl:string, onProgress:int -> unit) : string optio
                 sprintf "try {"
                 sprintf "  Wait-Process -Id %d -ErrorAction SilentlyContinue" (System.Diagnostics.Process.GetCurrentProcess().Id)
                 sprintf "  Start-Sleep -Seconds 1"
+                // the install is a function so it can be run again: robocopy's result used to be ignored, so a locked file (e.g. held by an antivirus scan) left an old .dll beside the new .exe.
+                // Now every .dll / .exe is checked after the copy; if any was not replaced it tries once more, then downloads the zip again and tries a last time, and only then gives up with a message
+                sprintf "$dst = %s" (q appDir)
+                "function Install {"
+                sprintf "  if (Test-Path -LiteralPath %s) { Remove-Item -LiteralPath %s -Recurse -Force }" (q stage) (q stage)
                 sprintf "  Expand-Archive -LiteralPath %s -DestinationPath %s -Force" (q zipPath) (q stage)
                 sprintf "  $src = %s" (q stage)
-                sprintf "  $d = @(Get-ChildItem -LiteralPath $src)"
-                sprintf "  if ($d.Count -eq 1 -and $d[0].PSIsContainer) { $src = $d[0].FullName }"
+                "  $d = @(Get-ChildItem -LiteralPath $src)"
+                "  if ($d.Count -eq 1 -and $d[0].PSIsContainer) { $src = $d[0].FullName }"
                 sprintf "  robocopy $src %s /E /R:30 /W:1 /XF HotKeys.txt Z1R_Tracker_settings.json /XD ShowRunCustomImages | Out-Null" (q appDir)
+                "  $rc = $LASTEXITCODE"
+                "  $bad = @()"
+                "  if ($rc -ge 8) { $bad += ('robocopy exit code ' + $rc) }"
+                "  Get-ChildItem -LiteralPath $src -Recurse -File | Where-Object { $_.Extension -in '.dll','.exe' } | ForEach-Object {"
+                "    $rel = $_.FullName.Substring($src.Length).TrimStart('\\')"
+                "    $t = Join-Path $dst $rel"
+                "    if (-not (Test-Path -LiteralPath $t)) { $bad += $rel }"
+                "    elseif ($_.Length -ne (Get-Item -LiteralPath $t).Length) { $bad += $rel }"
+                "    elseif ($_.Length -lt 20000000 -and (Get-FileHash -LiteralPath $_.FullName).Hash -ne (Get-FileHash -LiteralPath $t).Hash) { $bad += $rel }"
+                "  }"
+                "  return ,$bad"
+                "}"
+                "$bad = Install"
+                "if ($bad.Count -gt 0) { Start-Sleep -Seconds 5; $bad = Install }"
+                "if ($bad.Count -gt 0) {"
+                "  try {"
+                "    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12"
+                sprintf "    Invoke-WebRequest -UseBasicParsing -Uri %s -OutFile %s" (q zipUrl) (q zipPath)
+                "  } catch { }"
+                "  $bad = Install"
+                "}"
+                "if ($bad.Count -gt 0) {"
+                sprintf "  $msg = 'The update could not be fully installed, even after trying again and downloading it again. These files could not be replaced: ' + ($bad -join ', ') + '. Close ZORA Tracker, any other program using its folder, and your antivirus scan, then extract the downloaded zip over this folder by hand: ' + %s" (q zipPath)
+                sprintf "  $msg | Out-File -LiteralPath %s" (q log)
+                "  Add-Type -AssemblyName PresentationFramework"
+                "  [System.Windows.MessageBox]::Show($msg, 'ZORA Tracker update', 'OK', 'Warning') | Out-Null"
+                "} else {"
                 sprintf "  Start-Process -FilePath %s -WorkingDirectory %s" (q exe) (q appDir)
+                "}"
                 sprintf "} catch { $_ | Out-File -LiteralPath %s }" (q log)
             ]
         let scriptPath = System.IO.Path.Combine(work, "update.ps1")
