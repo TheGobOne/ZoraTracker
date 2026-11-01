@@ -47,7 +47,8 @@
     <EmbeddedResource Include="..\Z1R_WPF\icons\new_icons13x9.png" LogicalName="new_icons13x9.png" Link="icons\new_icons13x9.png" />
     <EmbeddedResource Include="..\Z1R_WPF\icons\zelda_bosses16x16.png" LogicalName="zelda_bosses16x16.png" Link="icons\zelda_bosses16x16.png" />
     <EmbeddedResource Include="..\Z1R_WPF\icons\zelda_items16x16.png" LogicalName="zelda_items16x16.png" Link="icons\zelda_items16x16.png" />
-    <EmbeddedResource Include="..\Z1R_WPF\icons\CustomLogo.png" LogicalName="CustomLogo.png" Link="icons\CustomLogo.png" />
+    <!-- the ZORA logo: the newer one from zora.gg (tetraly/zora web/zora-logo.png, 2026-10-30), scaled to 128px, in place of Z1R_WPF's CustomLogo.png -->
+    <EmbeddedResource Include="icons\CustomLogo.png" LogicalName="CustomLogo.png" />
   </ItemGroup>
 
 </Project>

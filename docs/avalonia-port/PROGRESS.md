@@ -800,6 +800,9 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
     10ms on a background thread (WPF: a tight DirectInput poll loop), with SDL told to keep reading while the tracker isn't focused. As WPF, only a
     gamepad present at startup is used. A disconnect raises `ControllerFailureEvent`, as a DirectInput read error does. **Test with a real gamepad.**
   - Linux (untested): fake input and warping use SharpHook (X11; Wayland doesn't allow them), and the beep is a generated 880Hz tone.
+- **Newer ZORA logo (ahead of WPF).** The logo above the ZORA Site link (`CustomLogo.png`) is the newer one from zora.gg (`tetraly/zora`
+  `web/zora-logo.png`, 30 Oct 2026), scaled from 512px to 128px, in `Z1R_Avalonia_WPFResources/icons/` (Z1R_WPF isn't edited). WPF beta18 still
+  has the older pixel-art Zora; see Proposed upstream PRs.
 
 ## Decisions needed from TheGobOne
 
@@ -824,6 +827,9 @@ Differences TheGobOne has explicitly approved. Anything not listed here is a par
 (none yet)
 
 ## Proposed upstream PRs to TheGobOne
+
+- **Newer ZORA logo.** Replace `Z1R_WPF/icons/CustomLogo.png` with the zora.gg logo (`Z1R_Avalonia_WPFResources/icons/CustomLogo.png`, 128px),
+  so both trackers show it.
 
 - **Settings file location.** `TrackerModelOptions.readSettings`/`writeSettings` always use `AppDomain.CurrentDomain.BaseDirectory/Z1R_Tracker_settings.json`.
   A way to set the folder (e.g. a `settingsDirectory` the app sets at startup) would let the cross-platform tracker keep settings in
