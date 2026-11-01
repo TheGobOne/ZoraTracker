@@ -13,6 +13,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Z1R_Avalonia\Z1R_Avalonia.csproj" />
-    <ProjectReference Include="..\Z1R_Avalonia_Prototype\Z1R_Avalonia_Prototype.fsproj" />
   </ItemGroup>
 </Project>

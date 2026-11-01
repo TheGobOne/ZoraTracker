@@ -44,7 +44,7 @@ author only chose F# because it was a language he wanted to learn. Concretely:
 - **Shared F# libraries stay F# for now, used unchanged:** the tracker model (`Z1R_Tracker_Core`, which compiles
   Gob's `Z1R_Tracker/*.fs`) and `Z1R_SharedInterop`. The WPF tracker uses them too, and Gob keeps changing them, so a C#
   copy would drift. Once WPF is retired they can be converted to C#.
-- `Z1R_Avalonia_Prototype` (the old F# prototype) stays as it is (behind `--prototype`) until the ported app is confirmed working at runtime, then it's dropped.
+- `Z1R_Avalonia_Prototype` (the old F# prototype) is no longer part of the desktop app. Only the browser (WebAssembly) host still starts it; it's dropped once that host starts the ported tracker.
 
 **Mirroring an F# file in C#.** Each `Z1R_WPF/X.fs` becomes `Z1R_Avalonia/X.cs`, so a WPF diff can still be found and
 applied:
@@ -98,8 +98,8 @@ applied:
    files through one helper in `Platform.cs` (see "Where user files live" in Risks), and don't
    hard-code fonts that only exist on Windows.
 10. **Keep the existing prototype buildable until it's replaced.** It lives in `Z1R_Avalonia_Prototype` (F#). The ported
-    `Program.cs`/`WPFUI.cs` are now the app's entry point; the prototype only starts with `--prototype`. Once the ported app
-    is confirmed working at runtime, drop the prototype (and `--dungeon-preview`) from the build.
+    `Program.cs`/`WPFUI.cs` are the desktop app's entry point; the prototype is only used by the browser host now. Once that
+    host starts the ported tracker, drop the prototype from the build.
 
 ## WPF → Avalonia translation cheat-sheet
 

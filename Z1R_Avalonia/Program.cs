@@ -2659,7 +2659,7 @@ public static class Program
 }
 
 // (WPF: the `new Application()` that main runs. Avalonia needs an Application class: the Fluent theme with the Light variant (WPF's unstyled defaults are
-// light; see PROGRESS.md), as DungeonPreviewApp. Once Avalonia is running, it does WPF's `theDummyWindow <- DummyWindow()`, `app.Exit.Add(...)`, and the
+// light; see PROGRESS.md). Once Avalonia is running, it does WPF's `theDummyWindow <- DummyWindow()`, `app.Exit.Add(...)`, and the
 // dummy window's Loaded (as a dispatcher callback, so exceptions there reach the crash handlers like WPF's Loaded handler's do).)
 public class ZoraTrackerApp : Application
 {

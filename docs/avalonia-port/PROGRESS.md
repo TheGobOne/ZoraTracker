@@ -93,9 +93,8 @@ Already real, not stubs: speech synthesis and speech recognition on Windows (Sys
 
 ## Phase 1 status
 
-All phase 1 files are ported to C# and build. `DungeonPreview.cs` (temporary, not part of the mirror) shows only the dungeon
-tracker: run the desktop app with `--dungeon-preview` (add `--screenshot out.png` to save a picture and quit). It sets
-things up the way `Program.fs`/`WPFUI.makeAll` do before calling `DungeonUI.makeDungeonTabs`.
+All phase 1 files are ported to C# and build. During phase 1 a temporary `DungeonPreview.cs` (not part of the mirror, run with
+`--dungeon-preview`) showed only the dungeon tracker; it was removed once the ported app ran.
 
 Checked so far, by rendering the preview headless (Avalonia.Headless + Skia, which works while the Mac's display is
 asleep) and comparing with `doc/screenshots/dt-drag-1-map-step1.png`:
@@ -111,8 +110,9 @@ runtime-test lists in the entries below.
 ## Phase 2 status
 
 All 38 WPF files are ported to C# and build, and the desktop app now starts the ported tracker (`Z1R_Avalonia.Program.main`, the
-port of Program.fs) by default. Temporary until the ported app is confirmed working at runtime, then removed: `--dungeon-preview`
-(the phase 1 dungeon-only window) and `--prototype` (the old F# prototype UI).
+port of Program.fs). After a first runtime check on the Mac (start screen and starting a game looked right), `--dungeon-preview`
+(the phase 1 dungeon-only window) and `--prototype` (the old F# prototype UI) were removed from the desktop app. `Z1R_Avalonia_Prototype`
+is still used by the browser (WebAssembly) host, until that host starts the ported tracker.
 
 Checked so far, without a display: the solution builds with no new warnings (Debug and Release). A headless run (Avalonia.Headless,
 no rendering, a scratch HOME so no real user files were touched) built the start screen, then started 1st Quest, 2nd Quest and Mixed -
@@ -718,7 +718,7 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
   `Winterop` is a nested class forwarding to Platform (`RegisterHotKey`/`UnregisterHotKey` take the `Window`, not its HWND; the `IShellLink` interface moved
   into `Platform.CreateShortcut`). `MyWindowBase`, `MyWindow`, `DummyWindow` are nested classes; `MakeTipTextBox` returns a `SelectableTextBlock`; WPF's
   `[<EntryPoint>] main` is `Program.main(string[] argv, Func<AppBuilder> configure)`, which the desktop host calls with its `UsePlatformDetect()` builder (the
-  platform backends live in that project); WPF's `new Application()` is `ZoraTrackerApp` (Fluent theme, Light variant, as `DungeonPreviewApp`). WPF's
+  platform backends live in that project); WPF's `new Application()` is `ZoraTrackerApp` (Fluent theme, Light variant). WPF's
   `Microsoft.Win32.OpenFileDialog` is a small `Program.OpenFileDialog` on Avalonia's `StorageProvider` with the same `InitialDirectory`/`Filter`/`FileName`,
   whose `ShowDialog(owner)` is awaited (WPF's blocks). `doStartup`, `showProgress` (WPF: `Async<unit>`) and the click handlers' `async { }` blocks are
   `async Task`s started with `CustomComboBoxes.StartImmediate`. Mutable locals and `ref` cells of the constructor are plain locals.
