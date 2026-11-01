@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 
 namespace Z1R_Avalonia;
 
@@ -363,5 +364,84 @@ public static class Platform
     public static void SystemBeep()
     {
         stub("system beep");
+    }
+
+    ////////////////////////////////////////////////////////////
+    // speech synthesis
+
+    /// <summary>One installed voice, as WPF's System.Speech `InstalledVoice` (`v.VoiceInfo.Name`, `v.Enabled`).</summary>
+    public sealed record InstalledVoice(string Name, bool Enabled);
+
+    /// <summary>The text-to-speech voice (WPF: a System.Speech.Synthesis.SpeechSynthesizer), with the members the tracker uses.
+    /// Windows: System.Speech (the System.Speech NuGet package), so it behaves as in WPF. macOS/Linux: a stub (risk 6) that keeps
+    /// Volume, lists no voices, logs once and prints each spoken text instead of speaking it.</summary>
+    public sealed class SpeechSynthesizer
+    {
+        private readonly object impl;   // a System.Speech.Synthesis.SpeechSynthesizer on Windows, else null
+        private int stubVolume = 100;   // (System.Speech's default; only the stub uses this)
+        public SpeechSynthesizer()
+        {
+            if (OperatingSystem.IsWindows())
+                impl = WinSpeech.Create();
+        }
+        /// <summary>0-100 (WPF: SpeechSynthesizer.Volume).</summary>
+        public int Volume
+        {
+            get => OperatingSystem.IsWindows() ? WinSpeech.GetVolume(impl) : stubVolume;
+            set { if (OperatingSystem.IsWindows()) WinSpeech.SetVolume(impl, value); else stubVolume = value; }
+        }
+        /// <summary>The current voice's name (WPF: `voice.Voice.Name`). The stub returns "".</summary>
+        public string VoiceName
+        {
+            get
+            {
+                if (OperatingSystem.IsWindows()) return WinSpeech.GetVoiceName(impl);
+                stub("speech synthesis voices (macOS: AVSpeechSynthesizer, Linux: speech-dispatcher)");
+                return "";
+            }
+        }
+        /// <summary>WPF: `voice.GetInstalledVoices()`. The stub returns no voices.</summary>
+        public List<InstalledVoice> GetInstalledVoices()
+        {
+            if (OperatingSystem.IsWindows()) return WinSpeech.GetInstalledVoices(impl);
+            stub("speech synthesis voices (macOS: AVSpeechSynthesizer, Linux: speech-dispatcher)");
+            return new List<InstalledVoice>();
+        }
+        /// <summary>WPF: `voice.SelectVoice(name)`. On Windows it throws if there's no such enabled voice, as System.Speech does (callers catch it).
+        /// The stub does nothing.</summary>
+        public void SelectVoice(string name)
+        {
+            if (OperatingSystem.IsWindows()) WinSpeech.SelectVoice(impl, name);
+            else stub("speech synthesis voices (macOS: AVSpeechSynthesizer, Linux: speech-dispatcher)");
+        }
+        /// <summary>Speaks the text and returns when it's done (WPF: `voice.Speak(text)`, synchronous). The stub prints the text.</summary>
+        public void Speak(string text)
+        {
+            if (OperatingSystem.IsWindows()) WinSpeech.Speak(impl, text);
+            else
+            {
+                stub("speech synthesis (macOS: AVSpeechSynthesizer, Linux: speech-dispatcher)");
+                Console.WriteLine($"[speech] {text}");
+            }
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static class WinSpeech
+    {
+        private static System.Speech.Synthesis.SpeechSynthesizer s(object o) => (System.Speech.Synthesis.SpeechSynthesizer)o;
+        public static object Create() => new System.Speech.Synthesis.SpeechSynthesizer();
+        public static int GetVolume(object o) => s(o).Volume;
+        public static void SetVolume(object o, int v) => s(o).Volume = v;
+        public static string GetVoiceName(object o) => s(o).Voice.Name;
+        public static List<InstalledVoice> GetInstalledVoices(object o)
+        {
+            var r = new List<InstalledVoice>();
+            foreach (var v in s(o).GetInstalledVoices())
+                r.Add(new InstalledVoice(v.VoiceInfo.Name, v.Enabled));
+            return r;
+        }
+        public static void SelectVoice(object o, string name) => s(o).SelectVoice(name);
+        public static void Speak(object o, string text) => s(o).Speak(text);
     }
 }

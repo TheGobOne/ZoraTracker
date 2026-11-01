@@ -28,7 +28,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 9 | PieMenus.fs | 915 | 1 | ported (C#) | straight translation; async → `Task`; panels are `(Canvas, Action<IBrush>)`; F# lists → `List<T>`/`IEnumerable<T>` (see Judgement calls) |
 | 10 | ShowRunCustom.fs | 225 | 1 | ported (C#) | ShowRunCustom.txt is a user file; relative SHOW/RUN paths resolve against the app folder; process launching and "reveal file" via Platform (see Judgement calls) |
 | 11 | Dungeon.fs | 1226 | 1 | ported (C#) | straight translation; co-op host launch real on Windows (Job Object moved to `Platform.StartChildProcessTiedToApp`), stubbed on macOS/Linux until phase 4; `DoorState` is a C# enum (see Judgement calls) |
-| 12 | OptionsMenu.fs | 1143 | 1 | todo | |
+| 12 | OptionsMenu.fs | 1143 | 1 | ported (C#) | every option wired as in WPF; voice via `Platform.SpeechSynthesizer` (System.Speech on Windows, stubbed on macOS/Linux); events are C# events with `trigger…()`; reset deletes the model's settings file (see Judgement calls) |
 | 13 | Views.fs | 610 | 1 | todo | |
 | 14 | DungeonSaveAndLoad.fs | 162 | 1 | todo | |
 | 15 | DungeonHighlightsUI.fs | 200 | 1 | todo | |
@@ -68,9 +68,10 @@ Temporary; every one has to be replaced before parity.
 | Cursor warping on Linux | `Platform.WarpCursor` | returns false; the app then skips the wait for a mouse-move event |
 | Fake clicks and scroll wheel on Linux | `Platform.*MouseClick`, `ScrollWheelRotate*` | log once |
 | Co-op host launch (`Z1R_SignalRHost`) on macOS/Linux | `Platform.StartChildProcessTiedToApp` (from `Dungeon.startLocalSignalRHost`) | logs once, starts nothing; today the host executable doesn't ship there, so `startLocalSignalRHost` prints "Host EXE not found" first, as WPF does when it's missing. Co-op is phase 4 |
+| Speech synthesis and voice choice on macOS/Linux | `Platform.SpeechSynthesizer` (`OptionsMenu.voice`) | logs once; `Speak` prints the text; lists no voices, so "Change Voice" doesn't appear; `Volume` is kept. Windows uses System.Speech, as WPF (risk 6) |
 | In-app update install on macOS/Linux | `CustomComboBoxes.makeVersionButtonWithBehavior` | "Install update" opens the release page instead (risk 11); `downloadAndStageUpdate` refuses off Windows, so no files are ever replaced there |
 
-Already real, not stubs: the co-op host launch on Windows (the same kernel32 Job Object calls as WPF), cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
+Already real, not stubs: speech synthesis on Windows (System.Speech, as in WPF), the co-op host launch on Windows (the same kernel32 Job Object calls as WPF), cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
 (CoreGraphics; fake input needs Accessibility permission).
 
 ## Early risk checks (phase 0)
@@ -294,6 +295,34 @@ Already real, not stubs: the co-op host launch on Windows (the same kernel32 Job
   Avalonia's Button theme (WPF: the default Windows button chrome with a 5px border), so their look differs; compare. `Loaded` (used to jump straight into a
   chooser, or to warp the mouse onto the colour button) exists in Avalonia but may fire at a slightly different time from WPF's; check the mouse lands on the
   button and the accelerated choosers open in the right place.
+- **Speech synthesis: `Platform.SpeechSynthesizer`.** WPF's `OptionsMenu.voice` (a System.Speech `SpeechSynthesizer`) is a `Platform.SpeechSynthesizer`
+  with the members the tracker uses: `Volume`, `VoiceName` (WPF `Voice.Name`), `GetInstalledVoices()` (`Platform.InstalledVoice(Name, Enabled)`; WPF
+  `v.VoiceInfo.Name`, `v.Enabled`), `SelectVoice(name)`, `Speak(text)` (synchronous). On Windows it wraps System.Speech from the `System.Speech` NuGet
+  package (10.0.0), which builds on every OS; it's only touched behind `OperatingSystem.IsWindows()` (no CA1416 warnings), and off Windows that assembly
+  would throw `PlatformNotSupportedException`. Off Windows it's a stub (see Stubs). Reminders' `voice.Volume` / `voice.Speak(text)` read as in WPF.
+  A `PreferredVoice` saved on Windows is simply not found elsewhere; `SelectVoice` falls back as in WPF (risk 6). Speech *recognition* isn't in
+  OptionsMenu (only the "Listen For Speech"/"Confirmation Sound" checkboxes, wired to `TrackerModelOptions` as in WPF); it comes with SpeechRecognition.fs.
+- **OptionsMenu C# shapes.** The twelve `Event<unit>`s are `event Action`s with a `trigger…()` method each (`OptionsMenu.requestRedrawOverworldEvent.Trigger()` →
+  `OptionsMenu.triggerRequestRedrawOverworldEvent()`, `….Publish.Add(f)` → `OptionsMenu.requestRedrawOverworldEvent += f`). `data1o`/`data1d`/`data2` are value-tuple
+  arrays (`data1o`'s margin is a `Thickness?`). Tour steps are `List<(string[] labels, string title, string body)>`; `runGuidedTour(Core)` take
+  `IEnumerable<…>` of those and an `Action`. `closeOptionsPopupHook`/`startBlankRunHook` are `Action`s. `makeOptionsCanvas` returns the `Border`.
+- **CheckBox `Checked`/`Unchecked` → `Graphics.onChecked(cb, f)` / `Graphics.onUnchecked(cb, f)`.** Avalonia 11 marks those events obsolete (CS0618);
+  the helpers use `IsCheckedChanged` and fire on the same transitions. Later files should use them.
+- **`ToolTipService.SetShowDuration` has no Avalonia equivalent:** an Avalonia tooltip stays open as long as the mouse is over its control (WPF hides it
+  after the duration; OptionsMenu sets 10 s). Kept as a no-op `setToolTipShowDuration` call so lines still match WPF.
+- **Option sliders.** WPF `TickPlacement.Both` → Avalonia `TickPlacement.Outside`. The Fluent slider looks different (and is taller) than WPF's; compare
+  the options screen's column heights on Windows.
+- **Reset All Settings deletes the model's settings file**, `Z1R_Tracker_settings.json` in `AppDomain.CurrentDomain.BaseDirectory`, because that's where
+  `TrackerModelOptions` (shared F# model, not editable here) reads and writes it. On Windows that's `Platform.UserDataDir()` anyway; on macOS it's inside
+  the app bundle, which a signed app can't write (see Proposed upstream PRs).
+- **"Show Crash Log..."** reveals `Platform.Files.User("Z1R_Tracker_crash_log.txt")` with `Platform.RevealInFileManager`, or opens `Platform.UserDataDir()`
+  with `Platform.OpenWithShell` if there's no log yet (WPF: `Explorer.exe` on the exe folder; the same on Windows).
+- **Co-op host settings: an unshown `Window`.** As in WPF, `showCoopHostSettingsWindow` creates a `Window` it never shows and `Close()`s it from Launch/Stop.
+  An Avalonia `Window` creates its native window on construction, so this costs a hidden native window per open; harmless, kept for parity.
+- **Guided tour (test at runtime).** `VisualTreeHelper` walks → `GetVisualChildren()`/`GetVisualParent()`; WPF `IsVisible`/`ActualWidth` →
+  `IsEffectivelyVisible`/`Bounds.Width`; `Primitives.ButtonBase` → `Button` (CheckBox/ToggleButton/RadioButton derive from it in Avalonia);
+  `TransformToAncestor(...).TransformBounds` → `TransformToVisual` + `TransformToAABB` (a null transform skips the label, as WPF's exception did). Check the
+  highlights land on the right controls on both tours, and that the callout placement matches WPF.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
@@ -320,4 +349,6 @@ Differences TheGobOne has explicitly approved. Anything not listed here is a par
 
 ## Proposed upstream PRs to TheGobOne
 
-(none yet)
+- **Settings file location.** `TrackerModelOptions.readSettings`/`writeSettings` always use `AppDomain.CurrentDomain.BaseDirectory/Z1R_Tracker_settings.json`.
+  A way to set the folder (e.g. a `settingsDirectory` the app sets at startup) would let the cross-platform tracker keep settings in
+  `Platform.UserDataDir()` on macOS/Linux, unchanged on Windows. OptionsMenu's "Reset All Settings" would then delete that file.

@@ -179,6 +179,12 @@ public static class Graphics
         cb.Padding = new Thickness(cb.Padding.Left * scale, cb.Padding.Top, cb.Padding.Right, cb.Padding.Bottom);
     }
 
+    // WPF's CheckBox `Checked` / `Unchecked` events (raised when IsChecked becomes true / false, also when set from code). Avalonia 11 still has
+    // them but marks them obsolete in favour of IsCheckedChanged, so ported files use these instead: WPF `cb.Checked.Add(fun _ -> ...)` →
+    // `Graphics.onChecked(cb, () => ...)`.
+    public static void onChecked(ToggleButton tb, Action f) => tb.IsCheckedChanged += (_, _) => { if (tb.IsChecked == true) f(); };
+    public static void onUnchecked(ToggleButton tb, Action f) => tb.IsCheckedChanged += (_, _) => { if (tb.IsChecked == false) f(); };
+
     public static readonly SolidColorBrush almostBlack = freeze(new SolidColorBrush(Color.FromRgb(30, 30, 30)));
     public static readonly SolidColorBrush almostBlackHoverFeedback = freeze(new SolidColorBrush(Color.FromRgb(30, 50, 50)));
     public static Button makeButton(string text, double? fontSizeOpt, IBrush fgOpt)

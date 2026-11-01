@@ -28,6 +28,9 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <!-- speech synthesis on Windows (WPF: the System.Speech framework assembly). Builds everywhere; only called when OperatingSystem.IsWindows()
+         (Platform.SpeechSynthesizer); off Windows the package's assembly throws PlatformNotSupportedException, so it's never touched there. -->
+    <PackageReference Include="System.Speech" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>
