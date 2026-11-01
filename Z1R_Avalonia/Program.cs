@@ -2582,7 +2582,7 @@ public static class Program
         Console.WriteLine("Starting ZORATracker...");
         try { Winterop.ShowWindow(Winterop.GetConsoleWindow(), Winterop.SW_HIDE); } catch (Exception) { }   // hide the console right away (a crash still re-shows it)
         var cwd = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
-        var thisExe = Path.Combine(cwd, Graphics.ExeName);
+        var thisExe = Path.Combine(cwd, Path.GetFileName(Platform.ExecutablePath()));   // (port: Graphics.ExeName, without touching Graphics: its statics make Avalonia bitmaps, and Avalonia isn't running yet)
         var thisExeName = thisExe.Replace('\\', '_').Replace('/', '_');   // backslash is not allowed character in mutex name   (port: nor is '/', on macOS/Linux)
         using var mutex = new Mutex(false, thisExeName);
         void killAnyZombieHosts()
