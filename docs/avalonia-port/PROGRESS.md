@@ -20,7 +20,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 1 | Gamepad.fs | 59 | 0 | stubbed (C#) | no gamepad is ever found |
 | 2 | Graphics.fs | 1634 | 0 | ported (C#) | sounds stubbed; Linux cursor warp/fake clicks stubbed; sprite sheet checked identical to the F# port |
 | 3 | CustomMessageBox.fs | 66 | 0 | ported (C#) | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites; the module is a namespace (see Judgement calls) |
-| 4 | OverworldRouteDrawing.fs | 268 | 1 | F#: to C# | straight translation; `drawPathsImpl` takes an `Avalonia.Point` |
+| 4 | OverworldRouteDrawing.fs | 268 | 1 | ported (C#) | straight translation; `drawPathsImpl` takes an `Avalonia.Point` and `whatToCyan` as `Func<int,int,bool>`; `doComputedDrawing` takes `IEnumerable<(int,int,bool)>`/`IEnumerable<Control>` |
 | 5 | DungeonRoomState.fs | 259 | 1 | F#: to C# | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control` |
 | 6 | HotKeys.fs | 606 | 1 | todo | global hotkeys stubbed |
 | 7 | Timeline.fs | 331 | 1 | F#: to C# | ported ahead of #5/#6 (it depends on neither); labels stay unwrapped read-only TextBoxes |
