@@ -50,7 +50,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 31 | MainTrackerTriforcesAndItems.fs | 874 | 2 | ported (C#) | straight translation; `setup` returns a 4-tuple; Item Locations/Item Progress windows as Popouts (WPF-unit positions, no `RestoreBounds`); item-progress mirror via `VisualBrush` (see Judgement calls) |
 | 32 | Debouncer.fs | 15 | 3 | ported (C#) | straight translation; one class `Debouncer` (see Judgement calls) |
 | 33 | SyncOriginTracker.fs | 22 | 4 | ported (C#) | straight translation; one class `SyncOriginTracker` (see Judgement calls) |
-| 34 | DungeonCInterop.fs | 24 | 4 | todo | |
+| 34 | DungeonCInterop.fs | 24 | 4 | ported (C#) | straight translation; curried functions take normal parameters; `subscribeToChanges(room, Action)` |
 | 35 | CoopSync.fs | 934 | 4 | todo | |
 | 36 | DungeonModelSync.fs | 79 | 4 | todo | |
 | 37 | WPFUI.fs | 4218 | 2 | todo | |
