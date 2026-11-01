@@ -25,7 +25,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 6 | HotKeys.fs | 606 | 1 | ported (C#) | parsing and in-window keys complete; global hotkey registration belongs to Program.cs; HotKeys.txt is a user file; key numbers unchanged (see Judgement calls) |
 | 7 | Timeline.fs | 331 | 1 | ported (C#) | labels stay unwrapped read-only TextBoxes; module is a namespace, `TimelineID` is a union-shaped C# class (see Judgement calls) |
 | 8 | CustomComboBoxes.fs | 1418 | 1 | ported (C#) | update check complete; update install Windows-only (macOS/Linux open the release page, see Stubs); "Open folder" opens the user-data folder; async → `Task` (see Judgement calls) |
-| 9 | PieMenus.fs | 915 | 1 | todo | |
+| 9 | PieMenus.fs | 915 | 1 | ported (C#) | straight translation; async → `Task`; panels are `(Canvas, Action<IBrush>)`; F# lists → `List<T>`/`IEnumerable<T>` (see Judgement calls) |
 | 10 | ShowRunCustom.fs | 225 | 1 | todo | |
 | 11 | Dungeon.fs | 1226 | 1 | todo | co-op host launch (Job Object) stubbed until phase 4 |
 | 12 | OptionsMenu.fs | 1143 | 1 | todo | |
@@ -232,6 +232,21 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   the release needs a way to tell the two zips apart (risk 11).
 - **"Open folder"** on the version button opens `Platform.UserDataDir()` (where HotKeys.txt, settings and the crash log are; the exe folder on Windows, as in WPF)
   through `Platform.OpenWithShell` (WPF: `Explorer.exe`). "Go to website" and the release page also use `OpenWithShell`.
+- **PieMenus C# shapes.** Every `…Async` is an `async Task<T>` (`FourWayPieMenu` a `Task`). A panel is `(Canvas, Action<IBrush>)`; `FourWayPieMenu` takes
+  `((Canvas, Action<IBrush>), Dock, Action)[]`. Hotkey labels (`keyOpt`) are a string or null. `pieDisabledDocks` is `List<Dock>`, `crossedOutChoices`/`legacyDisabledChoices`
+  are `List<string>` (callers assign a new list, as WPF assigns a new F# list). `cheapKeysChangedHook` is `Action`, `shopKeyIndexHook` and `itemPickerDisabledTip` are `Func<int,…>`.
+  `ItemPickerAsync` takes `IEnumerable<(int, Control)>`, `IconChoiceBoxAsync` `IEnumerable<(string, Control)>`, `CaveChoiceBoxAsync`/`MessageChoiceBoxAsync` `IEnumerable<string>`.
+  `ShopFlyoutAsync` takes `shopItems` as `List<(Bitmap, bool)>[]`, `addItem` as `Func<int, int, (int[], List<(Bitmap, bool)>[])>`, `pickItem` as `Func<Task<int>>`.
+- **Pie menu selection uses Avalonia's `Dock` numbers** (`Left=0, Bottom=1, Right=2, Top=3`; WPF: `Left, Top, Right, Bottom`). `currentSelection` only ever compares
+  against `(int)Dock.X` inside `FourWayPieMenu`, so nothing changes.
+- **Crossed-out cave choices (strikethrough).** Avalonia's TextBox has no `TextDecorations`, so a crossed-out button's read-only TextBox label is replaced by a TextBlock
+  with the same text, size, colours and alignment plus `Strikethrough`. Compare its look with WPF.
+- **`makeOrangeCheckBox`** builds its template in code (WPF: a XAML string with an `IsChecked` trigger): same 16×16 orange box, same tick path, 8px gap.
+- **Shop flyout right-click** (`PreviewMouseRightButtonUp`) is a tunnelling `PointerReleased` handler that checks `InitialPressMouseButton == Right`. `IsMouseOver` → `IsPointerOver`.
+- **Shop flyout layout measured before it is in the window (test at runtime).** WPF sizes the box and computes `headerH` and the first button's size (for "Jump mouse to
+  shop") from `Measure` before the box is shown, and has no re-centering `SizeChanged` handler here. In Avalonia, a control measured outside the visual tree may not have
+  its theme template/styles yet, so the box could be off-centre and the mouse jump could miss the first shop button. Check both.
+- **`addGiantRedX`**: WPF sets `StrokeStartLineCap`/`StrokeEndLineCap`; Avalonia has one `StrokeLineCap` (both Round, so the same).
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
