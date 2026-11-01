@@ -52,7 +52,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 33 | SyncOriginTracker.fs | 22 | 4 | ported (C#) | straight translation; one class `SyncOriginTracker` (see Judgement calls) |
 | 34 | DungeonCInterop.fs | 24 | 4 | ported (C#) | straight translation; curried functions take normal parameters; `subscribeToChanges(room, Action)` |
 | 35 | CoopSync.fs | 934 | 4 | ported (C#) | straight translation on Gob's Z1R_Sync (SignalR) and Newtonsoft, as WPF; records → C# records (same JSON); door state written as WPF's union JSON; polling loops are `async Task`s (see Judgement calls) |
-| 36 | DungeonModelSync.fs | 79 | 4 | todo | |
+| 36 | DungeonModelSync.fs | 79 | 4 | ported (C#) | straight translation; curried functions take normal parameters; `failwithf` → `throw new Exception` |
 | 37 | WPFUI.fs | 4218 | 2 | todo | |
 | 38 | Program.fs | 2028 | 2 | todo | global hotkeys, desktop shortcut, console window stubbed |
 
