@@ -23,7 +23,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 4 | OverworldRouteDrawing.fs | 268 | 1 | ported (C#) | straight translation; `drawPathsImpl` takes an `Avalonia.Point` and `whatToCyan` as `Func<int,int,bool>`; `doComputedDrawing` takes `IEnumerable<(int,int,bool)>`/`IEnumerable<Control>` |
 | 5 | DungeonRoomState.fs | 259 | 1 | ported (C#) | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control`; module is a namespace, `Changed` is a C# event (see Judgement calls) |
 | 6 | HotKeys.fs | 606 | 1 | ported (C#) | parsing and in-window keys complete; global hotkey registration belongs to Program.cs; HotKeys.txt is a user file; key numbers unchanged (see Judgement calls) |
-| 7 | Timeline.fs | 331 | 1 | F#: to C# | ported ahead of #5/#6 (it depends on neither); labels stay unwrapped read-only TextBoxes |
+| 7 | Timeline.fs | 331 | 1 | ported (C#) | labels stay unwrapped read-only TextBoxes; module is a namespace, `TimelineID` is a union-shaped C# class (see Judgement calls) |
 | 8 | CustomComboBoxes.fs | 1418 | 1 | todo | update install, opening folders stubbed |
 | 9 | PieMenus.fs | 915 | 1 | todo | |
 | 10 | ShowRunCustom.fs | 225 | 1 | todo | |
@@ -180,6 +180,15 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
 - **HotKeys on macOS: which modifiers? Needs Gob.** As in WPF, only exactly Shift, Ctrl or Alt (Option) count; anything with the Windows key /
   Cmd (`KeyModifiers.Meta`) is `Unsupported`, so Cmd+key never triggers a hotkey. Mac users may expect Cmd where Windows uses Ctrl.
 - **HotKeys.txt and HotKeys_BlankSampleTemplate.txt** are written to `Platform.Files.User` (the exe folder on Windows, as before).
+- **`Timeline` is a namespace too** (CS0542). `Timeline.TimelineID`, `Timeline.TimelineItem` and `new Timeline.Timeline(...)` read as in WPF;
+  the module's values are statics of `partial class Timeline`, so `Timeline.isCurrentlyLoadingASave` → `Timeline.Timeline.isCurrentlyLoadingASave`.
+  `TimelineItem` takes its bitmap function as `Func<System.Drawing.Bitmap>`; `Update` takes `IEnumerable<TimelineItem>`.
+- **`TimelineID` (an F# union with data cases) is one C# class shaped like a compiled F# union:** `Tag` / `TimelineID.Tags.X`, a static instance
+  per plain case (`TimelineID.MagicalSword`), a static method per data case (`TimelineID.LevelBox(i, j)`, `OWHeart(n)`, `CustomIcon(n)`,
+  `UserCustom(s)`), case data in `Item1`/`Item2` (ints) and `Text` (UserCustom), and structural `Equals`/`==`/`GetHashCode`/`ToString` like F#'s.
+  A WPF match `| Timeline.TimelineID.LevelBox(i,_) ->` becomes `case TimelineID.Tags.LevelBox:` reading `tid.Item1`.
+- **Timeline graph sort.** F#'s `Array.sortBy` isn't stable; `DrawGraph` sorts the same way FSharp.Core does (`Array.Sort(keys, items)`) so
+  samples with equal timestamps keep WPF's order.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
