@@ -48,7 +48,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 29 | Layout.fs | 860 | 2 | ported (C#) | straight translation; XAML templates/style → code templates and class-keyed styles; `optionBorderStyle` is a function; mouse-warp line tweened on a timer; magnifier uses a `VisualBrush` (see Judgement calls) |
 | 30 | Reminders.fs | 288 | 3 | ported (C#) | straight translation; agent is a `Channel`; voice via `OptionsMenu.voice`, clink via `Graphics.PlaySoundForReminder`, error beep via `Platform.SystemBeep` (stubbed off Windows); `Async<unit>` → `Func<Task>` (see Judgement calls) |
 | 31 | MainTrackerTriforcesAndItems.fs | 874 | 2 | ported (C#) | straight translation; `setup` returns a 4-tuple; Item Locations/Item Progress windows as Popouts (WPF-unit positions, no `RestoreBounds`); item-progress mirror via `VisualBrush` (see Judgement calls) |
-| 32 | Debouncer.fs | 15 | 3 | todo | |
+| 32 | Debouncer.fs | 15 | 3 | ported (C#) | straight translation; one class `Debouncer` (see Judgement calls) |
 | 33 | SyncOriginTracker.fs | 22 | 4 | todo | |
 | 34 | DungeonCInterop.fs | 24 | 4 | todo | |
 | 35 | CoopSync.fs | 934 | 4 | todo | |
@@ -618,6 +618,8 @@ runtime-test lists in the entries below.
   `PreviewMouseDown` and the moved triforce's non-left `PreviewMouseDown` → tunnelling `PointerPressed`; level 9 entry `MouseRightButtonDown` → `PointerPressed`
   (right only), `MouseWheel` → `PointerWheelChanged` through `Graphics.wheelNotch` (Handled set first, as WPF). The level 9 hint cell's `Visibility.Hidden` → Opacity 0 +
   not hit-testable. Tooltips via `ToolTip.SetTip` (extras icon: `ToolTip.SetPlacement(Top)`). The "dungeon quest" curve is a `PathGeometry` with one `BezierSegment`.
+- **Debouncer / SyncOriginTracker are classes at namespace level** (module `X` holding type `X`): `Debouncer.Debouncer(ms)` → `new Debouncer(ms)`, `Trigger(Action)`;
+  `Async.Start` → `Task.Run`, so the action runs on the thread pool, as in WPF. `SyncOriginTracker.SyncOriginTracker()` → `new SyncOriginTracker()`.
 
 ## Decisions needed from TheGobOne
 
