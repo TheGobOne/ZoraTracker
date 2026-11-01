@@ -51,7 +51,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 32 | Debouncer.fs | 15 | 3 | ported (C#) | straight translation; one class `Debouncer` (see Judgement calls) |
 | 33 | SyncOriginTracker.fs | 22 | 4 | ported (C#) | straight translation; one class `SyncOriginTracker` (see Judgement calls) |
 | 34 | DungeonCInterop.fs | 24 | 4 | ported (C#) | straight translation; curried functions take normal parameters; `subscribeToChanges(room, Action)` |
-| 35 | CoopSync.fs | 934 | 4 | todo | |
+| 35 | CoopSync.fs | 934 | 4 | ported (C#) | straight translation on Gob's Z1R_Sync (SignalR) and Newtonsoft, as WPF; records → C# records (same JSON); door state written as WPF's union JSON; polling loops are `async Task`s (see Judgement calls) |
 | 36 | DungeonModelSync.fs | 79 | 4 | todo | |
 | 37 | WPFUI.fs | 4218 | 2 | todo | |
 | 38 | Program.fs | 2028 | 2 | todo | global hotkeys, desktop shortcut, console window stubbed |
@@ -620,6 +620,23 @@ runtime-test lists in the entries below.
   not hit-testable. Tooltips via `ToolTip.SetTip` (extras icon: `ToolTip.SetPlacement(Top)`). The "dungeon quest" curve is a `PathGeometry` with one `BezierSegment`.
 - **Debouncer / SyncOriginTracker are classes at namespace level** (module `X` holding type `X`): `Debouncer.Debouncer(ms)` → `new Debouncer(ms)`, `Trigger(Action)`;
   `Async.Start` → `Task.Run`, so the action runs on the thread pool, as in WPF. `SyncOriginTracker.SyncOriginTracker()` → `new SyncOriginTracker()`.
+- **CoopSync C# shapes.** Records (`RoomChangePayload`, `OverworldTileUpdate`, `DoorChangePayload`) are C# records with init properties in F#'s order, so Newtonsoft
+  writes and reads the same JSON; the anonymous `{| Case: string |}` is `CoopSync.DoorStateCase`. `DungeonsTriforceState` is a class. Curried functions take normal
+  parameters (`shouldApplyUpdate(type, json, ts)`, `isDoorChangeFresh(level, x, y, isH, ts)`, …). The `send…Update` functions whose F# `async` never awaits return a
+  completed `Task` (they run when called; every F# caller started them at once); `sendDoorChangeUpdate`/`sendRoomChangeUpdate` (F#: `Async.StartImmediate` inside) are
+  `void`. `lastReceivedItemsHash` and `debounceOverworldSend` are null for None. Keys printed with F#'s `%b` keep lower-case `true`/`false`.
+- **CoopSync wire format: door state (Needs Gob, test co-op WPF↔Avalonia).** WPF's `Dungeon.DoorState` is an F# union, which Newtonsoft writes as `{"Case":"YES"}`; the port's
+  is a C# enum (written as `2`). `sendDoorChangeUpdate` serializes `DoorChangeInfo` with `CoopSync.DoorStateAsUnionCaseConverter`, so DoorChange messages look exactly
+  like WPF's and both trackers can co-op together. Whoever ports Program.cs must use the same converter if it deserializes a `DungeonUI.DoorChangeInfo` (WPF reads
+  `CoopSync.DoorChangePayload`, whose `NewState.Case` is a string, so that path needs nothing). Everything else serialized here is a Z1R_Tracker_Core / Z1R_Sync type
+  or a ported class with the same property names (`DungeonSaveAndLoad.DungeonModel`), so it's unchanged.
+- **CoopSync threading (test at runtime).** `Async.StartImmediate(loop())` polling loops are `async Task` loops started on the UI thread with `await Task.Delay`, which
+  resumes on the UI thread (as F#'s `Async.Sleep` returns to the captured context); `Async.Start` → `Task.Run` (thread pool, as WPF: e.g. the overworld/dungeon-map
+  exports and `SyncManager.EnqueueSync` run off the UI thread there too). `Application.Current.Dispatcher.Invoke` → `Dispatcher.UIThread.Invoke`. In `sendDungeonMapsUpdate`
+  WPF's `return ()` inside `async { if … then …; return () }` doesn't leave the block, so the export still runs when no dungeon tracker exists yet; kept as WPF (Needs Gob:
+  probably meant to return early). `overworldMapMarks[x,y].Changed` is a `[<CLIEvent>]`, so it's subscribed with `+=`. `printfn`/`printf` → `Console.WriteLine`/`Write`.
+- **Co-op off Windows.** CoopSync itself is cross-platform (SignalR client 10.0.14 through `Z1R_Avalonia_Sync`): joining a co-op session hosted elsewhere should work on
+  macOS/Linux. Only *hosting* (starting `Z1R_SignalRHost`, in Dungeon.cs via `Platform.StartChildProcessTiedToApp`) is still stubbed there (see Stubs).
 
 ## Decisions needed from TheGobOne
 
