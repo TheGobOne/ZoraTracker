@@ -144,18 +144,19 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   (`entranceRoomArrowColor` is `System.Drawing.Color?`, `dpi` is `double?`; `makeButton(text, double?, IBrush)` takes null for None).
   Curried `darkenImpl pct bmp` / `darkenKeepAlpha pct bmp` → `(pct, bmp)`. `overworldMapBMPs` returns `Bitmap[,]`;
   `dungeonRoomBmpPairs` is an array of value tuples. Exhaustive F# matches get a `_ => throw` arm for the C# compiler.
-- **F# `Event<T>` that other files `Trigger`** (e.g. `Graphics.volumeChanged`) stays an F# event, `FSharpEvent<T>` from
-  FSharp.Core, so callers still write `Graphics.volumeChanged.Trigger(v)`; subscribe with
-  `.Publish.AddHandler(new FSharpHandler<T>((_, v) => …))`. (A C# `event` can't be raised from outside its class.)
+- **F# `Event<T>` that other files `Trigger`** (e.g. `Graphics.volumeChanged`) becomes a C# `event Action<T>` plus a public trigger
+  method, since a C# event can't be raised from outside its class: WPF's `Graphics.volumeChanged.Trigger(v)` becomes
+  `Graphics.triggerVolumeChanged(v)`, and `volumeChanged.Publish.Add(fun v -> …)` becomes `Graphics.volumeChanged += v => …`.
+  (F# events of the F# model, e.g. `SaveAndLoad.seedAndFlagsUpdated`, keep their F# type: `.Publish.AddHandler(new FSharpHandler<T>(…))`.)
 - **`DragDropSurface<T>`** takes `onStartDrag` as `Action<PointerEventArgs, Action<T>>` (F#: a function of a tuple).
-- **`CustomMessageBox` is a namespace, not a static class.** C# rejects a nested type named like its enclosing class
-  (CS0542), so `Z1R_Avalonia.CustomMessageBox` is a namespace holding `class CustomMessageBox : Window`. Callers in
-  `Z1R_Avalonia` still write `new CustomMessageBox.CustomMessageBox(title, icon, text, buttonTexts)`; `buttonTexts` is an
-  `IEnumerable<string>` (pass an array). Use the same trick for any other F# module whose type has the module's name.
-- **`DungeonRoomState` is a namespace too** (same CS0542 problem as `CustomMessageBox`). The module's own values (`canvasAdd`,
+- **`CustomMessageBox` is one class, not a static class.** C# rejects a nested type named like its enclosing class
+  (CS0542), so, per PLAN.md, `CustomMessageBox.fs` becomes `class CustomMessageBox : Window` in namespace `Z1R_Avalonia`.
+  WPF's `CustomMessageBox.CustomMessageBox(title, icon, text, buttonTexts)` becomes `new CustomMessageBox(title, icon, text, buttonTexts)`;
+  `buttonTexts` is an `IEnumerable<string>` (pass an array).
+- **`DungeonRoomState` is one class too** (same CS0542 problem as `CustomMessageBox`). The module's own values (`canvasAdd`,
   `cachedTilePairs`, `mkTxt`, `entranceRoomArrowColorBrush`, `scale`, `isDoingDragPaintOffTheMap`, `veryDark`, `fakeUsedTransports`)
-  are static members of `class DungeonRoomState`, ahead of the instance members. Callers write `DungeonRoomState.DungeonRoomState`
-  for the type, `DungeonRoomState.DungeonRoomState.FromCSharp(...)` and `DungeonRoomState.DungeonRoomState.mkTxt(...)`.
+  are static members of `class DungeonRoomState`, ahead of the instance members. WPF's `DungeonRoomState.DungeonRoomState` becomes
+  `DungeonRoomState`; `DungeonRoomState.FromCSharp(...)` and `DungeonRoomState.mkTxt(...)` read as in WPF.
 - **F# events only raised by their own class become C# events** (precedent: `Gamepad.ControllerFailureEvent`). `DungeonRoomState.Changed`
   is `event Action<DungeonRoomState>`: WPF's `drs.Changed.Add(fun _ -> ...)` becomes `drs.Changed += _ => ...`.
 - **HotKeys key numbers need no translation.** HotKeys.txt stores keys as `0-9`/`a-z` (turned into WPF `Key` numbers by arithmetic:
@@ -170,8 +171,12 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   `GlobalHotkeyTargets.All` → `GlobalHotkeyTargetsExtensions.All`, `SingleKeyboardModifier.FromHotKeyTxt(s)` → `SingleKeyboardModifierExtensions.FromHotKeyTxt(s)`,
   and `SingleKeyboardModifier.GetCurrent()` → `SingleKeyboardModifierExtensions.GetCurrent(ea.KeyModifiers)` (no global keyboard state in Avalonia).
   Keys are `(SingleKeyboardModifier, Key)` value tuples everywhere (`ea.Key`, `PrettyKey(k)`, `HotKeyProcessor` methods). `HotKeyProcessor<V>.TryGetValue`
-  returns `FSharpOption<V>` (null = None; a C# nullable can't wrap an unconstrained `V`); `AsPrettyHotKeyOpt` returns a string or null.
-  `DungeonRoomHotKeyProcessor` holds `FSharpChoice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse>`. WPF's `MyKeyRoutedEventHandler`
+  is `bool TryGetValue(k, out V value)` (WPF: returns `'V option`); `AsPrettyHotKeyOpt` returns a string or null.
+  `DungeonRoomHotKeyProcessor` holds `HotKeys.DungeonRoomHotKey` (WPF: `Choice<RoomType,MonsterDetail,FloorDropDetail,DoorHotKeyResponse>`), an
+  abstract record with cases `OfRoomType(rt)`, `OfMonsterDetail(md)`, `OfFloorDropDetail(fd)`, `OfDoor(dhkr)` for `Choice1Of4`..`Choice4Of4`, each with
+  a `Value`; records compare by value like F#'s Choice, which the processor's dictionaries rely on. So WPF's
+  `AppendHotKeyToDescription(s, Choice2Of4 ident)` becomes `AppendHotKeyToDescription(s, new HotKeys.DungeonRoomHotKey.OfMonsterDetail(ident))`, and
+  `| Choice1Of4 rt ->` becomes `case HotKeys.DungeonRoomHotKey.OfRoomType(var rt):`. WPF's `MyKeyRoutedEventHandler`
   delegate is replaced by `EventHandler<MyKeyRoutedEventArgs>`.
 - **HotKeys: element under the mouse (test at runtime).** WPF sends each hotkey to `Mouse.DirectlyOver`, which is app-wide. Avalonia keeps the
   element under the pointer per TopLevel (`IInputRoot.PointerOverElement`), and popups are TopLevels of their own, so `InitializeWindow` uses the
@@ -180,15 +185,17 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
 - **HotKeys on macOS: which modifiers? Needs Gob.** As in WPF, only exactly Shift, Ctrl or Alt (Option) count; anything with the Windows key /
   Cmd (`KeyModifiers.Meta`) is `Unsupported`, so Cmd+key never triggers a hotkey. Mac users may expect Cmd where Windows uses Ctrl.
 - **HotKeys.txt and HotKeys_BlankSampleTemplate.txt** are written to `Platform.Files.User` (the exe folder on Windows, as before).
-- **`Timeline` is a namespace too** (CS0542). `Timeline.TimelineID`, `Timeline.TimelineItem` and `new Timeline.Timeline(...)` read as in WPF;
-  the module's values are statics of `partial class Timeline`, so `Timeline.isCurrentlyLoadingASave` → `Timeline.Timeline.isCurrentlyLoadingASave`.
+- **`Timeline` is one class too** (CS0542). The module's values are statics of `partial class Timeline` (split around `TimelineID`/`TimelineItem`
+  to keep the file order), and `TimelineID`/`TimelineItem` are at namespace level. WPF's `Timeline.Timeline(...)` → `new Timeline(...)`,
+  `Timeline.TimelineID.X` → `TimelineID.X`, `Timeline.TimelineItem(...)` → `new TimelineItem(...)`; `Timeline.isCurrentlyLoadingASave` is unchanged.
   `TimelineItem` takes its bitmap function as `Func<System.Drawing.Bitmap>`; `Update` takes `IEnumerable<TimelineItem>`.
 - **`TimelineID` (an F# union with data cases) is one C# class shaped like a compiled F# union:** `Tag` / `TimelineID.Tags.X`, a static instance
   per plain case (`TimelineID.MagicalSword`), a static method per data case (`TimelineID.LevelBox(i, j)`, `OWHeart(n)`, `CustomIcon(n)`,
   `UserCustom(s)`), case data in `Item1`/`Item2` (ints) and `Text` (UserCustom), and structural `Equals`/`==`/`GetHashCode`/`ToString` like F#'s.
   A WPF match `| Timeline.TimelineID.LevelBox(i,_) ->` becomes `case TimelineID.Tags.LevelBox:` reading `tid.Item1`.
-- **Timeline graph sort.** F#'s `Array.sortBy` isn't stable; `DrawGraph` sorts the same way FSharp.Core does (`Array.Sort(keys, items)`) so
-  samples with equal timestamps keep WPF's order.
+- **Timeline graph sort.** F#'s `Array.sortBy` isn't stable: FSharp.Core implements it as the BCL's `Array.Sort(keys, items)`. Equal timestamps
+  matter in `DrawGraph` (the last sample in a tick bucket wins), so it calls that same BCL `Array.Sort(keys, items)`, not a stable sort such as
+  LINQ `OrderBy`, which could order ties differently from WPF.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne

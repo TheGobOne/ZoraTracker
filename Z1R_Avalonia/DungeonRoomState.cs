@@ -1,8 +1,8 @@
 // Ported from Z1R_WPF/DungeonRoomState.fs (WPF @ 9292b0b). Same members, same order; see docs/avalonia-port/PLAN.md, "Language: C#".
-// (F#: `module DungeonRoomState` holding `type DungeonRoomState`. As with CustomMessageBox, C# doesn't allow a nested type with the
-// same name as its enclosing class (CS0542), so the module becomes a namespace. The module's own values (canvasAdd, cachedTilePairs,
-// mkTxt, ...) become static members of the class, ahead of its instance members, so callers write `DungeonRoomState.DungeonRoomState`
-// for the type and `DungeonRoomState.DungeonRoomState.mkTxt(...)` for WPF's `DungeonRoomState.mkTxt(...)`.)
+// (F#: `module DungeonRoomState` holding `type DungeonRoomState`. C# can't nest a class in a class of the same name (CS0542), so, as
+// PLAN.md says, there's one class `DungeonRoomState` in namespace Z1R_Avalonia. The module's own values (canvasAdd, cachedTilePairs,
+// mkTxt, ...) are static members of the class, ahead of its instance members. WPF's `DungeonRoomState.DungeonRoomState` becomes
+// `DungeonRoomState`, and `DungeonRoomState.mkTxt(...)` stays `DungeonRoomState.mkTxt(...)`.)
 // The room model itself is Gob's C# CDungeonRoomState (Z1R_Sync, via Z1R_Avalonia_Sync).
 using System;
 using Avalonia;
@@ -12,7 +12,7 @@ using Avalonia.Media;
 using Z1R_Tracker.Models;
 using Z1R_Tracker.Models.Z1R_TrackerInterop;
 
-namespace Z1R_Avalonia.DungeonRoomState;
+namespace Z1R_Avalonia;
 
 public class DungeonRoomState
 {

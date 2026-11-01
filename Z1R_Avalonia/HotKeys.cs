@@ -16,7 +16,6 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Microsoft.FSharp.Core;
 using Z1R_Tracker.Models.Z1R_TrackerInterop;
 
 namespace Z1R_Avalonia;
@@ -470,8 +469,7 @@ public static class HotKeys
         else
             return skm.PrettyString() + s;
     }
-    // (keys are (SingleKeyboardModifier, Key) value tuples throughout; TryGetValue returns an FSharpOption, which is null for None,
-    // because a C# nullable can't wrap an unconstrained generic V)
+    // (keys are (SingleKeyboardModifier, Key) value tuples throughout; WPF's `TryGetValue k : 'V option` is the usual C# `bool TryGetValue(k, out V)`)
     public class HotKeyProcessor<V>
     {
         private readonly string contextName;
@@ -480,13 +478,7 @@ public static class HotKeys
         private readonly Dictionary<V, string> cachedDescriptions = new Dictionary<V, string>();  // hotkeys never change during runtime, so first lookup is always the permanent description
         public HotKeyProcessor(string contextName) { this.contextName = contextName; }
         public string ContextName => contextName;
-        public FSharpOption<V> TryGetValue((SingleKeyboardModifier, Key) k)
-        {
-            if (table.TryGetValue(k, out var v))
-                return FSharpOption<V>.Some(v);
-            else
-                return FSharpOption<V>.None;
-        }
+        public bool TryGetValue((SingleKeyboardModifier, Key) k, out V value) => table.TryGetValue(k, out value);
         public bool ContainsKey((SingleKeyboardModifier, Key) k) => table.ContainsKey(k);
         public (SingleKeyboardModifier, Key)[] Keys() => table.Keys.ToArray();
         public bool TryAdd((SingleKeyboardModifier, Key) k, V v)
@@ -506,10 +498,9 @@ public static class HotKeys
                 var r = new List<(SingleKeyboardModifier, Key)>();
                 foreach (var k in keyUniverse)
                 {
-                    var x = this.TryGetValue(k);
-                    if (x != null)
+                    if (this.TryGetValue(k, out var x))
                     {
-                        if (EqualityComparer<V>.Default.Equals(x.Value, state)) r.Add(k);
+                        if (EqualityComparer<V>.Default.Equals(x, state)) r.Add(k);
                     }
                 }
                 stateToKeys.Add(state, r);
@@ -553,7 +544,18 @@ public static class HotKeys
     public static readonly HotKeyProcessor<int> OverworldHotKeyProcessor = new HotKeyProcessor<int>("Overworld");
     public static readonly HotKeyProcessor<int> OverworldMarkerHotKeyProcessor = new HotKeyProcessor<int>("OverworldMarker");
     public static readonly HotKeyProcessor<TrackerModel.DungeonBlocker> BlockerHotKeyProcessor = new HotKeyProcessor<TrackerModel.DungeonBlocker>("Blocker");
-    public static readonly HotKeyProcessor<FSharpChoice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse>> DungeonRoomHotKeyProcessor = new HotKeyProcessor<FSharpChoice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse>>("DungeonRoom");
+    // (F#: Choice<RoomType,MonsterDetail,FloorDropDetail,DoorHotKeyResponse>, i.e. Choice1Of4 .. Choice4Of4. Records, so they compare by value
+    // as the F# Choice did; that matters because HotKeyProcessor looks values up in dictionaries. Match with
+    // `case DungeonRoomHotKey.OfRoomType(var rt):` etc.)
+    public abstract record DungeonRoomHotKey
+    {
+        private DungeonRoomHotKey() { }
+        public sealed record OfRoomType(RoomType Value) : DungeonRoomHotKey;                    // Choice1Of4
+        public sealed record OfMonsterDetail(MonsterDetail Value) : DungeonRoomHotKey;          // Choice2Of4
+        public sealed record OfFloorDropDetail(FloorDropDetail Value) : DungeonRoomHotKey;      // Choice3Of4
+        public sealed record OfDoor(DoorHotKeyResponse Value) : DungeonRoomHotKey;              // Choice4Of4
+    }
+    public static readonly HotKeyProcessor<DungeonRoomHotKey> DungeonRoomHotKeyProcessor = new HotKeyProcessor<DungeonRoomHotKey>("DungeonRoom");
     public static readonly HotKeyProcessor<TrackerModel.HintZone> HintZoneHotKeyProcessor = new HotKeyProcessor<TrackerModel.HintZone>("HintZone");
     // contextual
     public static readonly HotKeyProcessor<int> TakeAnyHotKeyProcessor = new HotKeyProcessor<int>("TakeAny");
@@ -646,25 +648,25 @@ public static class HotKeys
                                 foreach (var x in RoomTypeExtensions.All())
                                     if (name == "DungeonRoom_" + x.AsHotKeyName())
                                     {
-                                        Add(DungeonRoomHotKeyProcessor, chOpt, FSharpChoice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse>.NewChoice1Of4(x));
+                                        Add(DungeonRoomHotKeyProcessor, chOpt, new DungeonRoomHotKey.OfRoomType(x));
                                         found = true;
                                     }
                                 foreach (var x in MonsterDetailExtensions.All())
                                     if (name == "DungeonRoom_" + x.AsHotKeyName())
                                     {
-                                        Add(DungeonRoomHotKeyProcessor, chOpt, FSharpChoice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse>.NewChoice2Of4(x));
+                                        Add(DungeonRoomHotKeyProcessor, chOpt, new DungeonRoomHotKey.OfMonsterDetail(x));
                                         found = true;
                                     }
                                 foreach (var x in FloorDropDetailExtensions.All())
                                     if (name == "DungeonRoom_" + x.AsHotKeyName())
                                     {
-                                        Add(DungeonRoomHotKeyProcessor, chOpt, FSharpChoice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse>.NewChoice3Of4(x));
+                                        Add(DungeonRoomHotKeyProcessor, chOpt, new DungeonRoomHotKey.OfFloorDropDetail(x));
                                         found = true;
                                     }
                                 foreach (var (x, dhkr) in AllDoors)
                                     if (name == "DungeonRoom_" + x)
                                     {
-                                        Add(DungeonRoomHotKeyProcessor, chOpt, FSharpChoice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse>.NewChoice4Of4(dhkr));
+                                        Add(DungeonRoomHotKeyProcessor, chOpt, new DungeonRoomHotKey.OfDoor(dhkr));
                                         found = true;
                                     }
                             }
@@ -719,7 +721,8 @@ public static class HotKeys
         {
             void error(string kind)
             {
-                var msg = $"Global hotkey '{PrettyKey(k)}' was bound as '{"Global_" + GlobalHotKeyProcessor.TryGetValue(k).Value.AsHotKeyName()}', but that key was also bound to {kind} entry";
+                GlobalHotKeyProcessor.TryGetValue(k, out var target);
+                var msg = $"Global hotkey '{PrettyKey(k)}' was bound as '{"Global_" + target.AsHotKeyName()}', but that key was also bound to {kind} entry";
                 throw new UserError(msg);
             }
             if (ItemHotKeyProcessor.ContainsKey(k))

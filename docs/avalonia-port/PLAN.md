@@ -50,7 +50,16 @@ author only chose F# because it was a language he wanted to learn. Concretely:
 applied:
 - `module X` → `public static class X` in namespace `Z1R_Avalonia`, holding the same members **in the same order**,
   with the same names (including the original camelCase; they can be renamed once WPF is retired) and the same comments.
-- Types defined inside the module → nested classes of `X`, so `X.SomeType` keeps its name.
+- Types defined inside the module → nested classes of `X`, so `X.SomeType` keeps its name. **Exception:** when a module
+  `X` defines a type also named `X` (e.g. `DungeonRoomState.DungeonRoomState`), C# can't nest a class in a class of
+  the same name. Then there's one class `X` at namespace level holding both the type's members and the module's values
+  (as statics); the module's other types also go at namespace level. WPF's `X.X` becomes `X`, and `X.value` stays
+  `X.value`. Don't turn `X` into a namespace.
+- **Write C# that a C# developer would expect.** Don't use F#-only library types (`FSharpOption`, `FSharpChoice`,
+  `FSharpEvent`, `FSharpList`, `FSharpFunc`) in our own code. Use the C# equivalent instead: `bool TryGetValue(key, out
+  value)` or nullable for options, an enum or a small class hierarchy for unions and Choice types, C# `event`s (with a
+  public `Raise…`/`Trigger…` method where other classes fire them), arrays/`List<T>`, and `Func`/`Action`. The only
+  exceptions are values that come from or go to the F# model (`Z1R_Tracker_Core`), which keep their F# types.
 - Top-level `let` values → `public static readonly` fields (`public static` for `let mutable`). C# runs static field
   initializers in textual order, as F# runs top-level bindings. A top-level `do` block becomes a private static method
   run from a field initializer at the same position (`private static readonly bool _init1 = init1();`), because a static

@@ -17,7 +17,6 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
-using Microsoft.FSharp.Control;
 
 namespace Z1R_Avalonia;
 
@@ -66,7 +65,10 @@ public static class Graphics
         public static int SetSonar(bool enable) => Platform.SetMouseSonar(enable);
     }
 
-    public static readonly FSharpEvent<int> volumeChanged = new FSharpEvent<int>();
+    // (F#: `let volumeChanged = new Event<int>()`, which other files Trigger. A C# event can only be raised by its own class, so other
+    // files call triggerVolumeChanged(v) for WPF's `volumeChanged.Trigger(v)`; subscribe with `volumeChanged += v => ...`.)
+    public static event Action<int> volumeChanged;
+    public static void triggerVolumeChanged(int v) => volumeChanged?.Invoke(v);
     private static double soundVolume = (double)TrackerModelOptions.Volume / 300.0;
     public static void PlaySoundForSpeechRecognizedAndUsedToMark()
     {
@@ -79,10 +81,10 @@ public static class Graphics
     private static readonly bool _init1 = init1();
     private static bool init1()
     {
-        volumeChanged.Publish.AddHandler(new FSharpHandler<int>((_, v) =>
+        volumeChanged += v =>
         {
             soundVolume = (double)v / 300.0;
-        }));
+        };
         return true;
     }
 

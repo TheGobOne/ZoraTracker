@@ -1,7 +1,7 @@
 // Ported from Z1R_WPF/CustomMessageBox.fs (WPF @ 9292b0b).
-// (F#: `module CustomMessageBox` holding `type CustomMessageBox`. C# doesn't allow a nested type with the same name as its
-// enclosing class (CS0542), so the module becomes a namespace instead; callers in Z1R_Avalonia still write
-// `new CustomMessageBox.CustomMessageBox(...)`.)
+// (F#: `module CustomMessageBox` holding `type CustomMessageBox`. C# can't nest a class in a class of the same name (CS0542), so, as
+// PLAN.md says, it's one class `CustomMessageBox` in namespace Z1R_Avalonia: WPF's `CustomMessageBox.CustomMessageBox(...)` becomes
+// `new CustomMessageBox(...)`.)
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -10,12 +10,12 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 
-namespace Z1R_Avalonia.CustomMessageBox;
+namespace Z1R_Avalonia;
 
 /*
 sample use:
 
-var cmb = new CustomMessageBox.CustomMessageBox("Verify changes", System.Drawing.SystemIcons.Question, "You moved a dungeon segment. Keep this change?", new[] { "Keep changes", "Undo" });
+var cmb = new CustomMessageBox("Verify changes", System.Drawing.SystemIcons.Question, "You moved a dungeon segment. Keep this change?", new[] { "Keep changes", "Undo" });
 cmb.OwnerWindow = (Window)TopLevel.GetTopLevel(this);
 cmb.ShowDialogBlocking();
 if (cmb.MessageBoxResult == null || cmb.MessageBoxResult == "Undo")

@@ -1,19 +1,19 @@
 // Ported from Z1R_WPF/Timeline.fs (WPF @ 9292b0b). Same members, same order; see docs/avalonia-port/PLAN.md, "Language: C#".
-// (F#: `module Timeline` holding `type Timeline`. As with CustomMessageBox, C# doesn't allow a nested type with the same name as its
-// enclosing class (CS0542), so the module becomes a namespace: callers still write `Timeline.TimelineID.X`, `new Timeline.TimelineItem(...)`
-// and `new Timeline.Timeline(...)`. The module's own values (isCurrentlyLoadingASave, canvasAdd, TLC, ...) are static members of
-// `partial class Timeline`, split around TimelineID/TimelineItem to keep the file order, so WPF's `Timeline.isCurrentlyLoadingASave`
-// becomes `Timeline.Timeline.isCurrentlyLoadingASave`.)
+// (F#: `module Timeline` holding `type Timeline`. C# can't nest a class in a class of the same name (CS0542), so, as PLAN.md says, there's
+// one class `Timeline` holding both the type's members and the module's values (isCurrentlyLoadingASave, canvasAdd, TLC, ...) as statics;
+// it's `partial`, split around TimelineID/TimelineItem to keep the file order. The module's other types are at namespace level.
+// WPF's `Timeline.Timeline(...)` becomes `new Timeline(...)`, `Timeline.TimelineID.X` becomes `TimelineID.X`, `Timeline.TimelineItem(...)`
+// becomes `new TimelineItem(...)`, and `Timeline.isCurrentlyLoadingASave` stays `Timeline.isCurrentlyLoadingASave`.)
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Microsoft.FSharp.Control;
+using Microsoft.FSharp.Control;   // (SaveAndLoad.seedAndFlagsUpdated is an F# event of the F# model)
 using Microsoft.FSharp.Core;
 
-namespace Z1R_Avalonia.Timeline
+namespace Z1R_Avalonia
 {
     public partial class Timeline
     {
@@ -393,7 +393,9 @@ namespace Z1R_Avalonia.Timeline
             if (TrackerModel.timelineDataOverworldSpotsRemain.Count > 0)
             {
                 // populate data to graph
-                // (F#: Array.sortBy fst, which is FSharp.Core's Array.Sort(keys, items); done the same way so equal keys end up in the same order)
+                // (F#: Array.sortBy fst. FSharp.Core implements that as the BCL's Array.Sort(keys, items), which isn't stable; equal keys matter
+                // here, since the last sample in a tick bucket wins. So this calls the same BCL Array.Sort(keys, items) rather than a stable sort
+                // like OrderBy, so equal keys end up in the same order as in WPF.)
                 var sorted = TrackerModel.timelineDataOverworldSpotsRemain.ToArray();
                 Array.Sort(sorted.Select(t => t.Item1).ToArray(), sorted);
                 var remainPerTick = Enumerable.Repeat(-1, numTicks+1).ToArray();
