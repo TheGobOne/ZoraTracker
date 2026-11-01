@@ -47,7 +47,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 28 | DrawingLayer.fs | 442 | 3 | ported (C#) | straight translation; resource tables are `Dictionary`s; "Open ExtraIcons Folder" via `Platform.OpenWithShell`; stamps scale from the top-left (see Judgement calls) |
 | 29 | Layout.fs | 860 | 2 | ported (C#) | straight translation; XAML templates/style → code templates and class-keyed styles; `optionBorderStyle` is a function; mouse-warp line tweened on a timer; magnifier uses a `VisualBrush` (see Judgement calls) |
 | 30 | Reminders.fs | 288 | 3 | ported (C#) | straight translation; agent is a `Channel`; voice via `OptionsMenu.voice`, clink via `Graphics.PlaySoundForReminder`, error beep via `Platform.SystemBeep` (stubbed off Windows); `Async<unit>` → `Func<Task>` (see Judgement calls) |
-| 31 | MainTrackerTriforcesAndItems.fs | 874 | 2 | todo | |
+| 31 | MainTrackerTriforcesAndItems.fs | 874 | 2 | ported (C#) | straight translation; `setup` returns a 4-tuple; Item Locations/Item Progress windows as Popouts (WPF-unit positions, no `RestoreBounds`); item-progress mirror via `VisualBrush` (see Judgement calls) |
 | 32 | Debouncer.fs | 15 | 3 | todo | |
 | 33 | SyncOriginTracker.fs | 22 | 4 | todo | |
 | 34 | DungeonCInterop.fs | 24 | 4 | todo | |
@@ -604,6 +604,20 @@ runtime-test lists in the entries below.
 - **Reminders threading (test at runtime).** The message loop is an `async` method started on the UI thread, so its awaits resume there (WPF: `SwitchToContext(ctxt)`); the
   clink delay, `voice.Speak` (blocking) and the minimum-display sleep run in `Task.Run` (WPF: `SwitchToThreadPool`). Border `MouseDown/Enter/Leave` → `PointerPressed/Entered/Exited`;
   `Visibility.Collapsed` → `IsVisible`. The error beep (`SystemSounds.Asterisk`) is `Platform.SystemBeep` (stubbed off Windows, see Stubs).
+- **MainTrackerTriforcesAndItems C# shapes.** `setup(cm, owInstance, layout, kind)` returns `(Func<TimelineID, TrackerModel.Box, bool, Canvas> boxItemImpl, Image extrasImage,
+  Action<Canvas,int> updateNumberedTriforceDisplayImpl, Action updateNumberedTriforceDisplayIfItExists)`. `makeGhostBusterImpl(IBrush, bool)` returns a `Canvas`;
+  `timelineItems` is a `List<TimelineItem>`; `doUIUpdateEvent` is a `Graphics.SharedEvent`; `itemProgressSource` is a `Control`; the windows are Avalonia `Window`s.
+  `boxActivators` uses reference equality (`ReferenceEqualityComparer`), as WPF's `HashIdentity.Reference`.
+- **Item Locations / Item Progress windows (test at runtime).** Same treatment as Popouts: Left/Top in WPF units (`ShowRunCustom.leftOf/topOf/setLeftTop`), size saved as the
+  client size, `RestoreBounds` replaced by the last normal-state bounds (a small `RestoreBoundsTracker`), "minimized" also by `WindowState`; `ContentRendered` → `Opened`,
+  `LocationChanged` → `PositionChanged`, `CanResizeWithGrip` → `CanResize`, closed with `ShowRunCustom.mainWindow()`. The layout switch re-fits the window by measuring the
+  Viewbox's natural size (WPF: `UpdateLayout()` then `ActualWidth/Height`), since Avalonia applies a SizeToContent resize asynchronously; check the new size is right in both
+  layouts. The Item Progress mirror is a `VisualBrush { Visual = bar, Stretch = Fill }` (WPF: `VisualBrush(bar)`); the invisible full-size "mirrorPad" child is kept, though
+  Avalonia's VisualBrush already maps the visual's own bounds; compare the mirrored picture with WPF.
+- **Main tracker input (test at runtime).** Level 2 placeholder `MouseDown` (left) → `PointerPressed` with `LeftButtonPressed`; the slot container's middle-click
+  `PreviewMouseDown` and the moved triforce's non-left `PreviewMouseDown` → tunnelling `PointerPressed`; level 9 entry `MouseRightButtonDown` → `PointerPressed`
+  (right only), `MouseWheel` → `PointerWheelChanged` through `Graphics.wheelNotch` (Handled set first, as WPF). The level 9 hint cell's `Visibility.Hidden` → Opacity 0 +
+  not hit-testable. Tooltips via `ToolTip.SetTip` (extras icon: `ToolTip.SetPlacement(Top)`). The "dungeon quest" curve is a `PathGeometry` with one `BezierSegment`.
 
 ## Decisions needed from TheGobOne
 
