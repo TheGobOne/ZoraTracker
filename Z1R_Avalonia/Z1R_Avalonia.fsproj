@@ -16,6 +16,7 @@
     <Compile Include="Graphics.fs" />
     <Compile Include="CustomMessageBox.fs" />
     <Compile Include="OverworldRouteDrawing.fs" />
+    <Compile Include="DungeonRoomState.fs" />
     <Compile Include="Timeline.fs" />
     <!-- the old prototype UI; still the app's entry point until the ported Program.fs/WPFUI.fs can run the app -->
     <Compile Include="Prototype.fs" />

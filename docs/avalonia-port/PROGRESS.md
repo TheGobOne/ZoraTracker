@@ -20,7 +20,7 @@ Status: `todo` · `ported` · `stubbed` (temporary) · `skipped` (needs a logged
 | 2 | Graphics.fs | 1634 | 0 | ported | sounds stubbed; Linux cursor warp/fake clicks stubbed |
 | 3 | CustomMessageBox.fs | 66 | 0 | ported | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites |
 | 4 | OverworldRouteDrawing.fs | 268 | 1 | ported | straight translation; `drawPathsImpl` takes an `Avalonia.Point` |
-| 5 | DungeonRoomState.fs | 259 | 1 | todo | |
+| 5 | DungeonRoomState.fs | 259 | 1 | ported | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control` |
 | 6 | HotKeys.fs | 606 | 1 | todo | global hotkeys stubbed |
 | 7 | Timeline.fs | 331 | 1 | ported | ported ahead of #5/#6 (it depends on neither); labels stay unwrapped read-only TextBoxes |
 | 8 | CustomComboBoxes.fs | 1418 | 1 | todo | update install, opening folders stubbed |
