@@ -39,7 +39,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 20 | LinkRouting.fs | 240 | 2 | ported (C#) | straight translation; `RouteDestination` is an abstract record; async → `Task` (see Judgement calls) |
 | 21 | Popouts.fs | 547 | 3 | ported (C#) | straight translation; `PopoutKind` is a C# enum; `doUIUpdateEvent` is a `Graphics.SharedEvent`; window positions in WPF units via ShowRunCustom's helpers; no `RestoreBounds` (see Judgement calls) |
 | 22 | OverworldItemGridUI.fs | 1034 | 2 | ported (C#) | straight translation; `ShowLocatorDescriptor` is an abstract record; `MakeItemGrid` returns a 13-element value tuple; `redrawOWCircle` is a `StrongBox`; events are `Graphics.SharedEvent`s (see Judgement calls) |
-| 23 | UIComponents.fs | 1536 | 2 | todo | |
+| 23 | UIComponents.fs | 1536 | 2 | ported (C#) | straight translation; Make* functions return value tuples; waypoint gradient tweened on a timer; magnifier cache in `Platform.Files.User("Magnifier")` (see Judgement calls) |
 | 24 | HUDs.fs | 392 | 3 | todo | |
 | 25 | Broadcast.fs | 251 | 3 | todo | |
 | 26 | UIHelpers.fs | 15 | 3 | todo | |
@@ -515,6 +515,28 @@ runtime-test lists in the entries below.
   (also on the hint boxes' fast hint selector). Spot Summary's `AddHandler(MouseDownEvent, …, true)` → `AddHandler(PointerPressedEvent, …, handledEventsToo: true)`, right button from
   `PointerUpdateKind`. `ToolTipService.SetPlacement(Top)` → `ToolTip.SetPlacement`; `SetShowDuration` is the usual no-op. The alphabetized hint-zone grid sorts the two-letter codes
   ordinally, as F#'s string compare does.
+
+- **UIComponents C# shapes.** `MakeMagnifier(List<Control>, int, Bitmap[,])` returns `(Action<int, int> onMouseForMagnifier, Border, Canvas)`. `MakeLegend(cm, Graphics.SharedEvent)`
+  returns `(Canvas, Image, Canvas, Action, Canvas, Canvas, Canvas)` in WPF's order. `itemProgressChanged` is an `Action`, `uncollectMapIcons` an `Action<List<int>>`.
+  `MakeItemProgressBar` returns `(Action, Canvas, Button)`; `MakeHintDecoderUI` a `Button`; `hintExplainer` a `Border`. `MakeBlockers(cm, List<Func<(int, (double, double))?>>,
+  SharedEvent<int> levelTabSelected, SharedEvent<bool> blockersHoverEvent, Control[], Action<int>, Action<int>)` returns the `Grid`. `MakeZoneOverlay(Canvas, Action, List<Control>)`
+  returns `(CheckBox, Action<HintZone, string, double, double> addZoneName, Action<HintZone, bool> changeZoneOpacity, Canvas[,])`. `MakeMouseHoverExplainer` returns `(Button, Canvas)`.
+  `legendStartButton` is a `Button`. The file's late `open OverworldMapTileCustomization` is a `using` alias for `OW_ITEM_GRID_LOCATIONS` (a `using static` makes `canvasAdd`/`OMTW` ambiguous).
+- **Magnifier tile cache** moved from `<exe folder>\Magnifier\` to `Platform.Files.User("Magnifier", …)`, like the Overworld tile cache; file names unchanged.
+- **Magnifier/legend translations (compare on Windows).** The magnified map's `LayoutTransform` (1.02 scale) is a `LayoutTransformControl`. `BlurEffect` has no `KernelType` (Avalonia's
+  blur is Gaussian, as WPF's setting). The Start Spot ring and Custom Waypoint icon `ScaleTransform`s and the recorder diamond (`fortyFiveDegrees`) get `RenderTransformOrigin = TopLeft`.
+  The Custom Waypoint's `PointAnimationUsingKeyFrames` on the gradient's `EndPoint` (linear, 9 key frames over 4 s, forever) is tweened on a 16 ms timer that never stops, as WPF's
+  animation never does. The legend spacing measures text with Avalonia's default font (WPF: `SystemFonts.MessageFontFamily`, which WPF TextBoxes use), so it follows the font
+  actually drawn; positions may differ slightly from WPF off Windows.
+- **Recorder whistle-order tooltip (test at runtime).** WPF fills a `ToolTip` in its `Opened` event; the port sets the `ToolTip` itself as the tip and fills it in the control's
+  `ToolTipOpening` event. Placement Top, show delay 100 ms; `SetShowDuration(60000)` is the usual no-op. Check the tooltip shows the current quest's order.
+- **Start Spot / Custom Waypoint placement popup: hotkeys (test at runtime).** WPF's key handler reads `Mouse.GetPosition(element)`; Avalonia has no global mouse position, so the
+  popup remembers the last pointer position over the map (cleared when the pointer leaves it). Arrow-key moves and fake clicks work only after the pointer has moved over the map
+  (the initial warp to the map's centre produces a move on Windows/macOS, see risk 3).
+- **UIComponents input.** Item progress bar `MouseLeftButtonDown`/`MouseRightButtonDown` → one `PointerPressed` handler choosing `onItemClick(1)`/`onItemClick(-1)` by
+  `PointerUpdateKind`; blocker boxes' Shift+left-click reads `KeyModifiers` (WPF: `Keyboard.IsKeyDown`); hint decoder and blocker wheels step once per `Graphics.wheelNotch`.
+  The blocker "Applies to..." panel's and the Other Hints section's type-keyed `Resources` styles are `Styles` on the same panel. `dash_bracelet`/`dash_raft`
+  `Visibility.Collapsed` → `IsVisible`. "Mouse Hover Explainer" (30pt, placed by pixel) uses `Graphics.matchWpfTextTop`.
 
 ## Decisions needed from TheGobOne
 
