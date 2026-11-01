@@ -34,7 +34,7 @@ public class DungeonPreviewApp : Application
     public static TaskCompletionSource<bool> Ready = new TaskCompletionSource<bool>();
 
     /// <summary>the window made by CreateWindow (headless tests show it themselves)</summary>
-    public static Window Current;
+    public static new Window Current;
 
     /// <summary>the preview window</summary>
     public static Window CreateWindow()

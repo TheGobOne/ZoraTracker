@@ -106,6 +106,19 @@ runtime-test lists in the entries below.
 
 ## Judgement calls / needs a human
 
+- **Scroll wheel: whole notches only.** WPF's `MouseWheel` fires once per wheel notch. Mac trackpads send a stream of tiny
+  deltas, including while two fingers rest on the pad for a right-click, so a plain right-click on a room opened the
+  floor-drop menu (scroll down) before the click arrived. Every wheel handler now goes through `Graphics.wheelNotch`, which
+  adds the deltas up per control and acts once per 1.0 (one notch). This also covers sideways scrolling (`Delta.Y = 0`).
+  **Test on a Mac** with a trackpad and a mouse; once all wheel handlers are ported, check a fast trackpad flick feels OK.
+- **Text sits higher off Windows.** WPF uses Segoe UI's line metrics (ascent 1.08 em). macOS falls back to Helvetica
+  (ascent 0.77 em), so glyphs are drawn about 0.3 em higher in their box: about 60px for the 200pt dungeon numeral,
+  about 4px for 12pt text. `Graphics.matchWpfTextTop` pads the top by the difference (0 with Segoe UI). Used on the dungeon
+  numerals and the summary tab's notes. Small text elsewhere is still slightly high. If that shows anywhere (clipped or
+  crowded labels), apply it there too, or pick a bundled default font for every platform (risk 5).
+- **Summary tab has no level 9 until the end.** As in WPF, the top-left cell holds the help text, and level 9 replaces it
+  once Zelda is rescued. Not a bug.
+
 - **Tab look.** Avalonia's Fluent tabs look nothing like WPF's: underlined text, a border around the tab strip as well
   as the content, and 48px tall. `Graphics.wpfTabItemTemplate` and `wpfTabControlTemplate` rebuild WPF's (Aero2) shape:
   boxed tabs with a 1px #ACACAC border, the selected tab white and raised 2px, light-blue hover, and the tab strip above
