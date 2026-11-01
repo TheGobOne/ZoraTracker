@@ -108,6 +108,33 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it): mou
 drag-paint, hotkeys, cursor warps, MOVE/GRAB, the summary hover previews), save/load against a WPF save file, and the
 runtime-test lists in the entries below.
 
+## Phase 2 status
+
+All 38 WPF files are ported to C# and build, and the desktop app now starts the ported tracker (`Z1R_Avalonia.Program.main`, the
+port of Program.fs) by default. Temporary until the ported app is confirmed working at runtime, then removed: `--dungeon-preview`
+(the phase 1 dungeon-only window) and `--prototype` (the old F# prototype UI).
+
+Checked so far, without a display: the solution builds with no new warnings (Debug and Release). A headless run (Avalonia.Headless,
+no rendering, a scratch HOME so no real user files were touched) built the start screen, then started 1st Quest, 2nd Quest and Mixed -
+2nd Quest Overworld: every class's static initializer ran in WPF compile order, `WPFUI.makeAll` completed, the timer was placed and ticked,
+and nothing reached the crash handlers (after fixing the button-template crash it found; see Judgement calls). Nothing has been seen on
+screen or clicked by a person yet.
+
+Not checked yet (needs a person at the Mac, and ideally Windows next to it). Runtime checklist:
+- Start screen: layout against WPF (two columns, Pick Overworld button, Load Save + recent saves box, options, version button); hover
+  explainers and their line; the Pick Overworld and 4th Sword popups open in place, scale with the window and close on outside clicks;
+  Legacy Mode locks the ZORA Extras; Remember startup selection; Custom LEVEL Name box; More Options... (blank grid / custom map file).
+- Starting each quest, Randomized Quest, Hide Dungeon Numbers, Heart Shuffle Off/Intra/Full, 4th Sword in level 2 and 9, Progressive Items.
+- Load Save: the file dialog (each OS), a WPF save file, the version-mismatch box, a recent save, a missing/broken file (back to the start
+  screen); crash recovery (a recent crash log entry plus an auto-save offers to load it).
+- Main window: resizing scales the UI and is remembered (MainWindowScale), position remembered (MainWindowLT), restart from the options
+  (Graphics.RestartTheApplication), closing writes settings and ends the app (popouts close too).
+- Timer: counts from Start, pause/reset, F10 (Windows Release build only) updates the timeline, stops when Zelda is rescued; its digits sit
+  where WPF's do. Race Mode notice and stamp; options changed on the start screen are reflected after Start (see "Startup order" below).
+- The rest of the tracker (overworld, dungeons, popups, hotkeys, popouts, broadcast window, reminders, timeline, drawing layer, co-op):
+  the runtime-test entries under Judgement calls, file by file.
+- Single instance: a second copy waits, then reports "Another instance" (the message only shows in a terminal).
+
 ## Judgement calls / needs a human
 
 - **Scroll wheel: whole notches only.** WPF's `MouseWheel` fires once per wheel notch. Mac trackpads send a stream of tiny
