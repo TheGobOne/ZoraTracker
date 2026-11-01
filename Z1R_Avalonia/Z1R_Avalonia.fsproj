@@ -6,13 +6,63 @@
     <TargetFramework>net10.0</TargetFramework>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RootNamespace>Z1R_Avalonia</RootNamespace>
+    <OtherFlags>--warnon:1182</OtherFlags>
   </PropertyGroup>
 
+  <!-- Ported WPF files go in the same order as Z1R_WPF.fsproj (see docs/avalonia-port/PLAN.md). -->
   <ItemGroup>
-    <Compile Include="Program.fs" />
+    <Compile Include="Platform.fs" />
+    <Compile Include="Drawing.fs" />
+    <Compile Include="Gamepad.fs" />
+    <Compile Include="Graphics.fs" />
+    <Compile Include="CustomMessageBox.fs" />
+    <!-- the old prototype UI; still the app's entry point until the ported Program.fs/WPFUI.fs can run the app -->
+    <Compile Include="Prototype.fs" />
   </ItemGroup>
 
-  <!-- art shared with the Windows tracker, embedded as Avalonia resources (avares://Z1R_Avalonia/Assets/...) -->
+  <!-- the Windows tracker's art, embedded under the same resource names it uses (Graphics.GetResourceStream) -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\Z1R_WPF\icons\s_map_overworld_vanilla_strip8.png" LogicalName="s_map_overworld_vanilla_strip8.png" Link="icons\s_map_overworld_vanilla_strip8.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\s_map_overworld_zones_strip8.png" LogicalName="s_map_overworld_zones_strip8.png" Link="icons\s_map_overworld_zones_strip8.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\s_map_overworld_strip8.png" LogicalName="s_map_overworld_strip8.png" Link="icons\s_map_overworld_strip8.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\s_icon_overworld_strip39.png" LogicalName="s_icon_overworld_strip39.png" Link="icons\s_icon_overworld_strip39.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\s_btn_tr_dungeon_cell_strip3.png" LogicalName="s_btn_tr_dungeon_cell_strip3.png" Link="icons\s_btn_tr_dungeon_cell_strip3.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\s_btn_tr_dungeon_num_strip18.png" LogicalName="s_btn_tr_dungeon_num_strip18.png" Link="icons\s_btn_tr_dungeon_num_strip18.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\ZTlogo64x64.png" LogicalName="ZTlogo64x64.png" Link="icons\ZTlogo64x64.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\CroppedBrianKitty.png" LogicalName="CroppedBrianKitty.png" Link="icons\CroppedBrianKitty.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\icons7x7.png" LogicalName="icons7x7.png" Link="icons\icons7x7.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\icons8x8.png" LogicalName="icons8x8.png" Link="icons\icons8x8.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\icons10x10.png" LogicalName="icons10x10.png" Link="icons\icons10x10.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\icons3x7.png" LogicalName="icons3x7.png" Link="icons\icons3x7.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\icons8x16.png" LogicalName="icons8x16.png" Link="icons\icons8x16.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\ow_icons5x9.png" LogicalName="ow_icons5x9.png" Link="icons\ow_icons5x9.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\alphanumerics3x5.png" LogicalName="alphanumerics3x5.png" Link="icons\alphanumerics3x5.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\link_icons.png" LogicalName="link_icons.png" Link="icons\link_icons.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\mouse-icon-button-colors.png" LogicalName="mouse-icon-button-colors.png" Link="icons\mouse-icon-button-colors.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\mouse-icon-button-colors-2.png" LogicalName="mouse-icon-button-colors-2.png" Link="icons\mouse-icon-button-colors-2.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\take-any-potion.png" LogicalName="take-any-potion.png" Link="icons\take-any-potion.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\take-any-leave.png" LogicalName="take-any-leave.png" Link="icons\take-any-leave.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\take-any-heart.png" LogicalName="take-any-heart.png" Link="icons\take-any-heart.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\take-any-candle.png" LogicalName="take-any-candle.png" Link="icons\take-any-candle.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\take-this-wood-sword.png" LogicalName="take-this-wood-sword.png" Link="icons\take-this-wood-sword.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\take-this-leave.png" LogicalName="take-this-leave.png" Link="icons\take-this-leave.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\take-this-candle.png" LogicalName="take-this-candle.png" Link="icons\take-this-candle.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\z1r-sample-hint.png" LogicalName="z1r-sample-hint.png" Link="icons\z1r-sample-hint.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\all-items-hud-pixels1.png" LogicalName="all-items-hud-pixels1.png" Link="icons\all-items-hud-pixels1.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\all-items-hud-pixels1-worse.png" LogicalName="all-items-hud-pixels1-worse.png" Link="icons\all-items-hud-pixels1-worse.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\first-quest-item-reference.png" LogicalName="first-quest-item-reference.png" Link="icons\first-quest-item-reference.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\second-quest-item-reference.png" LogicalName="second-quest-item-reference.png" Link="icons\second-quest-item-reference.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\eyeball.png" LogicalName="eyeball.png" Link="icons\eyeball.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\ws-ms-bu.png" LogicalName="ws-ms-bu.png" Link="icons\ws-ms-bu.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\mirror-overworld.png" LogicalName="mirror-overworld.png" Link="icons\mirror-overworld.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\open_cave20x20.png" LogicalName="open_cave20x20.png" Link="icons\open_cave20x20.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\new_icons13x9.png" LogicalName="new_icons13x9.png" Link="icons\new_icons13x9.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\zelda_bosses16x16.png" LogicalName="zelda_bosses16x16.png" Link="icons\zelda_bosses16x16.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\zelda_items16x16.png" LogicalName="zelda_items16x16.png" Link="icons\zelda_items16x16.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\CustomLogo.png" LogicalName="CustomLogo.png" Link="icons\CustomLogo.png" />
+  </ItemGroup>
+
+  <!-- art used by the prototype (avares://Z1R_Avalonia/Assets/...) -->
   <ItemGroup>
     <AvaloniaResource Include="..\Z1R_WPF\icons\s_map_overworld_vanilla_strip8.png" Link="Assets\s_map_overworld_vanilla_strip8.png" />
     <AvaloniaResource Include="..\Z1R_WPF\icons\ow_icons5x9.png" Link="Assets\ow_icons5x9.png" />
@@ -20,9 +70,19 @@
     <AvaloniaResource Include="..\Z1R_WPF\icons\icons3x7.png" Link="Assets\icons3x7.png" />
   </ItemGroup>
 
+  <!-- files that ship next to the app, as in the Windows tracker -->
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.*" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.*" />
+    <None Include="..\Z1R_WPF\reminder_clink.wav" Link="reminder_clink.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Z1R_WPF\confirm_speech.wav" Link="confirm_speech.wav" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Z1R_WPF\ShowRunCustomImages\*.png" Link="ShowRunCustomImages\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Z1R_Tracker\README.txt" Link="README.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <!-- the version Avalonia 11.3 itself uses -->
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
   </ItemGroup>
 
   <ItemGroup>
