@@ -4,4 +4,4 @@ open Avalonia
 
 [<EntryPoint>]
 let main argv =
-    AppBuilder.Configure<Z1R_Avalonia.Program.App>().UsePlatformDetect().StartWithClassicDesktopLifetime(argv)
+    AppBuilder.Configure<Z1R_Avalonia.Prototype.App>().UsePlatformDetect().StartWithClassicDesktopLifetime(argv)

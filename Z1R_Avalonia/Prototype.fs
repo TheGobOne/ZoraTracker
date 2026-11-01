@@ -1,4 +1,4 @@
-module Z1R_Avalonia.Program
+module Z1R_Avalonia.Prototype
 
 open Avalonia
 open Avalonia.Controls

@@ -11,7 +11,7 @@ do ()
 [<EntryPoint>]
 let main _ =
     // starts the shared App inside the <div id="out"> from AppBundle/index.html
-    AppBuilder.Configure<Z1R_Avalonia.Program.App>()
+    AppBuilder.Configure<Z1R_Avalonia.Prototype.App>()
         .StartBrowserAppAsync("out")
         .GetAwaiter().GetResult()
     0
