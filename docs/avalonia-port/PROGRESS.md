@@ -46,7 +46,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 27 | UserCustomLayer.fs | 210 | 3 | ported (C#) | straight translation; ExtraIcons is a user folder; `invokeExtras` is a `Func<Task>`; "Open ExtraIcons folder" via `Platform.RevealInFileManager` (see Judgement calls) |
 | 28 | DrawingLayer.fs | 442 | 3 | ported (C#) | straight translation; resource tables are `Dictionary`s; "Open ExtraIcons Folder" via `Platform.OpenWithShell`; stamps scale from the top-left (see Judgement calls) |
 | 29 | Layout.fs | 860 | 2 | ported (C#) | straight translation; XAML templates/style → code templates and class-keyed styles; `optionBorderStyle` is a function; mouse-warp line tweened on a timer; magnifier uses a `VisualBrush` (see Judgement calls) |
-| 30 | Reminders.fs | 288 | 3 | todo | voice/sound stubbed |
+| 30 | Reminders.fs | 288 | 3 | ported (C#) | straight translation; agent is a `Channel`; voice via `OptionsMenu.voice`, clink via `Graphics.PlaySoundForReminder`, error beep via `Platform.SystemBeep` (stubbed off Windows); `Async<unit>` → `Func<Task>` (see Judgement calls) |
 | 31 | MainTrackerTriforcesAndItems.fs | 874 | 2 | todo | |
 | 32 | Debouncer.fs | 15 | 3 | todo | |
 | 33 | SyncOriginTracker.fs | 22 | 4 | todo | |
@@ -597,6 +597,13 @@ runtime-test lists in the entries below.
   as the client size (WPF: outer); closed with the main window (`ShowRunCustom.mainWindow()`). The 8s instructions timeout uses `Task.Delay` on the UI thread.
 - **Layout links/input.** `MakeLinkText`'s `MouseLeftButtonUp` → `PointerReleased` with `InitialPressMouseButton == Left` (so the press must start on the link); the URL
   opens via `Platform.OpenWithShell`. The Shorter layout's `appMainCanvas.MouseMove` → `PointerMoved`. `Canvas.SetZIndex` → `ZIndex`.
+- **Reminders C# shapes.** The reminder agent (F#: `MailboxProcessor`) is a `Channel<Reminders.ReminderMessage>` (`reminderAgent.Writer.TryWrite(...)`); as in WPF,
+  reminders posted before `SetupReminderDisplayAndProcessing` sit in a channel nobody reads. `upcb`/`ReminderTextBox` return `Control`; icons are `IEnumerable<Control>`;
+  `visualUpdateToSynchronizeWithReminder`/`highlightAsyncComp` (F#: `Async<unit>`) are `Func<Task>` (null for None); `RemindTriforceCount(n, Func<Tuple<int,int>, Func<Task>>)`
+  (the locations are the model's F# tuples); `RemindOverworldOverwrites(..., string[] spokenOWTiles, Func<Task>)`; `SetupReminderDisplayAndProcessing(cm)` returns the `DockPanel`.
+- **Reminders threading (test at runtime).** The message loop is an `async` method started on the UI thread, so its awaits resume there (WPF: `SwitchToContext(ctxt)`); the
+  clink delay, `voice.Speak` (blocking) and the minimum-display sleep run in `Task.Run` (WPF: `SwitchToThreadPool`). Border `MouseDown/Enter/Leave` → `PointerPressed/Entered/Exited`;
+  `Visibility.Collapsed` → `IsVisible`. The error beep (`SystemSounds.Asterisk`) is `Platform.SystemBeep` (stubbed off Windows, see Stubs).
 
 ## Decisions needed from TheGobOne
 
