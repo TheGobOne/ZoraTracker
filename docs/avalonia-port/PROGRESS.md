@@ -44,7 +44,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 25 | Broadcast.fs | 251 | 3 | ported (C#) | straight translation; off-screen check via `Window.Screens`; views are `VisualBrush`es with an absolute `SourceRect`; positions in WPF units, sizes client size (see Judgement calls) |
 | 26 | UIHelpers.fs | 15 | 3 | ported (C#) | straight translation; `UIHelpers.NotTooFrequently(TimeSpan)` with `SendThunk(Action)` |
 | 27 | UserCustomLayer.fs | 210 | 3 | ported (C#) | straight translation; ExtraIcons is a user folder; `invokeExtras` is a `Func<Task>`; "Open ExtraIcons folder" via `Platform.RevealInFileManager` (see Judgement calls) |
-| 28 | DrawingLayer.fs | 442 | 3 | todo | |
+| 28 | DrawingLayer.fs | 442 | 3 | ported (C#) | straight translation; resource tables are `Dictionary`s; "Open ExtraIcons Folder" via `Platform.OpenWithShell`; stamps scale from the top-left (see Judgement calls) |
 | 29 | Layout.fs | 860 | 2 | todo | |
 | 30 | Reminders.fs | 288 | 3 | todo | voice/sound stubbed |
 | 31 | MainTrackerTriforcesAndItems.fs | 874 | 2 | todo | |
@@ -563,6 +563,15 @@ runtime-test lists in the entries below.
   `StackPanel`. `extraIconsDirectory` is `Platform.Files.User("ExtraIcons")` (WPF: exe folder; the same folder on Windows). The per-item timeline event stays an
   `FSharpEvent<bool>` (it goes to the F# model's `TimelineItemDescription.UserCustom`), null for None. The second `mkTxt` (which shadows the first in F#) is `mkTxt2`.
   The extras icon's `MouseDown` → `PointerPressed`. The checklist label TextBoxes inside a `Viewbox Stretch=Fill` (WPF TextBox chrome differs): compare at runtime.
+
+- **DrawingLayer C# shapes.** `ExtraIconsResourceTable`/`ZTrackerResourceTable` are `Dictionary<string, System.Drawing.Bitmap>` (F#: `dict`; same insertion order);
+  `ExtraZTbmps.All` is a `(string, Bitmap)[]`; `mouse` is a nullable `(DrawingLayerIcon, Image)`; `customMenuIconNames` sorts ordinally by lower-cased name, as F#'s
+  `Seq.sortBy`. `LoadDrawingLayer(DrawingLayerIconModel[], Canvas)`, `InteractWithDrawingLayer(cm, Canvas)` returns a `Task`.
+- **DrawingLayer input (test at runtime).** Stamp `MouseEnter/Leave/Down` → `PointerEntered/Exited/Pressed`, button from `PointerUpdateKind` (left = pick up, right = remove,
+  middle = half size); the root canvas's `MouseMove`/`MouseDown` → `PointerMoved`/`PointerPressed` (non-handled only, as WPF). The half-size `ScaleTransform` needs
+  `RenderTransformOrigin = TopLeft` (set in `makeImage`) to shrink toward the top-left as WPF; "is half size" is `RenderTransform != null` (no `Transform.Identity`).
+  The "Add custom icons to menus" checkbox's `LayoutTransform` (×1.5) → a `LayoutTransformControl` around it; tooltip via `ToolTip.SetTip`. "Open ExtraIcons Folder"
+  (WPF: `Explorer.exe <folder>`) → `Platform.OpenWithShell` on the user-data ExtraIcons folder.
 
 ## Decisions needed from TheGobOne
 
