@@ -32,8 +32,11 @@ The only allowed exceptions are where an operating system makes identical behavi
 explicitly approved, recorded under "Agreed platform deviations" in PROGRESS.md. Without his
 sign-off it is a parity gap, not an exception.
 
-The browser (WebAssembly) build is **not** part of the parity goal. It stays buildable, but
-browsers can't do things like global hotkeys or cursor warping, so it's best effort.
+**The desktop app is the main version** (Windows, macOS, Linux). The browser (WebAssembly) build is **not** part
+of the parity goal: it comes later (phase 6) as a limited build of the same app. Until then it keeps starting the
+old prototype. Decided with the fork's owner on 2026-11-01, because browsers can't do what racers and streamers rely on
+while the game has focus: global hotkeys, cursor warping and fake clicks, gamepad push-to-talk, plus the broadcast
+window for OBS.
 
 ## Language: C#
 
@@ -284,6 +287,16 @@ be checked**. In practice:
 **Phase 5 — ship**
 - macOS `.app` bundle (osx-arm64 + osx-x64), signing and notarisation, Linux build, per-OS
   auto-update, testing on each OS.
+
+**Phase 6 — browser build (limited)**, after the desktop app ships
+- Point `Z1R_Avalonia_Browser` at the ported tracker and delete `Z1R_Avalonia_Prototype`.
+- Make the blocking dialogs (`CustomMessageBox.ShowDialogBlocking`, other nested dispatcher frames) awaitable:
+  WebAssembly is single-threaded, so nothing may block. This changes desktop code too.
+- Fold pop-out windows into the single browser view (or separate pages); saves and loads through
+  downloads/uploads or browser storage.
+- Spoken text through the browser's speech synthesis; sound through Web Audio.
+- Switch off what browsers can't do (global hotkeys, cursor warping, fake input, co-op hosting, gamepad while
+  unfocused) and say so in the UI. Voice commands only where the Web Speech API exists, if at all.
 
 ## Done criteria
 

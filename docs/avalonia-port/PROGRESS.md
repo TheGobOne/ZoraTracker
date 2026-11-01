@@ -114,7 +114,7 @@ runtime-test lists in the entries below.
 All 38 WPF files are ported to C# and build, and the desktop app now starts the ported tracker (`Z1R_Avalonia.Program.main`, the
 port of Program.fs). After a first runtime check on the Mac (start screen and starting a game looked right), `--dungeon-preview`
 (the phase 1 dungeon-only window) and `--prototype` (the old F# prototype UI) were removed from the desktop app. `Z1R_Avalonia_Prototype`
-is still used by the browser (WebAssembly) host, until that host starts the ported tracker.
+is still used by the browser (WebAssembly) host, until that host starts the ported tracker in phase 6 (see PLAN.md).
 
 Checked so far, without a display: the solution builds with no new warnings (Debug and Release). A headless run (Avalonia.Headless,
 no rendering, a scratch HOME so no real user files were touched) built the start screen, then started 1st Quest, 2nd Quest and Mixed -
