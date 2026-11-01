@@ -795,7 +795,7 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
     Cursor warping stays on CoreGraphics because SharpHook's warp needs that permission too (checked: it returns ErrorAxApiDisabled), and
     CGWarpMouseCursorPosition doesn't.
   - Sound: each file has its own SDL audio stream, and playing it again restarts it, as WPF's one MediaPlayer per file. Volume is SDL's stream
-    gain (WPF: MediaPlayer.Volume, both linear 0-1). Checked on macOS (CoreAudio) at volume 0; **listen** for both sounds and compare loudness on Windows.
+    gain (WPF: MediaPlayer.Volume, both linear 0-1). Checked on macOS by ear (`--sound-test`, which plays both sounds and the beep once each); compare loudness on Windows.
   - Gamepad: the first gamepad SDL recognises uses its LEFT_SHOULDER button; otherwise the first joystick's button 4 (WPF: `Buttons4`). Polled every
     10ms on a background thread (WPF: a tight DirectInput poll loop), with SDL told to keep reading while the tracker isn't focused. As WPF, only a
     gamepad present at startup is used. A disconnect raises `ControllerFailureEvent`, as a DirectInput read error does. **Test with a real gamepad.**
