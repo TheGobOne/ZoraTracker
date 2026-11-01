@@ -30,7 +30,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 11 | Dungeon.fs | 1226 | 1 | ported (C#) | straight translation; co-op host launch real on Windows (Job Object moved to `Platform.StartChildProcessTiedToApp`), stubbed on macOS/Linux until phase 4; `DoorState` is a C# enum (see Judgement calls) |
 | 12 | OptionsMenu.fs | 1143 | 1 | ported (C#) | every option wired as in WPF; voice via `Platform.SpeechSynthesizer` (System.Speech on Windows, stubbed on macOS/Linux); events are C# events with `trigger…()`; reset deletes the model's settings file (see Judgement calls) |
 | 13 | Views.fs | 610 | 1 | ported (C#) | straight translation (no `VisualBrush` in this file); glow animation tweened on a timer; `SynthesizeANewLocationKnownEvent` returns a C# event holder (see Judgement calls) |
-| 14 | DungeonSaveAndLoad.fs | 162 | 1 | todo | |
+| 14 | DungeonSaveAndLoad.fs | 162 | 1 | ported (C#) | straight translation; save text built exactly as WPF's (InvariantCulture numbers, lowercase booleans); `DrawingLayerIcon` is an abstract record (see Judgement calls) |
 | 15 | DungeonHighlightsUI.fs | 200 | 1 | todo | |
 | 16 | DungeonPopups.fs | 406 | 1 | todo | |
 | 17 | DungeonUI.fs | 2554 | 1 | todo | |
@@ -339,6 +339,15 @@ Already real, not stubs: speech synthesis on Windows (System.Speech, as in WPF),
 - **Item boxes: sideways scrolling ignored**, as in the popup grids (`Delta.Y == 0` would otherwise open the item popup stepping backwards).
 - **Item box / triforce clicks.** `MouseDown` with `ChangedButton` → `PointerPressed` with `PointerUpdateKind` (the box reacts to left/middle/right presses only,
   as WPF's `ButtonState = Pressed` check; the triforce's non-middle branch also runs for thumb buttons, as in WPF).
+- **DungeonSaveAndLoad C# shapes.** The model classes (`DungeonRoomModel`, `DungeonModel`, `DrawingLayerIconModel`, `JustVersion`, `AllData`) are nested classes
+  with the same property names, defaults and declaration order (System.Text.Json and co-op's Newtonsoft map by name and write in declaration order; `IsDefault`
+  stays a read-only property, as in F#). `DrawingLayerIcon` (an F# union) is an abstract record with cases `ZTracker(Value)` / `ExtraIcon(Value)`:
+  `DrawingLayerIcon.ZTracker k` → `new DungeonSaveAndLoad.DrawingLayerIcon.ZTracker(k)`. `AllDrawingLayerStamps` is a `List<(DrawingLayerIcon, int, int, Image)>`.
+  The `Save*` functions return `string[]`, as WPF. Numbers are written with `InvariantCulture` (F#'s `sprintf "%d"` ignores the culture) and booleans as
+  `true`/`false`, so save files are byte-for-byte the same as WPF's. **Test at runtime:** load a WPF save file, save it again, and diff.
+- **Drawing-layer stamp "half size" check.** WPF counts a stamp as full size when its `RenderTransform` is null or the shared `Transform.Identity`. Avalonia has
+  no shared identity transform and a control's `RenderTransform` is null until set, so `SaveDrawingLayer` checks null only. DrawingLayer.cs must set it back to
+  null (as WPF does) when un-halving a stamp.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
