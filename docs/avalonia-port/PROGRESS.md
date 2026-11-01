@@ -38,7 +38,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 19 | OverworldMapTileCustomization.fs | 1545 | 2 | ported (C#) | straight translation; accelerators are `Func<CanvasManager, Canvas, int, int, Task>`; "no hotkeys" reveals HotKeys.txt via `Platform.RevealInFileManager` (see Judgement calls) |
 | 20 | LinkRouting.fs | 240 | 2 | ported (C#) | straight translation; `RouteDestination` is an abstract record; async → `Task` (see Judgement calls) |
 | 21 | Popouts.fs | 547 | 3 | ported (C#) | straight translation; `PopoutKind` is a C# enum; `doUIUpdateEvent` is a `Graphics.SharedEvent`; window positions in WPF units via ShowRunCustom's helpers; no `RestoreBounds` (see Judgement calls) |
-| 22 | OverworldItemGridUI.fs | 1034 | 2 | todo | |
+| 22 | OverworldItemGridUI.fs | 1034 | 2 | ported (C#) | straight translation; `ShowLocatorDescriptor` is an abstract record; `MakeItemGrid` returns a 13-element value tuple; `redrawOWCircle` is a `StrongBox`; events are `Graphics.SharedEvent`s (see Judgement calls) |
 | 23 | UIComponents.fs | 1536 | 2 | todo | |
 | 24 | HUDs.fs | 392 | 3 | todo | |
 | 25 | Broadcast.fs | 251 | 3 | todo | |
@@ -494,6 +494,27 @@ runtime-test lists in the entries below.
   Ctrl+scroll is often the system zoom gesture; **Needs Gob:** should Cmd also work there?
 - **Shop Prices window.** The price `ComboBox` uses Avalonia's Fluent look (WPF: Windows' dropdown); its black background/orange text are set as in WPF, but the dropdown
   list's colours come from the theme. Compare. The saved size is `Bounds` (client) for WPF's `ActualWidth/Height`.
+- **OverworldItemGridUI C# shapes.** `ShowLocatorDescriptor` (an F# union) is an abstract record with cases `DungeonNumber(Value)`, `DungeonIndex(Value)`, `Sword1()`,
+  `Sword2()`, `Sword3()`: `ShowLocatorDescriptor.Sword2` → `new OverworldItemGridUI.ShowLocatorDescriptor.Sword2()`, `| ShowLocatorDescriptor.DungeonNumber n ->` →
+  `case ShowLocatorDescriptor.DungeonNumber(var n):`. The mutable hooks are `Action`/`Func`s: `showLocatorExactLocation` `Action<int, int>`, `showLocatorExactLocations`
+  `Action<List<(int, int)>>`, `showLocatorHintedZone` `Action<HintZone, bool>`, `showLocatorInstanceFunc(All)` `Action<Func<int, int, bool>>`, `addHintZoomHook`
+  `Action<Control, int, double>`, `showMarkerItemsLocator` `Action<List<int>>`, `showLocator` `Action<ShowLocatorDescriptor>`, `exportDungeonModelsJsonLines` `Func<string[]>`,
+  `hideFeatsOfStrength`/`hideRaftSpots`/`hideFirst/SecondQuestFromMixed`/`setMirroredOverworld` `Action<bool>`. `HintZoneDisplayTextBox` returns `Control`;
+  `learnMoreHintDecoration` is a `(Border, double, double)`. `FastHintSelector` is `Task<(bool hasResult, HintZone result)>`; `ApplyFastHintSelectorBehavior(cm, (px, py), Control,
+  i, bool, ShowLocatorDescriptor or null, bool)`. `MakeItemGrid(cm, Func<TimelineID, Box, bool, Control> boxItemImpl, List<TimelineItem>, owInstance, Image extrasImage,
+  Graphics.SharedEvent resetTimerEvent, bool, Graphics.SharedEvent doUIUpdateEvent, Func<string> makeManualSave)` returns the same 13 values as a value tuple
+  (`invokeExtras`, an `Async<unit>`, is a `Func<Task>`; `highlightOpenCavesCB` is null when not standard Hyrule). `MakeFQSQStuff` takes `redrawOWCircle` (WPFUI's F# `ref` of a
+  function) as a `StrongBox<Action<int, int>>`, so WPFUI sets `.Value` later as before, and returns `(CheckBox, CheckBox, Button)`. `TrackerModel.SyntheticEventingBool` is built
+  with `FuncConvert.FromFunc` (its constructor takes an F# function).
+- **Timer text (test at runtime).** `hmsTimeTextBox` and `broadcastTimeTextBox` (42pt, placed by pixel) use `Graphics.matchWpfTextTop`. `hmsTimeTextBox` keeps WPF's
+  fixed 56px height; with the extra top padding off Windows, check the digits aren't clipped at the bottom. `niceTimerBox` (WPF `Visibility.Hidden`/`Visible`) uses
+  `Opacity` 0/1; it's never hit-test visible, as in WPF.
+- **Item grid icons forward clicks (test at runtime).** `rerouteClick` re-raises the icon's `PointerPressed` args on the item box (WPF: re-raises the `MouseDown` args), so
+  clicking the ladder/armos/letter/white-sword icon acts like clicking its box. Check left/right/middle clicks on those icons behave as on the boxes, including popups.
+- **Item grid input.** Take-any hearts: `MouseLeftButtonDown`/`MouseRightButtonDown` → `PointerPressed` with `PointerUpdateKind`; wheel steps once per `Graphics.wheelNotch`
+  (also on the hint boxes' fast hint selector). Spot Summary's `AddHandler(MouseDownEvent, …, true)` → `AddHandler(PointerPressedEvent, …, handledEventsToo: true)`, right button from
+  `PointerUpdateKind`. `ToolTipService.SetPlacement(Top)` → `ToolTip.SetPlacement`; `SetShowDuration` is the usual no-op. The alphabetized hint-zone grid sorts the two-letter codes
+  ordinally, as F#'s string compare does.
 
 ## Decisions needed from TheGobOne
 
