@@ -2309,4 +2309,10 @@ public static class Graphics
         public event Action<T> Fired;
         public void Trigger(T x) => Fired?.Invoke(x);
     }
+    // (the same for an F# `Event<unit>`: WPF's `new Event<unit>()` → `new Graphics.SharedEvent()`, `ev.Trigger()`, `ev.Publish.Add(fun _ -> f())` → `ev.Fired += f`)
+    public sealed class SharedEvent
+    {
+        public event Action Fired;
+        public void Trigger() => Fired?.Invoke();
+    }
 }

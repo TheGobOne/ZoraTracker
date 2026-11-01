@@ -22,23 +22,24 @@ public static class ShowRunCustom
     public static readonly double MINIMIZED_THRESHOLD = -15999.0;
 
     // (port helpers: WPF's Window.Left/Top are in device-independent units; Avalonia's Window.Position is in screen pixels. These convert,
-    // so the numbers saved in ShowRunCustom.txt and the settings mean the same as WPF's. Before a window is shown, the main window's scaling is used.)
-    private static Window mainWindow() =>
+    // so the numbers saved in ShowRunCustom.txt and the settings mean the same as WPF's. Before a window is shown, the main window's scaling is used.
+    // Popouts.cs uses them too.)
+    public static Window mainWindow() =>
         Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d ? d.MainWindow : null;
     private static double scalingOf(Window w)
     {
         var s = w.IsVisible ? w.DesktopScaling : (mainWindow()?.DesktopScaling ?? 1.0);
         return s > 0.0 ? s : 1.0;
     }
-    private static double leftOf(Window w) => w.Position.X / scalingOf(w);
-    private static double topOf(Window w) => w.Position.Y / scalingOf(w);
-    private static void setLeftTop(Window w, double left, double top)
+    public static double leftOf(Window w) => w.Position.X / scalingOf(w);
+    public static double topOf(Window w) => w.Position.Y / scalingOf(w);
+    public static void setLeftTop(Window w, double left, double top)
     {
         var s = scalingOf(w);
         w.Position = new PixelPoint((int)Math.Round(left * s), (int)Math.Round(top * s));
     }
     // (WPF's Window.Owner + Show(): Avalonia passes the owner to Show)
-    private static void showOwned(Window w)
+    public static void showOwned(Window w)
     {
         var owner = mainWindow();
         if (owner != null && owner != w) w.Show(owner); else w.Show();

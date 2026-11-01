@@ -37,7 +37,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 18 | SpeechRecognition.fs | 102 | 4 | ported (C#) | recognizer via `Platform.SpeechRecognitionEngine`: System.Speech on Windows (as WPF), stubbed on macOS/Linux; `ConvertSpokenPhraseToMapCell` returns `int?` (see Judgement calls) |
 | 19 | OverworldMapTileCustomization.fs | 1545 | 2 | ported (C#) | straight translation; accelerators are `Func<CanvasManager, Canvas, int, int, Task>`; "no hotkeys" reveals HotKeys.txt via `Platform.RevealInFileManager` (see Judgement calls) |
 | 20 | LinkRouting.fs | 240 | 2 | ported (C#) | straight translation; `RouteDestination` is an abstract record; async → `Task` (see Judgement calls) |
-| 21 | Popouts.fs | 547 | 3 | todo | |
+| 21 | Popouts.fs | 547 | 3 | ported (C#) | straight translation; `PopoutKind` is a C# enum; `doUIUpdateEvent` is a `Graphics.SharedEvent`; window positions in WPF units via ShowRunCustom's helpers; no `RestoreBounds` (see Judgement calls) |
 | 22 | OverworldItemGridUI.fs | 1034 | 2 | todo | |
 | 23 | UIComponents.fs | 1536 | 2 | todo | |
 | 24 | HUDs.fs | 392 | 3 | todo | |
@@ -477,6 +477,23 @@ runtime-test lists in the entries below.
   triforce targets copy the loop index for their click closures (F# gives each iteration its own).
 - **Link routing popup (compare on Windows).** The explanation is an unwrapped `TextBox` holding `\n`s, as in WPF (check all lines show inside the 444×290 border); the
   crosshair "+" is an 18pt TextBox at (7, 1), as in WPF.
+- **Popouts C# shapes.** `PopoutKind` (an F# union with no data) is a C# enum with the same case names (`Popouts.PopoutKind.RemainingItemsPoput`, typo kept). The
+  `doUIUpdateEvent` parameters (`makePopout`, `Startup`, the `…Content` functions) are a `Graphics.SharedEvent`, a new non-generic variant of `SharedEvent<T>` for F#'s
+  `Event<unit>` (`ev.Trigger()`, `ev.Fired += f`); WPFUI's `doUIUpdateEvent = new Event<unit>()` becomes `new Graphics.SharedEvent()`. `theUIUpdateEvent` is null for None.
+  `Initialize(Window, SynchronizationContext)`. ShowRunCustom's `mainWindow`/`leftOf`/`topOf`/`setLeftTop`/`showOwned` port helpers are now public so Popouts can reuse them.
+- **Popout windows: positions and sizes (test at runtime).** Left/Top are kept in WPF units (`ShowRunCustom.leftOf`/`setLeftTop`), so the settings strings mean the same.
+  Saved sizes are Avalonia's client size (WPF: outer size, frame included), as ShowRunCustom; a size saved by WPF reopens slightly larger. `showHotKeys` keeps WPF's
+  `DesiredSize + 16 / + 40` frame allowance, which in Avalonia (client size) leaves a little extra space; compare. Avalonia has no `RestoreBounds`: each popout remembers the
+  last bounds seen in the normal state and saves those when minimized. WPF detects "minimized or closing" by `Left < MINIMIZED_THRESHOLD` (Windows moves minimized windows to
+  -32000); macOS/Linux don't, so `WindowState == Minimized` counts too. `ContentRendered` → `Opened`; `LocationChanged` → `PositionChanged`; `CanResizeWithGrip` → `CanResize`.
+  With no saved position the window opens where Avalonia/the OS puts it (WPF: Windows' default spot); check that it's sensible on each OS.
+- **`refocusMainWindow` activates the main window.** WPF's `Window.Focus()` gives the window keyboard focus, which activates it; Avalonia's `Focus()` only moves focus within a
+  window, so the port calls `Activate()` then `Focus()`. Check on Windows and macOS that moving/resizing a popout hands the keyboard back to the tracker (hotkeys keep working)
+  without side effects (e.g. the main window jumping in front of a popout being dragged).
+- **Uncollected Items Ctrl+wheel** is a tunnelling `PointerWheelChanged` handler reading `e.KeyModifiers == Control` and stepping once per `Graphics.wheelNotch`. On macOS,
+  Ctrl+scroll is often the system zoom gesture; **Needs Gob:** should Cmd also work there?
+- **Shop Prices window.** The price `ComboBox` uses Avalonia's Fluent look (WPF: Windows' dropdown); its black background/orange text are set as in WPF, but the dropdown
+  list's colours come from the theme. Compare. The saved size is `Bounds` (client) for WPF's `ActualWidth/Height`.
 
 ## Decisions needed from TheGobOne
 
