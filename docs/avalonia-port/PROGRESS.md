@@ -27,7 +27,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 8 | CustomComboBoxes.fs | 1418 | 1 | ported (C#) | update check complete; update install Windows-only (macOS/Linux open the release page, see Stubs); "Open folder" opens the user-data folder; async → `Task` (see Judgement calls) |
 | 9 | PieMenus.fs | 915 | 1 | ported (C#) | straight translation; async → `Task`; panels are `(Canvas, Action<IBrush>)`; F# lists → `List<T>`/`IEnumerable<T>` (see Judgement calls) |
 | 10 | ShowRunCustom.fs | 225 | 1 | ported (C#) | ShowRunCustom.txt is a user file; relative SHOW/RUN paths resolve against the app folder; process launching and "reveal file" via Platform (see Judgement calls) |
-| 11 | Dungeon.fs | 1226 | 1 | todo | co-op host launch (Job Object) stubbed until phase 4 |
+| 11 | Dungeon.fs | 1226 | 1 | ported (C#) | straight translation; co-op host launch real on Windows (Job Object moved to `Platform.StartChildProcessTiedToApp`), stubbed on macOS/Linux until phase 4; `DoorState` is a C# enum (see Judgement calls) |
 | 12 | OptionsMenu.fs | 1143 | 1 | todo | |
 | 13 | Views.fs | 610 | 1 | todo | |
 | 14 | DungeonSaveAndLoad.fs | 162 | 1 | todo | |
@@ -67,9 +67,10 @@ Temporary; every one has to be replaced before parity.
 | Mouse sonar | `Platform.SetMouseSonar` | only reachable from code WPF has commented out (risk 8) |
 | Cursor warping on Linux | `Platform.WarpCursor` | returns false; the app then skips the wait for a mouse-move event |
 | Fake clicks and scroll wheel on Linux | `Platform.*MouseClick`, `ScrollWheelRotate*` | log once |
+| Co-op host launch (`Z1R_SignalRHost`) on macOS/Linux | `Platform.StartChildProcessTiedToApp` (from `Dungeon.startLocalSignalRHost`) | logs once, starts nothing; today the host executable doesn't ship there, so `startLocalSignalRHost` prints "Host EXE not found" first, as WPF does when it's missing. Co-op is phase 4 |
 | In-app update install on macOS/Linux | `CustomComboBoxes.makeVersionButtonWithBehavior` | "Install update" opens the release page instead (risk 11); `downloadAndStageUpdate` refuses off Windows, so no files are ever replaced there |
 
-Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
+Already real, not stubs: the co-op host launch on Windows (the same kernel32 Job Object calls as WPF), cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
 (CoreGraphics; fake input needs Accessibility permission).
 
 ## Early risk checks (phase 0)
@@ -261,6 +262,30 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   `Explorer.exe /Select,` call; macOS: Finder `open -R`; Linux: opens the folder, since there's no standard way to select a file). RUN of an executable goes through
   `Platform.StartProcessHidden` (same `ProcessStartInfo`); RUN of a URL through `Platform.OpenWithShell`, which logs a failure instead of showing the error window.
   On macOS a `.app` bundle is a folder, so `RUN "/Applications/X.app"` reports "does not exist", as a folder would in WPF. **Needs Gob:** should RUN accept `.app` bundles on macOS?
+- **Dungeon C# shapes.** `Dungeon.DoorState` (an F# union with no data) is a C# enum with the same case names and numbers; its members are in
+  `DoorStateExtensions` (HotKeys' `SingleKeyboardModifierExtensions` pattern): `s.AsInt()` is unchanged, `Dungeon.DoorState.FromInt(x)` →
+  `DoorStateExtensions.FromInt(x)`, `Dungeon.DoorState.FromString(s)` → `DoorStateExtensions.FromString(s)`. `DoorInterop`, `ZeldaFont` and `GrabHelper`
+  are nested classes (`Dungeon.DoorInterop.fromCSharp(...)`, `new Dungeon.GrabHelper()` read as in WPF). `Door` takes `redraw` as `Action<DoorState>`;
+  `roomChangedCallback`/`SetRoomChangedCallback` use `Action<int,int,int>`; `HDNCP` is a nullable `(TrackerModel.Dungeon, ManualResetEvent)`;
+  `GrabHelper.PreviewDrop` returns a `(bool[,], bool[,])` value tuple; `HotKeyAHiddenDungeonLabel(Control, TrackerModel.Dungeon, ManualResetEvent)` takes null
+  for None; the three `Hidden…Popup`s are `async Task` and take a `CustomComboBoxes.GridClickDismissalWarpReturn` (callers pass
+  `new CustomComboBoxes.GridClickDismissalWarpReturn.WarpTo(p)`). Their grid selects return no result, so `TResult` is `object` (F# leaves it generic).
+  The door colour brushes are `IBrush`; `zeldaLetterCache`/`MakeLetterBIInZeldaFont` give an `Avalonia.Media.Imaging.Bitmap`; `ZeldaFont.extraGlyphs` is a `Dictionary<char, string[]>`.
+- **Co-op host launch (Dungeon.startLocalSignalRHost).** The Windows Job Object code (kernel32 `CreateJobObject`/`SetInformationJobObject`/
+  `AssignProcessToJobObject`, the struct-size retries and the lazy job creation) moved unchanged from Dungeon into `Platform.StartChildProcessTiedToApp(fileName,
+  arguments)`, which also builds the same `ProcessStartInfo` (no shell execute, no window) and returns the `Process`. So `Dungeon.signalRJobHandle` and
+  `Dungeon.createSignalRJob` no longer exist; nothing else in WPF uses them. The host's path is `Platform.Files.App("Z1R_SignalRHost.exe")` (WPF:
+  `AppDomain.CurrentDomain.BaseDirectory`, the same folder). On macOS/Linux the function is a stub returning null (no "Launched" line is printed). **Needs Gob
+  (phase 4):** the host executable's name off Windows (no `.exe`), and how it is built and shipped there.
+- **`Dungeon`'s `do` block (subscribing to `AfterCreatePopupCanvas`) runs when Dungeon's statics are first initialized (test at runtime).** Like WPF's, it reads
+  `CanvasManager.TheOnlyCanvasManager`, so the CanvasManager must exist before anything first reads a `Dungeon` field (C# initializes a class's statics on first
+  field access; F# runs a non-last file's top-level code on first access too). If a field is read earlier, the class fails to initialize
+  (`TypeInitializationException`), and every later use of `Dungeon` fails. Check once Program.cs/WPFUI.cs are ported.
+- **Hidden-dungeon popups (compare on Windows).** The two-line labels ("(Note: in Mixed Quest dungeons,\n7 and 8 may be swapped)" and the "Don't mark
+  anything other than '?'" warning) are unwrapped TextBoxes, as in WPF, holding a `\n`; check both lines show, centred. The customizer's two buttons use
+  Avalonia's Button theme (WPF: the default Windows button chrome with a 5px border), so their look differs; compare. `Loaded` (used to jump straight into a
+  chooser, or to warp the mouse onto the colour button) exists in Avalonia but may fire at a slightly different time from WPF's; check the mouse lands on the
+  button and the accelerated choosers open in the right place.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne

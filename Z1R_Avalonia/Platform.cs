@@ -113,6 +113,107 @@ public static class Platform
         });
     }
 
+    // Windows Job Object: ties child process lifetime to the parent process.
+    // When this process exits for any reason (crash, task kill, window close),
+    // the OS automatically kills all processes in the job.
+    // (WPF: these declarations, the job handle and createSignalRJob() are in Dungeon.fs, used by startLocalSignalRHost; moved here unchanged.)
+    private static class WinJob
+    {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, IntPtr lpName);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool SetInformationJobObject(IntPtr hJob, int infoClass, IntPtr lpInfo, uint cbInfoLength);
+    }
+
+    private static IntPtr childProcessJobHandle = IntPtr.Zero;   // (WPF: Dungeon.signalRJobHandle)
+
+    private static void createChildProcessJob()   // (WPF: Dungeon.createSignalRJob)
+    {
+        try
+        {
+            var job = WinJob.CreateJobObject(IntPtr.Zero, IntPtr.Zero);
+            if (job != IntPtr.Zero)
+            {
+                // LimitFlags is always at offset 16 (after two LARGE_INTEGERs) regardless of bitness.
+                // The total struct size depends on compiler alignment settings; try all plausible values:
+                //   x64 natural alignment: 144  |  x64 pack=4: 136
+                //   x86 with 8-byte-aligned ULONGLONG: 112  |  x86 pack=4: 108
+                var JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+                var JobObjectExtendedLimitInformation = 9;
+                var sizesToTry =
+                    IntPtr.Size == 8 ? new[] { 144, 136 }
+                    : new[] { 112, 108 };
+                var jobSet = false;
+                foreach (var structSize in sizesToTry)
+                {
+                    if (!jobSet)
+                    {
+                        var ptr = Marshal.AllocHGlobal(structSize);
+                        try
+                        {
+                            for (int i = 0; i <= structSize - 1; i++)
+                                Marshal.WriteByte(ptr, i, 0);
+                            Marshal.WriteInt32(ptr, 16, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE);
+                            if (WinJob.SetInformationJobObject(job, JobObjectExtendedLimitInformation, ptr, (uint)structSize))
+                            {
+                                childProcessJobHandle = job;
+                                jobSet = true;
+                            }
+                            else
+                            {
+                                var err = Marshal.GetLastWin32Error();
+                                if (err != 24)  // 24 = ERROR_BAD_LENGTH; only retry for that specific error
+                                {
+                                    Console.WriteLine($"[Sync] SetInformationJobObject failed (error {err})");
+                                    jobSet = true;  // non-recoverable error; stop trying other sizes
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.FreeHGlobal(ptr);
+                        }
+                    }
+                }
+                if (!jobSet)
+                    Console.WriteLine($"[Sync] SetInformationJobObject: no struct size worked ({(IntPtr.Size == 8 ? "x64" : "x86")})");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Sync] Could not create job object: {ex.Message}");
+        }
+    }
+
+    /// <summary>Start an executable with no window (no shell execute), tied to this app's lifetime, as WPF's Dungeon.startLocalSignalRHost
+    /// does for Z1R_SignalRHost.exe. On Windows the process goes in a Job Object with KILL_ON_JOB_CLOSE, so the OS kills it whenever the app
+    /// exits for any reason. Exceptions from Process.Start propagate to the caller, as in WPF. Returns the process, or null where this isn't
+    /// implemented yet (macOS/Linux: stub; co-op is phase 4).</summary>
+    public static Process StartChildProcessTiedToApp(string fileName, string arguments)
+    {
+        if (!isWindows)
+        {
+            stub("starting a child process tied to the app's lifetime (co-op host; Windows uses a Job Object)");
+            return null;
+        }
+        // Defer job creation to first actual use; calling at module-load time (do) can trigger
+        // SetInformationJobObject error 24 on first launch due to static-initializer ordering.
+        if (childProcessJobHandle == IntPtr.Zero)
+            createChildProcessJob();
+        var psi = new ProcessStartInfo();
+        psi.FileName = fileName;
+        psi.Arguments = arguments;
+        psi.UseShellExecute = false;
+        psi.CreateNoWindow = true;
+        var proc = Process.Start(psi);
+        // Add to job object so it is killed automatically if ZTracker exits for any reason
+        if (childProcessJobHandle != IntPtr.Zero)
+            WinJob.AssignProcessToJobObject(childProcessJobHandle, proc.Handle);
+        return proc;
+    }
+
     /// <summary>Path of the running executable, for restarting the app.</summary>
     public static string ExecutablePath() => Environment.ProcessPath;
 
