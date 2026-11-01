@@ -20,7 +20,7 @@ Status: `todo` · `ported` · `stubbed` (temporary) · `skipped` (needs a logged
 | 4 | OverworldRouteDrawing.fs | 268 | 1 | ported | straight translation; `drawPathsImpl` takes an `Avalonia.Point` |
 | 5 | DungeonRoomState.fs | 259 | 1 | todo | |
 | 6 | HotKeys.fs | 606 | 1 | todo | global hotkeys stubbed |
-| 7 | Timeline.fs | 331 | 1 | todo | |
+| 7 | Timeline.fs | 331 | 1 | ported | ported ahead of #5/#6 (it depends on neither); labels stay unwrapped read-only TextBoxes |
 | 8 | CustomComboBoxes.fs | 1418 | 1 | todo | update install, opening folders stubbed |
 | 9 | PieMenus.fs | 915 | 1 | todo | |
 | 10 | ShowRunCustom.fs | 225 | 1 | todo | |
@@ -120,6 +120,11 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
 - **Label foreground in the message box buttons (needs checking on Windows).** WPF's Label style sets its own (black)
   foreground, so WPF's message box buttons may show black text on the dark rounded button. Avalonia's Label inherits
   the button's orange. Compare with WPF before deciding.
+- **Timeline text measuring.** WPF's `FormattedText` takes `NumberSubstitution`, `TextFormattingMode.Display` and
+  `PixelsPerDip`; Avalonia's doesn't (it measures in DIPs), so those arguments are dropped. The seed/flags/title
+  layout depends on these widths and on the TextBox's own padding (+10), so compare the timeline's top row with WPF.
+- **Timeline hover tooltip** (`timeToolTip`) is an editable, unwrapped TextBox with a 3px border, as in WPF. Its border
+  colour comes from the theme (WPF's default is a light grey); compare on Windows.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
