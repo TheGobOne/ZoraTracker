@@ -2176,4 +2176,14 @@ public static class Graphics
         // System.Windows.Media.RenderCapability.IsPixelShaderVersionSupported(2s,0s)
         // none of the above worked in practice, so there is a flag in the settings file instead
         TrackerModelOptions.UseBlurEffects.Value;
+
+    // (port helper, not in Graphics.fs: an F# `Event<T>` that one file creates and passes to others, which subscribe or `Trigger` it
+    // (e.g. WPFUI's `blockersHoverEvent`, passed to UIComponents and DungeonUI/DungeonHighlightsUI). A C# event can't be passed around
+    // or raised from outside its class, so such a value is a SharedEvent<T>: WPF's `new Event<bool>()` → `new Graphics.SharedEvent<bool>()`,
+    // `ev.Trigger(x)` → `ev.Trigger(x)`, `ev.Publish.Add(f)` → `ev.Fired += f`.)
+    public sealed class SharedEvent<T>
+    {
+        public event Action<T> Fired;
+        public void Trigger(T x) => Fired?.Invoke(x);
+    }
 }

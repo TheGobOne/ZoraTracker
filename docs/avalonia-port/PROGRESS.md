@@ -31,7 +31,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 12 | OptionsMenu.fs | 1143 | 1 | ported (C#) | every option wired as in WPF; voice via `Platform.SpeechSynthesizer` (System.Speech on Windows, stubbed on macOS/Linux); events are C# events with `trigger…()`; reset deletes the model's settings file (see Judgement calls) |
 | 13 | Views.fs | 610 | 1 | ported (C#) | straight translation (no `VisualBrush` in this file); glow animation tweened on a timer; `SynthesizeANewLocationKnownEvent` returns a C# event holder (see Judgement calls) |
 | 14 | DungeonSaveAndLoad.fs | 162 | 1 | ported (C#) | straight translation; save text built exactly as WPF's (InvariantCulture numbers, lowercase booleans); `DrawingLayerIcon` is an abstract record (see Judgement calls) |
-| 15 | DungeonHighlightsUI.fs | 200 | 1 | todo | |
+| 15 | DungeonHighlightsUI.fs | 200 | 1 | ported (C#) | straight translation; repeating animations tweened on a timer; `blockersHoverEvent` is a `Graphics.SharedEvent<bool>` (see Judgement calls) |
 | 16 | DungeonPopups.fs | 406 | 1 | todo | |
 | 17 | DungeonUI.fs | 2554 | 1 | todo | |
 | 18 | SpeechRecognition.fs | 102 | 4 | todo | stub in phase 2 (compile order), real in phase 4 |
@@ -348,6 +348,15 @@ Already real, not stubs: speech synthesis on Windows (System.Speech, as in WPF),
 - **Drawing-layer stamp "half size" check.** WPF counts a stamp as full size when its `RenderTransform` is null or the shared `Transform.Identity`. Avalonia has
   no shared identity transform and a control's `RenderTransform` is null until set, so `SaveDrawingLayer` checks null only. DrawingLayer.cs must set it back to
   null (as WPF does) when un-halving a stamp.
+- **`Graphics.SharedEvent<T>` for F# `Event<T>`s passed between files.** WPFUI creates `blockersHoverEvent = new Event<bool>()` and passes it to UIComponents
+  (which `Trigger`s it) and DungeonUI → DungeonHighlightsUI (which subscribe). A C# event can't be passed as a value or raised from outside its class, so such
+  values are a `Graphics.SharedEvent<T>` (added to Graphics.cs as a port helper): `new Event<bool>()` → `new Graphics.SharedEvent<bool>()`, `ev.Trigger(x)` is
+  unchanged, `ev.Publish.Add(f)` → `ev.Fired += f`. Later files (`levelTabSelected : Event<int>` in WPFUI/UIComponents/DungeonUI, …) should use it too.
+- **Dungeon "possible continuations" highlights (compare on Windows).** WPF's repeating `DoubleAnimation`s (door rectangles: scale 1→1.3 over 0.75 s,
+  auto-reversed, forever; room ellipses: dash offset 0→4.4 over 0.75 s, forever) started with `BeginAnimation(prop, anim)` and removed with
+  `BeginAnimation(prop, null)` are tweened by hand on one 16 ms `DispatcherTimer` per animation (linear, as WPF's default), as `TileHighlightRectangle`
+  does; removing sets the base value back (scale 1, offset 0), as WPF's does. WPF's `ScaleTransform(CenterX, CenterY)` → `RenderTransformOrigin` at the same
+  absolute point. Avalonia may draw the dashed ellipse's dash pattern slightly differently.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
