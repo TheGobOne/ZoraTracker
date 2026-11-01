@@ -1,33 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Shared cross-platform UI (library): used by the desktop exe (Win/macOS/Linux) and the browser (WebAssembly) host. -->
+  <!-- The cross-platform tracker UI (C#), ported file by file from Z1R_WPF (F#). See docs/avalonia-port/PLAN.md.
+       Every WPF file X.fs becomes X.cs here, as a static class X with the same members in the same order. -->
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RootNamespace>Z1R_Avalonia</RootNamespace>
-    <OtherFlags>--warnon:1182</OtherFlags>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
 
-  <!-- Ported WPF files go in the same order as Z1R_WPF.fsproj (see docs/avalonia-port/PLAN.md). -->
+  <!-- the F# versions of already-ported files, kept only until their C# conversion lands -->
   <ItemGroup>
-    <Compile Include="Platform.fs" />
-    <Compile Include="Gamepad.fs" />
-    <Compile Include="Graphics.fs" />
-    <Compile Include="CustomMessageBox.fs" />
-    <Compile Include="OverworldRouteDrawing.fs" />
-    <Compile Include="DungeonRoomState.fs" />
-    <Compile Include="Timeline.fs" />
-    <!-- the old prototype UI; still the app's entry point until the ported Program.fs/WPFUI.fs can run the app -->
-    <Compile Include="Prototype.fs" />
-  </ItemGroup>
-
-  <!-- art used by the prototype (avares://Z1R_Avalonia/Assets/...) -->
-  <ItemGroup>
-    <AvaloniaResource Include="..\Z1R_WPF\icons\s_map_overworld_vanilla_strip8.png" Link="Assets\s_map_overworld_vanilla_strip8.png" />
-    <AvaloniaResource Include="..\Z1R_WPF\icons\ow_icons5x9.png" Link="Assets\ow_icons5x9.png" />
-    <AvaloniaResource Include="..\Z1R_WPF\icons\icons7x7.png" Link="Assets\icons7x7.png" />
-    <AvaloniaResource Include="..\Z1R_WPF\icons\icons3x7.png" Link="Assets\icons3x7.png" />
+    <None Remove="*.fs" />
   </ItemGroup>
 
   <!-- files that ship next to the app, as in the Windows tracker -->
@@ -44,6 +31,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- the shared tracker model (Gob's F#, used unchanged) -->
     <ProjectReference Include="..\Z1R_Tracker_Core\Z1R_Tracker_Core.fsproj" />
     <!-- System.Drawing stand-in, the "Z1R_WPF" art assembly, and net10 builds of Gob's Z1R_Sync and Z1R_SharedInterop (see PROGRESS.md) -->
     <ProjectReference Include="..\Z1R_Avalonia_DrawingShim\Z1R_Avalonia_DrawingShim.csproj" />

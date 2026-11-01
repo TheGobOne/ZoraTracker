@@ -8,21 +8,22 @@ a parity gap until its stub is replaced or the gap is approved under "Agreed pla
 
 ## Files
 
-Status: `todo` · `ported` · `stubbed` (temporary) · `skipped` (needs a logged reason)
+Status: `todo` · `ported` · `stubbed` (temporary) · `skipped` (needs a logged reason) · `F#: to C#` (ported in F# before the
+switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build until its C# conversion lands)
 
 | # | WPF file | Lines | Phase | Status | Notes |
 |---|---|---|---|---|---|
-| – | Platform.fs (new) | – | 0 | ported | platform layer: user-file location, open-with-shell, cursor warp, fake clicks, sounds (see Stubs) |
+| – | Platform.cs (new) | – | 0 | ported | platform layer: user-file location, open-with-shell, cursor warp, fake clicks, sounds (see Stubs) |
 | – | `Z1R_Avalonia_DrawingShim` (new project) | – | 0 | ported | cross-platform `System.Drawing` (Bitmap, Graphics, Icon, SystemIcons, …) on SkiaSharp; replaced the earlier `Drawing.fs` |
 | – | `Z1R_Avalonia_WPFResources` (new project) | – | 1 | ported | the WPF tracker's embedded art, in an assembly named `Z1R_WPF` |
 | – | `Z1R_Avalonia_Sync`, `Z1R_Avalonia_SharedInterop` (new projects) | – | 1 | ported | net10 builds of Gob's `Z1R_Sync` and `Z1R_SharedInterop`, from his source files unchanged |
-| 1 | Gamepad.fs | 59 | 0 | stubbed | no gamepad is ever found |
-| 2 | Graphics.fs | 1634 | 0 | ported | sounds stubbed; Linux cursor warp/fake clicks stubbed |
-| 3 | CustomMessageBox.fs | 66 | 0 | ported | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites |
-| 4 | OverworldRouteDrawing.fs | 268 | 1 | ported | straight translation; `drawPathsImpl` takes an `Avalonia.Point` |
-| 5 | DungeonRoomState.fs | 259 | 1 | ported | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control` |
+| 1 | Gamepad.fs | 59 | 0 | stubbed (C#) | no gamepad is ever found |
+| 2 | Graphics.fs | 1634 | 0 | F#: to C# | sounds stubbed; Linux cursor warp/fake clicks stubbed |
+| 3 | CustomMessageBox.fs | 66 | 0 | F#: to C# | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites |
+| 4 | OverworldRouteDrawing.fs | 268 | 1 | F#: to C# | straight translation; `drawPathsImpl` takes an `Avalonia.Point` |
+| 5 | DungeonRoomState.fs | 259 | 1 | F#: to C# | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control` |
 | 6 | HotKeys.fs | 606 | 1 | todo | global hotkeys stubbed |
-| 7 | Timeline.fs | 331 | 1 | ported | ported ahead of #5/#6 (it depends on neither); labels stay unwrapped read-only TextBoxes |
+| 7 | Timeline.fs | 331 | 1 | F#: to C# | ported ahead of #5/#6 (it depends on neither); labels stay unwrapped read-only TextBoxes |
 | 8 | CustomComboBoxes.fs | 1418 | 1 | todo | update install, opening folders stubbed |
 | 9 | PieMenus.fs | 915 | 1 | todo | |
 | 10 | ShowRunCustom.fs | 225 | 1 | todo | |

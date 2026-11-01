@@ -15,7 +15,7 @@ open Avalonia.Themes.Fluent
 
 // images are bundled as Avalonia resources (works on desktop AND in the browser, where there is no real file system)
 let loadBmp (name:string) : Bitmap =
-    use s = Avalonia.Platform.AssetLoader.Open(System.Uri("avares://Z1R_Avalonia/Assets/" + name))
+    use s = Avalonia.Platform.AssetLoader.Open(System.Uri("avares://Z1R_Avalonia_Prototype/Assets/" + name))
     new Bitmap(s)
 
 let TILE_W = 64.   // 16 source pixels x 4 (same size as the Windows tracker)

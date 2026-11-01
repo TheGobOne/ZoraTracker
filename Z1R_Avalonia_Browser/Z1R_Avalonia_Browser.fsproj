@@ -17,6 +17,6 @@
     <PackageReference Include="Avalonia.Browser" Version="11.3.22" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Z1R_Avalonia\Z1R_Avalonia.fsproj" />
+    <ProjectReference Include="..\Z1R_Avalonia_Prototype\Z1R_Avalonia_Prototype.fsproj" />
   </ItemGroup>
 </Project>

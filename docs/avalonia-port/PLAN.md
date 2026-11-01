@@ -35,36 +35,61 @@ sign-off it is a parity gap, not an exception.
 The browser (WebAssembly) build is **not** part of the parity goal. It stays buildable, but
 browsers can't do things like global hotkeys or cursor warping, so it's best effort.
 
+## Language: C#
+
+The cross-platform tracker is written in **C#**, not F#. C# is more common and easier to maintain, and the original
+author only chose F# because it was a language he wanted to learn. Concretely:
+
+- **New code is C#.** `Z1R_Avalonia` (the ported UI), the launchers and the support projects are C#.
+- **Shared F# libraries stay F# for now, used unchanged:** the tracker model (`Z1R_Tracker_Core`, which compiles
+  Gob's `Z1R_Tracker/*.fs`) and `Z1R_SharedInterop`. The WPF tracker uses them too, and Gob keeps changing them, so a C#
+  copy would drift. Once WPF is retired they can be converted to C#.
+- `Z1R_Avalonia_Prototype` (the old F# prototype) stays as it is until the port can run the app, then it's dropped.
+
+**Mirroring an F# file in C#.** Each `Z1R_WPF/X.fs` becomes `Z1R_Avalonia/X.cs`, so a WPF diff can still be found and
+applied:
+- `module X` → `public static class X` in namespace `Z1R_Avalonia`, holding the same members **in the same order**,
+  with the same names (including the original camelCase; they can be renamed once WPF is retired) and the same comments.
+- Types defined inside the module → nested classes of `X`, so `X.SomeType` keeps its name.
+- Top-level `let` values → `public static readonly` fields (`public static` for `let mutable`). C# runs static field
+  initializers in textual order, as F# runs top-level bindings. A top-level `do` block becomes a private static method
+  run from a field initializer at the same position (`private static readonly bool _init1 = init1();`), because a static
+  constructor would run after all the fields instead.
+- Functions → static methods. Curried or partially applied functions → normal parameters, or `Func<>`/`Action<>` where
+  they're passed around. Tuples → C# value tuples. Our own `option` values → null or nullable. Model values from F#
+  keep their F# types (`FSharpOption`, `FSharpList`, …).
+- `async { }` → `async Task`. `Async.AwaitEvent`, `Async.StartImmediate` etc. → `TaskCompletionSource`, `await`,
+  `Dispatcher.UIThread`; keep the same ordering and threading.
+- Pattern matches → `switch` statements or expressions with the same cases in the same order.
+
 ## Ground rules
 
-1. **Mirror WPF file-for-file.** Each `Z1R_WPF/X.fs` becomes `Z1R_Avalonia/X.fs`, with the same
-   module name, the same functions in the same order, and the same layout constants. Translate;
+1. **Mirror WPF file-for-file.** Each `Z1R_WPF/X.fs` becomes `Z1R_Avalonia/X.cs` (see "Language: C#"), with the
+   same names, the same members in the same order, and the same layout constants. Translate;
    don't redesign. This keeps TheGobOne's future diffs mappable onto the port and makes the port
    reviewable side by side.
-2. **Same compile order as `Z1R_WPF.fsproj`.** Add each ported file to `Z1R_Avalonia.fsproj` in
-   that order. A file is ported only after everything it depends on is.
+2. **Port in the compile order of `Z1R_WPF.fsproj`.** C# doesn't care about file order, but F# files can only use
+   files above them, so porting in that order means everything a file uses already exists.
 3. **Never edit `Z1R_WPF/` or `Z1R_Tracker/` on this branch.** Those belong to TheGobOne. If shared
    logic needs to move into `Z1R_Tracker_Core`, record it in PROGRESS.md as a proposed upstream
    PR instead of doing it here.
 4. **Build after every file:**
-   `dotnet build Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.fsproj`
+   `dotnet build Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.csproj`
    A file isn't done until the whole solution builds with no new errors.
 5. **One commit per ported file** (or per tightly coupled group), with a message like
-   `port: DungeonUI.fs (WPF @ 9292b0b)`.
+   `port: DungeonUI.fs → DungeonUI.cs (WPF @ 9292b0b)`.
 6. **Stub, don't guess, on platform-specific features** (see the table below). Stubs go behind a
-   small interface in `Z1R_Avalonia/Platform.fs`, compile, do nothing (or log), and are listed in
+   small interface in `Z1R_Avalonia/Platform.cs`, compile, do nothing (or log), and are listed in
    PROGRESS.md. Every stub is temporary and has to be replaced before parity.
 7. **Never quietly drop or simplify a feature.** If something can't be ported faithfully, port as
    much as possible and log exactly what's missing in PROGRESS.md.
 8. **Log every judgement call** in PROGRESS.md: anything translated loosely, any WPF behaviour
    with no direct Avalonia equivalent, anything that needs a human to look at it.
 9. **No Windows-only assumptions.** Build paths with `Path.Combine` (never `\\`), resolve user
-   files through one helper in `Platform.fs` (see "Where user files live" in Risks), and don't
+   files through one helper in `Platform.cs` (see "Where user files live" in Risks), and don't
    hard-code fonts that only exist on Windows.
-10. **Keep the existing prototype buildable until it's replaced.** Rename
-    `Z1R_Avalonia/Program.fs` to `Prototype.fs` and keep it as a reference. Once the ported
-    `Program.fs`/`WPFUI.fs` can run the app, drop the prototype from the build (leave the file in
-    place).
+10. **Keep the existing prototype buildable until it's replaced.** It lives in `Z1R_Avalonia_Prototype` (F#) and
+    is still the app's entry point. Once the ported `Program.cs`/`WPFUI.cs` can run the app, drop it from the build.
 
 ## WPF → Avalonia translation cheat-sheet
 
@@ -92,7 +117,7 @@ browsers can't do things like global hotkeys or cursor warping, so it's best eff
 | `Popup` | `Avalonia.Controls.Primitives.Popup` |
 | `Microsoft.Win32.OpenFileDialog` | `TopLevel.StorageProvider.OpenFilePickerAsync` |
 | `System.Windows.Forms.Screen` | `Window.Screens` |
-| embedded resource PNGs | `AvaloniaResource` in the fsproj, loaded via `avares://Z1R_Avalonia/Assets/...` (see the existing fsproj) |
+| embedded resource PNGs | `AvaloniaResource` in the fsproj, loaded via `avares://Z1R_Avalonia/Assets/...` (see `Z1R_Avalonia_Prototype`) |
 
 ## Platform-specific features
 
@@ -112,7 +137,7 @@ is only about how to keep the build moving at first.
 | Gamepad (`SharpDX.DirectInput`) | `Gamepad.fs`, `SpeechRecognition.fs` | Stub | SDL via Silk.NET |
 | Co-op sync: SignalR client, plus a local `Z1R_SignalRHost.exe` server tied to the app with a Windows Job Object | `CoopSync.fs`, `Dungeon.fs`, `Dungeon*Sync.fs`, `Z1R_Sync`, `Z1R_SignalRHost` | Port last | Retarget client and host to net10; ship the host per OS or run it in-process |
 | Desktop shortcut (`IShellLink` `.lnk`) | `Program.fs` | Skip | macOS: the `.app` in Applications; Linux: a `.desktop` file |
-| Opening folders/files/URLs (`Explorer.exe`, `Process.Start`) | `CustomComboBoxes.fs`, `ShowRunCustom.fs` | Port | `open` on macOS, `xdg-open` on Linux, via `Platform.fs` |
+| Opening folders/files/URLs (`Explorer.exe`, `Process.Start`) | `CustomComboBoxes.fs`, `ShowRunCustom.fs` | Port | `open` on macOS, `xdg-open` on Linux, via `Platform.cs` |
 | Self-updater: downloads the release `.zip` and replaces the Windows build | `CustomComboBoxes.fs` | Port the "new version available" check; stub install | Per-OS updates (e.g. Velopack), with Mac/Linux builds published in releases |
 | Console window hiding (`GetConsoleWindow`, `ShowWindow`) | `Program.fs` | Skip on non-Windows | — |
 
@@ -218,7 +243,7 @@ be checked**. In practice:
   stubbed. Phases 3 and 4 are where they're finished and checked.
 
 **Phase 0 — foundations**
-- `Platform.fs` (new): the stub interfaces above, plus the user-file location helper.
+- `Platform.cs` (new): the stub interfaces above, plus the user-file location helper.
 - `Graphics.fs`: real port to SkiaSharp + Avalonia, including sprite-sheet slicing,
   black-to-transparent and recolouring. Add every PNG from `Z1R_WPF/icons` as an `AvaloniaResource`.
 - `CustomMessageBox.fs`, `Gamepad.fs` (stub).
