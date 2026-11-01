@@ -19,7 +19,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | – | `Z1R_Avalonia_Sync`, `Z1R_Avalonia_SharedInterop` (new projects) | – | 1 | ported | net10 builds of Gob's `Z1R_Sync` and `Z1R_SharedInterop`, from his source files unchanged |
 | 1 | Gamepad.fs | 59 | 0 | stubbed (C#) | no gamepad is ever found |
 | 2 | Graphics.fs | 1634 | 0 | ported (C#) | sounds stubbed; Linux cursor warp/fake clicks stubbed; sprite sheet checked identical to the F# port |
-| 3 | CustomMessageBox.fs | 66 | 0 | F#: to C# | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites |
+| 3 | CustomMessageBox.fs | 66 | 0 | ported (C#) | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites; the module is a namespace (see Judgement calls) |
 | 4 | OverworldRouteDrawing.fs | 268 | 1 | F#: to C# | straight translation; `drawPathsImpl` takes an `Avalonia.Point` |
 | 5 | DungeonRoomState.fs | 259 | 1 | F#: to C# | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control` |
 | 6 | HotKeys.fs | 606 | 1 | todo | global hotkeys stubbed |
@@ -148,6 +148,10 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   FSharp.Core, so callers still write `Graphics.volumeChanged.Trigger(v)`; subscribe with
   `.Publish.AddHandler(new FSharpHandler<T>((_, v) => …))`. (A C# `event` can't be raised from outside its class.)
 - **`DragDropSurface<T>`** takes `onStartDrag` as `Action<PointerEventArgs, Action<T>>` (F#: a function of a tuple).
+- **`CustomMessageBox` is a namespace, not a static class.** C# rejects a nested type named like its enclosing class
+  (CS0542), so `Z1R_Avalonia.CustomMessageBox` is a namespace holding `class CustomMessageBox : Window`. Callers in
+  `Z1R_Avalonia` still write `new CustomMessageBox.CustomMessageBox(title, icon, text, buttonTexts)`; `buttonTexts` is an
+  `IEnumerable<string>` (pass an array). Use the same trick for any other F# module whose type has the module's name.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
