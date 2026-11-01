@@ -87,7 +87,30 @@ Already real, not stubs: speech synthesis on Windows (System.Speech, as in WPF),
   To decide in phase 1, when the menus are ported.
 - **Fonts (risk 5): not done yet.** Needs a WPF screenshot to compare against.
 
+## Phase 1 status
+
+All phase 1 files are ported to C# and build. `DungeonPreview.cs` (temporary, not part of the mirror) shows only the dungeon
+tracker: run the desktop app with `--dungeon-preview` (add `--screenshot out.png` to save a picture and quit). It sets
+things up the way `Program.fs`/`WPFUI.makeAll` do before calling `DungeonUI.makeDungeonTabs`.
+
+Checked so far, by rendering the preview headless (Avalonia.Headless + Skia, which works while the Mac's display is
+asleep) and comparing with `doc/screenshots/dt-drag-1-map-step1.png`:
+- the summary tab and the level 1 tab render, with all nine levels set up without errors;
+- layout, sizes, room grid, sprites, header letters, the item/triforce panel and the colours match the WPF screenshot.
+  The other visible differences (GRAB vs MOVE, FQ/SQ vs 1Q/2Q, the big level numeral) are newer WPF changes since
+  that screenshot.
+
+Not checked yet (needs a person at the Mac, and ideally Windows next to it): mouse and keyboard interaction (room popups,
+drag-paint, hotkeys, cursor warps, MOVE/GRAB, the summary hover previews), save/load against a WPF save file, and the
+runtime-test lists in the entries below.
+
 ## Judgement calls / needs a human
+
+- **Tab look.** Avalonia's Fluent tabs look nothing like WPF's: underlined text, a border around the tab strip as well
+  as the content, and 48px tall. `Graphics.wpfTabItemTemplate` and `wpfTabControlTemplate` rebuild WPF's (Aero2) shape:
+  boxed tabs with a 1px #ACACAC border, the selected tab white and raised 2px, light-blue hover, and the tab strip above
+  a bordered content area. Installed app-wide by `installAppWideStyles`. **Check on Windows:** in the (older) docs
+  screenshot WPF's dungeon tabs are 40px apart; ours are 42px (28px header + 6,2 padding + border).
 
 - **Startup order (for whoever ports Program.cs).** In an F# exe, every file's top-level values and `do` blocks run at
   startup, in compile order. In C#, a static class runs its field initializers only when it's first used. Some WPF files

@@ -351,14 +351,92 @@ public static class Graphics
             tis.Setters.Add(new Setter(Layoutable.MinWidthProperty, 0.0));
             tis.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(6.0, 2.0, 6.0, 2.0)));
             tis.Setters.Add(new Setter(TemplatedControl.FontSizeProperty, 12.0));
+            // WPF's (Aero2) tab look, which the tracker relies on: boxed tabs with a 1px #ACACAC border and the TabItem's own background;
+            // the selected tab is white and raised by 2px on each side; hovering an unselected tab turns it light blue
+            tis.Setters.Add(new Setter(TemplatedControl.TemplateProperty, wpfTabItemTemplate));
             app.Styles.Add(tis);
             var tcs = new Style(x => x.OfType<TabControl>());
             tcs.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(2.0)));
             tcs.Setters.Add(new Setter(TemplatedControl.BorderThicknessProperty, new Thickness(1.0)));
             tcs.Setters.Add(new Setter(TemplatedControl.BorderBrushProperty, freeze(new SolidColorBrush(Color.FromRgb(0xAC, 0xAC, 0xAC)))));
+            tcs.Setters.Add(new Setter(TemplatedControl.TemplateProperty, wpfTabControlTemplate));
             app.Styles.Add(tcs);
+
         }
     }
+    private static readonly IBrush wpfTabBorder = freeze(new SolidColorBrush(Color.FromRgb(0xAC, 0xAC, 0xAC)));
+    private static readonly IBrush wpfTabHoverFill = freeze(new SolidColorBrush(Color.FromRgb(0xE5, 0xF1, 0xFB)));
+    private static readonly IBrush wpfTabHoverBorder = freeze(new SolidColorBrush(Color.FromRgb(0x7E, 0xB4, 0xEA)));
+    // (Avalonia: not in WPF's code; it's WPF's default TabItem look, rebuilt so the dungeon tabs look the same. See installAppWideStyles.)
+    public static readonly FuncControlTemplate<TabItem> wpfTabItemTemplate = new FuncControlTemplate<TabItem>((ti, _scope) =>
+    {
+        var cp = new ContentPresenter { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var bd = new Border { Child = cp, BorderThickness = new Thickness(1, 1, 1, 0) };
+        void refresh()
+        {
+            cp.Content = ti.Header;
+            cp.ContentTemplate = ti.HeaderTemplate;
+            bd.Padding = ti.Padding;
+            if (ti.IsSelected)
+            {
+                bd.Background = Brushes.White; bd.BorderBrush = wpfTabBorder;
+                bd.Margin = new Thickness(-2, -2, -2, -1);   // (and over the content border's top line)
+                ti.ZIndex = 1;
+            }
+            else
+            {
+                bool hover = ti.IsPointerOver;
+                bd.Background = hover ? wpfTabHoverFill : ti.Background;
+                bd.BorderBrush = hover ? wpfTabHoverBorder : wpfTabBorder;
+                bd.Margin = new Thickness(0);
+                ti.ZIndex = 0;
+            }
+            bd.Opacity = ti.IsEffectivelyEnabled ? 1.0 : 0.56;
+        }
+        refresh();
+        ti.PropertyChanged += (_, ea) =>
+        {
+            var p = ea.Property;
+            if (p == HeaderedContentControl.HeaderProperty || p == HeaderedContentControl.HeaderTemplateProperty || p == TabItem.IsSelectedProperty
+                || p == InputElement.IsPointerOverProperty || p == InputElement.IsEffectivelyEnabledProperty || p == TemplatedControl.BackgroundProperty
+                || p == TemplatedControl.PaddingProperty)
+                refresh();
+        };
+        return bd;
+    });
+    // (Avalonia: WPF's default TabControl shape. The tab strip sits above the content with a 2,2,2,0 margin, and only the content has the
+    // border and padding; Avalonia's theme draws the border around the tabs too.)
+    public static readonly FuncControlTemplate<TabControl> wpfTabControlTemplate = new FuncControlTemplate<TabControl>((tc, scope) =>
+    {
+        var items = new ItemsPresenter { Name = "PART_ItemsPresenter", Margin = new Thickness(2, 2, 2, 0), ZIndex = 1 };
+        items.ItemsPanel = tc.ItemsPanel;
+        scope.Register("PART_ItemsPresenter", items);
+        DockPanel.SetDock(items, Dock.Top);
+        var host = new ContentPresenter { Name = "PART_SelectedContentHost" };
+        scope.Register("PART_SelectedContentHost", host);
+        var contentBorder = new Border { Child = host };
+        void refresh()
+        {
+            host.Content = tc.SelectedContent;
+            host.ContentTemplate = tc.SelectedContentTemplate;
+            contentBorder.Background = tc.Background;
+            contentBorder.BorderBrush = tc.BorderBrush;
+            contentBorder.BorderThickness = tc.BorderThickness;
+            contentBorder.Padding = tc.Padding;
+        }
+        refresh();
+        tc.PropertyChanged += (_, ea) =>
+        {
+            var p = ea.Property;
+            if (p == TabControl.SelectedContentProperty || p == TabControl.SelectedContentTemplateProperty || p == TemplatedControl.BackgroundProperty
+                || p == TemplatedControl.BorderBrushProperty || p == TemplatedControl.BorderThicknessProperty || p == TemplatedControl.PaddingProperty)
+                refresh();
+        };
+        var dp = new DockPanel();
+        dp.Children.Add(items);
+        dp.Children.Add(contentBorder);
+        return dp;
+    });
     public static void styleRoundedButton(Button b)
     {
         b.Template = roundedButtonTemplate;
