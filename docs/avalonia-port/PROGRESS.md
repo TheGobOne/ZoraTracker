@@ -21,7 +21,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 2 | Graphics.fs | 1634 | 0 | ported (C#) | sounds stubbed; Linux cursor warp/fake clicks stubbed; sprite sheet checked identical to the F# port |
 | 3 | CustomMessageBox.fs | 66 | 0 | ported (C#) | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites; the module is a namespace (see Judgement calls) |
 | 4 | OverworldRouteDrawing.fs | 268 | 1 | ported (C#) | straight translation; `drawPathsImpl` takes an `Avalonia.Point` and `whatToCyan` as `Func<int,int,bool>`; `doComputedDrawing` takes `IEnumerable<(int,int,bool)>`/`IEnumerable<Control>` |
-| 5 | DungeonRoomState.fs | 259 | 1 | F#: to C# | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control` |
+| 5 | DungeonRoomState.fs | 259 | 1 | ported (C#) | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control`; module is a namespace, `Changed` is a C# event (see Judgement calls) |
 | 6 | HotKeys.fs | 606 | 1 | todo | global hotkeys stubbed |
 | 7 | Timeline.fs | 331 | 1 | F#: to C# | ported ahead of #5/#6 (it depends on neither); labels stay unwrapped read-only TextBoxes |
 | 8 | CustomComboBoxes.fs | 1418 | 1 | todo | update install, opening folders stubbed |
@@ -152,6 +152,12 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   (CS0542), so `Z1R_Avalonia.CustomMessageBox` is a namespace holding `class CustomMessageBox : Window`. Callers in
   `Z1R_Avalonia` still write `new CustomMessageBox.CustomMessageBox(title, icon, text, buttonTexts)`; `buttonTexts` is an
   `IEnumerable<string>` (pass an array). Use the same trick for any other F# module whose type has the module's name.
+- **`DungeonRoomState` is a namespace too** (same CS0542 problem as `CustomMessageBox`). The module's own values (`canvasAdd`,
+  `cachedTilePairs`, `mkTxt`, `entranceRoomArrowColorBrush`, `scale`, `isDoingDragPaintOffTheMap`, `veryDark`, `fakeUsedTransports`)
+  are static members of `class DungeonRoomState`, ahead of the instance members. Callers write `DungeonRoomState.DungeonRoomState`
+  for the type, `DungeonRoomState.DungeonRoomState.FromCSharp(...)` and `DungeonRoomState.DungeonRoomState.mkTxt(...)`.
+- **F# events only raised by their own class become C# events** (precedent: `Gamepad.ControllerFailureEvent`). `DungeonRoomState.Changed`
+  is `event Action<DungeonRoomState>`: WPF's `drs.Changed.Add(fun _ -> ...)` becomes `drs.Changed += _ => ...`.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
