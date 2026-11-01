@@ -40,10 +40,23 @@ public static class CustomComboBoxes
     // (port helper: WPF's Async.AwaitWaitHandle. The wait happens on the thread pool; the caller's await resumes on its own context.)
     private static Task AwaitWaitHandle(WaitHandle wh)
     {
+#if BROWSER
+        // (browser build: a page has one thread, so nothing can wait on the thread pool; check the handle every few ms instead, without blocking)
+        return pollWaitHandle(wh);
+#else
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var reg = ThreadPool.RegisterWaitForSingleObject(wh, (_, _) => tcs.TrySetResult(true), null, Timeout.Infinite, true);
         return tcs.Task.ContinueWith(_ => { reg.Unregister(null); }, TaskScheduler.Default);
+#endif
     }
+
+#if BROWSER
+    private static async Task pollWaitHandle(WaitHandle wh)
+    {
+        while (!wh.WaitOne(0))
+            await Task.Delay(15);
+    }
+#endif
 
     public static void canvasAdd(Canvas c, Control item, double left, double top) => Graphics.canvasAdd(c, item, left, top);
     public static void gridAdd(Grid g, Control x, int c, int r) => Graphics.gridAdd(g, x, c, r);

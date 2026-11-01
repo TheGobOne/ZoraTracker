@@ -16,13 +16,19 @@ public static class Gamepad
     public static bool IsLeftShoulderButtonDown() =>
         Volatile.Read(ref LeftShoulderButtonIsDown) == 1;
 
+#pragma warning disable CS0067   // (the browser build never reads a gamepad, so never raises it)
     public static event Action<Exception> ControllerFailureEvent;
+#pragma warning restore CS0067
 
     public static unsafe bool Initialize()
     {
+#if BROWSER
+        Console.WriteLine("gamepad not found");   // (browser build: no SDL, and a page only sees the gamepad while it has focus)
+        return false;
+#else
         SDL.SDL_Gamepad* gamepad = null;
         SDL.SDL_Joystick* joystick = null;
-        if (!Platform.isBrowser && Platform.Sdl.InitSubSystem(SDL.SDL_InitFlags.SDL_INIT_GAMEPAD))
+        if (Platform.Sdl.InitSubSystem(SDL.SDL_InitFlags.SDL_INIT_GAMEPAD))
         {
             using (var gamepads = SDL.SDL3.SDL_GetGamepads())
                 if (gamepads != null && gamepads.Count > 0)
@@ -91,5 +97,6 @@ public static class Gamepad
             thread.Start();
             return true;
         }
+#endif
     }
 }

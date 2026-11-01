@@ -113,7 +113,10 @@ runtime-test lists in the entries below.
 
 A limited build of the same tracker for web browsers (PLAN.md, phase 6). `Z1R_Avalonia_Browser` (C#, `net10.0-browser`) compiles
 `Z1R_Avalonia/*.cs` itself with `BROWSER` defined; a project reference couldn't change how they compile. Needs `sudo dotnet workload
-install wasm-tools` once (without it the build succeeds but Skia isn't linked and nothing draws); run with `dotnet run` in that folder.
+install wasm-tools` once (without it the build succeeds but Skia isn't linked and nothing draws); run with `dotnet run` in that folder
+(Debug: .NET code is interpreted, so slower). `dotnet publish -c Release` compiles ahead of time (AOT) to WebAssembly, with partial trimming
+(AOT requires trimming; the tracker's assemblies, FSharp.Core and Newtonsoft.Json are kept whole for reflection); serve
+`bin/Release/net10.0-browser/publish/wwwroot` with any static web server.
 
 How it works:
 - **No windows in a page.** `Browser.cs` (browser build only) defines `BrowserWindow`, a control standing in for Avalonia's `Window`,
@@ -125,16 +128,21 @@ How it works:
   `HotKeys.mouseDirectlyOver` asks the page for the element under the pointer; `ShowRunCustom.mainWindow` is `Graphics.theWindow`;
   MyWindow skips the ZTracker.lnk shortcut (no processes); `lifetime.MainWindow` is desktop only. `Screens.Primary` became `Screens?.Primary`
   (the stand-in has no screens until the page shows it); the hotkey functions take a `Control` (was `Window`; no change on desktop).
-- **Platform:** `Platform.isBrowser`. Sounds play through the page's `Audio` (the .wav files are served next to it), the error beep is a
+- **Platform:** `Platform.isBrowser`. SharpHook and SDL aren't in the browser build (native desktop libraries, and the AOT compiler
+  rejects them), so their code in Platform.cs and Gamepad.cs is `#if !BROWSER`. Sounds play through the page's `Audio` (the .wav files are served next to it), the error beep is a
   Web Audio tone, http(s) links open in a new tab (`wwwroot/main.js` helpers, `BrowserJs`). Global hotkeys, fake input, cursor warping
   and the gamepad are off. Fonts: Inter (a page has no system fonts). Settings live in the page's in-memory file system, so they're lost
   on reload.
+- **Popups:** `CustomComboBoxes.AwaitWaitHandle` waits on the thread pool (`RegisterWaitForSingleObject`); a page has one thread, so in the
+  browser build it checks the handle every 15ms instead. Without that, every popup (the overworld tile menu, dungeon menus, options)
+  closed the instant it opened.
 - **Pitfalls found:** target `net10.0-browser`, not `net10.0` (Avalonia.Browser's plain-net8.0 build is a placeholder that never draws);
   don't touch `Dispatcher.UIThread` before Avalonia starts (it makes a default dispatcher and the page never draws);
   `JsonSerializerIsReflectionEnabledByDefault` (settings, saves) and `UseSystemResourceKeys=false` (readable errors) are on.
 
-Checked in a browser: the start screen, starting a 1st Quest game, the main tracker (overworld map, item grid, dungeon summary and
-level tabs, timeline, timer). Not checked: most clicking around, save/load (the file picker doesn't give a local path in a page).
+Checked in a browser (headless Chrome driven over the DevTools protocol, Debug and AOT builds): the start screen, starting a 1st Quest game,
+the main tracker (overworld map, item grid, dungeon summary and level tabs, timeline, timer), right-clicking an overworld tile and choosing
+dungeon 1 (the tile, the level 1 tab and the 1/9 reminder update). Not checked: most clicking around, save/load (the file picker doesn't give a local path in a page).
 
 Next (phase 6): non-blocking dialogs shown in the page, saves through downloads/uploads or browser storage, settings in browser storage,
 spoken text through the browser's speech, telling the user in the app which features are off.

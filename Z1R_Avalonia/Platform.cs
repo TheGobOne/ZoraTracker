@@ -247,6 +247,7 @@ public static class Platform
     private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_WIN = 0x8;
     private sealed record HotKeyRegistration(Avalonia.Controls.Control Window, int Id, uint Modifiers, uint Vk);
     private static readonly List<HotKeyRegistration> hotKeys = new();
+#if !BROWSER   // (the browser build has no SharpHook or SDL: their native libraries don't exist there, and its compiler can't take them)
     private static SharpHook.SimpleGlobalHook keyboardHook;   // (SimpleGlobalHook: handlers run on the hook's thread, which is what lets them swallow keys)
 
     // Windows virtual-key codes for F1-F24 (the only keys the tracker registers) as SharpHook key codes
@@ -308,17 +309,22 @@ public static class Platform
             }
         });
     }
+#endif
 
     /// <summary>A system-wide hotkey for this window (WPF: user32 `RegisterHotKey(hWnd, id, fsModifiers, vk)`); the key arrives as WM_HOTKEY at the
     /// hooks added with AddWndProcHook. Every OS: SharpHook's global keyboard hook (see above). Only F1-F24 are supported (all the tracker uses);
     /// returns false for other keys.</summary>
     public static bool RegisterHotKey(Avalonia.Controls.Control w, int id, uint fsModifiers, uint vk)
     {
-        if (isBrowser) { stub("global hotkeys (a web page only sees keys while it has focus)"); return false; }
+#if BROWSER
+        stub("global hotkeys (a web page only sees keys while it has focus)");
+        return false;
+#else
         if (keyCodeOfVk(vk) == SharpHook.Data.KeyCode.VcUndefined) return false;
         lock (hotKeys) hotKeys.Add(new HotKeyRegistration(w, id, fsModifiers & (MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN), vk));
         ensureKeyboardHook();
         return true;
+#endif
     }
     public static bool UnregisterHotKey(Avalonia.Controls.Control w, int id)
     {
@@ -410,11 +416,11 @@ public static class Platform
 
     // Fake mouse input (hotkeys can act as mouse buttons and the scroll wheel) uses SharpHook's event simulator on every OS.
     // macOS: it needs Accessibility permission; macOS asks for it the first time, and without it nothing happens.
+#if !BROWSER
     private static SharpHook.Simulation.EventSimulator eventSimulator;
     private static bool eventSimulatorFailed;
     private static SharpHook.Simulation.EventSimulator simulator()
     {
-        if (isBrowser) { stub("fake mouse input (browsers don't allow it)"); return null; }
         if (eventSimulator == null && !eventSimulatorFailed)
         {
             try { eventSimulator = SharpHook.Simulation.EventSimulator.Create("ZoraTracker"); }   // (on Linux this sets up virtual input devices)
@@ -433,6 +439,7 @@ public static class Platform
         else if (r != SharpHook.Data.UioHookResult.Success)
             stub($"fake mouse input ({r})");
     }
+#endif
 
     // Cursor warping stays one OS call each: SharpHook's warp on macOS needs Accessibility permission, which CGWarpMouseCursorPosition doesn't,
     // and SetCursorPos is exactly what WPF calls. Linux uses SharpHook.
@@ -491,15 +498,27 @@ public static class Platform
         }
         else
         {
+#if BROWSER
+            return false;
+#else
             // X11 coordinates are pixels, as Avalonia's (Wayland doesn't let apps move the cursor; SharpHook then reports an error)
             var sim = simulator();
             if (sim == null) return false;
             var r = sim.SimulateMouseMovement((short)x, (short)y);
             reportSimulation(r);
             return r == SharpHook.Data.UioHookResult.Success;
+#endif
         }
     }
 
+#if BROWSER
+    // (browsers never let a page click or scroll for the user)
+    public static void LeftMouseClick() => stub("fake mouse input (browsers don't allow it)");
+    public static void RightMouseClick() => stub("fake mouse input (browsers don't allow it)");
+    public static void MiddleMouseClick() => stub("fake mouse input (browsers don't allow it)");
+    public static void ScrollWheelRotateUp() => stub("fake mouse input (browsers don't allow it)");
+    public static void ScrollWheelRotateDown() => stub("fake mouse input (browsers don't allow it)");
+#else
     // Fake mouse input, sent at the cursor's current position.
     private static void click(SharpHook.Data.MouseButton b)
     {
@@ -522,6 +541,7 @@ public static class Platform
     public static void MiddleMouseClick() => click(SharpHook.Data.MouseButton.Button3);
     public static void ScrollWheelRotateUp() => wheel(wheelNotchRotation);
     public static void ScrollWheelRotateDown() => wheel((short)-wheelNotchRotation);
+#endif
 
     /// <summary>The Windows "show location of pointer when I press Ctrl" setting (mouse sonar). Only referenced from code the WPF
     /// tracker has commented out; risk 8 in PLAN.md.</summary>
@@ -536,6 +556,7 @@ public static class Platform
 
     // Sounds play through SDL's audio on every OS (WPF: one MediaPlayer per sound file). As WPF's players, each file plays on its own stream,
     // and playing a file again restarts it from the beginning.
+#if !BROWSER
     private sealed unsafe class LoadedSound
     {
         public SDL.SDL_AudioStream* Stream;
@@ -578,12 +599,14 @@ public static class Platform
         return s;
     }
 
+#endif
+
     /// <summary>Plays a .wav file from the app folder, from the start (stopping that file if it's still playing). volume is 0.0-1.0.</summary>
     public static void PlaySound(string fileName, double volume)
     {
 #if BROWSER
-        if (isBrowser) { BrowserJs.PlaySound(Path.GetFileName(fileName), volume); return; }   // (the page serves the .wav files next to it)
-#endif
+        BrowserJs.PlaySound(Path.GetFileName(fileName), volume);   // (the page serves the .wav files next to it)
+#else
         unsafe
         {
             lock (loadedSounds)
@@ -595,6 +618,7 @@ public static class Platform
                 SDL.SDL3.SDL_PutAudioStreamData(s.Stream, s.Data, s.Length);
             }
         }
+#endif
     }
 
     private static class WinBeep
@@ -613,12 +637,14 @@ public static class Platform
     public static void SystemBeep()
     {
 #if BROWSER
-        if (isBrowser) { BrowserJs.Beep(); return; }
-#endif
+        BrowserJs.Beep();
+#else
         if (isWindows) WinBeep.MessageBeep(WinBeep.MB_ICONASTERISK);
         else if (isMacOS) MacBeep.NSBeep();
         else playBeepTone();
+#endif
     }
+#if !BROWSER
     private static unsafe void playBeepTone()
     {
         lock (loadedSounds)
@@ -672,6 +698,8 @@ public static class Platform
             }
         }
     }
+
+#endif
 
     ////////////////////////////////////////////////////////////
     // speech synthesis

@@ -2689,7 +2689,10 @@ public class ZoraTrackerApp : Application
 #if BROWSER
         // (browser build: the page shows the main window's content, scaled to fit, in place of the dummy window that opens it)
         else if (ApplicationLifetime is ISingleViewApplicationLifetime sv)
+        {
+            Dispatcher.UIThread.UnhandledException += (_, e) => Console.WriteLine($"UNHANDLED (UI thread): {e.Exception}");   // (the page's console, in place of a crash log)
             sv.MainView = new Viewbox { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.Both, Child = new Program.MyWindow() };
+        }
 #endif
         base.OnFrameworkInitializationCompleted();
     }

@@ -20,6 +20,24 @@
     <!-- keep .NET's error messages (WebAssembly builds strip them to resource keys by default), so the console shows what went wrong -->
     <UseSystemResourceKeys>false</UseSystemResourceKeys>
   </PropertyGroup>
+  <!-- Release (dotnet publish -c Release): compile ahead of time to WebAssembly, so the tracker runs at full speed (Debug interprets .NET code, which
+       is several times slower). AOT needs trimming; partial trimming only trims the .NET libraries that allow it, and the tracker's own assemblies and
+       the F#/JSON libraries are kept whole, since they use reflection the trimmer can't see. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <TrimmerRootAssembly Include="Z1R_Avalonia_Browser" />
+    <TrimmerRootAssembly Include="Z1R_Tracker_Core" />
+    <TrimmerRootAssembly Include="Z1R_SharedInterop" />
+    <TrimmerRootAssembly Include="Z1R_Sync" />
+    <TrimmerRootAssembly Include="Z1R_WPF" />
+    <TrimmerRootAssembly Include="Z1R_Avalonia_DrawingShim" />
+    <TrimmerRootAssembly Include="FSharp.Core" />
+    <TrimmerRootAssembly Include="Newtonsoft.Json" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Include="..\Z1R_Avalonia\*.cs" Link="Z1R_Avalonia\%(Filename)%(Extension)" />
@@ -28,15 +46,13 @@
     <Content Include="..\Z1R_WPF\confirm_speech.wav" Link="wwwroot\confirm_speech.wav" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- the same packages and projects as Z1R_Avalonia (SharpHook's and SDL's native libraries don't exist here; Platform never calls them in a browser) -->
+  <!-- the same packages and projects as Z1R_Avalonia, except SharpHook and SDL (native desktop libraries; their code is #if !BROWSER) -->
   <ItemGroup>
     <PackageReference Include="Avalonia.Browser" Version="11.3.22" />
     <!-- a page has no system fonts; Inter stands in for the tracker's fonts (Avalonia's browser template does the same) -->
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
     <PackageReference Include="System.Speech" Version="10.0.0" />
-    <PackageReference Include="SharpHook" Version="8.0.1" />
-    <PackageReference Include="ppy.SDL3-CS" Version="2026.1002.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Z1R_Tracker_Core\Z1R_Tracker_Core.fsproj" />
