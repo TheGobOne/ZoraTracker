@@ -40,7 +40,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 21 | Popouts.fs | 547 | 3 | ported (C#) | straight translation; `PopoutKind` is a C# enum; `doUIUpdateEvent` is a `Graphics.SharedEvent`; window positions in WPF units via ShowRunCustom's helpers; no `RestoreBounds` (see Judgement calls) |
 | 22 | OverworldItemGridUI.fs | 1034 | 2 | ported (C#) | straight translation; `ShowLocatorDescriptor` is an abstract record; `MakeItemGrid` returns a 13-element value tuple; `redrawOWCircle` is a `StrongBox`; events are `Graphics.SharedEvent`s (see Judgement calls) |
 | 23 | UIComponents.fs | 1536 | 2 | ported (C#) | straight translation; Make* functions return value tuples; waypoint gradient tweened on a timer; magnifier cache in `Platform.Files.User("Magnifier")` (see Judgement calls) |
-| 24 | HUDs.fs | 392 | 3 | todo | |
+| 24 | HUDs.fs | 392 | 3 | ported (C#) | straight translation; `#if NOT_RACE_LEGAL` kept, so (as in WPF) nothing calls it; frameless transparent windows; positions in WPF units (see Judgement calls) |
 | 25 | Broadcast.fs | 251 | 3 | todo | |
 | 26 | UIHelpers.fs | 15 | 3 | todo | |
 | 27 | UserCustomLayer.fs | 210 | 3 | todo | |
@@ -537,6 +537,16 @@ runtime-test lists in the entries below.
   `PointerUpdateKind`; blocker boxes' Shift+left-click reads `KeyModifiers` (WPF: `Keyboard.IsKeyDown`); hint decoder and blocker wheels step once per `Graphics.wheelNotch`.
   The blocker "Applies to..." panel's and the Other Hints section's type-keyed `Resources` styles are `Styles` on the same panel. `dash_bracelet`/`dash_raft`
   `Visibility.Collapsed` → `IsVisible`. "Mouse Hover Explainer" (30pt, placed by pixel) uses `Graphics.matchWpfTextTop`.
+
+- **HUDs: unreachable, as in WPF.** WPFUI calls `HUDs.MakeHUDs` only under `#if NOT_RACE_LEGAL`, which neither WPF's build nor ours defines, and inside it the two HUD makers
+  are hooked up only under the same `#if`. The C# keeps those `#if`s. `MakeHUDs(cm, Graphics.SharedEvent<VisualBrush> trackerDungeonMoused,
+  Graphics.SharedEvent<(DungeonUI.TrackerLocation, int, int)> trackerLocationMoused)`.
+- **HUD windows (untested, unreachable).** `WindowStyle.None` + `AllowsTransparency` → `SystemDecorations.None` + `TransparencyLevelHint = Transparent`; `ResizeMode` →
+  `CanResize`; `Owner` → `ShowRunCustom.showOwned`; `LocationChanged` → `PositionChanged`; positions through `ShowRunCustom.leftOf`/`topOf`/`setLeftTop` (WPF units).
+  WPF reads framed windows' outer `Width`/`Height`; the port reads `FrameSize` (outer) there and sets/saves the client size (`OverlayLocatorWindowLTWH`, as Popouts). The
+  `±8`/`-16` fudges (Windows 10's invisible resize borders) are kept as is, so the HUD/minimap placement next to the control/sizer window may be off by a few pixels on
+  macOS/Linux. The view rectangles' `VisualBrush` Viewbox (absolute) → `SourceRect` (absolute), `Stretch.None`. The "minimized" check is `Left < MINIMIZED_THRESHOLD` or
+  `WindowState == Minimized`, as Popouts.
 
 ## Decisions needed from TheGobOne
 
