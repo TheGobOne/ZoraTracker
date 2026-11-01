@@ -223,48 +223,116 @@ public static class Platform
 
     private static class WinProgram
     {
-        [DllImport("User32.dll")]
-        public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-        [DllImport("User32.dll")]
-        public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
         [DllImport("kernel32.dll")]
         public static extern IntPtr GetConsoleWindow();
         [DllImport("user32.dll")]
         public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     }
 
-    private static IntPtr hwndOf(Avalonia.Controls.Window w) => w.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+    // Global hotkeys use SharpHook's global keyboard hook (libuiohook) on every OS, in place of WPF's user32 RegisterHotKey. As with RegisterHotKey,
+    // a registered key fires only with exactly the registered modifiers, and is swallowed so no other app sees it (Windows and macOS; X11 can't
+    // swallow keys). The key reaches the window the way WPF's does: as a WM_HOTKEY message to the hooks added with AddWndProcHook, on the UI thread.
+    // macOS: the hook needs Accessibility permission; macOS asks for it the first time, and without it there are no global hotkeys.
+    private const int WM_HOTKEY = 0x0312;
+    private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_WIN = 0x8;
+    private sealed record HotKeyRegistration(Avalonia.Controls.Window Window, int Id, uint Modifiers, uint Vk);
+    private static readonly List<HotKeyRegistration> hotKeys = new();
+    private static SharpHook.SimpleGlobalHook keyboardHook;   // (SimpleGlobalHook: handlers run on the hook's thread, which is what lets them swallow keys)
 
-    /// <summary>A system-wide hotkey on this window (WPF: user32 `RegisterHotKey(hWnd, id, fsModifiers, vk)`); the key arrives as WM_HOTKEY in the
-    /// window procedure (see AddWndProcHook). Windows: the same user32 call as WPF. macOS/Linux: a stub (planned: SharpHook) that returns false.</summary>
+    // Windows virtual-key codes for F1-F24 (the only keys the tracker registers) as SharpHook key codes
+    private static SharpHook.Data.KeyCode keyCodeOfVk(uint vk) =>
+        vk >= 0x70 && vk <= 0x87 ? Enum.Parse<SharpHook.Data.KeyCode>("VcF" + (vk - 0x70 + 1)) : SharpHook.Data.KeyCode.VcUndefined;
+    private static uint vkOfKeyCode(SharpHook.Data.KeyCode k)
+    {
+        for (uint vk = 0x70; vk <= 0x87; vk++)
+            if (keyCodeOfVk(vk) == k) return vk;
+        return 0;
+    }
+    private static uint modifiersOf(SharpHook.Data.EventMask m) =>
+        (m.HasFlag(SharpHook.Data.EventMask.LeftAlt) || m.HasFlag(SharpHook.Data.EventMask.RightAlt) ? MOD_ALT : 0) |
+        (m.HasFlag(SharpHook.Data.EventMask.LeftCtrl) || m.HasFlag(SharpHook.Data.EventMask.RightCtrl) ? MOD_CONTROL : 0) |
+        (m.HasFlag(SharpHook.Data.EventMask.LeftShift) || m.HasFlag(SharpHook.Data.EventMask.RightShift) ? MOD_SHIFT : 0) |
+        (m.HasFlag(SharpHook.Data.EventMask.LeftMeta) || m.HasFlag(SharpHook.Data.EventMask.RightMeta) ? MOD_WIN : 0);
+
+    private static void onGlobalKeyPressed(object sender, SharpHook.KeyboardHookEventArgs e)
+    {
+        var vk = vkOfKeyCode(e.Data.KeyCode);
+        if (vk == 0) return;
+        var mods = modifiersOf(e.RawEvent.Mask);
+        List<HotKeyRegistration> hits;
+        lock (hotKeys) hits = hotKeys.FindAll(h => h.Vk == vk && h.Modifiers == mods);
+        if (hits.Count == 0) return;
+        e.SuppressEvent = true;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var h in hits)
+            {
+                // WM_HOTKEY: wParam is the hotkey id, lParam has the modifiers in its low word and the virtual-key code in its high word
+                var lParam = new IntPtr((int)((vk << 16) | mods));
+                List<WndProcHook> hooks;
+                lock (wndProcHooks) hooks = wndProcHooks.TryGetValue(h.Window, out var l) ? new List<WndProcHook>(l) : new List<WndProcHook>();
+                foreach (var hook in hooks)
+                {
+                    bool handled = false;
+                    hook(IntPtr.Zero, WM_HOTKEY, new IntPtr(h.Id), lParam, ref handled);
+                    if (handled) break;
+                }
+            }
+        });
+    }
+
+    private static void ensureKeyboardHook()
+    {
+        if (keyboardHook != null) return;
+        keyboardHook = new SharpHook.SimpleGlobalHook();
+        keyboardHook.KeyPressed += onGlobalKeyPressed;
+        keyboardHook.RunAsync(SharpHook.Data.GlobalHookType.Keyboard, useBackgroundThread: true).ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+            {
+                var ex = t.Exception.GetBaseException();
+                var why = ex is SharpHook.HookException he && (he.Result == SharpHook.Data.UioHookResult.ErrorAxApiDisabled || he.Result == SharpHook.Data.UioHookResult.ErrorAxApiRevoked)
+                    ? "it needs Accessibility permission (System Settings > Privacy & Security > Accessibility), then a restart of the tracker"
+                    : ex.Message;
+                Console.WriteLine($"global hotkeys are unavailable: {why}");
+            }
+        });
+    }
+
+    /// <summary>A system-wide hotkey for this window (WPF: user32 `RegisterHotKey(hWnd, id, fsModifiers, vk)`); the key arrives as WM_HOTKEY at the
+    /// hooks added with AddWndProcHook. Every OS: SharpHook's global keyboard hook (see above). Only F1-F24 are supported (all the tracker uses);
+    /// returns false for other keys.</summary>
     public static bool RegisterHotKey(Avalonia.Controls.Window w, int id, uint fsModifiers, uint vk)
     {
-        if (isWindows) return WinProgram.RegisterHotKey(hwndOf(w), id, fsModifiers, vk);
-        stub("global hotkeys (WPF: RegisterHotKey F10 = update the timeline now; planned: SharpHook)");
-        return false;
+        if (keyCodeOfVk(vk) == SharpHook.Data.KeyCode.VcUndefined) return false;
+        lock (hotKeys) hotKeys.Add(new HotKeyRegistration(w, id, fsModifiers & (MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN), vk));
+        ensureKeyboardHook();
+        return true;
     }
     public static bool UnregisterHotKey(Avalonia.Controls.Window w, int id)
     {
-        if (isWindows) return WinProgram.UnregisterHotKey(hwndOf(w), id);
-        return false;
+        lock (hotKeys) return hotKeys.RemoveAll(h => h.Window == w && h.Id == id) > 0;
     }
 
-    /// <summary>A window-procedure hook (WPF: `HwndSource.AddHook`). Return IntPtr.Zero and leave `handled` alone to let the message through.</summary>
+    /// <summary>A window-procedure hook (WPF: `HwndSource.AddHook`). Return IntPtr.Zero and leave `handled` alone to let the message through.
+    /// Only WM_HOTKEY is ever delivered (see RegisterHotKey), on every OS.</summary>
     public delegate IntPtr WndProcHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled);
-    private static readonly Dictionary<WndProcHook, Avalonia.Controls.Win32Properties.CustomWndProcHookCallback> wndProcHooks = new();
-    /// <summary>Windows: Avalonia's Win32 window-procedure hook. macOS/Linux: nothing (there are no window messages; see RegisterHotKey).</summary>
+    private static readonly Dictionary<Avalonia.Controls.Window, List<WndProcHook>> wndProcHooks = new();
     public static void AddWndProcHook(Avalonia.Controls.Window w, WndProcHook hook)
     {
-        if (!isWindows) return;
-        Avalonia.Controls.Win32Properties.CustomWndProcHookCallback cb = (IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, ref bool handled) => hook(hWnd, (int)msg, wParam, lParam, ref handled);
-        wndProcHooks[hook] = cb;
-        Avalonia.Controls.Win32Properties.AddWndProcHookCallback(w, cb);
+        lock (wndProcHooks)
+        {
+            if (!wndProcHooks.TryGetValue(w, out var l)) wndProcHooks[w] = l = new List<WndProcHook>();
+            l.Add(hook);
+        }
     }
     public static void RemoveWndProcHook(Avalonia.Controls.Window w, WndProcHook hook)
     {
-        if (!isWindows) return;
-        if (wndProcHooks.Remove(hook, out var cb))
-            Avalonia.Controls.Win32Properties.RemoveWndProcHookCallback(w, cb);
+        lock (wndProcHooks)
+        {
+            if (wndProcHooks.TryGetValue(w, out var l) && l.Remove(hook) && l.Count == 0)
+                wndProcHooks.Remove(w);
+        }
     }
 
     /// <summary>The console window (WPF: kernel32 `GetConsoleWindow()`); IntPtr.Zero when there is none, and always off Windows.</summary>
@@ -329,20 +397,37 @@ public static class Platform
     ////////////////////////////////////////////////////////////
     // mouse
 
+    // Fake mouse input (hotkeys can act as mouse buttons and the scroll wheel) uses SharpHook's event simulator on every OS.
+    // macOS: it needs Accessibility permission; macOS asks for it the first time, and without it nothing happens.
+    private static SharpHook.Simulation.EventSimulator eventSimulator;
+    private static bool eventSimulatorFailed;
+    private static SharpHook.Simulation.EventSimulator simulator()
+    {
+        if (eventSimulator == null && !eventSimulatorFailed)
+        {
+            try { eventSimulator = SharpHook.Simulation.EventSimulator.Create("ZoraTracker"); }   // (on Linux this sets up virtual input devices)
+            catch (Exception e)
+            {
+                eventSimulatorFailed = true;
+                Console.WriteLine($"fake mouse input is unavailable: {e.Message}");
+            }
+        }
+        return eventSimulator;
+    }
+    private static void reportSimulation(SharpHook.Data.UioHookResult r)
+    {
+        if (r == SharpHook.Data.UioHookResult.ErrorAxApiDisabled || r == SharpHook.Data.UioHookResult.ErrorAxApiRevoked)
+            stub("fake mouse input without Accessibility permission (System Settings > Privacy & Security > Accessibility)");
+        else if (r != SharpHook.Data.UioHookResult.Success)
+            stub($"fake mouse input ({r})");
+    }
+
+    // Cursor warping stays one OS call each: SharpHook's warp on macOS needs Accessibility permission, which CGWarpMouseCursorPosition doesn't,
+    // and SetCursorPos is exactly what WPF calls. Linux uses SharpHook.
     private static class Win
     {
         [DllImport("User32.dll")]
         public static extern bool SetCursorPos(int X, int Y);
-        [DllImport("User32.dll")]
-        public static extern void mouse_event(uint dwFlags, int dx, int dy, uint cButtons, int dwExtraInfo);
-        public const uint MOUSEEVENTF_LEFTDOWN = 0x02;
-        public const uint MOUSEEVENTF_LEFTUP = 0x04;
-        public const uint MOUSEEVENTF_RIGHTDOWN = 0x08;
-        public const uint MOUSEEVENTF_RIGHTUP = 0x10;
-        public const uint MOUSEEVENTF_MIDDLEDOWN = 0x20;
-        public const uint MOUSEEVENTF_MIDDLEUP = 0x40;
-        public const uint MOUSEEVENTF_WHEEL = 0x800;
-        public const int WHEEL_DELTA = 120;
     }
 
     private static class Mac
@@ -353,27 +438,12 @@ public static class Platform
         const string CF = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
         [DllImport(CG)] public static extern int CGWarpMouseCursorPosition(CGPoint newCursorPosition);
         [DllImport(CG)] public static extern int CGAssociateMouseAndMouseCursorPosition(int connected);
-        [DllImport(CG)] public static extern IntPtr CGEventCreate(IntPtr source);
-        [DllImport(CG)] public static extern CGPoint CGEventGetLocation(IntPtr ev);
         [DllImport(CG)] public static extern IntPtr CGEventCreateMouseEvent(IntPtr source, uint mouseType, CGPoint mouseCursorPosition, uint mouseButton);
-        // the non-variadic version: variadic P/Invoke isn't safe on Apple Silicon
-        [DllImport(CG)] public static extern IntPtr CGEventCreateScrollWheelEvent2(IntPtr source, uint units, uint wheelCount, int wheel1, int wheel2, int wheel3);
         [DllImport(CG)] public static extern void CGEventPost(uint tap, IntPtr ev);
         [DllImport(CF)] public static extern void CFRelease(IntPtr cf);
         public const uint kCGHIDEventTap = 0;
-        public const uint kCGEventLeftMouseDown = 1, kCGEventLeftMouseUp = 2;
-        public const uint kCGEventRightMouseDown = 3, kCGEventRightMouseUp = 4;
         public const uint kCGEventMouseMoved = 5;
-        public const uint kCGEventOtherMouseDown = 25, kCGEventOtherMouseUp = 26;
-        public const uint kCGMouseButtonLeft = 0, kCGMouseButtonRight = 1, kCGMouseButtonCenter = 2;
-        public const uint kCGScrollEventUnitLine = 1;
-        public static CGPoint cursorLocation()
-        {
-            var ev = CGEventCreate(IntPtr.Zero);
-            var p = CGEventGetLocation(ev);
-            CFRelease(ev);
-            return p;
-        }
+        public const uint kCGMouseButtonLeft = 0;
         public static void post(IntPtr ev)
         {
             if (ev != IntPtr.Zero)
@@ -381,12 +451,6 @@ public static class Platform
                 CGEventPost(kCGHIDEventTap, ev);
                 CFRelease(ev);
             }
-        }
-        public static void click(uint down, uint up, uint button)
-        {
-            var p = cursorLocation();
-            post(CGEventCreateMouseEvent(IntPtr.Zero, down, p, button));
-            post(CGEventCreateMouseEvent(IntPtr.Zero, up, p, button));
         }
     }
 
@@ -413,43 +477,37 @@ public static class Platform
         }
         else
         {
-            stub("cursor warping (Linux: XWarpPointer)");
-            return false;
+            // X11 coordinates are pixels, as Avalonia's (Wayland doesn't let apps move the cursor; SharpHook then reports an error)
+            var sim = simulator();
+            if (sim == null) return false;
+            var r = sim.SimulateMouseMovement((short)x, (short)y);
+            reportSimulation(r);
+            return r == SharpHook.Data.UioHookResult.Success;
         }
     }
 
-    // Fake mouse input, sent at the cursor's current position (hotkeys can act as mouse buttons and the scroll wheel).
-    // On macOS these need Accessibility permission, without which they're silently dropped.
-    public static void LeftMouseClick()
+    // Fake mouse input, sent at the cursor's current position.
+    private static void click(SharpHook.Data.MouseButton b)
     {
-        if (isWindows) Win.mouse_event(Win.MOUSEEVENTF_LEFTDOWN | Win.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
-        else if (isMacOS) Mac.click(Mac.kCGEventLeftMouseDown, Mac.kCGEventLeftMouseUp, Mac.kCGMouseButtonLeft);
-        else stub("fake mouse clicks (Linux: XTest)");
+        var sim = simulator();
+        if (sim == null) return;
+        var r = sim.SimulateMousePress(b);
+        if (r == SharpHook.Data.UioHookResult.Success) r = sim.SimulateMouseRelease(b);
+        reportSimulation(r);
     }
-    public static void RightMouseClick()
+    // one notch of the wheel: Windows and Linux count 120 per notch (WPF: WHEEL_DELTA); macOS counts lines
+    private static readonly short wheelNotchRotation = isMacOS ? (short)1 : (short)120;
+    private static void wheel(short rotation)
     {
-        if (isWindows) Win.mouse_event(Win.MOUSEEVENTF_RIGHTDOWN | Win.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
-        else if (isMacOS) Mac.click(Mac.kCGEventRightMouseDown, Mac.kCGEventRightMouseUp, Mac.kCGMouseButtonRight);
-        else stub("fake mouse clicks (Linux: XTest)");
+        var sim = simulator();
+        if (sim == null) return;
+        reportSimulation(sim.SimulateMouseWheel(rotation, SharpHook.Data.MouseWheelScrollDirection.Vertical, SharpHook.Data.MouseWheelScrollType.UnitScroll));
     }
-    public static void MiddleMouseClick()
-    {
-        if (isWindows) Win.mouse_event(Win.MOUSEEVENTF_MIDDLEDOWN | Win.MOUSEEVENTF_MIDDLEUP, 0, 0, 0, 0);
-        else if (isMacOS) Mac.click(Mac.kCGEventOtherMouseDown, Mac.kCGEventOtherMouseUp, Mac.kCGMouseButtonCenter);
-        else stub("fake mouse clicks (Linux: XTest)");
-    }
-    public static void ScrollWheelRotateUp()
-    {
-        if (isWindows) Win.mouse_event(Win.MOUSEEVENTF_WHEEL, 0, 0, (uint)Win.WHEEL_DELTA, 0);
-        else if (isMacOS) Mac.post(Mac.CGEventCreateScrollWheelEvent2(IntPtr.Zero, Mac.kCGScrollEventUnitLine, 1, 1, 0, 0));
-        else stub("fake scroll wheel (Linux: XTest)");
-    }
-    public static void ScrollWheelRotateDown()
-    {
-        if (isWindows) Win.mouse_event(Win.MOUSEEVENTF_WHEEL, 0, 0, unchecked((uint)(-Win.WHEEL_DELTA)), 0);
-        else if (isMacOS) Mac.post(Mac.CGEventCreateScrollWheelEvent2(IntPtr.Zero, Mac.kCGScrollEventUnitLine, 1, -1, 0, 0));
-        else stub("fake scroll wheel (Linux: XTest)");
-    }
+    public static void LeftMouseClick() => click(SharpHook.Data.MouseButton.Button1);
+    public static void RightMouseClick() => click(SharpHook.Data.MouseButton.Button2);
+    public static void MiddleMouseClick() => click(SharpHook.Data.MouseButton.Button3);
+    public static void ScrollWheelRotateUp() => wheel(wheelNotchRotation);
+    public static void ScrollWheelRotateDown() => wheel((short)-wheelNotchRotation);
 
     /// <summary>The Windows "show location of pointer when I press Ctrl" setting (mouse sonar). Only referenced from code the WPF
     /// tracker has commented out; risk 8 in PLAN.md.</summary>
@@ -462,16 +520,137 @@ public static class Platform
     ////////////////////////////////////////////////////////////
     // sound
 
-    /// <summary>Plays a .wav file from the app folder. volume is 0.0-1.0.</summary>
-    public static void PlaySound(string fileName, double volume)
+    // Sounds play through SDL's audio on every OS (WPF: one MediaPlayer per sound file). As WPF's players, each file plays on its own stream,
+    // and playing a file again restarts it from the beginning.
+    private sealed unsafe class LoadedSound
     {
-        stub($"sound playback ({Path.GetFileName(fileName)})");
+        public SDL.SDL_AudioStream* Stream;
+        public IntPtr Data;
+        public int Length;
+    }
+    private static readonly Dictionary<string, LoadedSound> loadedSounds = new();
+    private static bool sdlAudioFailed;
+
+    private static unsafe LoadedSound loadSound(string fileName)
+    {
+        if (loadedSounds.TryGetValue(fileName, out var s)) return s;
+        if (sdlAudioFailed) return null;
+        if (!Sdl.InitSubSystem(SDL.SDL_InitFlags.SDL_INIT_AUDIO))
+        {
+            sdlAudioFailed = true;
+            Console.WriteLine($"sound is unavailable: {SDL.SDL3.SDL_GetError()}");
+            return null;
+        }
+        SDL.SDL_AudioSpec spec;
+        byte* buf;
+        uint len;
+        if (!SDL.SDL3.SDL_LoadWAV(fileName, &spec, &buf, &len))
+        {
+            Console.WriteLine($"could not load {Path.GetFileName(fileName)}: {SDL.SDL3.SDL_GetError()}");
+            loadedSounds[fileName] = null;
+            return null;
+        }
+        var stream = SDL.SDL3.SDL_OpenAudioDeviceStream(SDL.SDL3.SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, null, IntPtr.Zero);
+        if (stream == null)
+        {
+            Console.WriteLine($"could not open an audio device: {SDL.SDL3.SDL_GetError()}");
+            SDL.SDL3.SDL_free(buf);
+            loadedSounds[fileName] = null;
+            return null;
+        }
+        SDL.SDL3.SDL_ResumeAudioStreamDevice(stream);
+        s = new LoadedSound { Stream = stream, Data = (IntPtr)buf, Length = (int)len };
+        loadedSounds[fileName] = s;
+        return s;
     }
 
-    /// <summary>The system "asterisk" sound (WPF: SystemSounds.Asterisk).</summary>
+    /// <summary>Plays a .wav file from the app folder, from the start (stopping that file if it's still playing). volume is 0.0-1.0.</summary>
+    public static void PlaySound(string fileName, double volume)
+    {
+        unsafe
+        {
+            lock (loadedSounds)
+            {
+                var s = loadSound(fileName);
+                if (s == null) return;
+                SDL.SDL3.SDL_ClearAudioStream(s.Stream);
+                SDL.SDL3.SDL_SetAudioStreamGain(s.Stream, (float)volume);
+                SDL.SDL3.SDL_PutAudioStreamData(s.Stream, s.Data, s.Length);
+            }
+        }
+    }
+
+    private static class WinBeep
+    {
+        [DllImport("user32.dll")]
+        public static extern bool MessageBeep(uint uType);
+        public const uint MB_ICONASTERISK = 0x40;
+    }
+    private static class MacBeep
+    {
+        [DllImport("/System/Library/Frameworks/AppKit.framework/AppKit")]
+        public static extern void NSBeep();
+    }
+    /// <summary>The system "asterisk" sound (WPF: SystemSounds.Asterisk, which is MessageBeep(MB_ICONASTERISK)). macOS: the system alert sound
+    /// (NSBeep). Linux has no standard alert sound, so a short tone plays through SDL.</summary>
     public static void SystemBeep()
     {
-        stub("system beep");
+        if (isWindows) WinBeep.MessageBeep(WinBeep.MB_ICONASTERISK);
+        else if (isMacOS) MacBeep.NSBeep();
+        else playBeepTone();
+    }
+    private static unsafe void playBeepTone()
+    {
+        lock (loadedSounds)
+        {
+            const string key = "(beep)";
+            if (!loadedSounds.TryGetValue(key, out var s))
+            {
+                s = null;
+                if (!sdlAudioFailed && Sdl.InitSubSystem(SDL.SDL_InitFlags.SDL_INIT_AUDIO))
+                {
+                    // 120ms of an 880Hz sine with short fades, mono 16-bit at 44.1kHz
+                    const int rate = 44100, n = rate * 120 / 1000;
+                    var data = (short*)NativeMemory.Alloc((nuint)(n * sizeof(short)));
+                    for (int i = 0; i < n; i++)
+                    {
+                        double fade = Math.Min(1.0, Math.Min(i, n - i) / (rate * 0.01));
+                        data[i] = (short)(Math.Sin(2 * Math.PI * 880 * i / rate) * fade * 12000);
+                    }
+                    var spec = new SDL.SDL_AudioSpec { format = SDL.SDL_AudioFormat.SDL_AUDIO_S16LE, channels = 1, freq = rate };
+                    var stream = SDL.SDL3.SDL_OpenAudioDeviceStream(SDL.SDL3.SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, null, IntPtr.Zero);
+                    if (stream != null)
+                    {
+                        SDL.SDL3.SDL_ResumeAudioStreamDevice(stream);
+                        s = new LoadedSound { Stream = stream, Data = (IntPtr)data, Length = n * sizeof(short) };
+                    }
+                }
+                loadedSounds[key] = s;
+            }
+            if (s == null) return;
+            SDL.SDL3.SDL_ClearAudioStream(s.Stream);
+            SDL.SDL3.SDL_PutAudioStreamData(s.Stream, s.Data, s.Length);
+        }
+    }
+
+    /// <summary>SDL (sound, and the gamepad in Gamepad.cs), started one subsystem at a time as it's first needed. SDL never gets a window here,
+    /// so it's told to keep reading the gamepad while another app has focus, as WPF's DirectInput did.</summary>
+    public static class Sdl
+    {
+        private static bool hintsSet;
+        public static bool InitSubSystem(SDL.SDL_InitFlags flags)
+        {
+            lock (typeof(Sdl))
+            {
+                if (!hintsSet)
+                {
+                    SDL.SDL3.SDL_SetHint(SDL.SDL3.SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+                    SDL.SDL3.SDL_SetHint(SDL.SDL3.SDL_HINT_APP_NAME, "Z1R Tracker");
+                    hintsSet = true;
+                }
+                return SDL.SDL3.SDL_InitSubSystem(flags);
+            }
+        }
     }
 
     ////////////////////////////////////////////////////////////

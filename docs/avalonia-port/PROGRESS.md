@@ -17,7 +17,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | – | `Z1R_Avalonia_DrawingShim` (new project) | – | 0 | ported | cross-platform `System.Drawing` (Bitmap, Graphics, Icon, SystemIcons, …) on SkiaSharp; replaced the earlier `Drawing.fs` |
 | – | `Z1R_Avalonia_WPFResources` (new project) | – | 1 | ported | the WPF tracker's embedded art, in an assembly named `Z1R_WPF` |
 | – | `Z1R_Avalonia_Sync`, `Z1R_Avalonia_SharedInterop` (new projects) | – | 1 | ported | net10 builds of Gob's `Z1R_Sync` and `Z1R_SharedInterop`, from his source files unchanged |
-| 1 | Gamepad.fs | 59 | 0 | stubbed (C#) | no gamepad is ever found |
+| 1 | Gamepad.fs | 59 | 0 | ported (C#) | SDL3 (ppy.SDL3-CS) on every OS in place of SharpDX.DirectInput |
 | 2 | Graphics.fs | 1634 | 0 | ported (C#) | sounds stubbed; Linux cursor warp/fake clicks stubbed; sprite sheet checked identical to the F# port |
 | 3 | CustomMessageBox.fs | 66 | 0 | ported (C#) | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites; the module is a namespace (see Judgement calls) |
 | 4 | OverworldRouteDrawing.fs | 268 | 1 | ported (C#) | straight translation; `drawPathsImpl` takes an `Avalonia.Point` and `whatToCyan` as `Func<int,int,bool>`; `doComputedDrawing` takes `IEnumerable<(int,int,bool)>`/`IEnumerable<Control>` |
@@ -62,21 +62,23 @@ Temporary; every one has to be replaced before parity.
 
 | Stub | Where | Notes |
 |---|---|---|
-| Gamepad (left shoulder = push-to-talk) | `Gamepad.fs` | `Initialize()` always reports no gamepad |
-| Sound effects (`confirm_speech.wav`, `reminder_clink.wav`) and system beep | `Platform.PlaySound`, `Platform.SystemBeep` | log once, play nothing; volume is still tracked |
 | Mouse sonar | `Platform.SetMouseSonar` | only reachable from code WPF has commented out (risk 8) |
-| Cursor warping on Linux | `Platform.WarpCursor` | returns false; the app then skips the wait for a mouse-move event |
-| Fake clicks and scroll wheel on Linux | `Platform.*MouseClick`, `ScrollWheelRotate*` | log once |
 | Co-op host launch (`Z1R_SignalRHost`) on macOS/Linux | `Platform.StartChildProcessTiedToApp` (from `Dungeon.startLocalSignalRHost`) | logs once, starts nothing; today the host executable doesn't ship there, so `startLocalSignalRHost` prints "Host EXE not found" first, as WPF does when it's missing. Co-op is phase 4 |
 | Speech synthesis and voice choice on macOS/Linux | `Platform.SpeechSynthesizer` (`OptionsMenu.voice`) | logs once; `Speak` prints the text; lists no voices, so "Change Voice" doesn't appear; `Volume` is kept. Windows uses System.Speech, as WPF (risk 6) |
 | Speech recognition on macOS/Linux | `Platform.SpeechRecognitionEngine` (`SpeechRecognition.speechRecognizer`) | prints which engine at startup, logs once on use, never recognizes anything; the grammar is still built. Windows uses System.Speech, as WPF (risk 4) |
-| Global hotkeys on macOS/Linux (F10 = update the timeline now; F5 is registered too, as WPF, and so swallowed system-wide) | `Platform.RegisterHotKey` / `AddWndProcHook` (from `Program.MyWindowBase`) | logs once, registers nothing (planned: SharpHook). Windows: user32 `RegisterHotKey` + Avalonia's Win32 window-procedure hook, as WPF; Release builds only, as WPF's `#if DEBUG` |
 | Console window show/hide on macOS/Linux | `Platform.GetConsoleWindow` / `ShowWindow` (from `Program`) | there's no console handle; `ShowWindow` logs once. A terminal the app was started from stays as it is |
 | ZTracker.lnk shortcut on macOS/Linux | `Platform.CreateShortcut` (from `Program.MyWindow`) | logs once (macOS: the .app in Applications; Linux: a .desktop file). Windows: the same `IShellLink` COM calls as WPF |
 | In-app update install on macOS/Linux | `CustomComboBoxes.makeVersionButtonWithBehavior` | "Install update" opens the release page instead (risk 11); `downloadAndStageUpdate` refuses off Windows, so no files are ever replaced there |
 
-Already real, not stubs: speech synthesis and speech recognition on Windows (System.Speech, as in WPF), the global hotkeys, console window and ZTracker.lnk on Windows (the same Win32/COM calls as WPF), the co-op host launch on Windows (the same kernel32 Job Object calls as WPF), cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
-(CoreGraphics; fake input needs Accessibility permission).
+Already real, not stubs: speech synthesis and speech recognition on Windows (System.Speech, as in WPF), the console window and ZTracker.lnk on Windows (the same Win32/COM calls as WPF), the co-op host launch on Windows (the same kernel32 Job Object calls as WPF).
+
+The same library on every OS (see "Cross-platform libraries" under Judgement calls):
+- **Global hotkeys** (F10 = update the timeline now; F5 is registered too, as WPF, and so swallowed): SharpHook's global keyboard hook. Release builds only, as WPF's `#if DEBUG`.
+- **Fake clicks and scroll wheel**: SharpHook's event simulator.
+- **Sound effects** (`confirm_speech.wav`, `reminder_clink.wav`): SDL3 audio.
+- **Gamepad push-to-talk**: SDL3.
+- **Cursor warping**: still one OS call each (SetCursorPos on Windows, CoreGraphics on macOS), SharpHook on Linux.
+- **System beep**: the OS alert sound on Windows (MessageBeep, which is what SystemSounds.Asterisk plays) and macOS (NSBeep); a short SDL tone on Linux.
 
 ## Early risk checks (phase 0)
 
@@ -633,7 +635,7 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
   (the locations are the model's F# tuples); `RemindOverworldOverwrites(..., string[] spokenOWTiles, Func<Task>)`; `SetupReminderDisplayAndProcessing(cm)` returns the `DockPanel`.
 - **Reminders threading (test at runtime).** The message loop is an `async` method started on the UI thread, so its awaits resume there (WPF: `SwitchToContext(ctxt)`); the
   clink delay, `voice.Speak` (blocking) and the minimum-display sleep run in `Task.Run` (WPF: `SwitchToThreadPool`). Border `MouseDown/Enter/Leave` → `PointerPressed/Entered/Exited`;
-  `Visibility.Collapsed` → `IsVisible`. The error beep (`SystemSounds.Asterisk`) is `Platform.SystemBeep` (stubbed off Windows, see Stubs).
+  `Visibility.Collapsed` → `IsVisible`. The error beep (`SystemSounds.Asterisk`) is `Platform.SystemBeep` (see Stubs).
 - **MainTrackerTriforcesAndItems C# shapes.** `setup(cm, owInstance, layout, kind)` returns `(Func<TimelineID, TrackerModel.Box, bool, Canvas> boxItemImpl, Image extrasImage,
   Action<Canvas,int> updateNumberedTriforceDisplayImpl, Action updateNumberedTriforceDisplayIfItExists)`. `makeGhostBusterImpl(IBrush, bool)` returns a `Canvas`;
   `timelineItems` is a `List<TimelineItem>`; `doUIUpdateEvent` is a `Graphics.SharedEvent`; `itemProgressSource` is a `Control`; the windows are Avalonia `Window`s.
@@ -783,6 +785,21 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
   presenter and stop the old template's refresh. The checkbox templates have the same pattern but aren't re-templated anywhere today.
 - **Timer box (compare on Windows).** As in WPF, MyWindow sets `hmsTimeTextBox.Padding = 0` after its 32pt FontSize, which replaces the `matchWpfTextTop`
   top padding (as Broadcast does); the digits are centred vertically, so check their position off Windows.
+- **Cross-platform libraries in place of OS calls.** Where a cross-platform library does the job, it's used on every OS (Windows included)
+  instead of a per-OS branch, so there's one code path to maintain and test: SharpHook (MIT; libuiohook) for global hotkeys and fake mouse
+  input, SDL3 via ppy.SDL3-CS (MIT; SDL is zlib) for sound and the gamepad. Behaviour notes:
+  - Hotkeys: WPF's `RegisterHotKey` + WM_HOTKEY becomes a low-level keyboard hook that matches the key and exact modifiers, swallows it (Windows,
+    macOS; X11 can't) and calls the window's `AddWndProcHook` hooks with a WM_HOTKEY message on the UI thread, so Program.cs is unchanged.
+    Only F1-F24 can be registered (all the tracker uses). **Test on Windows** (Release build): F10 updates the timeline, F5 is swallowed.
+  - macOS: the hotkey hook and fake clicks/scrolls need Accessibility permission. Without it the hook prints why at startup, and fake input logs once.
+    Cursor warping stays on CoreGraphics because SharpHook's warp needs that permission too (checked: it returns ErrorAxApiDisabled), and
+    CGWarpMouseCursorPosition doesn't.
+  - Sound: each file has its own SDL audio stream, and playing it again restarts it, as WPF's one MediaPlayer per file. Volume is SDL's stream
+    gain (WPF: MediaPlayer.Volume, both linear 0-1). Checked on macOS (CoreAudio) at volume 0; **listen** for both sounds and compare loudness on Windows.
+  - Gamepad: the first gamepad SDL recognises uses its LEFT_SHOULDER button; otherwise the first joystick's button 4 (WPF: `Buttons4`). Polled every
+    10ms on a background thread (WPF: a tight DirectInput poll loop), with SDL told to keep reading while the tracker isn't focused. As WPF, only a
+    gamepad present at startup is used. A disconnect raises `ControllerFailureEvent`, as a DirectInput read error does. **Test with a real gamepad.**
+  - Linux (untested): fake input and warping use SharpHook (X11; Wayland doesn't allow them), and the beep is a generated 880Hz tone.
 
 ## Decisions needed from TheGobOne
 

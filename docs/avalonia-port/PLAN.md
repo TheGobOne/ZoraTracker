@@ -137,14 +137,14 @@ is only about how to keep the build moving at first.
 | Feature | WPF source | Initial port | Final solution |
 |---|---|---|---|
 | Sprite/bitmap processing (`System.Drawing.Bitmap`, `GetPixel/SetPixel/LockBits`, ~236 uses in `Graphics.fs`) | `Graphics.fs`, `OverworldMapTileCustomization.fs`, `UIComponents.fs`, `WPFUI.fs`, … | **Port for real** to SkiaSharp (`SKBitmap`), converting to Avalonia `Bitmap` at the edge. This is phase 0. | — |
-| Cursor warping (`SetCursorPos`): menus open under the mouse, keyboard/gamepad navigation of menus moves the cursor | `Graphics.fs`; used throughout `CustomComboBoxes.fs`, `DungeonPopups.fs`, … | Stub (`Platform.WarpCursor`) | `CGWarpMouseCursorPosition` on macOS, `XWarpPointer` on X11 |
-| Fake mouse clicks and scrolls from hotkeys (`mouse_event`: left/middle/right click, wheel) | `Graphics.fs`; used by `CustomComboBoxes.fs`, `UIComponents.fs`, `OverworldItemGridUI.fs`, `WPFUI.fs` | Stub | `CGEventPost` on macOS, XTest on X11 |
+| Cursor warping (`SetCursorPos`): menus open under the mouse, keyboard/gamepad navigation of menus moves the cursor | `Graphics.fs`; used throughout `CustomComboBoxes.fs`, `DungeonPopups.fs`, … | Stub (`Platform.WarpCursor`) | `CGWarpMouseCursorPosition` on macOS (needs no permission), SharpHook on Linux; `SetCursorPos` on Windows, as WPF |
+| Fake mouse clicks and scrolls from hotkeys (`mouse_event`: left/middle/right click, wheel) | `Graphics.fs`; used by `CustomComboBoxes.fs`, `UIComponents.fs`, `OverworldItemGridUI.fs`, `WPFUI.fs` | Stub | SharpHook on every OS |
 | "Show mouse location" ring (`SystemParametersInfo` mouse sonar + `SendInput` Ctrl press) | `Graphics.fs` | Stub | Draw our own ring in a transparent overlay window (there's no system feature on macOS/Linux) |
-| Global hotkeys (`RegisterHotKey`) | `Program.fs`, `HotKeys.fs` | Port the in-window hotkeys; stub global registration | SharpHook |
+| Global hotkeys (`RegisterHotKey`) | `Program.fs`, `HotKeys.fs` | Port the in-window hotkeys; stub global registration | SharpHook on every OS |
 | Speech recognition (`System.Speech`), push-to-talk on the gamepad shoulder button | `SpeechRecognition.fs`, `OptionsMenu.fs` | Stub | Vosk with a restricted grammar, or a native helper per OS |
 | Speech synthesis, voice choice (`SpeechSynthesizer`, `SelectVoice`) | `OptionsMenu.fs`, `Reminders.fs` | Stub (log the text) | `AVSpeechSynthesizer` on macOS, speech-dispatcher/espeak on Linux |
-| Sound effects (`MediaPlayer`, `.wav`) and system beep (`SystemSounds.Asterisk`) | `Graphics.fs`, `Reminders.fs` | Stub | A small cross-platform audio library; bundle a sound for the beep |
-| Gamepad (`SharpDX.DirectInput`) | `Gamepad.fs`, `SpeechRecognition.fs` | Stub | SDL via Silk.NET |
+| Sound effects (`MediaPlayer`, `.wav`) and system beep (`SystemSounds.Asterisk`) | `Graphics.fs`, `Reminders.fs` | Stub | SDL3 audio on every OS; the beep is the OS alert sound (an SDL tone on Linux) |
+| Gamepad (`SharpDX.DirectInput`) | `Gamepad.fs`, `SpeechRecognition.fs` | Stub | SDL3 (ppy.SDL3-CS) on every OS |
 | Co-op sync: SignalR client, plus a local `Z1R_SignalRHost.exe` server tied to the app with a Windows Job Object | `CoopSync.fs`, `Dungeon.fs`, `Dungeon*Sync.fs`, `Z1R_Sync`, `Z1R_SignalRHost` | Port last | Retarget client and host to net10; ship the host per OS or run it in-process |
 | Desktop shortcut (`IShellLink` `.lnk`) | `Program.fs` | Skip | macOS: the `.app` in Applications; Linux: a `.desktop` file |
 | Opening folders/files/URLs (`Explorer.exe`, `Process.Start`) | `CustomComboBoxes.fs`, `ShowRunCustom.fs` | Port | `open` on macOS, `xdg-open` on Linux, via `Platform.cs` |

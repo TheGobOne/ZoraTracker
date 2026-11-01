@@ -5,8 +5,9 @@
 // `Main` calls `Program.main` here with the Avalonia app builder, since the platform backends live in that project). `ZoraTrackerApp` (namespace level,
 // after the class) is the Avalonia Application: WPF's `new Application()` + `app.Run(theDummyWindow)`.
 //
-// Windows-only pieces go through Platform.cs: the global F10/F5 hotkeys (user32 RegisterHotKey + a window-procedure hook), the console window
-// (GetConsoleWindow/ShowWindow) and the ZTracker.lnk shortcut (IShellLink) are the same Win32 calls as WPF on Windows and stubs (logged) on macOS/Linux.
+// Platform-specific pieces go through Platform.cs: the global F10/F5 hotkeys (WPF: user32 RegisterHotKey + a window-procedure hook; here SharpHook on
+// every OS, delivered as the same WM_HOTKEY message), the console window (GetConsoleWindow/ShowWindow) and the ZTracker.lnk shortcut (IShellLink), the
+// last two the same Win32 calls as WPF on Windows and stubs (logged) on macOS/Linux.
 // User files (crash log, recent loads) are Platform.Files.User files. WPF's Width/Height/ActualWidth are the window's outer size; Avalonia's are the client
 // size, so the window sizes below subtract WPF's CHROME_WIDTH/CHROME_HEIGHT, and `ActualWidth`/`ActualHeight` add it back (the formulas stay WPF's).
 // Static initialization: see `runStaticInitializersInWpfCompileOrder` (and "Startup order" in PROGRESS.md). Mouse events are pointer events; WPF's
@@ -43,8 +44,8 @@ namespace Z1R_Avalonia;
 
 public static class Program
 {
-    // (WPF: the user32/kernel32 declarations; the calls now live in Platform.cs, real on Windows and stubbed on macOS/Linux. RegisterHotKey/UnregisterHotKey
-    // take the window instead of its HWND. The IShellLink COM interface (used for the ZTracker.lnk shortcut) is in Platform.CreateShortcut.)
+    // (WPF: the user32/kernel32 declarations; the calls now live in Platform.cs. RegisterHotKey/UnregisterHotKey (SharpHook, every OS) take the window
+    // instead of its HWND. The IShellLink COM interface (used for the ZTracker.lnk shortcut) is in Platform.CreateShortcut.)
     public static class Winterop
     {
         public static bool RegisterHotKey(Window w, int id, uint fsModifiers, uint vk) => Platform.RegisterHotKey(w, id, fsModifiers, vk);

@@ -9,6 +9,7 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
 
@@ -31,6 +32,10 @@
     <!-- speech synthesis on Windows (WPF: the System.Speech framework assembly). Builds everywhere; only called when OperatingSystem.IsWindows()
          (Platform.SpeechSynthesizer); off Windows the package's assembly throws PlatformNotSupportedException, so it's never touched there. -->
     <PackageReference Include="System.Speech" Version="10.0.0" />
+    <!-- global hotkeys and fake mouse input on every OS (libuiohook; Platform.RegisterHotKey, Platform.LeftMouseClick, ...) -->
+    <PackageReference Include="SharpHook" Version="8.0.1" />
+    <!-- sound and the gamepad on every OS (SDL3 with its native libraries; Platform.PlaySound, Gamepad) -->
+    <PackageReference Include="ppy.SDL3-CS" Version="2026.1002.1" />
   </ItemGroup>
 
   <ItemGroup>
