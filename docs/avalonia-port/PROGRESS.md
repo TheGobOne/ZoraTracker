@@ -43,7 +43,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 24 | HUDs.fs | 392 | 3 | ported (C#) | straight translation; `#if NOT_RACE_LEGAL` kept, so (as in WPF) nothing calls it; frameless transparent windows; positions in WPF units (see Judgement calls) |
 | 25 | Broadcast.fs | 251 | 3 | ported (C#) | straight translation; off-screen check via `Window.Screens`; views are `VisualBrush`es with an absolute `SourceRect`; positions in WPF units, sizes client size (see Judgement calls) |
 | 26 | UIHelpers.fs | 15 | 3 | ported (C#) | straight translation; `UIHelpers.NotTooFrequently(TimeSpan)` with `SendThunk(Action)` |
-| 27 | UserCustomLayer.fs | 210 | 3 | todo | |
+| 27 | UserCustomLayer.fs | 210 | 3 | ported (C#) | straight translation; ExtraIcons is a user folder; `invokeExtras` is a `Func<Task>`; "Open ExtraIcons folder" via `Platform.RevealInFileManager` (see Judgement calls) |
 | 28 | DrawingLayer.fs | 442 | 3 | todo | |
 | 29 | Layout.fs | 860 | 2 | todo | |
 | 30 | Reminders.fs | 288 | 3 | todo | voice/sound stubbed |
@@ -558,6 +558,11 @@ runtime-test lists in the entries below.
   the shrunken map get `RenderTransformOrigin = TopLeft`; the magnifier and Max Hearts copies set `VisualBrush.Stretch = Fill` (WPF's default). The off-screen notice (a
   read-only wrapped TextBox) is a `SelectableTextBlock`. WPF's `broadcastTimeTextBox.LayoutTransform <- null` has nothing to clear. The timer's explicit `Padding = 0`
   (as WPF) replaces the `matchWpfTextTop` padding set in OverworldItemGridUI; the 26pt digits are centred vertically, so compare their position with WPF.
+
+- **UserCustomLayer C# shapes.** `InitializeUserCustom`/`InteractWithUserCustom(cm, List<TimelineItem> timelineItems, Func<Task> invokeExtras)`; `thePanel` is a
+  `StackPanel`. `extraIconsDirectory` is `Platform.Files.User("ExtraIcons")` (WPF: exe folder; the same folder on Windows). The per-item timeline event stays an
+  `FSharpEvent<bool>` (it goes to the F# model's `TimelineItemDescription.UserCustom`), null for None. The second `mkTxt` (which shadows the first in F#) is `mkTxt2`.
+  The extras icon's `MouseDown` → `PointerPressed`. The checklist label TextBoxes inside a `Viewbox Stretch=Fill` (WPF TextBox chrome differs): compare at runtime.
 
 ## Decisions needed from TheGobOne
 
