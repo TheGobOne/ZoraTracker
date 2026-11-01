@@ -22,7 +22,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 3 | CustomMessageBox.fs | 66 | 0 | ported (C#) | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites; the module is a namespace (see Judgement calls) |
 | 4 | OverworldRouteDrawing.fs | 268 | 1 | ported (C#) | straight translation; `drawPathsImpl` takes an `Avalonia.Point` and `whatToCyan` as `Func<int,int,bool>`; `doComputedDrawing` takes `IEnumerable<(int,int,bool)>`/`IEnumerable<Control>` |
 | 5 | DungeonRoomState.fs | 259 | 1 | ported (C#) | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control`; module is a namespace, `Changed` is a C# event (see Judgement calls) |
-| 6 | HotKeys.fs | 606 | 1 | todo | global hotkeys stubbed |
+| 6 | HotKeys.fs | 606 | 1 | ported (C#) | parsing and in-window keys complete; global hotkey registration belongs to Program.cs; HotKeys.txt is a user file; key numbers unchanged (see Judgement calls) |
 | 7 | Timeline.fs | 331 | 1 | F#: to C# | ported ahead of #5/#6 (it depends on neither); labels stay unwrapped read-only TextBoxes |
 | 8 | CustomComboBoxes.fs | 1418 | 1 | todo | update install, opening folders stubbed |
 | 9 | PieMenus.fs | 915 | 1 | todo | |
@@ -158,6 +158,28 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   for the type, `DungeonRoomState.DungeonRoomState.FromCSharp(...)` and `DungeonRoomState.DungeonRoomState.mkTxt(...)`.
 - **F# events only raised by their own class become C# events** (precedent: `Gamepad.ControllerFailureEvent`). `DungeonRoomState.Changed`
   is `event Action<DungeonRoomState>`: WPF's `drs.Changed.Add(fun _ -> ...)` becomes `drs.Changed += _ => ...`.
+- **HotKeys key numbers need no translation.** HotKeys.txt stores keys as `0-9`/`a-z` (turned into WPF `Key` numbers by arithmetic:
+  `'a'+44`, `'0'+34`) or `\nnn` (a WPF `Key` number); settings store no keys. Checked by reflection against WPF's `WindowsBase`
+  (net472 reference assembly): all 202 `System.Windows.Input.Key` names exist in `Avalonia.Input.Key` with the same numbers (0..172);
+  Avalonia only adds keys numbered 10001 and up. So existing HotKeys.txt files work unchanged (tested: `\24` = Up, `\75` = NumPad1).
+  Aliased numbers (Return/Enter, Prior/PageUp, …) exist in both; `PrettyKey` shows `Key.ToString()`, so compare a displayed alias name on Windows.
+- **HotKeys C# shapes.** The nested `module MyKey` (which callers `open`) is flattened into namespace `Z1R_Avalonia`: `SingleKeyboardModifier`,
+  `MyKeyRoutedEventArgs`, `MyKey.MyKeyEvent`, and `c.MyKeyAdd(f)` (an extension on `Control`) keep their names. `SingleKeyboardModifier` and
+  `HotKeys.GlobalHotkeyTargets` are C# enums whose members live in `SingleKeyboardModifierExtensions` / `GlobalHotkeyTargetsExtensions`
+  (Gob's `RoomType`/`RoomTypeExtensions` pattern): `x.PrettyString()`, `x.AsHotKeyName()`, `x.AsHotKeyDisplay()` are unchanged, but
+  `GlobalHotkeyTargets.All` → `GlobalHotkeyTargetsExtensions.All`, `SingleKeyboardModifier.FromHotKeyTxt(s)` → `SingleKeyboardModifierExtensions.FromHotKeyTxt(s)`,
+  and `SingleKeyboardModifier.GetCurrent()` → `SingleKeyboardModifierExtensions.GetCurrent(ea.KeyModifiers)` (no global keyboard state in Avalonia).
+  Keys are `(SingleKeyboardModifier, Key)` value tuples everywhere (`ea.Key`, `PrettyKey(k)`, `HotKeyProcessor` methods). `HotKeyProcessor<V>.TryGetValue`
+  returns `FSharpOption<V>` (null = None; a C# nullable can't wrap an unconstrained `V`); `AsPrettyHotKeyOpt` returns a string or null.
+  `DungeonRoomHotKeyProcessor` holds `FSharpChoice<RoomType, MonsterDetail, FloorDropDetail, DoorHotKeyResponse>`. WPF's `MyKeyRoutedEventHandler`
+  delegate is replaced by `EventHandler<MyKeyRoutedEventArgs>`.
+- **HotKeys: element under the mouse (test at runtime).** WPF sends each hotkey to `Mouse.DirectlyOver`, which is app-wide. Avalonia keeps the
+  element under the pointer per TopLevel (`IInputRoot.PointerOverElement`), and popups are TopLevels of their own, so `InitializeWindow` uses the
+  main window's, falling back to the TopLevel the pointer last moved in (a class handler on `PointerMoved`). Check hotkeys while hovering popup
+  menus, and that keys still arrive at the main window while a popup is open. With Alt held, WPF reports the key in `SystemKey`; Avalonia always uses `Key`.
+- **HotKeys on macOS: which modifiers? Needs Gob.** As in WPF, only exactly Shift, Ctrl or Alt (Option) count; anything with the Windows key /
+  Cmd (`KeyModifiers.Meta`) is `Unsupported`, so Cmd+key never triggers a hotkey. Mac users may expect Cmd where Windows uses Ctrl.
+- **HotKeys.txt and HotKeys_BlankSampleTemplate.txt** are written to `Platform.Files.User` (the exe folder on Windows, as before).
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
