@@ -1196,7 +1196,7 @@ public static class CustomComboBoxes
             recenterMouse();
         // (WPF MouseWheel: Delta is ±120 per notch, Avalonia's is ±1.0; only the sign is used. WPF's MouseWheel is only the vertical wheel; Avalonia
         // also reports horizontal scrolling (e.g. a sideways trackpad swipe) here with Delta.Y = 0, which WPF never delivers, so that is ignored)
-        tileCanvas.PointerWheelChanged += (_, x) => { if (x.Delta.Y == 0.0) return; recenterMouse(); if (x.Delta.Y < 0) next(); else prev(); };
+        tileCanvas.PointerWheelChanged += (s, x) => { var notch = Graphics.wheelNotch(s, x); if (notch == 0) return; recenterMouse(); if (notch < 0) next(); else prev(); };   // (whole notches only: trackpads send tiny deltas, and sideways scrolling, which WPF's MouseWheel never reports; see PROGRESS.md)
         tileCanvas.PointerPressed += (_, ea) =>
         {
             ea.Handled = true;

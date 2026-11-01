@@ -962,10 +962,14 @@ public static class DungeonUI
         //let exportFunctions = Array.create 9 (fun () -> new DungeonSaveAndLoad.DungeonModel())
         //let importFunctions = Array.create 9 (fun _ -> ())
         //let isFirstTimeClickingAnyRoom = Array.init 9 (fun _ -> new TrackerModel.Eventing<bool>(true))
-        TextBox makeNumeral(char labelChar) =>
-            new TextBox { Foreground = Brushes.Magenta, Background = Brushes.Transparent, Text = $"{labelChar}", IsReadOnly = true, IsHitTestVisible = false, FontSize = 200.0, Opacity = 0.25,
+        TextBox makeNumeral(char labelChar)
+        {
+            var n = new TextBox { Foreground = Brushes.Magenta, Background = Brushes.Transparent, Text = $"{labelChar}", IsReadOnly = true, IsHitTestVisible = false, FontSize = 200.0, Opacity = 0.25,
                             Height = (double)(27 * 8 + 12 * 7), Width = (double)(39 * 8 + 12 * 7), VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.Bold,
                             HorizontalContentAlignment = HorizontalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, BorderThickness = new Thickness(0.0), Padding = new Thickness(0.0) };
+            Graphics.matchWpfTextTop(n);   // (non-Windows fonts draw the digit too high; see PROGRESS.md)
+            return n;
+        }
         char getLabelChar(int level) => level == 9 ? '9' : TrackerModel.IsHiddenDungeonNumbers.Invoke(null) ? (char)((int)'A' - 1 + level) : (char)((int)'0' + level);
         //let mutable justUnmarked = None
         (int, int, HotKeys.DungeonRoomHotKey)? justUnmarked = null;
@@ -1371,12 +1375,13 @@ public static class DungeonUI
                         ea.Handled = true;
                     }
                 }, _ => { });
-                doorCanvas.PointerWheelChanged += (_, ea) =>
+                doorCanvas.PointerWheelChanged += (s, ea) =>
                 {
-                    if (ea.Delta.Y == 0.0) return;   // (sideways scrolling, which WPF's MouseWheel never reports; see PROGRESS.md)
+                    var notch = Graphics.wheelNotch(s, ea);
+                    if (notch == 0) return;   // (whole notches only: trackpads send tiny deltas, and sideways scrolling, which WPF's MouseWheel never reports; see PROGRESS.md)
                     if (!grabHelper.IsGrabMode)  // cannot interact with doors in grab mode
                     {
-                        if (ea.Delta.Y < 0) door.Next(); else door.Prev();
+                        if (notch < 0) door.Next(); else door.Prev();
                     }
                 };
                 doorCanvas.MyKeyAdd(ea =>
@@ -2595,15 +2600,16 @@ public static class DungeonUI
                         }
                         CustomComboBoxes.StartImmediate(work());
                     }
-                    c.PointerWheelChanged += (_, x) =>
+                    c.PointerWheelChanged += (s, x) =>
                     {
-                        if (x.Delta.Y == 0.0) return;   // (sideways scrolling, which WPF's MouseWheel never reports; see PROGRESS.md)
+                        var notch = Graphics.wheelNotch(s, x);
+                        if (notch == 0) return;   // (whole notches only: trackpads send tiny deltas, and sideways scrolling, which WPF's MouseWheel never reports; see PROGRESS.md)
                         if (!CustomComboBoxes.GlobalFlag.popupIsActive)
                         {
                             if (!grabHelper.IsGrabMode)  // cannot scroll rooms in grab mode
                             {
                                 CustomComboBoxes.GlobalFlag.popupIsActive = true;
-                                var scrollUp = x.Delta.Y > 0;
+                                var scrollUp = notch > 0;
                                 var showMonster = scrollUp != TrackerModelOptions.ReverseScrollWheelDirection.Value;
                                 if (showMonster)
                                     doMonsterDetailPopup();
@@ -3179,8 +3185,11 @@ public static class DungeonUI
                     var origNumeralColor = n.Foreground;
                     var notFoundText = new TextBox { Text = "not yet found", Foreground = origNumeralColor, Background = Brushes.Black, IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), FontSize = 12.0, Width = (double)w, TextAlignment = TextAlignment.Center };   // (full cell width with centered text, so it sits under the numeral)
                     var completeText = new TextBox { Text = "complete", Foreground = Brushes.Lime, Background = Brushes.Black, IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), Width = (double)w, TextAlignment = TextAlignment.Center };
-                    void placeNote(TextBox tbx) =>
+                    void placeNote(TextBox tbx)
+                    {
+                        Graphics.matchWpfTextTop(tbx);   // (like the numeral above it, or the two overlap off Windows)
                         canvasAdd(c, tbx, 0.0, numeralTop + 77.0);
+                    }
                     placeNote(notFoundText);
                     placeNote(completeText);
                     var miniContent = new Rectangle { Width = (double)w, Height = (double)h, Fill = new VisualBrush(contentCanvases[i]) { Stretch = Stretch.Fill } };   // (WPF's default Stretch is Fill; Avalonia's is Uniform)

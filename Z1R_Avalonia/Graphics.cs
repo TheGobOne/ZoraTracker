@@ -182,6 +182,38 @@ public static class Graphics
     // WPF's CheckBox `Checked` / `Unchecked` events (raised when IsChecked becomes true / false, also when set from code). Avalonia 11 still has
     // them but marks them obsolete in favour of IsCheckedChanged, so ported files use these instead: WPF `cb.Checked.Add(fun _ -> ...)` →
     // `Graphics.onChecked(cb, () => ...)`.
+    // WPF's MouseWheel fires once per wheel notch. Avalonia reports trackpads as a stream of tiny deltas (including while two fingers rest for a
+    // right-click), so a handler that acts on every event would open popups by accident. This adds the deltas up per control and returns +1 (up) or
+    // -1 (down) once they reach one notch (Delta 1.0), else 0. Sideways scrolling (Delta.Y = 0) is always 0. The sum resets after a 300ms pause.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, double[]> wheelSums = new();
+    public static int wheelNotch(object sender, PointerWheelEventArgs ea)
+    {
+        var s = wheelSums.GetValue(sender, _ => new double[2]);   // [sum, timestamp of the last event]
+        if (ea.Timestamp - s[1] > 300) s[0] = 0.0;
+        s[1] = ea.Timestamp;
+        if (ea.Delta.Y == 0.0) return 0;
+        if (Math.Sign(s[0]) != Math.Sign(ea.Delta.Y)) s[0] = 0.0;   // changed direction: start over
+        s[0] += ea.Delta.Y;
+        if (Math.Abs(s[0]) < 1.0) return 0;
+        var r = Math.Sign(s[0]);
+        s[0] -= r;
+        return r;
+    }
+    // WPF lays text out with Segoe UI's line metrics (ascent 2210/2048 em). Other platforms fall back to fonts with a shorter ascent (macOS Helvetica:
+    // 0.77 em), which puts the glyphs higher in their box: about 60px higher for a 200pt numeral. This pads the top by the difference, so the glyphs
+    // land where WPF draws them, and keeps it right when FontSize changes. With Segoe UI (Windows) the padding is 0.
+    public static void matchWpfTextTop(TemplatedControl c)
+    {
+        void update()
+        {
+            var m = new Typeface(c.FontFamily, c.FontStyle, c.FontWeight).GlyphTypeface.Metrics;
+            var ascent = -(double)m.Ascent / m.DesignEmHeight;   // (Avalonia's Ascent is negative)
+            var p = c.Padding;
+            c.Padding = new Thickness(p.Left, Math.Max(0.0, (2210.0 / 2048.0 - ascent) * c.FontSize), p.Right, p.Bottom);
+        }
+        update();
+        c.PropertyChanged += (_, e) => { if (e.Property == TemplatedControl.FontSizeProperty || e.Property == TemplatedControl.FontFamilyProperty) update(); };
+    }
     public static void onChecked(ToggleButton tb, Action f) => tb.IsCheckedChanged += (_, _) => { if (tb.IsChecked == true) f(); };
     public static void onUnchecked(ToggleButton tb, Action f) => tb.IsCheckedChanged += (_, _) => { if (tb.IsChecked == false) f(); };
 

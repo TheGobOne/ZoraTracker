@@ -143,7 +143,7 @@ runtime-test lists in the entries below.
 - **Gob's `Z1R_Sync` (C#) is needed in phase 1, not phase 4.** The dungeon room model (`CDungeonRoomState`, the
   `RoomType`/`MonsterDetail`/`FloorDropDetail` enums and their sprites) lives there, and `DungeonRoomState.fs` and
   `HotKeys.fs` use it. `Z1R_Avalonia_Sync` compiles Gob's four `.cs` files unchanged for net10, with SignalR client
-  8.0.11 in place of 3.1. His sprite loaders look for a loaded assembly named exactly `Z1R_WPF`, so
+  10.0.14 in place of 3.1 (8.0.11 had a high-severity advisory, GHSA-334f-vvp4-7g6p). His sprite loaders look for a loaded assembly named exactly `Z1R_WPF`, so
   `Z1R_Avalonia_WPFResources` is an assembly with that name, holding the same embedded PNGs. `Graphics.GetResourceStream`
   reads from it as well. Co-op itself (SignalR, starting `Z1R_SignalRHost.exe`) still has to be made to work in phase 4.
   If Gob adds an icon to `Z1R_WPF.fsproj`, add it to `Z1R_Avalonia_WPFResources.csproj` too.

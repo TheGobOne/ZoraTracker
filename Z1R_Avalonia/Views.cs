@@ -761,13 +761,14 @@ public static class Views
                     }
                 }
             };
-            c.PointerWheelChanged += (_, ea) =>
+            c.PointerWheelChanged += (s, ea) =>
             {
-                if (ea.Delta.Y == 0.0) return;   // (sideways scrolling, which WPF's MouseWheel never reports; see PROGRESS.md)
+                var notch = Graphics.wheelNotch(s, ea);
+                if (notch == 0) return;   // (whole notches only: trackpads send tiny deltas, and sideways scrolling, which WPF's MouseWheel never reports; see PROGRESS.md)
                 if (!CustomComboBoxes.GlobalFlag.popupIsActive)
                 {
                     ea.Handled = true;
-                    activateComboBox((ea.Delta.Y < 0 ? 1 : -1), new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());
+                    activateComboBox((notch < 0 ? 1 : -1), new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());
                 }
             };
             c.MyKeyAdd(ea =>
