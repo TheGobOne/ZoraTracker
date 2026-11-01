@@ -36,7 +36,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 17 | DungeonUI.fs | 2554 | 1 | ported (C#) | straight translation; drag-paint via Avalonia drag-and-drop in a nested dispatcher frame; summary-tab previews via `VisualBrush`; room-tile flash tweened on a timer; module events are C# events (see Judgement calls) |
 | 18 | SpeechRecognition.fs | 102 | 4 | ported (C#) | recognizer via `Platform.SpeechRecognitionEngine`: System.Speech on Windows (as WPF), stubbed on macOS/Linux; `ConvertSpokenPhraseToMapCell` returns `int?` (see Judgement calls) |
 | 19 | OverworldMapTileCustomization.fs | 1545 | 2 | ported (C#) | straight translation; accelerators are `Func<CanvasManager, Canvas, int, int, Task>`; "no hotkeys" reveals HotKeys.txt via `Platform.RevealInFileManager` (see Judgement calls) |
-| 20 | LinkRouting.fs | 240 | 2 | todo | |
+| 20 | LinkRouting.fs | 240 | 2 | ported (C#) | straight translation; `RouteDestination` is an abstract record; async → `Task` (see Judgement calls) |
 | 21 | Popouts.fs | 547 | 3 | todo | |
 | 22 | OverworldItemGridUI.fs | 1034 | 2 | todo | |
 | 23 | UIComponents.fs | 1536 | 2 | todo | |
@@ -468,6 +468,15 @@ runtime-test lists in the entries below.
   tree — is swallowed by the same try/catch as WPF's exception). Check the summary's width, the three-column grid, and that the = and potion icon line up.
 - **"You have no HotKeys mapped"** opens the file manager with HotKeys.txt selected via `Platform.RevealInFileManager` (WPF: `Explorer.exe /Select,`; same on Windows,
   Finder on macOS, the folder on Linux).
+- **LinkRouting C# shapes.** `RouteDestination` (an F# union) is an abstract record with cases `OW_MAP(Spots)` (`List<(int, int)>`), `HINTZONE(Zone, CouldBeLetterDungeon)`,
+  `UNMARKEDINSTANCEFUNC(F)` (`Func<int, int, bool>`): WPFUI's `| Some(RouteDestination.OW_MAP(spots)) ->` becomes `case LinkRouting.RouteDestination.OW_MAP(var spots):`.
+  `SetupLinkRouting` takes `Action<RouteDestination>`, `Action`, `Func<bool>`, `blockerQueries` as `List<Func<(int, (double, double))?>>` (null for None; UIComponents'
+  `MakeBlockers` adds to it), `Action<Canvas, int>`, `Func<bool>`, the sword bitmap, the overworld instance and two `Action<Canvas>`s, and returns
+  `(Action stepAnimateLink, Canvas linkIcon, Canvas currentTargetIcon)`. `activatePopup` is an `async Task` started with `CustomComboBoxes.StartImmediate`. `MouseDown`/
+  `MouseEnter`/`MouseLeave`/`IsMouseOver` → `PointerPressed`/`PointerEntered`/`PointerExited`/`IsPointerOver`. C# `for` loops share one variable across iterations, so the
+  triforce targets copy the loop index for their click closures (F# gives each iteration its own).
+- **Link routing popup (compare on Windows).** The explanation is an unwrapped `TextBox` holding `\n`s, as in WPF (check all lines show inside the 444×290 border); the
+  crosshair "+" is an 18pt TextBox at (7, 1), as in WPF.
 
 ## Decisions needed from TheGobOne
 
