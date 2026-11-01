@@ -78,6 +78,41 @@ public static class Platform
         }
     }
 
+    /// <summary>Open the file manager with this file selected (WPF: `Explorer.exe /Select, "file"`). macOS: Finder (`open -R`).
+    /// Linux has no standard way to select a file, so its folder is opened.</summary>
+    public static void RevealInFileManager(string file)
+    {
+        try
+        {
+            if (isWindows)
+                Process.Start(new ProcessStartInfo("Explorer.exe", $"/Select, \"{file}\""));
+            else if (isMacOS)
+                Process.Start("open", new[] { "-R", file });
+            else
+                Process.Start("xdg-open", new[] { Path.GetDirectoryName(file) });
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"could not reveal '{file}': {e.Message}");
+        }
+    }
+
+    /// <summary>Start an executable in its own folder with no console window, as WPF's ShowRunCustom RUN does
+    /// (stdout redirected, no shell execute). Exceptions propagate to the caller, as Process.Start's do in WPF.</summary>
+    public static void StartProcessHidden(string fileName, string arguments)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            WorkingDirectory = Path.GetDirectoryName(fileName),
+            FileName = fileName,
+            Arguments = arguments,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden
+        });
+    }
+
     /// <summary>Path of the running executable, for restarting the app.</summary>
     public static string ExecutablePath() => Environment.ProcessPath;
 

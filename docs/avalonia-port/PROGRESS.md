@@ -13,7 +13,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 
 | # | WPF file | Lines | Phase | Status | Notes |
 |---|---|---|---|---|---|
-| – | Platform.cs (new) | – | 0 | ported | platform layer: user-file location, open-with-shell, cursor warp, fake clicks, sounds (see Stubs) |
+| – | Platform.cs (new) | – | 0 | ported | platform layer: user-file location, open-with-shell, reveal-in-file-manager, hidden process start, cursor warp, fake clicks, sounds (see Stubs) |
 | – | `Z1R_Avalonia_DrawingShim` (new project) | – | 0 | ported | cross-platform `System.Drawing` (Bitmap, Graphics, Icon, SystemIcons, …) on SkiaSharp; replaced the earlier `Drawing.fs` |
 | – | `Z1R_Avalonia_WPFResources` (new project) | – | 1 | ported | the WPF tracker's embedded art, in an assembly named `Z1R_WPF` |
 | – | `Z1R_Avalonia_Sync`, `Z1R_Avalonia_SharedInterop` (new projects) | – | 1 | ported | net10 builds of Gob's `Z1R_Sync` and `Z1R_SharedInterop`, from his source files unchanged |
@@ -26,7 +26,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 7 | Timeline.fs | 331 | 1 | ported (C#) | labels stay unwrapped read-only TextBoxes; module is a namespace, `TimelineID` is a union-shaped C# class (see Judgement calls) |
 | 8 | CustomComboBoxes.fs | 1418 | 1 | ported (C#) | update check complete; update install Windows-only (macOS/Linux open the release page, see Stubs); "Open folder" opens the user-data folder; async → `Task` (see Judgement calls) |
 | 9 | PieMenus.fs | 915 | 1 | ported (C#) | straight translation; async → `Task`; panels are `(Canvas, Action<IBrush>)`; F# lists → `List<T>`/`IEnumerable<T>` (see Judgement calls) |
-| 10 | ShowRunCustom.fs | 225 | 1 | todo | |
+| 10 | ShowRunCustom.fs | 225 | 1 | ported (C#) | ShowRunCustom.txt is a user file; relative SHOW/RUN paths resolve against the app folder; process launching and "reveal file" via Platform (see Judgement calls) |
 | 11 | Dungeon.fs | 1226 | 1 | todo | co-op host launch (Job Object) stubbed until phase 4 |
 | 12 | OptionsMenu.fs | 1143 | 1 | todo | |
 | 13 | Views.fs | 610 | 1 | todo | |
@@ -247,6 +247,20 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   shop") from `Measure` before the box is shown, and has no re-centering `SizeChanged` handler here. In Avalonia, a control measured outside the visual tree may not have
   its theme template/styles yet, so the box could be off-centre and the mouse jump could miss the first shop button. Check both.
 - **`addGiantRedX`**: WPF sets `StrokeStartLineCap`/`StrokeEndLineCap`; Avalonia has one `StrokeLineCap` (both Round, so the same).
+- **ShowRunCustom.txt** is written to `Platform.Files.User` (WPF: the exe folder; same place on Windows). `ShowRunCustom.Line` (an F# union) is an abstract record
+  with cases `BLANK()`, `COMMENT(Text)`, `SHOW(File, Ltwh)` (`Ltwh` a nullable `(double, double, double, double)`), `RUN(Command, Args)`; `ParseShowRunCustomFile` returns `List<Line>`;
+  `DoShowRunCustom` takes an `Action`; `makeScalable` takes a `Control`.
+- **ShowRunCustom relative paths.** WPF opens a relative SHOW/RUN path from the current directory (the exe folder when started normally); the sample lines are
+  `.\ShowRunCustomImages\...`, images that ship with the app. A macOS/Linux app's current directory isn't its folder, so relative paths resolve against `Platform.AppDir()`,
+  with `\` turned into `/` off Windows (so old files still work). The new template's sample paths are written `./ShowRunCustomImages/...`. Absolute paths are unchanged.
+- **ShowRunCustom window positions are kept in WPF units.** WPF's `Left`/`Top` are device-independent; Avalonia's `Position` is in pixels, so the port converts with
+  `DesktopScaling` when reading and writing ShowRunCustom.txt and `ShowRunInfoWindowLT`. Saved width/height are Avalonia's client size (WPF: the outer size, borders and
+  title bar included), so a SHOW window saved by WPF reopens slightly larger. `LocationChanged` → `PositionChanged`, `ContentRendered` → `Opened`, `Owner` → `Show(owner)`.
+  `ResizeMode.CanResizeWithGrip` → `CanResize` (Avalonia draws no resize grip). Check minimized/closing windows don't write junk positions (MINIMIZED_THRESHOLD) on Windows.
+- **ShowRunCustom "show the file".** The info/error window opens the file manager with ShowRunCustom.txt selected via `Platform.RevealInFileManager` (Windows: same
+  `Explorer.exe /Select,` call; macOS: Finder `open -R`; Linux: opens the folder, since there's no standard way to select a file). RUN of an executable goes through
+  `Platform.StartProcessHidden` (same `ProcessStartInfo`); RUN of a URL through `Platform.OpenWithShell`, which logs a failure instead of showing the error window.
+  On macOS a `.app` bundle is a folder, so `RUN "/Applications/X.app"` reports "does not exist", as a folder would in WPF. **Needs Gob:** should RUN accept `.app` bundles on macOS?
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
