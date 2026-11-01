@@ -13,7 +13,9 @@ Status: `todo` · `ported` · `stubbed` (temporary) · `skipped` (needs a logged
 | # | WPF file | Lines | Phase | Status | Notes |
 |---|---|---|---|---|---|
 | – | Platform.fs (new) | – | 0 | ported | platform layer: user-file location, open-with-shell, cursor warp, fake clicks, sounds (see Stubs) |
-| – | Drawing.fs (new) | – | 0 | ported | `Z1RDrawing.Bitmap`/`Icon`/`SystemIcons`: cross-platform stand-ins for the System.Drawing types, on SkiaSharp |
+| – | `Z1R_Avalonia_DrawingShim` (new project) | – | 0 | ported | cross-platform `System.Drawing` (Bitmap, Graphics, Icon, SystemIcons, …) on SkiaSharp; replaced the earlier `Drawing.fs` |
+| – | `Z1R_Avalonia_WPFResources` (new project) | – | 1 | ported | the WPF tracker's embedded art, in an assembly named `Z1R_WPF` |
+| – | `Z1R_Avalonia_Sync`, `Z1R_Avalonia_SharedInterop` (new projects) | – | 1 | ported | net10 builds of Gob's `Z1R_Sync` and `Z1R_SharedInterop`, from his source files unchanged |
 | 1 | Gamepad.fs | 59 | 0 | stubbed | no gamepad is ever found |
 | 2 | Graphics.fs | 1634 | 0 | ported | sounds stubbed; Linux cursor warp/fake clicks stubbed |
 | 3 | CustomMessageBox.fs | 66 | 0 | ported | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites |
@@ -83,14 +85,23 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
 
 ## Judgement calls / needs a human
 
-- **System.Drawing → `Z1RDrawing.Bitmap`.** `System.Drawing.Bitmap` only works on Windows in .NET, so `Drawing.fs`
-  provides a stand-in with the same members, backed by a plain ARGB array (decoding/encoding through SkiaSharp). The
-  ported files only change `System.Drawing.Bitmap` to `Z1RDrawing.Bitmap`; `System.Drawing.Color` is cross-platform and
-  stays. Overloaded constructors (`new Bitmap(stream)`, `(filename)`, `(src)`, `(src, size)`) match System.Drawing's.
-  Checked by rendering a sheet of ~150 sprites and the full overworld map: all correct.
+- **System.Drawing stays `System.Drawing`.** `System.Drawing.Bitmap` (System.Drawing.Common) only works on Windows in
+  .NET, so the `Z1R_Avalonia_DrawingShim` project re-implements the parts the trackers use (`Bitmap`, `Image`,
+  `Graphics.FromImage` with Clear/DrawImage/FillEllipse/DrawLine/…, `Pen`, `Brushes`, `Icon`, `SystemIcons`,
+  `Imaging.ImageFormat/PixelFormat`, `Drawing2D` enums) in the same namespace, on SkiaSharp. Ported F# code and Gob's
+  C# code use `System.Drawing.*` exactly as in WPF. (Phase 0 first used an F#-only `Z1RDrawing` namespace; it was
+  replaced so Gob's C# compiles unchanged.) `Save` always writes PNG. Checked by rendering ~140 sprites (including
+  Z1R_Sync's monster and floor-drop sprites), the overworld map, and a `Graphics.FromImage` drawing.
+- **Gob's `Z1R_Sync` (C#) is needed in phase 1, not phase 4.** The dungeon room model (`CDungeonRoomState`, the
+  `RoomType`/`MonsterDetail`/`FloorDropDetail` enums and their sprites) lives there, and `DungeonRoomState.fs` and
+  `HotKeys.fs` use it. `Z1R_Avalonia_Sync` compiles Gob's four `.cs` files unchanged for net10, with SignalR client
+  8.0.11 in place of 3.1. His sprite loaders look for a loaded assembly named exactly `Z1R_WPF`, so
+  `Z1R_Avalonia_WPFResources` is an assembly with that name, holding the same embedded PNGs. `Graphics.GetResourceStream`
+  reads from it as well. Co-op itself (SignalR, starting `Z1R_SignalRHost.exe`) still has to be made to work in phase 4.
+  If Gob adds an icon to `Z1R_WPF.fsproj`, add it to `Z1R_Avalonia_WPFResources.csproj` too.
 - **Overworld tile cache** moved from `<exe folder>\Overworld\` to `Platform.UserDataDir()/Overworld/` (same as the exe
   folder on Windows). File names are unchanged. Like System.Drawing's, the `.bmp` files are PNG data.
-- **Message box icons.** Windows' own icons can't ship on other systems, so `Z1RDrawing.SystemIcons` draws look-alikes
+- **Message box icons.** Windows' own icons can't ship on other systems, so the shim's `SystemIcons` draws look-alikes
   (blue ?, blue i, yellow !, red X). Needs Gob's OK as a platform deviation.
 - **Message box text** uses `SelectableTextBlock` instead of a read-only `TextBox`. Avalonia's TextBox measures wrapped
   text a pixel or two too narrow, so the last word drops onto a clipped second line (confirmed with a test). **This

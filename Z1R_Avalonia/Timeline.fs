@@ -309,7 +309,7 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
                             try Graphics.BMPtoImage ((if has = TrackerModel.PlayerHas.NO then Graphics.greyscale else id) bmp)
                             with e ->
                                 printfn "Timeline icon for %s failed: %s" tid.Identifier (e.ToString())
-                                Graphics.BMPtoImage ((if has = TrackerModel.PlayerHas.NO then Graphics.greyscale else id) (new Z1RDrawing.Bitmap(bmp.Width, bmp.Height)))
+                                Graphics.BMPtoImage ((if has = TrackerModel.PlayerHas.NO then Graphics.greyscale else id) (new System.Drawing.Bitmap(bmp.Width, bmp.Height)))
                         if img.Width = 30. && iconSize = 21. then
                             // a kludge to not make overworld hearts look so awful when scaled
                             img.Width <- 20.

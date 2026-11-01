@@ -9,7 +9,7 @@ open Avalonia.Threading
 (*
 sample use:
 
-let cmb = new CustomMessageBox.CustomMessageBox("Verify changes", Z1RDrawing.SystemIcons.Question, "You moved a dungeon segment. Keep this change?", ["Keep changes"; "Undo"])
+let cmb = new CustomMessageBox.CustomMessageBox("Verify changes", System.Drawing.SystemIcons.Question, "You moved a dungeon segment. Keep this change?", ["Keep changes"; "Undo"])
 cmb.OwnerWindow <- TopLevel.GetTopLevel(this) :?> Window
 cmb.ShowDialogBlocking()
 if cmb.MessageBoxResult = null || cmb.MessageBoxResult = "Undo" then
@@ -22,7 +22,7 @@ takes the owner as an argument, so ShowDialogBlocking runs a nested dispatcher l
 the WPF call sites synchronous.)
 *)
 
-type CustomMessageBox(title, icon:Z1RDrawing.Icon, mainText, buttonTexts:seq<string>) as this =
+type CustomMessageBox(title, icon:System.Drawing.Icon, mainText, buttonTexts:seq<string>) as this =
     inherit Window()
 
     let mutable result = null

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- net10 build of Gob's Z1R_Sync (net472), from the same source files, unchanged.
+       System.Drawing comes from Z1R_Avalonia_DrawingShim (cross-platform), and the sprites from Z1R_Avalonia_WPFResources
+       (an assembly named Z1R_WPF). Co-op sync itself (SignalR, the local host process) is phase 4. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Z1R_Sync</AssemblyName>
+    <RootNamespace>Z1R_Sync</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\GlobalAssemblyInfo.cs" Link="GlobalAssemblyInfo.cs" />
+    <Compile Include="..\Z1R_Sync\CDungeonRoomState.cs" Link="CDungeonRoomState.cs" />
+    <Compile Include="..\Z1R_Sync\DungeonDoorInterop.cs" Link="DungeonDoorInterop.cs" />
+    <Compile Include="..\Z1R_Sync\ManageContainer.cs" Link="ManageContainer.cs" />
+    <Compile Include="..\Z1R_Sync\SyncManager.cs" Link="SyncManager.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.11" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Z1R_Avalonia_DrawingShim\Z1R_Avalonia_DrawingShim.csproj" />
+    <ProjectReference Include="..\Z1R_Avalonia_SharedInterop\Z1R_Avalonia_SharedInterop.fsproj" />
+    <ProjectReference Include="..\Z1R_Avalonia_WPFResources\Z1R_Avalonia_WPFResources.csproj" />
+  </ItemGroup>
+
+</Project>

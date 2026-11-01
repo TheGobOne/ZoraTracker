@@ -56,7 +56,8 @@ volumeChanged.Publish.Add(fun v ->
 
 let mutable ErrorBeepWithReminderLogText = fun (_txt:string) -> ()
 
-let GetResourceStream(name:string) = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
+// (WPF: this assembly. The art lives in Z1R_Avalonia_WPFResources, an assembly named Z1R_WPF with the same resource names.)
+let GetResourceStream(name:string) = Z1R_WPF_Resources.Marker.Assembly.GetManifestResourceStream(name)
 
 let unparent(fe:Control) =
     if fe.Parent<> null then
@@ -279,15 +280,15 @@ let isBlackGoodContrast(rgb) =
     let use_black = l > 0.5*0.5
     use_black  // else use white
 
-let transformColor(bmp:Z1RDrawing.Bitmap, f) =
-    let r = new Z1RDrawing.Bitmap(bmp.Width,bmp.Height)
+let transformColor(bmp:System.Drawing.Bitmap, f) =
+    let r = new System.Drawing.Bitmap(bmp.Width,bmp.Height)
     for px = 0 to bmp.Width-1 do
         for py = 0 to bmp.Height-1 do
             let c = bmp.GetPixel(px,py)
             r.SetPixel(px, py, f c)
     r
 
-let greyscale(bmp:Z1RDrawing.Bitmap) =
+let greyscale(bmp:System.Drawing.Bitmap) =
     transformColor(bmp, fun c -> 
         if c.ToArgb() = System.Drawing.Color.Transparent.ToArgb() then
             c
@@ -303,16 +304,16 @@ let desaturateColor(c:System.Drawing.Color, pct) =
     let newG = float c.G + f * (L - float c.G)
     let newB = float c.B + f * (L - float c.B)
     System.Drawing.Color.FromArgb(int newR, int newG, int newB)
-let desaturate(bmp:Z1RDrawing.Bitmap, pct) = transformColor(bmp, (fun c -> desaturateColor(c,pct)))
-let darkenImpl pct (bmp:Z1RDrawing.Bitmap) =
-    let r = new Z1RDrawing.Bitmap(bmp.Width,bmp.Height)
+let desaturate(bmp:System.Drawing.Bitmap, pct) = transformColor(bmp, (fun c -> desaturateColor(c,pct)))
+let darkenImpl pct (bmp:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(bmp.Width,bmp.Height)
     for px = 0 to bmp.Width-1 do
         for py = 0 to bmp.Height-1 do
             let c = bmp.GetPixel(px,py)
             let c = System.Drawing.Color.FromArgb(int(float c.R * pct), int(float c.G * pct), int(float c.B * pct))
             r.SetPixel(px, py, c)
     r
-let darken(bmp:Z1RDrawing.Bitmap) =
+let darken(bmp:System.Drawing.Bitmap) =
     darkenImpl 0.5 bmp
 let mediaColor(c:System.Drawing.Color) =
     Media.Color.FromArgb(c.A, c.R, c.G, c.B)
@@ -322,7 +323,7 @@ let mutable dpi = None : float option
 let BItoImage(bi:Imaging.Bitmap) =
     new Image(Source=bi)
 // a bitmap Avalonia can draw (WPF: a frozen BitmapImage)
-let BMPToBI(b:Z1RDrawing.Bitmap) : Imaging.Bitmap =
+let BMPToBI(b:System.Drawing.Bitmap) : Imaging.Bitmap =
     let wb = new Imaging.WriteableBitmap(PixelSize(b.Width, b.Height), Vector(96., 96.), Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Unpremul)
     use fb = wb.Lock()
     let row = Array.zeroCreate<int> b.Width
@@ -332,7 +333,7 @@ let BMPToBI(b:Z1RDrawing.Bitmap) : Imaging.Bitmap =
             row.[x] <- int px.[y*b.Width + x]   // ARGB as a little-endian int is BGRA in memory
         System.Runtime.InteropServices.Marshal.Copy(row, 0, fb.Address + nativeint (y*fb.RowBytes), b.Width)
     wb :> Imaging.Bitmap
-let BMPtoImage(bmp:Z1RDrawing.Bitmap) =
+let BMPtoImage(bmp:System.Drawing.Bitmap) =
     let i = new Image()
     i.Source <- BMPToBI(bmp)
     i.Height <- float bmp.Height 
@@ -462,8 +463,8 @@ type DragDropSurface<'T>(surface:Control, onStartDrag : Input.PointerEventArgs *
 
 let alphaNumBmp =
     let imageStream = GetResourceStream("alphanumerics3x5.png")
-    new Z1RDrawing.Bitmap(imageStream)
-let paintAlphanumerics3x5(ch, color, bmp:Z1RDrawing.Bitmap, x, y) =  // x and y are 1-pixel coordinates, even though bmp is blown up 3x
+    new System.Drawing.Bitmap(imageStream)
+let paintAlphanumerics3x5(ch, color, bmp:System.Drawing.Bitmap, x, y) =  // x and y are 1-pixel coordinates, even though bmp is blown up 3x
     let index =
         match ch with
         | '1' -> 0
@@ -498,7 +499,7 @@ let paintAlphanumerics3x5(ch, color, bmp:Z1RDrawing.Bitmap, x, y) =  // x and y 
                         bmp.SetPixel(3*(x+i)+dx, 3*(y+j)+dy, color)
 
 let alphaNumOnTransparentBmp(ch, color, w:int, h:int, x, y) =
-    let r = new Z1RDrawing.Bitmap(w,h)
+    let r = new System.Drawing.Bitmap(w,h)
     for px = 0 to w-1 do
         for py = 0 to h-1 do
             r.SetPixel(px, py, System.Drawing.Color.Transparent)
@@ -507,15 +508,15 @@ let alphaNumOnTransparentBmp(ch, color, w:int, h:int, x, y) =
 
 let openCaveIconBmp = 
     let imageStream = GetResourceStream("open_cave20x20.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     bmp
 
 let (filled_small_heart_bmp, empty_small_heart_bmp) =
     let imageStream = GetResourceStream("icons8x8.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let a = [|  
         for i = 0 to bmp.Width/8 - 1 do
-            let r = new Z1RDrawing.Bitmap(8,8)
+            let r = new System.Drawing.Bitmap(8,8)
             for px = 0 to 8-1 do
                 for py = 0 to 8-1 do
                     let color = bmp.GetPixel(px + i*8, py)
@@ -531,10 +532,10 @@ let (boomerang_bmp, bow_bmp, magic_boomerang_bmp, raft_bmp, ladder_bmp, recorder
         brown_sword_bmp, magical_sword_bmp, blue_candle_bmp, blue_ring_bmp,
         ganon_bmp, zelda_bmp, bomb_bmp, bow_and_arrow_bmp, bait_bmp, question_marks_bmp, rupee_bmp, basement_stair_bmp, ws_ms_bomb_upgrade_bmp) =
     let imageStream = GetResourceStream("icons7x7.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let a = [|  
         for i = 0 to bmp.Width/7 - 1 do
-            let r = new Z1RDrawing.Bitmap(7*3,7*3)
+            let r = new System.Drawing.Bitmap(7*3,7*3)
             for px = 0 to 7*3-1 do
                 for py = 0 to 7*3-1 do
                     let color = bmp.GetPixel(px/3 + i*7, py/3)
@@ -551,10 +552,10 @@ let (digdogger_bmp, gleeok_bmp, gohma_bmp, manhandla_bmp, wizzrobe_bmp, patra_bm
         vire_bmp, zol_bmp, pols_voice_bmp, red_tektite, red_goriya, rope, stalfos, wallmaster, gel, keese, likelike, gibdo, red_lynel, blue_moblin, aquamentus, blue_lanmola,
         moldorm, rupee_boss, traps, other_monster2) =
     let imageStream = GetResourceStream("zelda_bosses16x16.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let a = [|  
         for i = 0 to bmp.Width/16 - 1 do
-            let r = new Z1RDrawing.Bitmap(18,18)  // border around it
+            let r = new System.Drawing.Bitmap(18,18)  // border around it
             for px = 0 to 17 do
                 for py = 0 to 17 do
                     if px=0 || px=17 || py=0 || py=17 then
@@ -572,10 +573,10 @@ let (digdogger_bmp, gleeok_bmp, gohma_bmp, manhandla_bmp, wizzrobe_bmp, patra_bm
 
 let (zi_triforce_bmp, zi_heart_bmp, zi_bomb_bmp, zi_key_bmp, zi_fiver_bmp, zi_map_bmp, zi_compass_bmp, zi_other_item_bmp, zi_alt_bomb_bmp, zi_rock, zi_tree, zi_atlas, zi_staircase) =
     let imageStream = GetResourceStream("zelda_items16x16.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let a = [|  
         for i = 0 to bmp.Width/16 - 1 do
-            let r = new Z1RDrawing.Bitmap(18,18)  // border around it
+            let r = new System.Drawing.Bitmap(18,18)  // border around it
             for px = 0 to 17 do
                 for py = 0 to 17 do
                     if px=0 || px=17 || py=0 || py=17 then
@@ -592,10 +593,10 @@ let (zi_triforce_bmp, zi_heart_bmp, zi_bomb_bmp, zi_key_bmp, zi_fiver_bmp, zi_ma
 
 //let (placeholder_row0_bmp, placeholder_row1_bmp, placeholder_row2_bmp, placeholder_row3_bmp, placeholder_row4_bmp, placeholder_row5_bmp, placeholder_row6_bmp, placeholder_row7_bmp) =
 //    let imageStream = GetResourceStream("zelda_items16x16.png")
-//    let bmp = new Z1RDrawing.Bitmap(imageStream)
+//    let bmp = new System.Drawing.Bitmap(imageStream)
 //    let a = [|  
 //        for i = 0 to bmp.Width/16 - 1 do
-//            let r = new Z1RDrawing.Bitmap(18,18)  // border around it
+//            let r = new System.Drawing.Bitmap(18,18)  // border around it
 //            for px = 0 to 17 do
 //                for py = 0 to 17 do
 //                    if px=0 || px=17 || py=0 || py=17 then
@@ -609,8 +610,8 @@ let (zi_triforce_bmp, zi_heart_bmp, zi_bomb_bmp, zi_key_bmp, zi_fiver_bmp, zi_ma
 //            yield r
 //    |]
 //    (a.[0], a.[1], a.[2], a.[3], a.[4], a.[5], a.[6], a.[7])
-let unborder(bmp:Z1RDrawing.Bitmap) =
-    let r = new Z1RDrawing.Bitmap(bmp.Width-2, bmp.Height-2)
+let unborder(bmp:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(bmp.Width-2, bmp.Height-2)
     for i = 0 to r.Width-1 do
         for j = 0 to r.Height-1 do
             r.SetPixel(i,j,bmp.GetPixel(i+1,j+1))
@@ -619,10 +620,10 @@ let zi_staircase_unborderedBI = unborder(zi_staircase) |> BMPToBI
 
 let _brightTriforce_bmp, fullOrangeTriforce_bmp, _dullOrangeTriforce_bmp, greyTriforce_bmp, owHeartSkipped_bmp, owHeartEmpty_bmp, owHeartFull_bmp, iconRightArrow_bmp, iconCheckMark_bmp, iconExtras_bmp, iconDisk_bmp, owHeartTallFull_bmp = 
     let imageStream = GetResourceStream("icons10x10.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let all = [|
         for i = 0 to bmp.Width/10 - 1 do
-            let r = new Z1RDrawing.Bitmap(10*3,10*3)
+            let r = new System.Drawing.Bitmap(10*3,10*3)
             for px = 0 to 10*3-1 do
                 for py = 0 to 10*3-1 do
                     let color = bmp.GetPixel(px/3 + i*10, py/3)
@@ -639,7 +640,7 @@ let FOUND_NUMERAL_COLOR = System.Drawing.Color.White
 let heartFromTakeAny_bmp, heartFromWhiteSwordCave_bmp, heartFromCoast_bmp, heartFromArmos_bmp, heartFromNumberedDungeon_bmps, heartFromLetteredDungeon_bmps =
     let LABEL = System.Drawing.Color.FromArgb(0xFF,0xFF,0xFF)
     let paint(ch) = 
-        let bmp = owHeartTallFull_bmp.Clone() :?> Z1RDrawing.Bitmap
+        let bmp = owHeartTallFull_bmp.Clone() :?> System.Drawing.Bitmap
         paintAlphanumerics3x5(ch, LABEL, bmp, 4, 2)
         bmp
     let a = [|
@@ -654,7 +655,7 @@ let emptyUnfoundNumberedTriforce_bmps, emptyUnfoundLetteredTriforce_bmps =
         for ch in ['1'; 'A'] do
             yield [|
             for i = 0 to 7 do
-                let bmp = greyTriforce_bmp.Clone() :?> Z1RDrawing.Bitmap
+                let bmp = greyTriforce_bmp.Clone() :?> System.Drawing.Bitmap
                 paintAlphanumerics3x5(char(int ch + i), UNFOUND_NUMERAL_COLOR, bmp, 4, 4)
                 yield bmp
             |] |]
@@ -664,7 +665,7 @@ let emptyFoundNumberedTriforce_bmps, emptyFoundLetteredTriforce_bmps =
         for ch in ['1'; 'A'] do
             yield [|
             for i = 0 to 7 do
-                let bmp = greyTriforce_bmp.Clone() :?> Z1RDrawing.Bitmap
+                let bmp = greyTriforce_bmp.Clone() :?> System.Drawing.Bitmap
                 paintAlphanumerics3x5(char(int ch + i), FOUND_NUMERAL_COLOR, bmp, 4, 4)
                 yield bmp
             |] |]
@@ -674,13 +675,13 @@ let fullNumberedUnfoundTriforce_bmps, fullNumberedFoundTriforce_bmps, fullLetter
         for ch in ['1'; 'A'] do
             yield [|
             for i = 0 to 7 do
-                let bmp = fullOrangeTriforce_bmp.Clone() :?> Z1RDrawing.Bitmap
+                let bmp = fullOrangeTriforce_bmp.Clone() :?> System.Drawing.Bitmap
                 paintAlphanumerics3x5(char(int ch + i), UNFOUND_NUMERAL_COLOR, bmp, 4, 4)
                 yield bmp
             |]
             yield [|
             for i = 0 to 7 do
-                let bmp = fullOrangeTriforce_bmp.Clone() :?> Z1RDrawing.Bitmap
+                let bmp = fullOrangeTriforce_bmp.Clone() :?> System.Drawing.Bitmap
                 paintAlphanumerics3x5(char(int ch + i), FOUND_NUMERAL_COLOR, bmp, 4, 4)
                 yield bmp
             |]
@@ -688,8 +689,8 @@ let fullNumberedUnfoundTriforce_bmps, fullNumberedFoundTriforce_bmps, fullLetter
     a.[0], a.[1], a.[2], a.[3]
 let unfoundL9_bmp,foundL9_bmp =
     let unfoundTriforceColor = emptyUnfoundNumberedTriforce_bmps.[0].GetPixel(15, 28)
-    let u = new Z1RDrawing.Bitmap(10*3,10*3)
-    let f = new Z1RDrawing.Bitmap(10*3,10*3)
+    let u = new System.Drawing.Bitmap(10*3,10*3)
+    let f = new System.Drawing.Bitmap(10*3,10*3)
     // make a rectangle 'shield' to draw the 9 on, so that a hint halo does not wash out the '9'
     for i = 3*3 to 8*3-1 do
         for j = 3*3 to 10*3-1 do
@@ -701,8 +702,8 @@ let unfoundL9_bmp,foundL9_bmp =
 
 let fairy_bmp =
     let imageStream = GetResourceStream("icons8x16.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
-    let r = new Z1RDrawing.Bitmap(16,32)
+    let bmp = new System.Drawing.Bitmap(imageStream)
+    let r = new System.Drawing.Bitmap(16,32)
     for x = 0 to 15 do
         for y = 0 to 31 do
             let c = bmp.GetPixel(x/2, y/2)
@@ -713,11 +714,11 @@ let fairy_bmp =
 let mutable entranceRoomArrowColor = None
 let dungeonRoomBmpPairsF() =
     let imageStream = GetResourceStream("new_icons13x9.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let a = [|  
         for i = 0 to bmp.Width/13 - 1 do
-            let cr = new Z1RDrawing.Bitmap(13*3,9*3)
-            let ur = new Z1RDrawing.Bitmap(13*3,9*3)
+            let cr = new System.Drawing.Bitmap(13*3,9*3)
+            let ur = new System.Drawing.Bitmap(13*3,9*3)
             for px = 0 to 13*3-1 do
                 for py = 0 to 9*3-1 do
                     ur.SetPixel(px, py, bmp.GetPixel(px/3 + i*13,   py/3))
@@ -730,11 +731,11 @@ let dungeonRoomBmpPairsF() =
 let dungeonRoomBmpPairs = dungeonRoomBmpPairsF()
 let dungeonRoomTinyBmpPairsF() =
     let imageStream = GetResourceStream("new_icons13x9.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let a = [|  
         for i = 0 to bmp.Width/13 - 1 do
-            let ur = new Z1RDrawing.Bitmap(13,9)
-            let cr = new Z1RDrawing.Bitmap(13,9)
+            let ur = new System.Drawing.Bitmap(13,9)
+            let cr = new System.Drawing.Bitmap(13,9)
             for px = 0 to 13-1 do
                 for py = 0 to 9-1 do
                     ur.SetPixel(px, py, bmp.GetPixel(px + i*13,   py))
@@ -747,11 +748,11 @@ let dungeonRoomTinyBmpPairs = dungeonRoomTinyBmpPairsF()
 (*
 let dungeonRoomFloorDrops, dungeonRoomMonsters =
     let imageStream = GetResourceStream("icons3x3.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let a = [|  
         for i = 0 to bmp.Width/3 - 1 do
-            let r = new Z1RDrawing.Bitmap(5*3,5*3)
-            let b = new Z1RDrawing.Bitmap(8*3,8*3)
+            let r = new System.Drawing.Bitmap(5*3,5*3)
+            let b = new System.Drawing.Bitmap(8*3,8*3)
             // black border around them
             for x = 0 to 14 do
                 for y = 0 to 14 do
@@ -781,36 +782,36 @@ let overworldImage =
     let file = files.[(new System.Random()).Next(files.Length)]
 //    printfn "selecting overworld file %s" file
     let imageStream = GetResourceStream(file)
-    new Z1RDrawing.Bitmap(imageStream)
+    new System.Drawing.Bitmap(imageStream)
 let zhMapIcons =
     let imageStream = GetResourceStream("s_icon_overworld_strip39.png")
-    new Z1RDrawing.Bitmap(imageStream)
+    new System.Drawing.Bitmap(imageStream)
 let zhDungeonIcons =
     let imageStream = GetResourceStream("s_btn_tr_dungeon_cell_strip3.png")
-    new Z1RDrawing.Bitmap(imageStream)
+    new System.Drawing.Bitmap(imageStream)
 let zhDungeonNums =
     let imageStream = GetResourceStream("s_btn_tr_dungeon_num_strip18.png")
-    new Z1RDrawing.Bitmap(imageStream)
+    new System.Drawing.Bitmap(imageStream)
 
 
 // 'Boots Replace Boomerangs' startup option: the boomerang is shown as the boots, and the magical (blue) boomerang as the magical boots
 let private bmpFromBase64(b64:string) =
     use ms = new System.IO.MemoryStream(System.Convert.FromBase64String(b64))
-    let src = new Z1RDrawing.Bitmap(ms)
-    let r = new Z1RDrawing.Bitmap(src)   // detach from the stream
+    let src = new System.Drawing.Bitmap(ms)
+    let r = new System.Drawing.Bitmap(src)   // detach from the stream
     r.SetResolution(96.0f, 96.0f)
     r
 let boots_bmp = bmpFromBase64 "iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAABq0lEQVR4nN2Uz2oUQRCHv+rpyay7MWuIEjwF/LMgGHISTyo5iCdfwIuPIb6PCOLFJ/DiUYUEkSCCB0nWEBNMgu5mZ7q7PAxK3O7dZA65+Dt2V39d1b+qhjOQjC+8fTirqkpw4d8NhSDGzbWMffxmMP9+z+8bgaAx1I4vqCp5kdO53AY9dsIIg4MRejRKpHICNLhAZ/Ec1+9dhTLUAFVoWfprfb5/3EJkOjWCZnnG4e5P1l99iILLKtDOLRrKZlAURIRsJoPj7yVgPGhwU4FJqHeeucVZenfj8rfWv7G70UdMw/L/ZItXNCgitXniFdWE1QmZU0U11H8ONVJ7NcmutFFTJMDAUabG8++lTYFeYXneXLt1MbvQnUk3V0Oo2mGlPLlZrL1c7fzodU03lfCpoCICVeDS0gIrD25g2oXrH1Tu6XLx4tmd9vPx+IlvqjrW7EHJC0t+vqDTbVlXOXqq99V7gEcnQsUIUuSI8bHFClduL0Ge8en1Z7e3uR+dj6BihNGvkp2N7XpMU1UAkgnVsLTWxhER1GSG4eERX959ZXInKmj9TZrsTOYn1m8QJqArILh0CgAAAABJRU5ErkJggg=="
 let magical_boots_bmp = bmpFromBase64 "iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAABkElEQVR4nM2UuUpDQRSGv5m5XJcEF0QQFGxMYxHb4AJpfAUVLXwCewt7KwvRIk/gWtvnCYJNELQIgqAIwS2Cy50Zi7lBSCbLFRF/GC53me/8Z+45B/5Cto201p/WWpvP54cAlFJeRuB7+PIGl7egpLsXwKeGsUGYGAFr2xvzQiv3sHUC6V7QFgIJj6+wPg9rC2B+Ap0eh6MNEAJs7NRYCGPn9QwSQbWF2puDgrtqA+kQ+tvzWkOvbmHrFFI9zqGS8PQKa7OwMucCJIYKAaFyqw4Ng85p19XyM+tZ3arL2Mn0f6BSSqGUQtTLo0HeH9VJtVrtQ2vd8n1iqAVyudxUOtV3XS6Xn6vVqrENfZso/SCQgQD293bPi8XiQzabHWwEdg01BvpDKF7A5iFU7k1kjIkKhcJxqVQ6aArugwhcoSsJIjYi46Fy8w53TzJI9UAmk1mMt6x2hEbGASLt5oDge7AIATtnbjZsL5toZrJ5vxc6OgBLOdeavk4SwEcEY8MykJ4DbCo06zv5DhKtCvY39QWjQ6CiSDEc2gAAAABJRU5ErkJggg=="
 let boomerangOrBootsBmp() = if TrackerModel.BootsReplaceBoomerangs then boots_bmp else boomerang_bmp
 let magicBoomerangOrMagicalBootsBmp() = if TrackerModel.BootsReplaceBoomerangs then magical_boots_bmp else magic_boomerang_bmp
-let customItemBmps : Z1RDrawing.Bitmap[] = Array.zeroCreate 16   // the user's ExtraIcons-folder icons, resized to item-icon size (filled in by DrawingLayer.applyCustomMenuIcons)
+let customItemBmps : System.Drawing.Bitmap[] = Array.zeroCreate 16   // the user's ExtraIcons-folder icons, resized to item-icon size (filled in by DrawingLayer.applyCustomMenuIcons)
 let allItemBMPs = [| book_bmp; boomerang_bmp; bow_bmp; power_bracelet_bmp; ladder_bmp; magic_boomerang_bmp; key_bmp; raft_bmp; recorder_bmp; red_candle_bmp; red_ring_bmp; silver_arrow_bmp; wand_bmp; white_sword_bmp |]
 let allItemBMPsWithHeartShuffle = [| yield! allItemBMPs; for _i = 0 to 8 do yield heart_container_bmp |]
 
 // Extra item sprites (potions, letter, progressive sword). Drawn in code as 7x7 pixel art, blown up 3x like the icons7x7 sheet sprites.
 let makeSprite7x7(rows:string[], palette:(char*System.Drawing.Color) list) =
-    let r = new Z1RDrawing.Bitmap(7*3,7*3)
+    let r = new System.Drawing.Bitmap(7*3,7*3)
     for px = 0 to 7*3-1 do
         for py = 0 to 7*3-1 do
             let ch = rows.[py/3].[px/3]
@@ -819,7 +820,7 @@ let makeSprite7x7(rows:string[], palette:(char*System.Drawing.Color) list) =
     r
 // triforce piece icon (the item-sheet triforce, centered in a 21x21 cell)
 let triforce_item_bmp =
-    let r = new Z1RDrawing.Bitmap(21,21)
+    let r = new System.Drawing.Bitmap(21,21)
     for px = 0 to 15 do
         for py = 0 to 15 do
             let c = zi_triforce_bmp.GetPixel(px+1, py+1)
@@ -834,10 +835,10 @@ let magic_key_bmp =
                      "...or.."
                      "...oo.."
                      "...or.." |], ['o', System.Drawing.Color.FromArgb(252,152,56); 'r', System.Drawing.Color.FromArgb(216,40,0)])
-let readCacheFileOrCreateBmp(filename, createF : unit -> Z1RDrawing.Bitmap) =
+let readCacheFileOrCreateBmp(filename, createF : unit -> System.Drawing.Bitmap) =
     // always treat the tiles as 96dpi, whatever the cache file (or this machine's display scaling) says; a tile with another dpi gets drawn smaller than 48x33, leaving dark lines between map tiles
     if System.IO.File.Exists(filename) then
-        let bmp = Z1RDrawing.Bitmap.FromFile(filename) :?> Z1RDrawing.Bitmap
+        let bmp = System.Drawing.Bitmap.FromFile(filename) :?> System.Drawing.Bitmap
         bmp.SetResolution(96.0f, 96.0f)
         bmp
     else
@@ -849,7 +850,7 @@ let readCacheFileOrCreateBmp(filename, createF : unit -> Z1RDrawing.Bitmap) =
 
 let mutable alternativeOverworldMapFilename, shouldInitiallyHideOverworldMap = "", false   // startup screen can set these
 let blankTileBmp =
-    let fullTileBmp = new Z1RDrawing.Bitmap(16*3,11*3)
+    let fullTileBmp = new System.Drawing.Bitmap(16*3,11*3)
     let main = System.Drawing.Color.DarkSlateGray
     let alt = System.Drawing.Color.FromArgb(int main.R + 48, int main.G + 48, int main.B + 88)
     for px = 0 to 16*3-1 do
@@ -863,11 +864,11 @@ let overworldMapBMPs(n) =
     let m = overworldImage
     let tiles = Array2D.zeroCreate 16 8
     if n=4 && not(System.String.IsNullOrEmpty(alternativeOverworldMapFilename)) then
-        let image = new Z1RDrawing.Bitmap(alternativeOverworldMapFilename)
-        let bitmap = new Z1RDrawing.Bitmap( image, new System.Drawing.Size( 256*3, 88*3 ) )
+        let image = new System.Drawing.Bitmap(alternativeOverworldMapFilename)
+        let bitmap = new System.Drawing.Bitmap( image, new System.Drawing.Size( 256*3, 88*3 ) )
         for x = 0 to 15 do
             for y = 0 to 7 do
-                let tile = new Z1RDrawing.Bitmap(16*3,11*3)
+                let tile = new System.Drawing.Bitmap(16*3,11*3)
                 for px = 0 to 16*3-1 do
                     for py = 0 to 11*3-1 do
                         tile.SetPixel(px, py, bitmap.GetPixel((x*16*3 + px), (y*11*3 + py)))
@@ -878,7 +879,7 @@ let overworldMapBMPs(n) =
                 let tile = 
                     let filename = Platform.Files.User("Overworld", sprintf "quest.%d.ow.%2d.%2d.bmp" n x y)   // (WPF: next to the exe, with a backslash path)
                     readCacheFileOrCreateBmp(filename, fun () ->
-                        let tile = new Z1RDrawing.Bitmap(16*3,11*3)
+                        let tile = new System.Drawing.Bitmap(16*3,11*3)
                         for px = 0 to 16*3-1 do
                             for py = 0 to 11*3-1 do
                                 tile.SetPixel(px, py, m.GetPixel(256*n + (x*16*3 + px)/3, (y*11*3 + py)/3))
@@ -890,18 +891,18 @@ let TRANS_BG = System.Drawing.Color.FromArgb(1, System.Drawing.Color.Black)  // 
 let itemBackgroundColor = System.Drawing.Color.FromArgb(0xEF,0x83,0)
 let itemsBMP = 
     let imageStream = GetResourceStream("icons3x7.png")
-    new Z1RDrawing.Bitmap(imageStream)
+    new System.Drawing.Bitmap(imageStream)
 
 // a full tile with nothing drawn on it (used under marker icons when the tile's own icon is shown as one of those marker slots)
 let emptyTileBmp =
-    let b = new Z1RDrawing.Bitmap(16*3,11*3)
+    let b = new System.Drawing.Bitmap(16*3,11*3)
     for px = 0 to 16*3-1 do
         for py = 0 to 11*3-1 do
             b.SetPixel(px, py, TRANS_BG)
     b
 // the bomb (as at the top of the tracker), scaled to fit inside a w x h area and centered in it, on bg
 let bombFitBmp(w:int, h:int, bg:System.Drawing.Color) =
-    let r = new Z1RDrawing.Bitmap(w, h)
+    let r = new System.Drawing.Bitmap(w, h)
     for x = 0 to w-1 do
         for y = 0 to h-1 do
             r.SetPixel(x, y, bg)
@@ -923,7 +924,7 @@ let bombFitBmp(w:int, h:int, bg:System.Drawing.Color) =
     r
 
 let genericDungeonInterior_bmp =
-    let bmp = new Z1RDrawing.Bitmap(5*3,9*3)
+    let bmp = new System.Drawing.Bitmap(5*3,9*3)
     for px = 0 to 5*3-1 do
         for py = 0 to 9*3-1 do
             bmp.SetPixel(px, py, System.Drawing.Color.Yellow)
@@ -933,14 +934,14 @@ let genericDungeonInterior_bmp =
 let X_OPACITY = 0.55
 let overworldCommonestFloorColorBrush = freeze(new SolidColorBrush(Color.FromRgb(204uy,176uy,136uy)))
 let overworldCommonestFloorColorDarkBrush = freeze(new SolidColorBrush(Color.FromRgb(byte(float 204 * X_OPACITY),byte(float 176 * X_OPACITY),byte(float 136 * X_OPACITY))))
-let unmarkedBmp = new Z1RDrawing.Bitmap(5*3,9*3)
-let dontCareBmp = new Z1RDrawing.Bitmap(5*3,9*3)
+let unmarkedBmp = new System.Drawing.Bitmap(5*3,9*3)
+let dontCareBmp = new System.Drawing.Bitmap(5*3,9*3)
 
 // each overworld map tile may have multiple icons that can represent it (e.g. dungeon 1 versus dungeon A)
 // we store a table, where the array index is the mapSquareChoiceDomain index of the general entry type, and the value there is a list of all possible icons
 // The sword cave icons (5x9 art pixels, 3x3 screen pixels each) without the brown cave floor: the number/letter becomes white with a black outline,
 // and the rest of the brown is transparent. Art that has no brown (already restyled) is returned unchanged.
-let restyleSwordCard(bmp:Z1RDrawing.Bitmap) : Z1RDrawing.Bitmap =
+let restyleSwordCard(bmp:System.Drawing.Bitmap) : System.Drawing.Bitmap =
     let isBrown(c:System.Drawing.Color) = c.A = 255uy && c.R = 185uy && c.G = 122uy && c.B = 87uy
     let isBlack(c:System.Drawing.Color) = c.A = 255uy && c.R = 0uy && c.G = 0uy && c.B = 0uy
     let cw, ch = bmp.Width/3, bmp.Height/3
@@ -951,7 +952,7 @@ let restyleSwordCard(bmp:Z1RDrawing.Bitmap) : Z1RDrawing.Bitmap =
             if isBrown (cell x y) then anyBrown <- true
     if not anyBrown then bmp
     else
-        let r = new Z1RDrawing.Bitmap(bmp.Width, bmp.Height)
+        let r = new System.Drawing.Bitmap(bmp.Width, bmp.Height)
         for x = 0 to cw-1 do
             for y = 0 to ch-1 do
                 let c = cell x y
@@ -970,8 +971,8 @@ let restyleSwordCard(bmp:Z1RDrawing.Bitmap) : Z1RDrawing.Bitmap =
                         r.SetPixel(x*3+dx, y*3+dy, nc)
         r
 // a darker copy that keeps transparent pixels transparent
-let darkenKeepAlpha (pct:float) (bmp:Z1RDrawing.Bitmap) =
-    let r = new Z1RDrawing.Bitmap(bmp.Width,bmp.Height)
+let darkenKeepAlpha (pct:float) (bmp:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(bmp.Width,bmp.Height)
     for px = 0 to bmp.Width-1 do
         for py = 0 to bmp.Height-1 do
             let c = bmp.GetPixel(px,py)
@@ -981,7 +982,7 @@ let darkenKeepAlpha (pct:float) (bmp:Z1RDrawing.Bitmap) =
 let theInteriorBmpTable = Array.init (TrackerModel.dummyOverworldTiles.Length) (fun _ -> ResizeArray())
 do
     let imageStream = GetResourceStream("ow_icons5x9.png")
-    let interiorIconStrip = new Z1RDrawing.Bitmap(imageStream)
+    let interiorIconStrip = new System.Drawing.Bitmap(imageStream)
     let ubc = overworldCommonestFloorColorBrush
     for px = 0 to 5*3-1 do
         for py = 0 to 9*3-1 do
@@ -990,12 +991,12 @@ do
     for px = 0 to 5*3-1 do
         for py = 0 to 9*3-1 do
             dontCareBmp.SetPixel(px, py, System.Drawing.Color.FromArgb(int dcbc.Color.R, int dcbc.Color.G, int dcbc.Color.B))
-    let darkxbmp = new Z1RDrawing.Bitmap(5*3,9*3)
+    let darkxbmp = new System.Drawing.Bitmap(5*3,9*3)
     for px = 0 to 5*3-1 do
         for py = 0 to 9*3-1 do
             darkxbmp.SetPixel(px, py, System.Drawing.Color.Black)
     let getInteriorIconFromStrip(i) = 
-        let bmp = new Z1RDrawing.Bitmap(5*3,9*3)
+        let bmp = new System.Drawing.Bitmap(5*3,9*3)
         for px = 0 to 5*3-1 do
             for py = 0 to 9*3-1 do
                 bmp.SetPixel(px, py, interiorIconStrip.GetPixel(i*5+px/3, py/3))
@@ -1004,7 +1005,7 @@ do
     for labels in ["123456789";"ABCDEFGH9"] do
         for color in [System.Drawing.Color.Yellow; System.Drawing.Color.FromArgb(153,153,0)] do
             labels |> Seq.iteri (fun i ch ->
-                let bmp = new Z1RDrawing.Bitmap(5*3,9*3)
+                let bmp = new System.Drawing.Bitmap(5*3,9*3)
                 for px = 0 to 5*3-1 do
                     for py = 0 to 9*3-1 do
                         bmp.SetPixel(px, py, color)
@@ -1013,7 +1014,7 @@ do
                 )
     // 9-12  any roads
     "1234" |> Seq.iteri (fun i ch ->
-        let bmp = new Z1RDrawing.Bitmap(5*3,9*3)
+        let bmp = new System.Drawing.Bitmap(5*3,9*3)
         for px = 0 to 5*3-1 do
             for py = 0 to 9*3-1 do
                 bmp.SetPixel(px, py, System.Drawing.Color.Orchid)
@@ -1031,7 +1032,7 @@ do
     theInteriorBmpTable.[15].Add(restyleSwordCard(getInteriorIconFromStrip(2)) |> darkenKeepAlpha 0.6)
     // 16-23  item shops (as single-item icons)
     for i = 0 to TrackerModel.MapSquareChoiceDomainHelper.NUM_ITEMS-1 do
-        let bmp = new Z1RDrawing.Bitmap(5*3,9*3)
+        let bmp = new System.Drawing.Bitmap(5*3,9*3)
         for px = 0 to 5*3-1 do
             for py = 0 to 9*3-1 do
                 bmp.SetPixel(px, py, itemBackgroundColor)
@@ -1091,7 +1092,7 @@ do
     // 35  'X'
     theInteriorBmpTable.[35].Add(darkxbmp)
     // Helper: paint a 3x3 block at unit coordinates (ux, uy) in black
-    let p3 (bmp:Z1RDrawing.Bitmap) (ux:int) (uy:int) =
+    let p3 (bmp:System.Drawing.Bitmap) (ux:int) (uy:int) =
         for dx = 0 to 2 do
             for dy = 0 to 2 do
                 bmp.SetPixel(3*ux+dx, 3*uy+dy, System.Drawing.Color.Black)
@@ -1102,7 +1103,7 @@ do
     //    X X X X X   row 4  (horizontal bar)
     //    . . X . .   row 5
     //    . X . X .   row 6
-    let pp1bmp = new Z1RDrawing.Bitmap(5*3, 9*3)
+    let pp1bmp = new System.Drawing.Bitmap(5*3, 9*3)
     for px = 0 to 5*3-1 do
         for py = 0 to 9*3-1 do
             pp1bmp.SetPixel(px, py, System.Drawing.Color.Magenta)
@@ -1116,7 +1117,7 @@ do
     //    X X X X X   row 4  (widest)
     //    . X X X .   row 5
     //    . . X . .   row 6  (bottom point)
-    let pp2bmp = new Z1RDrawing.Bitmap(5*3, 9*3)
+    let pp2bmp = new System.Drawing.Bitmap(5*3, 9*3)
     for px = 0 to 5*3-1 do
         for py = 0 to 9*3-1 do
             pp2bmp.SetPixel(px, py, System.Drawing.Color.Cyan)
@@ -1126,9 +1127,9 @@ do
 // full tiles just have interior bmp in the center and transparent pixels all around (except for the final 'X' one)
 // 'Use old potion/letter icons': the tracker's original overworld-tile artwork for the potion shop and the (blue) letter, shrunk to fit an item cell.
 // The 5x9 interior icon is redrawn at 2x (10x18) and centered in a 21x21 cell.
-let oldTileIconAsItem(interior:Z1RDrawing.Bitmap) =
+let oldTileIconAsItem(interior:System.Drawing.Bitmap) =
     // drop the brown (corner-colored) background, crop to the artwork, and scale it up (nearest-neighbor) to fill as much of the 21x21 item cell as it can
-    let r = new Z1RDrawing.Bitmap(21,21)
+    let r = new System.Drawing.Bitmap(21,21)
     for px = 0 to 20 do
         for py = 0 to 20 do
             r.SetPixel(px, py, System.Drawing.Color.Transparent)
@@ -1153,8 +1154,8 @@ let oldTileIconAsItem(interior:Z1RDrawing.Bitmap) =
                     r.SetPixel(offX + x, offY + y, art(ux,uy))
     r
 // the old potion-shop icon exactly as it looked on the overworld tile (tall, with its brown background), scaled to the 21-pixel item height
-let oldTileIconWithBackgroundAsItem(interior:Z1RDrawing.Bitmap) =
-    let r = new Z1RDrawing.Bitmap(21,21)
+let oldTileIconWithBackgroundAsItem(interior:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(21,21)
     for px = 0 to 20 do
         for py = 0 to 20 do
             r.SetPixel(px, py, System.Drawing.Color.Transparent)
@@ -1181,7 +1182,7 @@ let red_potion_bmp =
     makeSprite7x7(potionRows, ['a', System.Drawing.Color.FromArgb(231,156,33); 'c', System.Drawing.Color.White; 'L', System.Drawing.Color.FromArgb(181,49,33); 'h', System.Drawing.Color.FromArgb(231,156,33)])
 // one icon for both potions: left half blue potion, right half red potion (split vertically)
 let potion_split_bmp =
-    let r = new Z1RDrawing.Bitmap(21,21)
+    let r = new System.Drawing.Bitmap(21,21)
     for x = 0 to 20 do
         for y = 0 to 20 do
             r.SetPixel(x, y, (if x <= 10 then blue_potion_bmp else red_potion_bmp).GetPixel(x, y))
@@ -1195,7 +1196,7 @@ let old_letter_bmp = oldTileIconAsItem(theInteriorBmpTable.[30].[0])   // the ol
 // the potion shop's overworld icon (menu cell and placed tile): the split potion sprite (blue half on the left, red half on the right) on a plain background, no brown cave color
 do
     let BG = System.Drawing.Color.FromArgb(int TRANS_BG.A, int TRANS_BG.R, int TRANS_BG.G, int TRANS_BG.B)
-    let r = new Z1RDrawing.Bitmap(5*3, 9*3)
+    let r = new System.Drawing.Bitmap(5*3, 9*3)
     for x = 0 to r.Width-1 do
         for y = 0 to r.Height-1 do
             r.SetPixel(x, y, BG)
@@ -1208,9 +1209,9 @@ do
 // the overworld sword tile icons (1/2/3), used for the swords in the dungeon item menus
 // the thin, tall overworld cave icon (15x27) scaled to fit the 21-tall item cell: a 12x21 icon centered in the cell, no brown fill around it
 let private swordMenuPixel(c:System.Drawing.Color) = c
-let swordIconAsItem(interior0:Z1RDrawing.Bitmap) =
+let swordIconAsItem(interior0:System.Drawing.Bitmap) =
     let interior = restyleSwordCard interior0
-    let r = new Z1RDrawing.Bitmap(21,21)
+    let r = new System.Drawing.Bitmap(21,21)
     for px = 0 to 20 do
         for py = 0 to 20 do
             r.SetPixel(px, py, System.Drawing.Color.Transparent)
@@ -1221,9 +1222,9 @@ let swordIconAsItem(interior0:Z1RDrawing.Bitmap) =
             r.SetPixel(4 + x, y, swordMenuPixel(interior.GetPixel(sx, sy)))
     r
 // the same icon at its natural 15x27 size (3x3 screen pixels per art pixel), used in the (taller) top row of the dungeon item menu
-let swordMenuBmp(interior0:Z1RDrawing.Bitmap) =
+let swordMenuBmp(interior0:System.Drawing.Bitmap) =
     let interior = restyleSwordCard interior0
-    let r = new Z1RDrawing.Bitmap(15,27)
+    let r = new System.Drawing.Bitmap(15,27)
     for x = 0 to 14 do
         for y = 0 to 26 do
             r.SetPixel(x, y, swordMenuPixel(interior.GetPixel(x, y)))
@@ -1235,13 +1236,13 @@ let ow_sword1_item_bmp = swordIconAsItem(theInteriorBmpTable.[15].[0])
 let ow_sword2_item_bmp = swordIconAsItem(theInteriorBmpTable.[14].[0])
 let ow_sword3_item_bmp = swordIconAsItem(theInteriorBmpTable.[13].[0])
 // the overworld 4th-sword ('4') and progressive-sword ('P') icons: same pixel art as WPFUI.extraSwordIconBmp
-let private extraSwordInterior(isProg:bool) : Z1RDrawing.Bitmap =
+let private extraSwordInterior(isProg:bool) : System.Drawing.Bitmap =
     let brown = System.Drawing.Color.FromArgb(185,122,87)
     let blade = if isProg then System.Drawing.Color.FromArgb(255,242,0) else System.Drawing.Color.FromArgb(128,128,255)
     let hilt = if isProg then System.Drawing.Color.White else System.Drawing.Color.White
     let glyph = if isProg then [| "abbba"; "ababa"; "abbba"; "abaaa"; "abaaa" |] else [| "ababa"; "ababa"; "abbba"; "aaaba"; "aaaba" |]
     let rows = Array.append (Array.append [| "aaaaa" |] glyph) [| "aaaXa"; "HHHXX"; "aaaXa" |]
-    let bmp = new Z1RDrawing.Bitmap(5*3, 9*3)
+    let bmp = new System.Drawing.Bitmap(5*3, 9*3)
     for y = 0 to 8 do
         for x = 0 to 4 do
             let c = 
@@ -1259,8 +1260,8 @@ let ow_progressive_item_bmp = swordIconAsItem(extraSwordInterior true)
 let ow_sword4_menu_bmp = swordMenuBmp(extraSwordInterior false)
 let ow_progressive_menu_bmp = swordMenuBmp(extraSwordInterior true)
 // the full 15x27 sword icons with a grey (instead of black) outline around the number/letter: shown in the sword item boxes
-let swordBoxBmp(menuBmp:Z1RDrawing.Bitmap) =
-    let r = new Z1RDrawing.Bitmap(menuBmp.Width, menuBmp.Height)
+let swordBoxBmp(menuBmp:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(menuBmp.Width, menuBmp.Height)
     for x = 0 to r.Width-1 do
         for y = 0 to r.Height-1 do
             let c = menuBmp.GetPixel(x, y)
@@ -1273,7 +1274,7 @@ let ow_sword4_box_bmp = swordBoxBmp ow_sword4_menu_bmp
 let ow_progressive_box_bmp = swordBoxBmp ow_progressive_menu_bmp
 // Progressive Items: the progressive sword with its tier next to the P (P1 / P2 / P3 / P4), over a sword drawn like the item progress bar's swords (hilt, tall guard, blade).
 // 21x27: the P and number glyph on top (outlined like the plain P sword), the sword along the bottom. Index 0 of the arrays below is the plain P sword.
-let private progressiveTierSwordBmp(tier:int) : Z1RDrawing.Bitmap =
+let private progressiveTierSwordBmp(tier:int) : System.Drawing.Bitmap =
     let pGlyph = [| "bbb"; "bab"; "bbb"; "baa"; "baa" |]
     let digit =
         match tier with
@@ -1283,7 +1284,7 @@ let private progressiveTierSwordBmp(tier:int) : Z1RDrawing.Bitmap =
         | _ -> [| "bab"; "bab"; "bbb"; "aab"; "aab" |]
     let rows = Array.concat [ [| "aaaaaaa" |]; Array.init 5 (fun r -> pGlyph.[r] + "a" + digit.[r]); [| "aaaaaaa" |] ]
     let brown = System.Drawing.Color.FromArgb(185,122,87)
-    let art = new Z1RDrawing.Bitmap(7*3, 7*3)
+    let art = new System.Drawing.Bitmap(7*3, 7*3)
     for y = 0 to 6 do
         for x = 0 to 6 do
             let c = if rows.[y].[x] = 'b' then System.Drawing.Color.Black else brown
@@ -1299,7 +1300,7 @@ let private progressiveTierSwordBmp(tier:int) : Z1RDrawing.Bitmap =
         | 2 -> rgb 255 255 255, rgb 80 80 80, rgb 63 72 204, rgb 63 72 204, rgb 32 36 102, rgb 63 72 204
         | 3 -> rgb 255 255 255, rgb 32 32 32, rgb 237 0 36, rgb 237 0 36, rgb 119 0 18, rgb 59 0 9
         | _ -> rgb 255 255 255, rgb 223 223 223, rgb 128 128 255, rgb 0 0 168, rgb 0 0 84, rgb 0 0 84
-    let r = new Z1RDrawing.Bitmap(21, 27)
+    let r = new System.Drawing.Bitmap(21, 27)
     for x = 0 to 20 do
         for y = 0 to 17 do
             r.SetPixel(x, y, glyphPart.GetPixel(x, y))
@@ -1313,8 +1314,8 @@ let private progressiveTierSwordBmp(tier:int) : Z1RDrawing.Bitmap =
         for x = 13 to 20 do
             r.SetPixel(x, y0 + ry, (if x = 20 then tip elif tier = 4 && x > 17 then rgb 0 0 168 else blade))
     r
-let private progressiveTierItemBmp(interior:Z1RDrawing.Bitmap) =
-    let r = new Z1RDrawing.Bitmap(21,21)
+let private progressiveTierItemBmp(interior:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(21,21)
     for x = 0 to 14 do
         for y = 0 to 20 do
             let sx = min 20 (int ((float x + 0.5) * 21. / 15.))
@@ -1330,7 +1331,7 @@ let initFull() =
     let BG = System.Drawing.Color.FromArgb(int TRANS_BG.A, int TRANS_BG.R, int TRANS_BG.G, int TRANS_BG.B)   // the compiler is being stupid, clone this color to workaround
     for i = 0 to len-1 do
         for interiorBmp in theInteriorBmpTable.[i] do
-            let fullTileBmp = new Z1RDrawing.Bitmap(16*3,11*3)
+            let fullTileBmp = new System.Drawing.Bitmap(16*3,11*3)
             for px = 0 to 16*3-1 do
                 for py = 0 to 11*3-1 do
                     if px>=5*3 && px<10*3 && py>=1*3 && py<10*3 then 
@@ -1343,10 +1344,10 @@ do
 
 let linkFaceForward_bmp,linkRunRight_bmp,linkFaceRight_bmp,linkGotTheThing_bmp =
     let imageStream = GetResourceStream("link_icons.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     let a = [|
         for i = 0 to 3 do
-            let r = new Z1RDrawing.Bitmap(16, 16)
+            let r = new System.Drawing.Bitmap(16, 16)
             for x = 0 to 15 do
                 for y = 0 to 15 do
                     let color = bmp.GetPixel(16*i+x, y)
@@ -1358,7 +1359,7 @@ let linkFaceForward_bmp,linkRunRight_bmp,linkFaceRight_bmp,linkGotTheThing_bmp =
     
 let loadBMP(filename) = 
     let imageStream = GetResourceStream(filename)
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
+    let bmp = new System.Drawing.Bitmap(imageStream)
     bmp
 let mouseIconButtonColorsBMP = loadBMP("mouse-icon-button-colors.png")
 let mouseIconButtonColors2BMP = loadBMP("mouse-icon-button-colors-2.png")
@@ -1385,8 +1386,8 @@ let wsmsbuBMP = loadBMP("ws-ms-bu.png")
 (*
 code for clipping screenshots to same size
 
-let clipTakeAny(bmp:Z1RDrawing.Bitmap) =
-    let r = new Z1RDrawing.Bitmap(672, 448)
+let clipTakeAny(bmp:System.Drawing.Bitmap) =
+    let r = new System.Drawing.Bitmap(672, 448)
     for x = 0 to 671 do
         for y = 0 to 447 do
             r.SetPixel(x,y,bmp.GetPixel(x+48, y+45))
@@ -1412,10 +1413,10 @@ do
 (*
 do
     let imageStream = GetResourceStream("icons3x7.png")
-    let bmp37 = new Z1RDrawing.Bitmap(imageStream)
+    let bmp37 = new System.Drawing.Bitmap(imageStream)
     let imageStream = GetResourceStream("icons7x7.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
-    let newBmp = new Z1RDrawing.Bitmap(bmp.Width+7, bmp.Height)
+    let bmp = new System.Drawing.Bitmap(imageStream)
+    let newBmp = new System.Drawing.Bitmap(bmp.Width+7, bmp.Height)
     for i = 0 to bmp.Width-1 do
         for j = 0 to bmp.Height-1 do
             newBmp.SetPixel(i,j,bmp.GetPixel(i,j))
@@ -1429,8 +1430,8 @@ do
 
 do
     let imageStream = GetResourceStream("icons7x7.png")
-    let bmp = new Z1RDrawing.Bitmap(imageStream)
-    let newBmp = new Z1RDrawing.Bitmap(bmp.Width, bmp.Height)
+    let bmp = new System.Drawing.Bitmap(imageStream)
+    let newBmp = new System.Drawing.Bitmap(bmp.Width, bmp.Height)
     for i = 0 to bmp.Width-1 do
         for j = 0 to bmp.Height-1 do
             let c = bmp.GetPixel(i,j)

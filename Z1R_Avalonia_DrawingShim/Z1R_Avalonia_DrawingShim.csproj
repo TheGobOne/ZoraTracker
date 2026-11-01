@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Cross-platform stand-in for the parts of System.Drawing (System.Drawing.Common) that the trackers use.
+       System.Drawing.Common only works on Windows in .NET 7+, so this re-implements Bitmap, Graphics, Icon, SystemIcons, ...
+       on SkiaSharp, in the same namespace, so the WPF tracker's code (F# and Gob's C# Z1R_Sync) compiles unchanged.
+       Never reference System.Drawing.Common next to this. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Z1R_Avalonia_DrawingShim</AssemblyName>
+    <RootNamespace>System.Drawing</RootNamespace>
+    <NoWarn>CS0436</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- the version Avalonia 11.3 itself uses -->
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+  </ItemGroup>
+
+</Project>
