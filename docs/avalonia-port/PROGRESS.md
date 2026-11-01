@@ -33,7 +33,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 14 | DungeonSaveAndLoad.fs | 162 | 1 | ported (C#) | straight translation; save text built exactly as WPF's (InvariantCulture numbers, lowercase booleans); `DrawingLayerIcon` is an abstract record (see Judgement calls) |
 | 15 | DungeonHighlightsUI.fs | 200 | 1 | ported (C#) | straight translation; repeating animations tweened on a timer; `blockersHoverEvent` is a `Graphics.SharedEvent<bool>` (see Judgement calls) |
 | 16 | DungeonPopups.fs | 406 | 1 | ported (C#) | straight translation; async → `Task`; detail popups return `(hasResult, result)` (see Judgement calls) |
-| 17 | DungeonUI.fs | 2554 | 1 | todo | |
+| 17 | DungeonUI.fs | 2554 | 1 | ported (C#) | straight translation; drag-paint via Avalonia drag-and-drop in a nested dispatcher frame; summary-tab previews via `VisualBrush`; room-tile flash tweened on a timer; module events are C# events (see Judgement calls) |
 | 18 | SpeechRecognition.fs | 102 | 4 | todo | stub in phase 2 (compile order), real in phase 4 |
 | 19 | OverworldMapTileCustomization.fs | 1545 | 2 | todo | |
 | 20 | LinkRouting.fs | 240 | 2 | todo | |
@@ -366,6 +366,44 @@ Already real, not stubs: speech synthesis on Windows (System.Speech, as in WPF),
 - **Dungeon room popups (test at runtime).** They warp the cursor before opening (`SilentlyWarpMouseCursorTo` / `WarpMouseCursorTo`), so they hit the macOS
   warp delay noted under "Early risk checks"; check the cursor lands on the current room type (also after Shift+drag rearranging and moving/resizing the grid)
   and on the entrance-room icons. The captions and the UI-reminder overlay are unwrapped read-only TextBoxes, as in WPF; compare their widths and centring with WPF.
+- **DungeonUI C# shapes.** `choice1`..`choice4` build a `HotKeys.DungeonRoomHotKey` (`OfRoomType`/`OfMonsterDetail`/`OfFloorDropDetail`/`OfDoor`); the local copies inside
+  `makeDungeonTabs` (WPF: `Choice<…, obj>`, boxing the door response) build the same type, and `justUnmarked` is a nullable `(int, int, DungeonRoomHotKey)`.
+  `DoorPosition` is an abstract record (`Horizontal(level, x, y)` / `Vertical(…)`); `DoorChangeInfo` / `RoomChangeInfo` are records with init properties
+  (`new DungeonUI.DoorChangeInfo { Level = …, X = …, … }`). `customLevelNameChanged`, `doorChangedEvent`, `roomChangedEvent` are C# events with
+  `triggerCustomLevelNameChanged()` (WPFUI calls it), `triggerDoorChanged(info)`, `triggerRoomChanged(info)`; CoopSync's `doorChangedEvent.Publish.Add(f)` → `DungeonUI.doorChangedEvent += f`
+  (or `AddDoorChangedListener(f)`). `ganonQuadrant`/`zeldaQuadrant` (F# ref cells) are `int` statics. `AhhGlobalVariables` holds `Action<int>`/`Action`s. `redrawAllRoomsPublic` is an
+  `Action` (null for None). `horizontalDoorsPerLevel`/`verticalDoorsPerLevel`/`roomStatesPerLevel`/`setNewValueFunctions` are arrays of 2D arrays (`T[][,]`); `exportFunctionsLarge`
+  is `Func<DungeonModel>[]`, `importFunctions` `Action<DungeonModel>[]`. `TrackerLocation` is a C# enum. `FloatHelper.IsBetween` is at namespace level (C# extension methods
+  can't be nested). `MakeLocalTrackerPanel` returns `(Canvas, Action, Func<Point>, (Canvas, Action<int, GridClickDismissalWarpReturn>)[])`; `makeOutlineShapes*` return `List<Control>`.
+  `makeDungeonTabs` keeps WPF's parameters in order: `(cm, Action<Canvas> layoutF, Func<double> posYF, SharedEvent<int> selectDungeonTabEvent, int TH, Canvas rightwardCanvas,
+  SharedEvent<int> levelTabSelected, SharedEvent<bool> blockersHoverEvent, Canvas[] mainTrackerGhostbusters, Func<string, Task> showProgress, Action<int> enterF, Action<int> leaveF)`
+  and returns `Task<(Canvas, Point, Border, Func<string[]>, Func<Func<string, Task>, DungeonModel[], Task>)>`.
+- **`fortyFiveDegrees` isn't frozen** (Avalonia has no Freeze; one `RotateTransform` is shared, as WPF shares the frozen one). UIComponents/WPFUI use it as a `RenderTransform`:
+  Avalonia rotates around the control's centre by default (WPF: its top-left corner), so those callers need `RenderTransformOrigin = TopLeft` to match.
+- **Drag-paint (test at runtime, especially on macOS).** WPF's blocking `DragDrop.DoDragDrop(roomCanvas, "L"/"R"/"M", Link)` → Avalonia `DragDrop.DoDragDropAsync(ea, DataTransfer
+  with the text, Link)`, waited for in a nested dispatcher frame so the post-drop code (and `DragDropSurface`'s reset) runs after the drop, as in WPF. Rooms get
+  `DragDrop.AddDragOverHandler` + `SetAllowDrop` (WPF: `DragOver`, `AllowDrop`) and read the button from `DataTransfer.TryGetText()`. On macOS this is a real OS drag session
+  (drag cursor/image may differ, DragOver timing may differ); check painting across rooms with left/right/middle/Shift+left, and that a click (not a drag) still works.
+  The drag start reads the buttons from the move's pointer properties and Shift from `ea.KeyModifiers` (WPF: global `Keyboard.IsKeyDown`); door and room clicks read
+  `InitialPressMouseButton` (WPF: `ChangedButton`) and Shift from the release's modifiers.
+- **Dungeon tabs: WPF metrics for TabControl/TabItem (compare on Windows).** `Graphics.installAppWideStyles` now gives TabItem no minimum size, 6,2 padding and 12px text
+  (Fluent: 48px tall, 24px text), and TabControl a 1px #ACACAC border and 2px padding, as WPF's defaults. The tab strip's look (selected-tab indicator, header spacing) still
+  differs from WPF; check that the content sits where WPF puts it (`dungeonTabs.Height = content + 30`) and nothing is clipped.
+- **Dungeon summary tab: `VisualBrush` previews (test at runtime).** The minis, the hover "midi" preview and the ghostbuster boxes paint other controls with `VisualBrush`, as in
+  WPF; the summary tab still parks the level canvases in the 0.0001-opacity `dummyCanvas` so they stay rendered. Avalonia's TileBrush defaults to `Stretch.Uniform` (WPF: Fill), so
+  the brushes that relied on WPF's default set `Stretch.Fill`. Check the previews show and update (e.g. LEVEL↔BOARD), and are sized as in WPF.
+- **Dungeon summary tab: the small local tracker's 2/3 scale** uses a `LayoutTransformControl` (no `LayoutTransform` in Avalonia), which is what gets docked.
+- **Room-change flash** (`animateDungeonRoomTile`): WPF's `ColorAnimation` (alpha 0→180 over 1 s, auto-reversed, on a shared `SolidColorBrush`) is tweened by hand on a 16 ms timer,
+  linear; restarting begins again from alpha 0, and it ends holding alpha 0, as WPF's.
+- **Custom level name dialog** (right-click the dungeon header): a `Window` shown modally over the header's window (WPF: `Owner = Application.Current.MainWindow`, the same
+  window) in a nested dispatcher frame, like `ShowDialogBlocking`. `DialogResult <- true` → `Close(true)`; the Cancel button closes it explicitly (Avalonia's `IsCancel` only
+  clicks it). `CharacterCasing.Upper` has no Avalonia equivalent: typed text is upper-cased in a tunnelling `TextInput` handler (pasted text isn't, but the name is
+  upper-cased on OK anyway). `Loaded` → `Opened` for focusing the box. The window uses the app's button style; compare its look with WPF.
+- **Dungeon tracker small translations.** `levelTab.InvalidateProperty(TabItem.HeaderProperty)` → `InvalidateVisual()` (Avalonia repaints the header's children anyway).
+  `ToolTipService.SetInitialShowDelay` → `ToolTip.SetShowDelay`; `SetShowDuration` is the same no-op helper as OptionsMenu's. Sideways scrolling (`Delta.Y = 0`) is ignored on
+  doors and rooms (WPF never reports it; it would otherwise step a door or open the floor-drop popup). The vanilla-outline hatch is a `DrawingBrush` with
+  `SourceRect`/`DestinationRect` (WPF `Viewbox`/`Viewport`) and one square `LineCap`; compare it. `rainbowBrush` (WPF: angle 90°) runs top to bottom. The hidden-dungeon letter
+  button's "Courier New" falls back to another font off Windows (risk 5). `Image.Source.Clone()` for the placeholder icons shares the (immutable) Avalonia bitmap.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne

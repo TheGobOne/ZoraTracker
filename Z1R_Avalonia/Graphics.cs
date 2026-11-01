@@ -344,6 +344,19 @@ public static class Graphics
             var ls = new Style(x => x.OfType<Label>());
             ls.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(5.0)));
             app.Styles.Add(ls);
+            // WPF metrics: WPF tab headers are small (12px text, 6,2 padding, no minimum height; Fluent's are 48px tall with 24px text), and a WPF TabControl
+            // has a 1px grey border and 2px padding around the selected tab's content (the dungeon tracker's layout depends on both)
+            var tis = new Style(x => x.OfType<TabItem>());
+            tis.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
+            tis.Setters.Add(new Setter(Layoutable.MinWidthProperty, 0.0));
+            tis.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(6.0, 2.0, 6.0, 2.0)));
+            tis.Setters.Add(new Setter(TemplatedControl.FontSizeProperty, 12.0));
+            app.Styles.Add(tis);
+            var tcs = new Style(x => x.OfType<TabControl>());
+            tcs.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(2.0)));
+            tcs.Setters.Add(new Setter(TemplatedControl.BorderThicknessProperty, new Thickness(1.0)));
+            tcs.Setters.Add(new Setter(TemplatedControl.BorderBrushProperty, freeze(new SolidColorBrush(Color.FromRgb(0xAC, 0xAC, 0xAC)))));
+            app.Styles.Add(tcs);
         }
     }
     public static void styleRoundedButton(Button b)
