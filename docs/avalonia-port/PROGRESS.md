@@ -18,7 +18,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | – | `Z1R_Avalonia_WPFResources` (new project) | – | 1 | ported | the WPF tracker's embedded art, in an assembly named `Z1R_WPF` |
 | – | `Z1R_Avalonia_Sync`, `Z1R_Avalonia_SharedInterop` (new projects) | – | 1 | ported | net10 builds of Gob's `Z1R_Sync` and `Z1R_SharedInterop`, from his source files unchanged |
 | 1 | Gamepad.fs | 59 | 0 | stubbed (C#) | no gamepad is ever found |
-| 2 | Graphics.fs | 1634 | 0 | F#: to C# | sounds stubbed; Linux cursor warp/fake clicks stubbed |
+| 2 | Graphics.fs | 1634 | 0 | ported (C#) | sounds stubbed; Linux cursor warp/fake clicks stubbed; sprite sheet checked identical to the F# port |
 | 3 | CustomMessageBox.fs | 66 | 0 | F#: to C# | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites |
 | 4 | OverworldRouteDrawing.fs | 268 | 1 | F#: to C# | straight translation; `drawPathsImpl` takes an `Avalonia.Point` |
 | 5 | DungeonRoomState.fs | 259 | 1 | F#: to C# | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control` |
@@ -137,6 +137,17 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
   layout depends on these widths and on the TextBox's own padding (+10), so compare the timeline's top row with WPF.
 - **Timeline hover tooltip** (`timeToolTip`) is an editable, unwrapped TextBox with a 3px border, as in WPF. Its border
   colour comes from the theme (WPF's default is a light grey); compare on Windows.
+- **C# shapes of F# module values (Graphics.cs sets the pattern for later files).** A `let` whose value needs several
+  statements → a `private static make_<name>()` method just above its `public static readonly` field. A tuple `let (a, b, …) =`
+  → one private helper field (`_icons7x7`, `_heartFroms`, …) holding the array/value tuple, then one field per name.
+  `do` blocks → `private static readonly bool _initN = initN();` at the same position. F# `option` values → nullable
+  (`entranceRoomArrowColor` is `System.Drawing.Color?`, `dpi` is `double?`; `makeButton(text, double?, IBrush)` takes null for None).
+  Curried `darkenImpl pct bmp` / `darkenKeepAlpha pct bmp` → `(pct, bmp)`. `overworldMapBMPs` returns `Bitmap[,]`;
+  `dungeonRoomBmpPairs` is an array of value tuples. Exhaustive F# matches get a `_ => throw` arm for the C# compiler.
+- **F# `Event<T>` that other files `Trigger`** (e.g. `Graphics.volumeChanged`) stays an F# event, `FSharpEvent<T>` from
+  FSharp.Core, so callers still write `Graphics.volumeChanged.Trigger(v)`; subscribe with
+  `.Publish.AddHandler(new FSharpHandler<T>((_, v) => …))`. (A C# `event` can't be raised from outside its class.)
+- **`DragDropSurface<T>`** takes `onStartDrag` as `Action<PointerEventArgs, Action<T>>` (F#: a function of a tuple).
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
