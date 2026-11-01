@@ -109,12 +109,42 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it): mou
 drag-paint, hotkeys, cursor warps, MOVE/GRAB, the summary hover previews), save/load against a WPF save file, and the
 runtime-test lists in the entries below.
 
+## Browser build
+
+A limited build of the same tracker for web browsers (PLAN.md, phase 6). `Z1R_Avalonia_Browser` (C#, `net10.0-browser`) compiles
+`Z1R_Avalonia/*.cs` itself with `BROWSER` defined; a project reference couldn't change how they compile. Needs `sudo dotnet workload
+install wasm-tools` once (without it the build succeeds but Skia isn't linked and nothing draws); run with `dotnet run` in that folder.
+
+How it works:
+- **No windows in a page.** `Browser.cs` (browser build only) defines `BrowserWindow`, a control standing in for Avalonia's `Window`,
+  and a global alias makes every `Window` in the tracker's code that stand-in. `MyWindowBase` derives from it, so `MyWindow` runs
+  unchanged and `ZoraTrackerApp` shows it in the page, scaled to fit (`Viewbox`). Every other window (pop-outs, HUDs, broadcast,
+  message boxes, the custom level name dialog) is created but never shown; `ShowDialog` returns at once with no result, which the
+  tracker treats as dismissed. Each logs once as a stub.
+- **`#if BROWSER` edits in mirrored files**, kept small: the five `TopLevel.GetTopLevel(x) as Window` lookups use `BrowserWindow.Of(x)`;
+  `HotKeys.mouseDirectlyOver` asks the page for the element under the pointer; `ShowRunCustom.mainWindow` is `Graphics.theWindow`;
+  MyWindow skips the ZTracker.lnk shortcut (no processes); `lifetime.MainWindow` is desktop only. `Screens.Primary` became `Screens?.Primary`
+  (the stand-in has no screens until the page shows it); the hotkey functions take a `Control` (was `Window`; no change on desktop).
+- **Platform:** `Platform.isBrowser`. Sounds play through the page's `Audio` (the .wav files are served next to it), the error beep is a
+  Web Audio tone, http(s) links open in a new tab (`wwwroot/main.js` helpers, `BrowserJs`). Global hotkeys, fake input, cursor warping
+  and the gamepad are off. Fonts: Inter (a page has no system fonts). Settings live in the page's in-memory file system, so they're lost
+  on reload.
+- **Pitfalls found:** target `net10.0-browser`, not `net10.0` (Avalonia.Browser's plain-net8.0 build is a placeholder that never draws);
+  don't touch `Dispatcher.UIThread` before Avalonia starts (it makes a default dispatcher and the page never draws);
+  `JsonSerializerIsReflectionEnabledByDefault` (settings, saves) and `UseSystemResourceKeys=false` (readable errors) are on.
+
+Checked in a browser: the start screen, starting a 1st Quest game, the main tracker (overworld map, item grid, dungeon summary and
+level tabs, timeline, timer). Not checked: most clicking around, save/load (the file picker doesn't give a local path in a page).
+
+Next (phase 6): non-blocking dialogs shown in the page, saves through downloads/uploads or browser storage, settings in browser storage,
+spoken text through the browser's speech, telling the user in the app which features are off.
+
 ## Phase 2 status
 
 All 38 WPF files are ported to C# and build, and the desktop app now starts the ported tracker (`Z1R_Avalonia.Program.main`, the
 port of Program.fs). After a first runtime check on the Mac (start screen and starting a game looked right), `--dungeon-preview`
 (the phase 1 dungeon-only window) and `--prototype` (the old F# prototype UI) were removed from the desktop app. `Z1R_Avalonia_Prototype`
-is still used by the browser (WebAssembly) host, until that host starts the ported tracker in phase 6 (see PLAN.md).
+has since been deleted; the browser build runs the ported tracker (see Browser build).
 
 Checked so far, without a display: the solution builds with no new warnings (Debug and Release). A headless run (Avalonia.Headless,
 no rendering, a scratch HOME so no real user files were touched) built the start screen, then started 1st Quest, 2nd Quest and Mixed -

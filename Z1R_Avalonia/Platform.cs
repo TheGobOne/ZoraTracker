@@ -15,6 +15,8 @@ public static class Platform
     public static readonly bool isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
     public static readonly bool isMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
     public static readonly bool isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+    /// <summary>The browser (WebAssembly) build: no native libraries, processes or windows (see Browser.cs).</summary>
+    public static readonly bool isBrowser = OperatingSystem.IsBrowser();
 
     // stubs log once per feature, so a missing feature shows up in the console without flooding it
     private static readonly HashSet<string> reportedStubs = new HashSet<string>();
@@ -66,6 +68,14 @@ public static class Platform
     {
         try
         {
+#if BROWSER
+            if (isBrowser)
+            {
+                if (target.StartsWith("http://") || target.StartsWith("https://")) BrowserJs.OpenUrl(target);   // a new tab
+                else stub("opening files and folders (browser)");
+                return;
+            }
+#endif
             if (isWindows)
                 Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
             else if (isMacOS)
@@ -235,7 +245,7 @@ public static class Platform
     // macOS: the hook needs Accessibility permission; macOS asks for it the first time, and without it there are no global hotkeys.
     private const int WM_HOTKEY = 0x0312;
     private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_WIN = 0x8;
-    private sealed record HotKeyRegistration(Avalonia.Controls.Window Window, int Id, uint Modifiers, uint Vk);
+    private sealed record HotKeyRegistration(Avalonia.Controls.Control Window, int Id, uint Modifiers, uint Vk);
     private static readonly List<HotKeyRegistration> hotKeys = new();
     private static SharpHook.SimpleGlobalHook keyboardHook;   // (SimpleGlobalHook: handlers run on the hook's thread, which is what lets them swallow keys)
 
@@ -302,14 +312,15 @@ public static class Platform
     /// <summary>A system-wide hotkey for this window (WPF: user32 `RegisterHotKey(hWnd, id, fsModifiers, vk)`); the key arrives as WM_HOTKEY at the
     /// hooks added with AddWndProcHook. Every OS: SharpHook's global keyboard hook (see above). Only F1-F24 are supported (all the tracker uses);
     /// returns false for other keys.</summary>
-    public static bool RegisterHotKey(Avalonia.Controls.Window w, int id, uint fsModifiers, uint vk)
+    public static bool RegisterHotKey(Avalonia.Controls.Control w, int id, uint fsModifiers, uint vk)
     {
+        if (isBrowser) { stub("global hotkeys (a web page only sees keys while it has focus)"); return false; }
         if (keyCodeOfVk(vk) == SharpHook.Data.KeyCode.VcUndefined) return false;
         lock (hotKeys) hotKeys.Add(new HotKeyRegistration(w, id, fsModifiers & (MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN), vk));
         ensureKeyboardHook();
         return true;
     }
-    public static bool UnregisterHotKey(Avalonia.Controls.Window w, int id)
+    public static bool UnregisterHotKey(Avalonia.Controls.Control w, int id)
     {
         lock (hotKeys) return hotKeys.RemoveAll(h => h.Window == w && h.Id == id) > 0;
     }
@@ -317,8 +328,8 @@ public static class Platform
     /// <summary>A window-procedure hook (WPF: `HwndSource.AddHook`). Return IntPtr.Zero and leave `handled` alone to let the message through.
     /// Only WM_HOTKEY is ever delivered (see RegisterHotKey), on every OS.</summary>
     public delegate IntPtr WndProcHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled);
-    private static readonly Dictionary<Avalonia.Controls.Window, List<WndProcHook>> wndProcHooks = new();
-    public static void AddWndProcHook(Avalonia.Controls.Window w, WndProcHook hook)
+    private static readonly Dictionary<Avalonia.Controls.Control, List<WndProcHook>> wndProcHooks = new();
+    public static void AddWndProcHook(Avalonia.Controls.Control w, WndProcHook hook)
     {
         lock (wndProcHooks)
         {
@@ -326,7 +337,7 @@ public static class Platform
             l.Add(hook);
         }
     }
-    public static void RemoveWndProcHook(Avalonia.Controls.Window w, WndProcHook hook)
+    public static void RemoveWndProcHook(Avalonia.Controls.Control w, WndProcHook hook)
     {
         lock (wndProcHooks)
         {
@@ -403,6 +414,7 @@ public static class Platform
     private static bool eventSimulatorFailed;
     private static SharpHook.Simulation.EventSimulator simulator()
     {
+        if (isBrowser) { stub("fake mouse input (browsers don't allow it)"); return null; }
         if (eventSimulator == null && !eventSimulatorFailed)
         {
             try { eventSimulator = SharpHook.Simulation.EventSimulator.Create("ZoraTracker"); }   // (on Linux this sets up virtual input devices)
@@ -458,7 +470,9 @@ public static class Platform
     /// desktopScaling is the window's DesktopScaling. Returns false where cursor warping isn't supported (no warp happened).</summary>
     public static bool WarpCursor(int x, int y, double desktopScaling)
     {
-        if (isWindows)
+        if (isBrowser)
+            return false;   // (browsers never let a page move the cursor)
+        else if (isWindows)
         {
             Win.SetCursorPos(x, y);
             return true;
@@ -567,6 +581,9 @@ public static class Platform
     /// <summary>Plays a .wav file from the app folder, from the start (stopping that file if it's still playing). volume is 0.0-1.0.</summary>
     public static void PlaySound(string fileName, double volume)
     {
+#if BROWSER
+        if (isBrowser) { BrowserJs.PlaySound(Path.GetFileName(fileName), volume); return; }   // (the page serves the .wav files next to it)
+#endif
         unsafe
         {
             lock (loadedSounds)
@@ -595,6 +612,9 @@ public static class Platform
     /// (NSBeep). Linux has no standard alert sound, so a short tone plays through SDL.</summary>
     public static void SystemBeep()
     {
+#if BROWSER
+        if (isBrowser) { BrowserJs.Beep(); return; }
+#endif
         if (isWindows) WinBeep.MessageBeep(WinBeep.MB_ICONASTERISK);
         else if (isMacOS) MacBeep.NSBeep();
         else playBeepTone();

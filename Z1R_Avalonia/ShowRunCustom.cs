@@ -24,8 +24,12 @@ public static class ShowRunCustom
     // (port helpers: WPF's Window.Left/Top are in device-independent units; Avalonia's Window.Position is in screen pixels. These convert,
     // so the numbers saved in ShowRunCustom.txt and the settings mean the same as WPF's. Before a window is shown, the main window's scaling is used.
     // Popouts.cs uses them too.)
+#if BROWSER
+    public static Window mainWindow() => Graphics.theWindow;   // (browser build: the main window is the stand-in shown in the page)
+#else
     public static Window mainWindow() =>
         Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d ? d.MainWindow : null;
+#endif
     private static double scalingOf(Window w)
     {
         var s = w.IsVisible ? w.DesktopScaling : (mainWindow()?.DesktopScaling ?? 1.0);

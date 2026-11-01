@@ -137,9 +137,17 @@ public static class HotKeys
     private static TopLevel lastPointerTopLevel = null;
     private static IInputElement mouseDirectlyOver(Window w)
     {
+#if BROWSER
+        // (browser build: the window is a control in the page, and the page is the input root)
+        var root = TopLevel.GetTopLevel(w);
+        var x = ((IInputRoot)root)?.PointerOverElement;
+        if (x == null && lastPointerTopLevel != null && lastPointerTopLevel != root)
+            x = ((IInputRoot)lastPointerTopLevel).PointerOverElement;
+#else
         var x = ((IInputRoot)w).PointerOverElement;
         if (x == null && lastPointerTopLevel != null && lastPointerTopLevel != w)
             x = ((IInputRoot)lastPointerTopLevel).PointerOverElement;
+#endif
         return x;
     }
     public static void InitializeWindow(Window w, TextBox notesTextBox)

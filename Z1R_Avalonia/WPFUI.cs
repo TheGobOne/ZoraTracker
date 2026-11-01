@@ -5371,7 +5371,11 @@ public static class WPFUI
 
         void refocusKeyboard()
         {
+#if BROWSER
+            var w = BrowserWindow.Of(appMainCanvas);
+#else
             var w = TopLevel.GetTopLevel(appMainCanvas) as Window;   // (WPF: Window.GetWindow)
+#endif
             w?.FocusManager?.ClearFocus();   // ensure that clicks outside the Notes area de-focus it, by clearing keyboard focus... (WPF: Keyboard.ClearFocus + FocusManager.SetFocusedElement(w, null))
             w?.Focus();  // refocus keyboard to main window so MyKey still works
         }

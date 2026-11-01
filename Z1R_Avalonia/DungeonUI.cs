@@ -1987,7 +1987,11 @@ public static class DungeonUI
                 if (ea.GetCurrentPoint(dungeonHeaderCanvas).Properties.PointerUpdateKind != PointerUpdateKind.RightButtonPressed) return;
                 ea.Handled = true;
                 // (WPF: Owner = Application.Current.MainWindow; here the window this header is in, which is the main window)
+#if BROWSER
+                var owner = BrowserWindow.Of(dungeonHeaderCanvas);
+#else
                 var owner = TopLevel.GetTopLevel(dungeonHeaderCanvas) as Window;
+#endif
                 var w = new Window { Title = "Custom level name", SizeToContent = SizeToContent.WidthAndHeight, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner,
                                     ShowInTaskbar = false };
                 var sp = new StackPanel { Margin = new Thickness(12.0) };
@@ -2720,7 +2724,11 @@ public static class DungeonUI
 
                                             redrawAllRooms();  // make updated changes visual
                                             var cmb = new CustomMessageBox("Verify changes", System.Drawing.SystemIcons.Question, "You moved a dungeon segment. Keep this change?", new[] { "Keep changes", "Undo" });
+#if BROWSER
+                                            cmb.OwnerWindow = BrowserWindow.Of(c);
+#else
                                             cmb.OwnerWindow = TopLevel.GetTopLevel(c) as Window;
+#endif
                                             cmb.ShowDialogBlocking();
                                             grabRedraw();  // DoDrop completes the grab, neeed to update the visual
                                             if (cmb.MessageBoxResult == null || cmb.MessageBoxResult == "Undo")

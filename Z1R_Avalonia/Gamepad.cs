@@ -22,7 +22,7 @@ public static class Gamepad
     {
         SDL.SDL_Gamepad* gamepad = null;
         SDL.SDL_Joystick* joystick = null;
-        if (Platform.Sdl.InitSubSystem(SDL.SDL_InitFlags.SDL_INIT_GAMEPAD))
+        if (!Platform.isBrowser && Platform.Sdl.InitSubSystem(SDL.SDL_InitFlags.SDL_INIT_GAMEPAD))
         {
             using (var gamepads = SDL.SDL3.SDL_GetGamepads())
                 if (gamepads != null && gamepads.Count > 0)

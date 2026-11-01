@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!-- Browser (WebAssembly) build of the tracker: a limited version (PLAN.md, phase 6). It compiles Z1R_Avalonia's own .cs files with BROWSER
+       defined (a project reference can't change how they compile: MyWindowBase derives from a stand-in for Window here; see Z1R_Avalonia/Browser.cs).
+       One-time setup:  sudo dotnet workload install wasm-tools   (without it the build succeeds, but Skia isn't linked in and the page can't draw)
+       Run:  dotnet run in this folder   (prints the local URL)
+       Publish a static site:  dotnet publish Z1R_Avalonia_Browser -c Release  (output: bin/Release/net10.0-browser/publish/wwwroot) -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-browser</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Z1R_Avalonia</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <DefineConstants>$(DefineConstants);BROWSER</DefineConstants>
+    <!-- the settings and save files use System.Text.Json's reflection-based serializer, which WebAssembly builds turn off by default -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- keep .NET's error messages (WebAssembly builds strip them to resource keys by default), so the console shows what went wrong -->
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Z1R_Avalonia\*.cs" Link="Z1R_Avalonia\%(Filename)%(Extension)" />
+    <!-- the sounds, served next to the page (Platform.PlaySound) -->
+    <Content Include="..\Z1R_WPF\reminder_clink.wav" Link="wwwroot\reminder_clink.wav" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Z1R_WPF\confirm_speech.wav" Link="wwwroot\confirm_speech.wav" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- the same packages and projects as Z1R_Avalonia (SharpHook's and SDL's native libraries don't exist here; Platform never calls them in a browser) -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Browser" Version="11.3.22" />
+    <!-- a page has no system fonts; Inter stands in for the tracker's fonts (Avalonia's browser template does the same) -->
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="System.Speech" Version="10.0.0" />
+    <PackageReference Include="SharpHook" Version="8.0.1" />
+    <PackageReference Include="ppy.SDL3-CS" Version="2026.1002.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Z1R_Tracker_Core\Z1R_Tracker_Core.fsproj" />
+    <ProjectReference Include="..\Z1R_Avalonia_DrawingShim\Z1R_Avalonia_DrawingShim.csproj" />
+    <ProjectReference Include="..\Z1R_Avalonia_WPFResources\Z1R_Avalonia_WPFResources.csproj" />
+    <ProjectReference Include="..\Z1R_Avalonia_SharedInterop\Z1R_Avalonia_SharedInterop.fsproj" />
+    <ProjectReference Include="..\Z1R_Avalonia_Sync\Z1R_Avalonia_Sync.csproj" />
+  </ItemGroup>
+</Project>

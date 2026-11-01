@@ -33,8 +33,8 @@ explicitly approved, recorded under "Agreed platform deviations" in PROGRESS.md.
 sign-off it is a parity gap, not an exception.
 
 **The desktop app is the main version** (Windows, macOS, Linux). The browser (WebAssembly) build is **not** part
-of the parity goal: it comes later (phase 6) as a limited build of the same app. Until then it keeps starting the
-old prototype. Decided with the fork's owner on 2026-11-01, because browsers can't do what racers and streamers rely on
+of the parity goal: it's a limited build of the same app (phase 6), started early on 2026-11-01 in place of the old
+prototype. Decided with the fork's owner on 2026-11-01, because browsers can't do what racers and streamers rely on
 while the game has focus: global hotkeys, cursor warping and fake clicks, gamepad push-to-talk, plus the broadcast
 window for OBS.
 
@@ -47,7 +47,7 @@ author only chose F# because it was a language he wanted to learn. Concretely:
 - **Shared F# libraries stay F# for now, used unchanged:** the tracker model (`Z1R_Tracker_Core`, which compiles
   Gob's `Z1R_Tracker/*.fs`) and `Z1R_SharedInterop`. The WPF tracker uses them too, and Gob keeps changing them, so a C#
   copy would drift. Once WPF is retired they can be converted to C#.
-- `Z1R_Avalonia_Prototype` (the old F# prototype) is no longer part of the desktop app. Only the browser (WebAssembly) host still starts it; it's dropped once that host starts the ported tracker.
+- `Z1R_Avalonia_Prototype` (the old F# prototype) has been deleted; the browser build runs the ported tracker.
 
 **Mirroring an F# file in C#.** Each `Z1R_WPF/X.fs` becomes `Z1R_Avalonia/X.cs`, so a WPF diff can still be found and
 applied:
@@ -100,9 +100,8 @@ applied:
 9. **No Windows-only assumptions.** Build paths with `Path.Combine` (never `\\`), resolve user
    files through one helper in `Platform.cs` (see "Where user files live" in Risks), and don't
    hard-code fonts that only exist on Windows.
-10. **Keep the existing prototype buildable until it's replaced.** It lives in `Z1R_Avalonia_Prototype` (F#). The ported
-    `Program.cs`/`WPFUI.cs` are the desktop app's entry point; the prototype is only used by the browser host now. Once that
-    host starts the ported tracker, drop the prototype from the build.
+10. **Keep the browser build compiling.** `Z1R_Avalonia_Browser` compiles `Z1R_Avalonia/*.cs` again with `BROWSER` defined
+    (see "Browser build" in PROGRESS.md), so a change there that only builds on desktop breaks it. Build both.
 
 ## WPF → Avalonia translation cheat-sheet
 
@@ -288,8 +287,8 @@ be checked**. In practice:
 - macOS `.app` bundle (osx-arm64 + osx-x64), signing and notarisation, Linux build, per-OS
   auto-update, testing on each OS.
 
-**Phase 6 — browser build (limited)**, after the desktop app ships
-- Point `Z1R_Avalonia_Browser` at the ported tracker and delete `Z1R_Avalonia_Prototype`.
+**Phase 6 — browser build (limited)**: started early; the first step is done
+- Done: `Z1R_Avalonia_Browser` runs the ported tracker and `Z1R_Avalonia_Prototype` is deleted.
 - Make the blocking dialogs (`CustomMessageBox.ShowDialogBlocking`, other nested dispatcher frames) awaitable:
   WebAssembly is single-threaded, so nothing may block. This changes desktop code too.
 - Fold pop-out windows into the single browser view (or separate pages); saves and loads through

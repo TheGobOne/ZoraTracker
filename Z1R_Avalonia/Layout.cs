@@ -1040,7 +1040,11 @@ public static class Layout
             // (WPF: `let CHROME_HEIGHT = 39.  // Windows app border`, then `((cm.RootCanvas.Parent :?> Canvas).Parent :?> Window).Height <- H + CHROME_HEIGHT // this is fragile, but
             // don't know a better way right now`. WPF's Window.Height is the outer height, so it adds the Windows frame; Avalonia's is the client height, so no
             // CHROME_HEIGHT. The window is found with TopLevel.GetTopLevel, as WPF's Window.GetWindow, rather than by the parent chain.)
+#if BROWSER
+            if (BrowserWindow.Of(cm.RootCanvas) is Window win)
+#else
             if (TopLevel.GetTopLevel(cm.RootCanvas) is Window win)
+#endif
                 win.Height = H2;
         }
         void IApplicationLayoutBase.AllDone()

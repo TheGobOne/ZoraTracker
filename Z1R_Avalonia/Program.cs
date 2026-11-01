@@ -45,11 +45,11 @@ namespace Z1R_Avalonia;
 public static class Program
 {
     // (WPF: the user32/kernel32 declarations; the calls now live in Platform.cs. RegisterHotKey/UnregisterHotKey (SharpHook, every OS) take the window
-    // instead of its HWND. The IShellLink COM interface (used for the ZTracker.lnk shortcut) is in Platform.CreateShortcut.)
+    // (a Control, so the browser build's stand-in window fits) instead of its HWND. The IShellLink COM interface (used for the ZTracker.lnk shortcut) is in Platform.CreateShortcut.)
     public static class Winterop
     {
-        public static bool RegisterHotKey(Window w, int id, uint fsModifiers, uint vk) => Platform.RegisterHotKey(w, id, fsModifiers, vk);
-        public static bool UnregisterHotKey(Window w, int id) => Platform.UnregisterHotKey(w, id);
+        public static bool RegisterHotKey(Control w, int id, uint fsModifiers, uint vk) => Platform.RegisterHotKey(w, id, fsModifiers, vk);
+        public static bool UnregisterHotKey(Control w, int id) => Platform.UnregisterHotKey(w, id);
         public static readonly int HOTKEY_ID = 9000;
 
         public static IntPtr GetConsoleWindow() => Platform.GetConsoleWindow();
@@ -60,7 +60,11 @@ public static class Program
         public static readonly int SW_MINIMIZE = 6;
     }
 
+#if BROWSER
+    public class MyWindowBase : BrowserWindow   // (browser build: pages have no windows; see Browser.cs)
+#else
     public class MyWindowBase : Window
+#endif
     {
         private Platform.WndProcHook source = null;   // (WPF: the HwndSource the hook is added to)
         private readonly int VK_F10 = 0x79;
@@ -476,11 +480,13 @@ public static class Program
             OptionsMenu.triggerHideTimerChanged();
             Graphics.triggerVolumeChanged(TrackerModelOptions.Volume);
 
+#if !BROWSER   // (browser build: no processes, and nothing to make a shortcut to)
             {
                 // (WPF: an IShellLink saved as ZTracker.lnk; Windows only, see Platform.CreateShortcut)
                 var cwd = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
                 Platform.CreateShortcut(Path.Combine(cwd, "ZTracker.lnk"), Path.Combine(cwd, Graphics.ExeName), cwd, Path.Combine(cwd, "icons/ztlogo64x64.ico"), "Launch ZORATracker");
             }
+#endif
 
             Graphics.theWindow = this;
             // full window
@@ -1425,7 +1431,7 @@ public static class Program
                 _ = b;   // (the 'Click here for options' button is no longer shown; the window can simply be resized)
                 var curFactor = TrackerModelOptions.SmallerAppWindow.Value ? TrackerModelOptions.SmallerAppWindowScaleFactor : 1.0;
                 // (WPF: SystemParameters.WorkArea, the primary screen's work area in WPF units)
-                var primary = this.Screens.Primary;
+                var primary = this.Screens?.Primary;   // (port: null in the browser build before the page shows it)
                 var workAreaHeight = primary != null ? primary.WorkingArea.Height / (primary.Scaling > 0.0 ? primary.Scaling : 1.0) : double.MaxValue;
                 var workingAreaTooSmallForCurrentHeight = workAreaHeight < (1000.0 * curFactor);
                 var likelyDoesntFit = workingAreaTooSmallForCurrentHeight;  // 'smaller' now might mean larger    && not(TrackerModelOptions.SmallerAppWindow.Value)
@@ -2558,7 +2564,9 @@ public static class Program
 */
 
             var mainW = new MyWindow();
+#if !BROWSER
             lifetime.MainWindow = mainW;   // (WPF: mainW.Owner <- this)
+#endif
             mainW.Show();
             var handle = Winterop.GetConsoleWindow();
             Winterop.ShowWindow(handle, Winterop.SW_HIDE);   // hidden rather than minimized (no stray bar on screen); a crash still brings it back with SW_SHOWNORMAL
@@ -2678,6 +2686,11 @@ public class ZoraTrackerApp : Application
             d.Exit += (_, _) => Program.stopLocalSignalRHost();
             Dispatcher.UIThread.Post(() => Program.theDummyWindow.Loaded());
         }
+#if BROWSER
+        // (browser build: the page shows the main window's content, scaled to fit, in place of the dummy window that opens it)
+        else if (ApplicationLifetime is ISingleViewApplicationLifetime sv)
+            sv.MainView = new Viewbox { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.Both, Child = new Program.MyWindow() };
+#endif
         base.OnFrameworkInitializationCompleted();
     }
 }
