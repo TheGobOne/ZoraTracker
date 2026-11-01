@@ -131,8 +131,23 @@ How it works:
 - **Platform:** `Platform.isBrowser`. SharpHook and SDL aren't in the browser build (native desktop libraries, and the AOT compiler
   rejects them), so their code in Platform.cs and Gamepad.cs is `#if !BROWSER`. Sounds play through the page's `Audio` (the .wav files are served next to it), the error beep is a
   Web Audio tone, http(s) links open in a new tab (`wwwroot/main.js` helpers, `BrowserJs`). Global hotkeys, fake input, cursor warping
-  and the gamepad are off. Fonts: Inter (a page has no system fonts). Settings live in the page's in-memory file system, so they're lost
-  on reload.
+  and the gamepad are off. Fonts: Inter (a page has no system fonts).
+- **Files.** Files written in a page go to an in-memory file system (the user folder is the app folder there, as on Windows). `BrowserStorage`
+  copies the ones worth keeping (top-level `.json`/`.txt`: settings, HotKeys.txt, Notes.txt, recent loads, ShowRunCustom.txt; and
+  `Saves/*.json`) to localStorage within a second of a change and as the page is left (`main.js` calls the exported `Flush`), and puts them
+  back before the tracker reads its settings. Left out: the crash log, the hotkeys template, screenshots and tile caches. localStorage is
+  about 5 MB and a save is about 150 KB, so a full store is logged and later changes may not be kept.
+- **Saves.** Manual, reset and completion saves are also downloaded (`Platform.OfferDownload`, a no-op on desktop). Load Save opens the
+  browser's file picker; the picked file is copied into the page's `Saves` folder (`BrowserStorage.CopyIntoPage`) so it's kept and shows in
+  the recent saves. Cancelling the picker is reported as an error by the browser, so `OpenFileDialog` treats any picker error as Cancel
+  (an uncaught one stopped the whole app). The autosave is written as a save named like the autosave: Gob's AutoSave also sets the file's
+  creation time, which aborts the WebAssembly runtime. Closing the page mid-run leaves no crash log, so on the start screen the web version
+  offers an autosave from the last day ("There is an auto-save from your last visit"); BrowserStorage remembers when each file was written,
+  since restoring a file makes it look new.
+- **Message boxes:** the tracker's own (`DoModalMessageBox`) already draw in the page. The one `CustomMessageBox` window (DungeonUI's "Keep
+  changes" after dragging a dungeon segment) can't be waited for in a click handler, so in the browser it answers with its first button.
+- **What's off is told to the user:** `index.html` shows a note on the first visit (localStorage `zt-web-note-seen`), and again from the
+  small "web version" link in the corner.
 - **Popups:** `CustomComboBoxes.AwaitWaitHandle` waits on the thread pool (`RegisterWaitForSingleObject`); a page has one thread, so in the
   browser build it checks the handle every 15ms instead. Without that, every popup (the overworld tile menu, dungeon menus, options)
   closed the instant it opened.
@@ -142,10 +157,12 @@ How it works:
 
 Checked in a browser (headless Chrome driven over the DevTools protocol, Debug and AOT builds): the start screen, starting a 1st Quest game,
 the main tracker (overworld map, item grid, dungeon summary and level tabs, timeline, timer), right-clicking an overworld tile and choosing
-dungeon 1 (the tile, the level 1 tab and the 1/9 reminder update). Not checked: most clicking around, save/load (the file picker doesn't give a local path in a page).
+dungeon 1 (the tile, the level 1 tab and the 1/9 reminder update). Debug build: the first-visit note; a changed option survives a reload;
+Save (named) downloads the file and keeps it; Load Save with the `<input type=file>` picker Firefox and Safari use (Chrome's own picker
+can't be given a file by the test driver), and Cancel; the uploaded save is kept and recorded in recent loads; the autosave is kept, and
+offered and loaded on the next visit. Not checked: most clicking around, the recent saves list on screen, a full localStorage, other browsers.
 
-Next (phase 6): non-blocking dialogs shown in the page, saves through downloads/uploads or browser storage, settings in browser storage,
-spoken text through the browser's speech, telling the user in the app which features are off.
+Next (phase 6): spoken text through the browser's speech; possibly a way to see and delete saves kept in the browser.
 
 ## Phase 2 status
 

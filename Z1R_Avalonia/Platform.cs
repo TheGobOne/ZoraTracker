@@ -37,11 +37,12 @@ public static class Platform
     /// <summary>Folder for files the user or the app writes: settings, HotKeys.txt, crash logs, ShowRunCustom.txt, ExtraIcons, overworld tile cache.
     /// On Windows this is the app folder, exactly like the WPF tracker. On macOS a signed .app can't be written to, so it's
     /// ~/Library/Application Support/ZoraTracker; on Linux it's $XDG_CONFIG_HOME/ZoraTracker (default ~/.config/ZoraTracker).
-    /// (The macOS/Linux location is waiting on TheGobOne's sign-off: risk 10 in PLAN.md.)</summary>
+    /// (The macOS/Linux location is waiting on TheGobOne's sign-off: risk 10 in PLAN.md.) In the browser it's the app folder too, in the page's
+    /// in-memory file system, so the tracker's files and Gob's (settings, Saves) are in one place for BrowserStorage to keep.</summary>
     public static string UserDataDir()
     {
         string dir;
-        if (isWindows)
+        if (isWindows || isBrowser)
             dir = AppContext.BaseDirectory;
         else if (isMacOS)
             dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "ZoraTracker");
@@ -61,6 +62,16 @@ public static class Platform
         public static string User(params string[] parts) { var all = new string[parts.Length + 1]; all[0] = UserDataDir(); parts.CopyTo(all, 1); return Path.Combine(all); }
         /// <summary>A path to a file that ships with the app (see AppDir).</summary>
         public static string App(params string[] parts) { var all = new string[parts.Length + 1]; all[0] = AppDir(); parts.CopyTo(all, 1); return Path.Combine(all); }
+    }
+
+    /// <summary>Called with each save file the user makes (manual, reset and completion saves; not the autosave). The desktop app has nothing to do;
+    /// in the browser, files written in the page are only kept in the browser, so the save is also downloaded, to be loaded again with Load.</summary>
+    public static void OfferDownload(string path)
+    {
+#if BROWSER
+        try { BrowserJs.DownloadText(Path.GetFileName(path), File.ReadAllText(path)); }
+        catch (Exception e) { Console.WriteLine($"downloading {path} failed: {e.Message}"); }
+#endif
     }
 
     /// <summary>Open a folder, file or URL with the system's default handler (Explorer / Finder / xdg-open).</summary>

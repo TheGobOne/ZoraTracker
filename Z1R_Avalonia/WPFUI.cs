@@ -1207,9 +1207,14 @@ public static class WPFUI
 
         CheckBox toggleBookShieldCheckBox = null;
         CheckBox bookIsAtlasCheckBox = null;
-        string MakeManualSave() => SaveAndLoad.SaveAll(notesTextBox.Text, DungeonUI.theDungeonTabControl.SelectedIndex, exportDungeonModelsJsonLines(), DungeonSaveAndLoad.SaveDrawingLayer(),
+        string MakeManualSave()
+        {
+            var filename = SaveAndLoad.SaveAll(notesTextBox.Text, DungeonUI.theDungeonTabControl.SelectedIndex, exportDungeonModelsJsonLines(), DungeonSaveAndLoad.SaveDrawingLayer(),
                                         Graphics.alternativeOverworldMapFilename, Graphics.shouldInitiallyHideOverworldMap, currentRecorderDestinationIndex,
                                         toggleBookShieldCheckBox.IsChecked.Value, bookIsAtlasCheckBox.IsChecked.Value, SaveAndLoad.SaveType.ManualSave);
+            Platform.OfferDownload(filename);   // (port: the browser build also downloads it)
+            return filename;
+        }
 
         var mirrorOW = new Border { Child = Graphics.BMPtoImage(Graphics.mirrorOverworldBMP), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1.0) };
         mirrorOW.PointerEntered += (_, _) => mirrorOW.BorderBrush = Brushes.DarkGray;
@@ -5695,9 +5700,18 @@ public static class WPFUI
                     lastAutoSave = DateTime.Now;
                     try
                     {
+                        var saveType = SaveAndLoad.SaveType.AutoSave;
+#if BROWSER
+                        // (port: an AutoSave also sets the file's creation time, which stops the WebAssembly runtime, so the page writes it as a save
+                        // named like the autosave, in place of the old one)
+                        SaveAndLoad.EnsureSavesDirectory();
+                        System.IO.File.Delete(SaveAndLoad.AutoSaveFilename);
+                        SaveAndLoad.pendingManualSaveName = System.IO.Path.GetFileNameWithoutExtension(SaveAndLoad.AutoSaveFilename);
+                        saveType = SaveAndLoad.SaveType.ManualSave;
+#endif
                         SaveAndLoad.SaveAll(notesTextBox.Text, DungeonUI.theDungeonTabControl.SelectedIndex, exportDungeonModelsJsonLines(), DungeonSaveAndLoad.SaveDrawingLayer(),
                                                 Graphics.alternativeOverworldMapFilename, Graphics.shouldInitiallyHideOverworldMap, currentRecorderDestinationIndex,
-                                                toggleBookShieldCheckBox.IsChecked.Value, bookIsAtlasCheckBox.IsChecked.Value, SaveAndLoad.SaveType.AutoSave);
+                                                toggleBookShieldCheckBox.IsChecked.Value, bookIsAtlasCheckBox.IsChecked.Value, saveType);
                         async Task go()
                         {
                             diskIcon.Opacity = 0.7;

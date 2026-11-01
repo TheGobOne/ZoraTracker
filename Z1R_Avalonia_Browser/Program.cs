@@ -19,6 +19,7 @@ public static class Program
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) => System.Console.WriteLine($"UNOBSERVED: {e.Exception}");
         try
         {
+            Z1R_Avalonia.BrowserStorage.Restore();   // (settings, saves etc. from earlier visits, before the tracker reads them)
             await AppBuilder.Configure<Z1R_Avalonia.ZoraTrackerApp>().WithInterFont().LogToTextWriter(System.Console.Out, Avalonia.Logging.LogEventLevel.Warning).StartBrowserAppAsync("out");
         }
         catch (System.Exception e)

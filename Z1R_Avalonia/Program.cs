@@ -287,8 +287,14 @@ public static class Program
             var opts = new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = types };
             if (InitialDirectory != null)
                 opts.SuggestedStartLocation = await owner.StorageProvider.TryGetFolderFromPathAsync(InitialDirectory);
-            var files = await owner.StorageProvider.OpenFilePickerAsync(opts);
+            IReadOnlyList<IStorageFile> files;
+            try { files = await owner.StorageProvider.OpenFilePickerAsync(opts); }
+            catch (Exception e) { Console.WriteLine($"the file picker failed: {e.Message}"); return false; }   // (the browser's picker reports Cancel as an error)
             var path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
+#if BROWSER
+            if (path == null && files.Count > 0)
+                path = await BrowserStorage.CopyIntoPage(files[0]);   // (a page can't open the user's files by path, so the picked file is copied in)
+#endif
             if (path == null)
                 return false;
             FileName = path;
@@ -2489,6 +2495,28 @@ public static class Program
                     }
                 }
             }
+#if BROWSER
+            // (port: closing the page mid-run leaves no crash log, so the web version offers the autosave from a visit in the last day)
+            if (!popupIsActive && BrowserStorage.WrittenAt(SaveAndLoad.AutoSaveFilename) is DateTime autoSavedAt && DateTime.UtcNow - autoSavedAt < TimeSpan.FromDays(1.0))
+            {
+                popupIsActive = true;
+                async Task resume()
+                {
+                    var ago = DateTime.UtcNow - autoSavedAt;
+                    var agoText = ago.TotalMinutes < 2 ? "a minute ago" : ago.TotalMinutes < 90 ? $"{(int)ago.TotalMinutes} minutes ago" : $"{(int)ago.TotalHours} hours ago";
+                    var r = await CustomComboBoxes.DoModalMessageBox(cm, null,
+                                                                     $"There is an auto-save from your last visit ({agoText}).\n"+
+                                                                     "Would you like to load it?", new[] { "Yes, load auto-save", "No" });
+                    popupIsActive = false;
+                    if (r == "Yes, load auto-save")
+                    {
+                        var json = File.ReadAllText(SaveAndLoad.AutoSaveFilename);
+                        await doStartup(999, DungeonSaveAndLoad.LoadAll(json));
+                    }
+                }
+                CustomComboBoxes.StartImmediate(resume());
+            }
+#endif
         }
 
         // (F#: Async.SwitchToContext; a no-op when already there)
@@ -2691,6 +2719,7 @@ public class ZoraTrackerApp : Application
         else if (ApplicationLifetime is ISingleViewApplicationLifetime sv)
         {
             Dispatcher.UIThread.UnhandledException += (_, e) => Console.WriteLine($"UNHANDLED (UI thread): {e.Exception}");   // (the page's console, in place of a crash log)
+            BrowserStorage.StartSaving();   // (keeps settings and saves in the browser's storage)
             // (black behind it, so the space around the tracker matches the page instead of the Light theme's white)
             sv.MainView = new Border { Background = Brushes.Black, Child = new Viewbox { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.Both, Child = new Program.MyWindow() } };
         }

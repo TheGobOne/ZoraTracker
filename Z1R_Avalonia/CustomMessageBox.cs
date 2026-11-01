@@ -31,10 +31,16 @@ the WPF call sites synchronous.)
 public class CustomMessageBox : Window
 {
     private string result = null;
+#if BROWSER
+    private readonly string firstButton;
+#endif
     private Window ownerWindow = null;
 
     public CustomMessageBox(string title, System.Drawing.Icon icon, string mainText, IEnumerable<string> buttonTexts)
     {
+#if BROWSER
+        firstButton = buttonTexts.FirstOrDefault();
+#endif
         this.WindowStartupLocation = WindowStartupLocation.CenterOwner;
         this.SystemDecorations = SystemDecorations.Full;   // (WPF: WindowStyle.SingleBorderWindow)
         this.Topmost = true;
@@ -87,6 +93,11 @@ public class CustomMessageBox : Window
     /// <summary>shows the box modally and returns once it's closed (WPF: ShowDialog)</summary>
     public void ShowDialogBlocking()
     {
+#if BROWSER
+        // a page can't wait for a box inside a click handler (no nested dispatcher loop), and the box isn't shown (BrowserWindow), so it answers
+        // with its first button at once (the one call, DungeonUI's "Keep changes" after a segment drag, keeps what the user just did)
+        result = firstButton;
+#else
         var frame = new DispatcherFrame();
         this.Closed += (_, _) => frame.Continue = false;
         if (ownerWindow != null)
@@ -94,5 +105,6 @@ public class CustomMessageBox : Window
         else
             this.Show();
         Dispatcher.UIThread.PushFrame(frame);
+#endif
     }
 }

@@ -287,15 +287,17 @@ be checked**. In practice:
 - macOS `.app` bundle (osx-arm64 + osx-x64), signing and notarisation, Linux build, per-OS
   auto-update, testing on each OS.
 
-**Phase 6 — browser build (limited)**: started early; the first step is done
+**Phase 6 — browser build (limited)**: started early; the first steps are done
 - Done: `Z1R_Avalonia_Browser` runs the ported tracker and `Z1R_Avalonia_Prototype` is deleted.
+- Done: settings, the autosave and other files kept in browser storage; saves downloaded, loads through the file picker; the
+  autosave offered on the next visit; what's off is shown in a note on the page. Sound plays through the page.
 - Make the blocking dialogs (`CustomMessageBox.ShowDialogBlocking`, other nested dispatcher frames) awaitable:
-  WebAssembly is single-threaded, so nothing may block. This changes desktop code too.
-- Fold pop-out windows into the single browser view (or separate pages); saves and loads through
-  downloads/uploads or browser storage.
-- Spoken text through the browser's speech synthesis; sound through Web Audio.
-- Switch off what browsers can't do (global hotkeys, cursor warping, fake input, co-op hosting, gamepad while
-  unfocused) and say so in the UI. Voice commands only where the Web Speech API exists, if at all.
+  WebAssembly is single-threaded, so nothing may block. This changes desktop code too. (For now the one
+  CustomMessageBox answers with its first button in the browser.)
+- Fold pop-out windows into the single browser view (or separate pages).
+- Spoken text through the browser's speech synthesis.
+- Switched off (global hotkeys, cursor warping, fake input, co-op hosting, gamepad). Voice commands only where the
+  Web Speech API exists, if at all.
 
 ## Done criteria
 

@@ -27,13 +27,43 @@ function beep() {
 function openUrl(url) {
     window.open(url, "_blank", "noopener");
 }
+function downloadText(fileName, text) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    a.download = fileName;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+// the tracker's kept files (Z1R_Avalonia/Browser.cs, BrowserStorage)
+function storageKeys(prefix) {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k.startsWith(prefix)) keys.push(k);
+    }
+    return keys;
+}
+function storageGet(key) { return localStorage.getItem(key) ?? ""; }
+function storageSet(key, value) {
+    try { localStorage.setItem(key, value); return true; }
+    catch { return false; }   // full
+}
+function storageRemove(key) { localStorage.removeItem(key); }
 
 const dotnetRuntime = await dotnet
     .withDiagnosticTracing(false)
     .withApplicationArgumentsFromQuery()
     .create();
 
-dotnetRuntime.setModuleImports('main.js', { playSound, beep, openUrl });
+dotnetRuntime.setModuleImports('main.js', { playSound, beep, openUrl, downloadText, storageKeys, storageGet, storageSet, storageRemove });
 
 const config = dotnetRuntime.getConfig();
-await dotnetRuntime.runMain(config.mainAssemblyName, [globalThis.location.href]);
+const running = dotnetRuntime.runMain(config.mainAssemblyName, [globalThis.location.href]);
+
+// save changed files as the page is left, not only once a second
+const exports = await dotnetRuntime.getAssemblyExports(config.mainAssemblyName);
+const flush = () => { try { exports.Z1R_Avalonia.BrowserStorage.Flush(); } catch { } };
+window.addEventListener("pagehide", flush);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });
+
+await running;
