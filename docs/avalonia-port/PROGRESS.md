@@ -42,7 +42,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 23 | UIComponents.fs | 1536 | 2 | ported (C#) | straight translation; Make* functions return value tuples; waypoint gradient tweened on a timer; magnifier cache in `Platform.Files.User("Magnifier")` (see Judgement calls) |
 | 24 | HUDs.fs | 392 | 3 | ported (C#) | straight translation; `#if NOT_RACE_LEGAL` kept, so (as in WPF) nothing calls it; frameless transparent windows; positions in WPF units (see Judgement calls) |
 | 25 | Broadcast.fs | 251 | 3 | ported (C#) | straight translation; off-screen check via `Window.Screens`; views are `VisualBrush`es with an absolute `SourceRect`; positions in WPF units, sizes client size (see Judgement calls) |
-| 26 | UIHelpers.fs | 15 | 3 | todo | |
+| 26 | UIHelpers.fs | 15 | 3 | ported (C#) | straight translation; `UIHelpers.NotTooFrequently(TimeSpan)` with `SendThunk(Action)` |
 | 27 | UserCustomLayer.fs | 210 | 3 | todo | |
 | 28 | DrawingLayer.fs | 442 | 3 | todo | |
 | 29 | Layout.fs | 860 | 2 | todo | |
