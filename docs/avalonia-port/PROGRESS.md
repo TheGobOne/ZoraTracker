@@ -24,7 +24,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 5 | DungeonRoomState.fs | 259 | 1 | ported (C#) | straight translation on Gob's `CDungeonRoomState` (Z1R_Avalonia_Sync); `CurrentDisplayEx` returns `Control`; module is a namespace, `Changed` is a C# event (see Judgement calls) |
 | 6 | HotKeys.fs | 606 | 1 | ported (C#) | parsing and in-window keys complete; global hotkey registration belongs to Program.cs; HotKeys.txt is a user file; key numbers unchanged (see Judgement calls) |
 | 7 | Timeline.fs | 331 | 1 | ported (C#) | labels stay unwrapped read-only TextBoxes; module is a namespace, `TimelineID` is a union-shaped C# class (see Judgement calls) |
-| 8 | CustomComboBoxes.fs | 1418 | 1 | todo | update install, opening folders stubbed |
+| 8 | CustomComboBoxes.fs | 1418 | 1 | ported (C#) | update check complete; update install Windows-only (macOS/Linux open the release page, see Stubs); "Open folder" opens the user-data folder; async → `Task` (see Judgement calls) |
 | 9 | PieMenus.fs | 915 | 1 | todo | |
 | 10 | ShowRunCustom.fs | 225 | 1 | todo | |
 | 11 | Dungeon.fs | 1226 | 1 | todo | co-op host launch (Job Object) stubbed until phase 4 |
@@ -67,6 +67,7 @@ Temporary; every one has to be replaced before parity.
 | Mouse sonar | `Platform.SetMouseSonar` | only reachable from code WPF has commented out (risk 8) |
 | Cursor warping on Linux | `Platform.WarpCursor` | returns false; the app then skips the wait for a mouse-move event |
 | Fake clicks and scroll wheel on Linux | `Platform.*MouseClick`, `ScrollWheelRotate*` | log once |
+| In-app update install on macOS/Linux | `CustomComboBoxes.makeVersionButtonWithBehavior` | "Install update" opens the release page instead (risk 11); `downloadAndStageUpdate` refuses off Windows, so no files are ever replaced there |
 
 Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
 (CoreGraphics; fake input needs Accessibility permission).
@@ -196,6 +197,41 @@ Already real, not stubs: cursor warping and fake clicks/scrolls on Windows (the 
 - **Timeline graph sort.** F#'s `Array.sortBy` isn't stable: FSharp.Core implements it as the BCL's `Array.Sort(keys, items)`. Equal timestamps
   matter in `DrawGraph` (the last sample in a tick bucket wins), so it calls that same BCL `Array.Sort(keys, items)`, not a stable sort such as
   LINQ `OrderBy`, which could order ties differently from WPF.
+- **CustomComboBoxes: F# async → `Task`.** `DoModalCore`, `DoModal*`, `DoModalMessageBox*`, `DoModalGridSelect`, `DisplayItemComboBox` are `async Task`/`Task<T>`;
+  callers `await` them for `let!`/`do!`. `Async.AwaitWaitHandle(wh)` + `SwitchToContext` → a private `AwaitWaitHandle` (thread-pool wait + `TaskCompletionSource`;
+  the await resumes on the UI context). **`x |> Async.StartImmediate` → `CustomComboBoxes.StartImmediate(task)`** (an `async void` wrapper, so an escaping exception
+  is rethrown on the UI thread as in F#); later files should use it. `Async.SwitchToThreadPool` … `SwitchToContext` → `await Task.Run(...)`. The `ManualResetEvent`s
+  callers pass stay `ManualResetEvent`.
+- **CustomComboBoxes C# shapes.** `GlobalFlag` is a nested static class: WPF's `open GlobalFlag` … `popupIsActive` → `CustomComboBoxes.GlobalFlag.popupIsActive`.
+  `PopupClickBehavior<T>` and `GridClickDismissalWarpReturn` are abstract records with nested cases (as `HotKeys.DungeonRoomHotKey`): `DismissPopupWithResult(r)` →
+  `new PopupClickBehavior<T>.DismissPopupWithResult(r)` (`.Value`), `StayPoppedUp` → `new PopupClickBehavior<T>.StayPoppedUp()`, `WarpToCenter` →
+  `new GridClickDismissalWarpReturn.WarpToCenter()`, `WarpTo(p)` → `new GridClickDismissalWarpReturn.WarpTo(p)` (`.Pos`). `DoModalGridSelect<TState,TResult>` returns
+  `Task<(bool hasResult, TResult result)>` for `'Result option` (TResult may be a value type); its grid argument is the value tuple `(gnc, gnr, gcw, grh)`, elements are
+  `(Control, bool, TState)[]`, `redrawTile` is `Action<TState>`, `onClick` is `Func<PointerPressedEventArgs, TState, PopupClickBehavior<TResult>>`, decorations are
+  `IEnumerable<(Control, double, double)>`, `who` is a `ManualResetEvent` or null, `opaOpt` a `double?`. `DisplayItemComboBox` returns `(hasResult, (ident, PlayerHas))`.
+  `MouseButtonEventArgsToPlayerHas` takes a `PointerPressedEventArgs` (every WPF caller passes a MouseDown's args). `ModalGridSelectBrushes` holds `ISolidColorBrush`es.
+  `CanvasManager.AfterCreatePopupCanvas`/`BeforeDismissPopupCanvas` are C# events (`+=`). `boxCurrentBMP(n, null)` for None. `updateAvailable` is `(string, string)?`;
+  `updateListeners` holds `Action<(string, string)>`; `fetchLatestRelease` returns null and `fetchReleaseZipUrl`/`downloadAndStageUpdate` return null for None.
+- **Popup grids: pointer capture (test at runtime).** Avalonia captures the pointer to the element pressed; WPF doesn't. A press on a grid cell releases that capture,
+  so Shift+drag drops on the cell under the mouse and hover highlights follow a held button, as in WPF. The drag bar and resize grip capture explicitly, as in WPF.
+- **Popup grids: Shift for Shift+drag** is read from the click's `KeyModifiers` (WPF: global `Keyboard.IsKeyDown`).
+- **Popup grids: horizontal scrolling ignored.** Avalonia reports sideways scrolling (trackpads) as a wheel event with `Delta.Y = 0`, which WPF's `MouseWheel` never
+  delivers; without a guard it would step the selection. It's ignored.
+- **Popup grids: scaling and rotation.** The scaled grid sets `RenderTransformOrigin = TopLeft` (Avalonia's default is the center, WPF's the corner). The lock bar's
+  rotated text uses a `LayoutTransformControl` (no `LayoutTransform` in Avalonia). Arrow-key navigation and "jump to mouse" use `TranslatePoint` through the scale
+  transform; check they land on the right cell at 1.25x/2x and after resizing.
+- **Popup grid cursors.** WPF `SizeNESW`/`SizeNWSE` → Avalonia `BottomLeftCorner`/`BottomRightCorner` (the grip's corner); `Hand`, `Arrow`, `SizeAll` unchanged.
+- **Modal message box (CustomComboBoxes).** WPF's type-keyed styles in `b.Resources` → `Styles` on the border (TextBox orange/black, rounded Button). The wrapped
+  read-only TextBox is a `SelectableTextBlock` with the style's orange set directly.
+- **Escape closes the top popup** through a tunnelling `KeyDown` class handler on `Window` (WPF: `RegisterClassHandler` on `PreviewKeyDown`).
+- **"POPUP NOTE" lines** go to the crash log in `Platform.Files.User` (WPF: the exe folder; same place on Windows).
+- **Update check uses `HttpClient`.** WPF's `WebClient` and its `ServicePointManager` TLS 1.2 line are obsolete in .NET (SYSLIB0014 warnings); `HttpClient` makes the
+  same GitHub API requests with the same User-Agent, and .NET already uses TLS 1.2/1.3. The download reports the same 0-100 percentage.
+- **Update install (Windows).** Same PowerShell script, but it relaunches the port's own executable (`Graphics.ExeName`) instead of `Z1R_WPF.exe`, and trims the
+  platform separator instead of `'\\'`. **Needs Gob:** it installs the first `.zip` asset of the release, which today is the WPF build; once the Avalonia build ships,
+  the release needs a way to tell the two zips apart (risk 11).
+- **"Open folder"** on the version button opens `Platform.UserDataDir()` (where HotKeys.txt, settings and the crash log are; the exe folder on Windows, as in WPF)
+  through `Platform.OpenWithShell` (WPF: `Explorer.exe`). "Go to website" and the release page also use `OpenWithShell`.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
