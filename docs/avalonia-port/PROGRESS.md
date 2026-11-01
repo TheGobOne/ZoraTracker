@@ -32,7 +32,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 13 | Views.fs | 610 | 1 | ported (C#) | straight translation (no `VisualBrush` in this file); glow animation tweened on a timer; `SynthesizeANewLocationKnownEvent` returns a C# event holder (see Judgement calls) |
 | 14 | DungeonSaveAndLoad.fs | 162 | 1 | ported (C#) | straight translation; save text built exactly as WPF's (InvariantCulture numbers, lowercase booleans); `DrawingLayerIcon` is an abstract record (see Judgement calls) |
 | 15 | DungeonHighlightsUI.fs | 200 | 1 | ported (C#) | straight translation; repeating animations tweened on a timer; `blockersHoverEvent` is a `Graphics.SharedEvent<bool>` (see Judgement calls) |
-| 16 | DungeonPopups.fs | 406 | 1 | todo | |
+| 16 | DungeonPopups.fs | 406 | 1 | ported (C#) | straight translation; async → `Task`; detail popups return `(hasResult, result)` (see Judgement calls) |
 | 17 | DungeonUI.fs | 2554 | 1 | todo | |
 | 18 | SpeechRecognition.fs | 102 | 4 | todo | stub in phase 2 (compile order), real in phase 4 |
 | 19 | OverworldMapTileCustomization.fs | 1545 | 2 | todo | |
@@ -357,6 +357,15 @@ Already real, not stubs: speech synthesis on Windows (System.Speech, as in WPF),
   `BeginAnimation(prop, null)` are tweened by hand on one 16 ms `DispatcherTimer` per animation (linear, as WPF's default), as `TileHighlightRectangle`
   does; removing sets the base value back (scale 1, offset 0), as WPF's does. WPF's `ScaleTransform(CenterX, CenterY)` → `RenderTransformOrigin` at the same
   absolute point. Avalonia may draw the dashed ellipse's dash pattern slightly differently.
+- **DungeonPopups C# shapes.** `DoMonsterDetailPopup`/`DoFloorDropDetailPopup` are `Task<(bool hasResult, MonsterDetail/FloorDropDetail result)>` (WPF: `Async<'T option>`;
+  DoModalGridSelect's tuple passed through), so DungeonUI's `match mdOpt with Some md ->` becomes `if (r.hasResult) … r.result`. `DoDungeonRoomSelectPopup` is a `Task`
+  and takes `usedTransports` as `int[]`, `setNewValue` as `Action<DungeonRoomState>`. `dungeonRoomExplainer` is a `Control`, `setOpacity` an `Action<double>` (one private
+  `_dungeonRoomExplainer` tuple field, Graphics' pattern). `THE_DIFF`/`suppressRoomSyncTemporarily` are mutable statics. The room-type grid's click test
+  (`ChangedButton` Left/Right and `ButtonState = Pressed`) reads the press's `PointerUpdateKind` (Left/RightButtonPressed). The fire-and-forget
+  `async { do! Async.Sleep(250) } |> Async.StartImmediate` (which does nothing else) is `CustomComboBoxes.StartImmediate(Task.Delay(250))`.
+- **Dungeon room popups (test at runtime).** They warp the cursor before opening (`SilentlyWarpMouseCursorTo` / `WarpMouseCursorTo`), so they hit the macOS
+  warp delay noted under "Early risk checks"; check the cursor lands on the current room type (also after Shift+drag rearranging and moving/resizing the grid)
+  and on the entrance-room icons. The captions and the UI-reminder overlay are unwrapped read-only TextBoxes, as in WPF; compare their widths and centring with WPF.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
 
 ## Decisions needed from TheGobOne
