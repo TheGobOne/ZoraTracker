@@ -17,7 +17,7 @@ Status: `todo` · `ported` · `stubbed` (temporary) · `skipped` (needs a logged
 | 1 | Gamepad.fs | 59 | 0 | stubbed | no gamepad is ever found |
 | 2 | Graphics.fs | 1634 | 0 | ported | sounds stubbed; Linux cursor warp/fake clicks stubbed |
 | 3 | CustomMessageBox.fs | 66 | 0 | ported | `ShowDialogBlocking()` replaces `Owner`+`ShowDialog()` at call sites |
-| 4 | OverworldRouteDrawing.fs | 268 | 1 | todo | |
+| 4 | OverworldRouteDrawing.fs | 268 | 1 | ported | straight translation; `drawPathsImpl` takes an `Avalonia.Point` |
 | 5 | DungeonRoomState.fs | 259 | 1 | todo | |
 | 6 | HotKeys.fs | 606 | 1 | todo | global hotkeys stubbed |
 | 7 | Timeline.fs | 331 | 1 | todo | |
