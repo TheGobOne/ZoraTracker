@@ -45,7 +45,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 26 | UIHelpers.fs | 15 | 3 | ported (C#) | straight translation; `UIHelpers.NotTooFrequently(TimeSpan)` with `SendThunk(Action)` |
 | 27 | UserCustomLayer.fs | 210 | 3 | ported (C#) | straight translation; ExtraIcons is a user folder; `invokeExtras` is a `Func<Task>`; "Open ExtraIcons folder" via `Platform.RevealInFileManager` (see Judgement calls) |
 | 28 | DrawingLayer.fs | 442 | 3 | ported (C#) | straight translation; resource tables are `Dictionary`s; "Open ExtraIcons Folder" via `Platform.OpenWithShell`; stamps scale from the top-left (see Judgement calls) |
-| 29 | Layout.fs | 860 | 2 | todo | |
+| 29 | Layout.fs | 860 | 2 | ported (C#) | straight translation; XAML templates/style → code templates and class-keyed styles; `optionBorderStyle` is a function; mouse-warp line tweened on a timer; magnifier uses a `VisualBrush` (see Judgement calls) |
 | 30 | Reminders.fs | 288 | 3 | todo | voice/sound stubbed |
 | 31 | MainTrackerTriforcesAndItems.fs | 874 | 2 | todo | |
 | 32 | Debouncer.fs | 15 | 3 | todo | |
@@ -572,6 +572,31 @@ runtime-test lists in the entries below.
   `RenderTransformOrigin = TopLeft` (set in `makeImage`) to shrink toward the top-left as WPF; "is half size" is `RenderTransform != null` (no `Transform.Identity`).
   The "Add custom icons to menus" checkbox's `LayoutTransform` (×1.5) → a `LayoutTransformControl` around it; tooltip via `ToolTip.SetTip`. "Open ExtraIcons Folder"
   (WPF: `Explorer.exe <folder>`) → `Platform.OpenWithShell` on the user-data ExtraIcons folder.
+
+- **Layout C# shapes.** `IApplicationLayoutBase` is a C# interface; every `UIElement`/`FrameworkElement` parameter is a `Control` (`Image`, `Canvas`, `Button`, `Point`,
+  `Rect` are Avalonia's); `IsShort` is a get-only property. `ApplicationLayout`/`ShorterApplicationLayout` implement it explicitly, and `ShorterApplicationLayout`
+  re-lists the interface (F#: inherits and re-implements). `MakeLinkText`/`MakeDiscordLink` return `Control`; `addPanelDecor(Action<Control>)`; `topLeftPlace` is an
+  `Action`; `panelHeadings` is a `List<(TextBlock, double, double, double)>`; `zonesCoordsNatural` a nullable 4-tuple; `setupMouseMagnifier(cm, Action)`.
+  **Caller change:** WPF's `new Border(Style=Layout.optionBorderStyle, ...)` → `Layout.optionBorderStyle(new Border { ... })`: Avalonia has no `Style` property and a
+  style can't be shared, so the function gives the border the class `optionBorder` and its own copy of the two styles (normal, `:pointerover`), keyed by that class so
+  Borders inside the area aren't restyled.
+- **Layout templates (compare on Windows).** `panelButtonTemplate`/`startupButtonTemplate` (WPF: XAML `ControlTemplate`s with an `IsMouseOver` trigger) are
+  `FuncControlTemplate<Button>`s built by one helper (corner radius 4 / 8), switching fill and border on `IsPointerOver`, as `Graphics.roundedButtonTemplate`.
+  `SnapsToDevicePixels` → layout rounding only (Avalonia has no pixel snapping property).
+- **Zones/Coords checkbox scaling (compare on Windows).** WPF scales them with a `LayoutTransform`; the port uses a `RenderTransform` from the top-left corner (in a Canvas
+  it looks the same, and `Bounds`, like WPF's `ActualWidth`, stays unscaled), and the "already scaled" check reads `RenderTransform`. Nothing else may set those
+  checkboxes' `RenderTransform`. The ? / eyeball / mirror icons' `Visibility.Hidden` → Opacity 0 + not hit-testable.
+- **ShowMouseWarp (test at runtime).** WPF reads `Mouse.GetPosition(AppMainCanvas)`; the layout tracks the last pointer position over `cm.RootCanvas` instead. The
+  Storyboard (end point old→new over 300ms, start point the same after 150ms) is tweened on a 15ms `DispatcherTimer`; the line is removed after 500ms, as WPF.
+- **ShorterApplicationLayout window height (test at runtime).** WPF sets the outer `Height` to `H*appScale + 39` (Windows frame) on `(RootCanvas.Parent.Parent :?> Window)`;
+  the port sets the client `Height` to `H*appScale` on `TopLevel.GetTopLevel(cm.RootCanvas)` (no `CHROME_HEIGHT`, since Avalonia's `Height` is the client height). Depends
+  on how WPFUI/Program nest the root canvas once ported. The lower half's `CustomLogo.png` image is loaded with `new Bitmap(stream)` (WPF: `BitmapFrame.Create`).
+- **Mouse magnifier window (compare on Windows).** Avalonia has no `BitmapCacheBrush`: the view is a `VisualBrush` of `cm.RootCanvas` (Stretch Fill) on a rectangle with
+  nearest-neighbour bitmap scaling, so bitmaps stay blocky but text and shapes are redrawn sharp at 3x rather than pixelated as in WPF. `ScaleTransform.CenterX/Y` → an
+  absolute `RenderTransformOrigin`. `CanResizeWithGrip` → `CanResize`; `LocationChanged` → `PositionChanged`; Left/Top saved in WPF units (ShowRunCustom helpers), size
+  as the client size (WPF: outer); closed with the main window (`ShowRunCustom.mainWindow()`). The 8s instructions timeout uses `Task.Delay` on the UI thread.
+- **Layout links/input.** `MakeLinkText`'s `MouseLeftButtonUp` → `PointerReleased` with `InitialPressMouseButton == Left` (so the press must start on the link); the URL
+  opens via `Platform.OpenWithShell`. The Shorter layout's `appMainCanvas.MouseMove` → `PointerMoved`. `Canvas.SetZIndex` → `ZIndex`.
 
 ## Decisions needed from TheGobOne
 
