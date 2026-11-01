@@ -53,7 +53,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 34 | DungeonCInterop.fs | 24 | 4 | ported (C#) | straight translation; curried functions take normal parameters; `subscribeToChanges(room, Action)` |
 | 35 | CoopSync.fs | 934 | 4 | ported (C#) | straight translation on Gob's Z1R_Sync (SignalR) and Newtonsoft, as WPF; records → C# records (same JSON); door state written as WPF's union JSON; polling loops are `async Task`s (see Judgement calls) |
 | 36 | DungeonModelSync.fs | 79 | 4 | ported (C#) | straight translation; curried functions take normal parameters; `failwithf` → `throw new Exception` |
-| 37 | WPFUI.fs | 4218 | 2 | todo | |
+| 37 | WPFUI.fs | 4218 | 2 | ported (C#) | straight translation; `makeAll` is one `async Task<Action<int>>`; the `ITrackerEvents` object expression is a delegate-forwarding class; no global mouse position, so the last pointer position is tracked; Notes.txt and the completion screenshots are user files (see Judgement calls) |
 | 38 | Program.fs | 2028 | 2 | todo | global hotkeys, desktop shortcut, console window stubbed |
 
 ## Stubs
@@ -637,6 +637,52 @@ runtime-test lists in the entries below.
   probably meant to return early). `overworldMapMarks[x,y].Changed` is a `[<CLIEvent>]`, so it's subscribed with `+=`. `printfn`/`printf` → `Console.WriteLine`/`Write`.
 - **Co-op off Windows.** CoopSync itself is cross-platform (SignalR client 10.0.14 through `Z1R_Avalonia_Sync`): joining a co-op session hosted elsewhere should work on
   macOS/Linux. Only *hosting* (starting `Z1R_SignalRHost`, in Dungeon.cs via `Platform.StartChildProcessTiedToApp`) is still stubbed there (see Stubs).
+- **WPFUI C# shapes.** `makeAll(Window mainWindow, CanvasManager cm, Canvas drawingCanvas, int owMapNum, bool heartShuffle, DungeonTrackerInstanceKind kind,
+  DungeonSaveAndLoad.AllData loadData /* null for None */, Func<string, Task> showProgress, SpeechRecognition.SpeechRecognitionInstance speechRecognitionInstance /* may be null */)`
+  returns `Task<Action<int>>` (the timeline-drawing function, F#: `int -> unit`). `resetTimerEvent` is a `Graphics.SharedEvent` (`.Fired += f`, `.Trigger()`);
+  `showRaceModeNotice(Window owner)` (owner may be null). Module hooks are `Action`/`Func`s (`decorStateChanged` `Action`, `redrawOwTileHook` `Action<int,int>`,
+  `hintButtonHighlightHook` `Action<int,bool>`, `progressiveUpgradeHook` `Action<List<(int,int)>, Bitmap, Bitmap>`, `progressiveSwordCheckHook` `Action`); `copiedMarkerIdents`
+  is a `List<int>`, `copiedMarkerSource` a `(int,int)`, `dupLinks` a `Dictionary<(int,int), List<(int,int)>>`; `decorSlot*` return `(double,double,double)`, `visibleDecorIcons`
+  a `List<int>`, `decorDisplayList(List<int>)` a `List<(int,int)>`, `shopItemBitmapsGlobal` a `List<(Bitmap,bool)>`, `decorCheckmark` a `Control`; `drawRoutesToImpl` takes a
+  `RouteDestination` (null for None) and `Func<int,int,bool>`. `type RouteDestination = …` and `module OW_ITEM_GRID_LOCATIONS = …` are `using` aliases; OverworldMapTileCustomization
+  and OverworldItemGridUI both define `canvasAdd`/`OMTW`, so WPFUI has private forwarders to OverworldItemGridUI's (F#'s later `open` wins). Inside `makeAll`: F# `ref` cells
+  and `let mutable`s are plain locals; the local events (`selectDungeonTabEvent`, `levelTabSelected`, `blockersHoverEvent`) are `Graphics.SharedEvent<T>`s; the F# object
+  expression passed to `TrackerModel.allUIEventingLogic` is the private class `WPFUI.TrackerEvents`, whose `ITrackerEvents` members forward to delegates filled in with
+  WPF's code; `oneTimeRemindLadder`/`oneTimeRemindAnyKey` are nullable `(LastChangedTime, Action)` tuples. The module's two `do`s are `_init1` (styles the max-hearts button)
+  and `_init2` (sets `OverworldMapTileCustomization.setDecorIconsHook`).
+- **WPFUI: mouse position (test at runtime).** WPF calls `Input.Mouse.GetPosition` (after a briefly-highlighted location, for the copied-marker cursor, `RoutingInfo`'s
+  route redraw under the mouse, and the arrow-key cursor nudges). Avalonia has no global mouse position, so `makeAll` keeps the last pointer position seen over
+  `cm.RootCanvas` (a tunnelling, handled-too `PointerMoved`), as Layout does, and translates it. Shift/Ctrl on tile clicks come from the click's `KeyModifiers` (WPF:
+  `Keyboard.IsKeyDown`). Ctrl+Z (undo last tile mark) is a tunnelling `KeyDown` class handler on `Window` checking `KeyModifiers == Control` (macOS: Ctrl, not Cmd; Needs Gob,
+  as for HotKeys).
+- **WPFUI input translations.** Tile `MouseDown` → `PointerPressed` with `PointerUpdateKind` (left / right / XButton1 / middle); tile and other wheel handlers through
+  `Graphics.wheelNotch`; `PreviewMouseMove`/`PreviewMouseRightButtonDown` (copy cursor) and `PreviewMouseDown` (max hearts) → tunnelling handlers; the hint entry's
+  `PreviewKeyDown` → tunnelling `KeyDown`; `MouseRightButtonUp` (hint buttons) → `PointerReleased` with `InitialPressMouseButton == Right` re-raising `Button.ClickEvent`;
+  `MouseRightButtonDown` (Hotkeys button) → `PointerPressed` (right). The menu cell's right-click (Any Road → "Place Vanilla") reads the press's `PointerUpdateKind`.
+- **WPFUI tooltips.** The Dead Woods / Lost Hills "not enabled" note is a `ToolTip` control set as the tip (show delay 0, placement Bottom); WPF closes it in `Opened` and marks
+  `ToolTipOpening` handled when the option is enabled; the port cancels `ToolTipOpening` (`e.Cancel`), which also refreshes the text first. `ToolTipService.SetPlacement` →
+  `ToolTip.SetPlacement`.
+- **WPFUI visuals (compare on Windows).** The hint-button glow `DropShadowEffect(ShadowDepth=0)` → `OffsetX/OffsetY = 0`; `BlurEffect` has no `KernelType` (always Gaussian).
+  The 45° recorder squares (shared `DungeonUI.fortyFiveDegrees`) set `RenderTransformOrigin = TopLeft` (WPF's default); the mirror flip and the RACE MODE / LEGACY MODE labels
+  keep WPF's explicit centre origin. The postgame timer clone's `LayoutTransform` is a `LayoutTransformControl`. The menu's wrapped description boxes (orange on black) are
+  `SelectableTextBlock`s (Avalonia's TextBox mis-measures wrapped text). The coords grid font is `"Consolas, Menlo, DejaVu Sans Mono, monospace"` (WPF: Consolas, Windows only).
+  Big hover text (45pt hint letters, 40pt "?" in the shop hover) sits in panels, not placed by pixel, so it doesn't use `matchWpfTextTop`; check it isn't clipped off Windows.
+- **WPFUI tile-change animation.** WPF's `ColorAnimation` (cyan alpha 0→140 over 1.5 s, auto-reversed) on the radial highlight's outer gradient stop is tweened by hand on a
+  16 ms timer (restarting from 0, as `BeginAnimation` does). The `RadialGradientBrush`'s centre/origin (0.5,0.5) and radii 0.5 are Avalonia's defaults.
+- **WPFUI Race Mode notice.** WPF's `ShowDialog()` → a nested dispatcher frame, as `CustomMessageBox.ShowDialogBlocking`: `ShowDialog(owner)` when there is an owner, a plain
+  (non-modal) `Show()` centred on screen when there isn't (WPF: modal either way). `ResizeMode.NoResize` → `CanResize = false`. The RACE MODE stamp opens it over
+  `ShowRunCustom.mainWindow()` (WPF: `Application.Current.MainWindow`).
+- **WPFUI user files.** `Notes.txt` (read at startup) and the completion screenshots (`most-recent-completion-timeline.png`, `most-recent-completion-full-screenshot.png`)
+  → `Platform.Files.User(...)` (WPF: `AppDomain.BaseDirectory`; the same folder on Windows).
+- **WPFUI completion screenshots (test at runtime).** WPF draws a `VisualBrush` (absolute `Viewbox`, scaled by `appScale`) into a `DrawingVisual` and saves a
+  `RenderTargetBitmap` with a `PngBitmapEncoder`. The port fills a rectangle of the region's size with a `VisualBrush` of `cm.RootCanvas.Parent` whose `SourceRect` is that
+  region (scaled by `appScale` as WPF), renders it with Avalonia's `RenderTargetBitmap` and saves it as PNG. Check both files match the window, especially with a non-1 app scale.
+- **WPFUI keyboard refocus.** `refocusKeyboard` (WPF: `Keyboard.ClearFocus` + `FocusManager.SetFocusedElement(w, null)` + `Keyboard.Focus(w)`) → `w.FocusManager.ClearFocus()` +
+  `w.Focus()` on the `TopLevel`'s window.
+- **WPFUI static initialization (for whoever ports Program.cs).** WPFUI's statics create controls (TextBoxes, a WrapPanel, a `Cursor`), so they need Avalonia's platform
+  running; WPF runs them at program start, before `MyWindow` reads the settings file, so `owGettableScreensCheckBox` and the Race Mode stamp start from default option
+  values (makeAll and `raceModeChanged` update them later). `_init2` must have run before any overworld tile is clicked or a save is loaded. Program.cs should force
+  `RuntimeHelpers.RunClassConstructor(typeof(WPFUI).TypeHandle)` (after the other ported classes, in compile order) once the platform is up and before reading settings.
 
 ## Decisions needed from TheGobOne
 
