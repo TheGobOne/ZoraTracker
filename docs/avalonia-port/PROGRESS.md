@@ -41,7 +41,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 22 | OverworldItemGridUI.fs | 1034 | 2 | ported (C#) | straight translation; `ShowLocatorDescriptor` is an abstract record; `MakeItemGrid` returns a 13-element value tuple; `redrawOWCircle` is a `StrongBox`; events are `Graphics.SharedEvent`s (see Judgement calls) |
 | 23 | UIComponents.fs | 1536 | 2 | ported (C#) | straight translation; Make* functions return value tuples; waypoint gradient tweened on a timer; magnifier cache in `Platform.Files.User("Magnifier")` (see Judgement calls) |
 | 24 | HUDs.fs | 392 | 3 | ported (C#) | straight translation; `#if NOT_RACE_LEGAL` kept, so (as in WPF) nothing calls it; frameless transparent windows; positions in WPF units (see Judgement calls) |
-| 25 | Broadcast.fs | 251 | 3 | todo | |
+| 25 | Broadcast.fs | 251 | 3 | ported (C#) | straight translation; off-screen check via `Window.Screens`; views are `VisualBrush`es with an absolute `SourceRect`; positions in WPF units, sizes client size (see Judgement calls) |
 | 26 | UIHelpers.fs | 15 | 3 | todo | |
 | 27 | UserCustomLayer.fs | 210 | 3 | todo | |
 | 28 | DrawingLayer.fs | 442 | 3 | todo | |
@@ -547,6 +547,17 @@ runtime-test lists in the entries below.
   `±8`/`-16` fudges (Windows 10's invisible resize borders) are kept as is, so the HUD/minimap placement next to the control/sizer window may be off by a few pixels on
   macOS/Linux. The view rectangles' `VisualBrush` Viewbox (absolute) → `SourceRect` (absolute), `Stretch.None`. The "minimized" check is `Left < MINIMIZED_THRESHOLD` or
   `WindowState == Minimized`, as Popouts.
+
+- **Broadcast C# shapes.** `MakeBroadcastWindow(cm, Canvas drawingCanvas, Grid blockerGrid, Canvas dungeonTabsOverlayContent, Action refocusMainWindow)`;
+  `maxHeartsForBroadcast` is a `Control`; `makeViewRectImpl(Point, Point, Visual)` returns a `Rectangle`. Popup layers are tracked with C# `cm.AfterCreatePopupCanvas`/
+  `BeforeDismissPopupCanvas` events, keyed by reference (`ReferenceEqualityComparer`, WPF: `HashIdentity.Reference`).
+- **Broadcast window (test at runtime, on each OS).** `allWithinOneScreen` uses Avalonia's `Window.Screens` (WPF: WinForms `Screen`): the window's pixel `Position` and outer
+  size (`FrameSize` × `DesktopScaling`), less WPF's 8/10px fudge, must fit one screen's `WorkingArea`; check the red "partially off-screen" bar appears/disappears correctly
+  on macOS and Linux (the fudge is for Windows' invisible borders). Left/Top are saved in WPF units (`ShowRunCustom.leftOf`); the saved size is the client size (WPF: outer),
+  and the initial `scaleSize + 16`/`H + 40` frame allowances are kept, so the first open is a little larger than WPF's. The `ScaleTransform`s on the item-progress strip and
+  the shrunken map get `RenderTransformOrigin = TopLeft`; the magnifier and Max Hearts copies set `VisualBrush.Stretch = Fill` (WPF's default). The off-screen notice (a
+  read-only wrapped TextBox) is a `SelectableTextBlock`. WPF's `broadcastTimeTextBox.LayoutTransform <- null` has nothing to clear. The timer's explicit `Padding = 0`
+  (as WPF) replaces the `matchWpfTextTop` padding set in OverworldItemGridUI; the 26pt digits are centred vertically, so compare their position with WPF.
 
 ## Decisions needed from TheGobOne
 
