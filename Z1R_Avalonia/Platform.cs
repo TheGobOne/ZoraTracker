@@ -219,6 +219,114 @@ public static class Platform
     public static string ExecutablePath() => Environment.ProcessPath;
 
     ////////////////////////////////////////////////////////////
+    // global hotkeys, the console window and the app shortcut (WPF: Program.fs's `Winterop` module, user32/kernel32/shell32 calls)
+
+    private static class WinProgram
+    {
+        [DllImport("User32.dll")]
+        public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+        [DllImport("User32.dll")]
+        public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr GetConsoleWindow();
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    }
+
+    private static IntPtr hwndOf(Avalonia.Controls.Window w) => w.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+
+    /// <summary>A system-wide hotkey on this window (WPF: user32 `RegisterHotKey(hWnd, id, fsModifiers, vk)`); the key arrives as WM_HOTKEY in the
+    /// window procedure (see AddWndProcHook). Windows: the same user32 call as WPF. macOS/Linux: a stub (planned: SharpHook) that returns false.</summary>
+    public static bool RegisterHotKey(Avalonia.Controls.Window w, int id, uint fsModifiers, uint vk)
+    {
+        if (isWindows) return WinProgram.RegisterHotKey(hwndOf(w), id, fsModifiers, vk);
+        stub("global hotkeys (WPF: RegisterHotKey F10 = update the timeline now; planned: SharpHook)");
+        return false;
+    }
+    public static bool UnregisterHotKey(Avalonia.Controls.Window w, int id)
+    {
+        if (isWindows) return WinProgram.UnregisterHotKey(hwndOf(w), id);
+        return false;
+    }
+
+    /// <summary>A window-procedure hook (WPF: `HwndSource.AddHook`). Return IntPtr.Zero and leave `handled` alone to let the message through.</summary>
+    public delegate IntPtr WndProcHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled);
+    private static readonly Dictionary<WndProcHook, Avalonia.Controls.Win32Properties.CustomWndProcHookCallback> wndProcHooks = new();
+    /// <summary>Windows: Avalonia's Win32 window-procedure hook. macOS/Linux: nothing (there are no window messages; see RegisterHotKey).</summary>
+    public static void AddWndProcHook(Avalonia.Controls.Window w, WndProcHook hook)
+    {
+        if (!isWindows) return;
+        Avalonia.Controls.Win32Properties.CustomWndProcHookCallback cb = (IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, ref bool handled) => hook(hWnd, (int)msg, wParam, lParam, ref handled);
+        wndProcHooks[hook] = cb;
+        Avalonia.Controls.Win32Properties.AddWndProcHookCallback(w, cb);
+    }
+    public static void RemoveWndProcHook(Avalonia.Controls.Window w, WndProcHook hook)
+    {
+        if (!isWindows) return;
+        if (wndProcHooks.Remove(hook, out var cb))
+            Avalonia.Controls.Win32Properties.RemoveWndProcHookCallback(w, cb);
+    }
+
+    /// <summary>The console window (WPF: kernel32 `GetConsoleWindow()`); IntPtr.Zero when there is none, and always off Windows.</summary>
+    public static IntPtr GetConsoleWindow() => isWindows ? WinProgram.GetConsoleWindow() : IntPtr.Zero;
+    /// <summary>Shows or hides a window by handle (WPF: user32 `ShowWindow(hWnd, nCmdShow)`, used on the console window). macOS/Linux: a stub
+    /// (the console there is the terminal the app was started from, if any, and stays as it is).</summary>
+    public static bool ShowWindow(IntPtr hWnd, int nCmdShow)
+    {
+        if (isWindows) return WinProgram.ShowWindow(hWnd, nCmdShow);
+        stub("showing/hiding the console window (macOS/Linux: the terminal, if any, is left alone)");
+        return false;
+    }
+
+    /// <summary>Writes a shortcut file that launches the app (WPF: an `IShellLink` saved via `IPersistFile` as ZTracker.lnk next to the exe).
+    /// Windows: the same shell COM calls as WPF. macOS/Linux: a stub (macOS: the .app in Applications; Linux: a .desktop file).</summary>
+    public static void CreateShortcut(string lnkPath, string targetPath, string workingDirectory, string iconPath, string description)
+    {
+        if (OperatingSystem.IsWindows()) WinShellLink.Create(lnkPath, targetPath, workingDirectory, iconPath, description);
+        else stub("app shortcut (WPF: ZTracker.lnk next to the exe; macOS: the .app in Applications, Linux: a .desktop file)");
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static class WinShellLink
+    {
+        [ComImport]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        [Guid("000214F9-0000-0000-C000-000000000046")]
+        private interface IShellLink
+        {
+            void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszFile, int cchMaxPath, [Out] IntPtr pfd, int fFlags);
+            void GetIDList([Out] IntPtr ppidl);
+            void SetIDList(IntPtr pidl);
+            void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszName, int cchMaxName);
+            void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+            void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszDir, int cchMaxPath);
+            void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+            void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszArgs, int cchMaxPath);
+            void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+            void GetHotkey([Out] short pwHotkey);
+            void SetHotkey(short wHotkey);
+            void GetShowCmd([Out] int piShowCmd);
+            void SetShowCmd(int iShowCmd);
+            void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszIconPath, int cchIconPath, [Out] int piIcon);
+            void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+            void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved);
+            void Resolve(IntPtr hwnd, int fFlags);
+            void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+        }
+        public static void Create(string lnkPath, string targetPath, string workingDirectory, string iconPath, string description)
+        {
+            var shellLink = Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046")));
+            var isl = (IShellLink)shellLink;
+            isl.SetDescription(description);
+            isl.SetPath(targetPath);
+            isl.SetWorkingDirectory(workingDirectory);
+            isl.SetIconLocation(iconPath, 0);
+            var ipf = (System.Runtime.InteropServices.ComTypes.IPersistFile)isl;
+            ipf.Save(lnkPath, false);
+        }
+    }
+
+    ////////////////////////////////////////////////////////////
     // mouse
 
     private static class Win

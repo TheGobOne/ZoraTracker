@@ -233,14 +233,31 @@ public static class Graphics
     private static readonly SolidColorBrush hoverOrange = freeze(new SolidColorBrush(Color.Parse("#FFA31A")));
     private static readonly SolidColorBrush pressedFill = freeze(new SolidColorBrush(Color.Parse("#241A0A")));
     public static readonly SolidColorBrush roundedBorderBrush = freeze(new SolidColorBrush(Color.FromRgb(58, 58, 58)));
+    // (port helper, not in Graphics.fs: the code button templates set their presenter's Content themselves. A button can be given another template after it
+    // has been shown (Layout re-templates the control-panel buttons); the old template's presenter then still holds the content as its visual child, and
+    // Avalonia refuses to give the content a second visual parent. A template calls adoptContent when it's built, which releases the content from the
+    // button's previous presenter, and its refresh does nothing once isCurrentPresenter is false.)
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ContentControl, ContentPresenter> currentPresenters = new();
+    public static void adoptContent(ContentControl owner, ContentPresenter cp)
+    {
+        if (currentPresenters.TryGetValue(owner, out var old) && old != cp)
+        {
+            old.Content = null;
+            old.UpdateChild();
+        }
+        currentPresenters.AddOrUpdate(owner, cp);
+    }
+    public static bool isCurrentPresenter(ContentControl owner, ContentPresenter cp) => currentPresenters.TryGetValue(owner, out var c) && c == cp;
     public static readonly FuncControlTemplate<Button> roundedButtonTemplate =
         new FuncControlTemplate<Button>((b, _scope) =>
         {
             // (not named PART_ContentPresenter: the Fluent theme restyles a presenter with that name on hover/press)
             var cp = new ContentPresenter();
+            adoptContent(b, cp);
             var bd = new Border { Name = "bd", CornerRadius = new CornerRadius(4.0), Child = cp };
             void refresh()
             {
+                if (!isCurrentPresenter(b, cp)) return;   // (this template has been replaced; see adoptContent)
                 cp.Content = b.Content;
                 cp.ContentTemplate = b.ContentTemplate;
                 bd.Background = b.IsPressed ? pressedFill : b.Background;

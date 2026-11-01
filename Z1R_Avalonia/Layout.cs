@@ -124,9 +124,11 @@ public static class Layout
         {
             // (not named PART_ContentPresenter: the Fluent theme restyles a presenter with that name on hover/press)
             var cp = new ContentPresenter { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
+            Graphics.adoptContent(b, cp);   // (the panel buttons get this template after they have been shown; see Graphics.adoptContent)
             var bd = new Border { Name = "bd", BorderThickness = new Thickness(1.0), CornerRadius = new CornerRadius(cornerRadius), UseLayoutRounding = true, Child = cp };
             void refresh()
             {
+                if (!Graphics.isCurrentPresenter(b, cp)) return;   // (this template has been replaced)
                 cp.Content = b.Content;
                 cp.ContentTemplate = b.ContentTemplate;
                 bd.Background = b.IsPointerOver ? templateHoverFill : templateFill;

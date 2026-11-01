@@ -54,7 +54,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 35 | CoopSync.fs | 934 | 4 | ported (C#) | straight translation on Gob's Z1R_Sync (SignalR) and Newtonsoft, as WPF; records → C# records (same JSON); door state written as WPF's union JSON; polling loops are `async Task`s (see Judgement calls) |
 | 36 | DungeonModelSync.fs | 79 | 4 | ported (C#) | straight translation; curried functions take normal parameters; `failwithf` → `throw new Exception` |
 | 37 | WPFUI.fs | 4218 | 2 | ported (C#) | straight translation; `makeAll` is one `async Task<Action<int>>`; the `ITrackerEvents` object expression is a delegate-forwarding class; no global mouse position, so the last pointer position is tracked; Notes.txt and the completion screenshots are user files (see Judgement calls) |
-| 38 | Program.fs | 2028 | 2 | todo | global hotkeys, desktop shortcut, console window stubbed |
+| 38 | Program.fs | 2028 | 2 | ported (C#) | startup screen, main window, crash handling and recovery, co-op message handling complete; global F10/F5 hotkeys, console window and ZTracker.lnk via Platform (as WPF on Windows, stubbed on macOS/Linux); static initializers forced in WPF compile order once the CanvasManager exists; file dialogs via StorageProvider (see Judgement calls) |
 
 ## Stubs
 
@@ -70,9 +70,12 @@ Temporary; every one has to be replaced before parity.
 | Co-op host launch (`Z1R_SignalRHost`) on macOS/Linux | `Platform.StartChildProcessTiedToApp` (from `Dungeon.startLocalSignalRHost`) | logs once, starts nothing; today the host executable doesn't ship there, so `startLocalSignalRHost` prints "Host EXE not found" first, as WPF does when it's missing. Co-op is phase 4 |
 | Speech synthesis and voice choice on macOS/Linux | `Platform.SpeechSynthesizer` (`OptionsMenu.voice`) | logs once; `Speak` prints the text; lists no voices, so "Change Voice" doesn't appear; `Volume` is kept. Windows uses System.Speech, as WPF (risk 6) |
 | Speech recognition on macOS/Linux | `Platform.SpeechRecognitionEngine` (`SpeechRecognition.speechRecognizer`) | prints which engine at startup, logs once on use, never recognizes anything; the grammar is still built. Windows uses System.Speech, as WPF (risk 4) |
+| Global hotkeys on macOS/Linux (F10 = update the timeline now; F5 is registered too, as WPF, and so swallowed system-wide) | `Platform.RegisterHotKey` / `AddWndProcHook` (from `Program.MyWindowBase`) | logs once, registers nothing (planned: SharpHook). Windows: user32 `RegisterHotKey` + Avalonia's Win32 window-procedure hook, as WPF; Release builds only, as WPF's `#if DEBUG` |
+| Console window show/hide on macOS/Linux | `Platform.GetConsoleWindow` / `ShowWindow` (from `Program`) | there's no console handle; `ShowWindow` logs once. A terminal the app was started from stays as it is |
+| ZTracker.lnk shortcut on macOS/Linux | `Platform.CreateShortcut` (from `Program.MyWindow`) | logs once (macOS: the .app in Applications; Linux: a .desktop file). Windows: the same `IShellLink` COM calls as WPF |
 | In-app update install on macOS/Linux | `CustomComboBoxes.makeVersionButtonWithBehavior` | "Install update" opens the release page instead (risk 11); `downloadAndStageUpdate` refuses off Windows, so no files are ever replaced there |
 
-Already real, not stubs: speech synthesis and speech recognition on Windows (System.Speech, as in WPF), the co-op host launch on Windows (the same kernel32 Job Object calls as WPF), cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
+Already real, not stubs: speech synthesis and speech recognition on Windows (System.Speech, as in WPF), the global hotkeys, console window and ZTracker.lnk on Windows (the same Win32/COM calls as WPF), the co-op host launch on Windows (the same kernel32 Job Object calls as WPF), cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
 (CoreGraphics; fake input needs Accessibility permission).
 
 ## Early risk checks (phase 0)
@@ -683,6 +686,76 @@ runtime-test lists in the entries below.
   running; WPF runs them at program start, before `MyWindow` reads the settings file, so `owGettableScreensCheckBox` and the Race Mode stamp start from default option
   values (makeAll and `raceModeChanged` update them later). `_init2` must have run before any overworld tile is clicked or a save is loaded. Program.cs should force
   `RuntimeHelpers.RunClassConstructor(typeof(WPFUI).TypeHandle)` (after the other ported classes, in compile order) once the platform is up and before reading settings.
+
+- **Program C# shapes.** Program.fs's top level is `public static class Program` in namespace `Z1R_Avalonia` (the desktop host's is `Z1R_Avalonia_Desktop.Program`).
+  `Winterop` is a nested class forwarding to Platform (`RegisterHotKey`/`UnregisterHotKey` take the `Window`, not its HWND; the `IShellLink` interface moved
+  into `Platform.CreateShortcut`). `MyWindowBase`, `MyWindow`, `DummyWindow` are nested classes; `MakeTipTextBox` returns a `SelectableTextBlock`; WPF's
+  `[<EntryPoint>] main` is `Program.main(string[] argv, Func<AppBuilder> configure)`, which the desktop host calls with its `UsePlatformDetect()` builder (the
+  platform backends live in that project); WPF's `new Application()` is `ZoraTrackerApp` (Fluent theme, Light variant, as `DungeonPreviewApp`). WPF's
+  `Microsoft.Win32.OpenFileDialog` is a small `Program.OpenFileDialog` on Avalonia's `StorageProvider` with the same `InitialDirectory`/`Filter`/`FileName`,
+  whose `ShowDialog(owner)` is awaited (WPF's blocks). `doStartup`, `showProgress` (WPF: `Async<unit>`) and the click handlers' `async { }` blocks are
+  `async Task`s started with `CustomComboBoxes.StartImmediate`. Mutable locals and `ref` cells of the constructor are plain locals.
+- **Startup order: F# initializes files lazily, so WPF reads the settings first (corrects the "Startup order" and "WPFUI static initialization" notes
+  above).** An F# exe runs a non-last file's top-level code the first time one of that file's values is used, not at startup (checked with an F# exe built
+  by the .NET 10 SDK: calling a function doesn't run its file's code, reading a value does). WPF depends on that: Dungeon's `do` block reads
+  `CanvasManager.TheOnlyCanvasManager` (`.Value` of an option, which throws while it's None), and DungeonUI, OverworldItemGridUI, UIComponents, Layout and
+  WPFUI all use Dungeon in their own top-level code (shown by forcing them in a headless run: each failed with Dungeon's `TypeInitializationException`
+  before a CanvasManager existed). MyWindow creates the CanvasManager after `readSettings()`, so in WPF those files, WPFUI included, initialize after the
+  settings are read: `owGettableScreensCheckBox` and the Race Mode stamp start from the saved settings, not the defaults. Program.cs therefore forces every
+  ported class's static initializer in WPF compile order (`runStaticInitializersInWpfCompileOrder`, ending with WPFUI) right after it creates the
+  CanvasManager: the earliest point at which all of them can run, before the start screen is built, so hooks (`_init2`'s `setDecorIconsHook`) and
+  subscriptions (`raceModeChanged`, Reminders, CoopSync, MainTrackerTriforcesAndItems) exist before anything needs them. In WPF, WPFUI and the classes only
+  makeAll uses initialize later (when Start is clicked), so an option changed on the start screen is seen by their top-level code there; here makeAll and
+  the option events must update anything that reads an option at creation (PROGRESS's WPFUI note says they do). **Test at runtime:** change Race Mode and
+  the overworld-gettable option on the start screen, then start, and check the stamp and checkbox. SpeechRecognition is left out of the forced list: its
+  only value is the System.Speech recognizer, which WPF creates only when speech recognition is on (creating it can fail on a PC with no recognizer).
+  `DungeonUI.TH`, `OverworldItemGridUI.TH` and `OverworldItemGridUI.TCH` are now `const` (as F# compiles these constants), so MyWindow's
+  `HEIGHT_SANS_CHROME` can read them before the CanvasManager exists without running those classes' initializers.
+- **No hidden DummyWindow.** WPF's main window is owned by a hidden, minimized dummy window, so that windows have no forced Z-order; `app.Run(dummy)` ends
+  when it closes. Avalonia gains nothing from an invisible owner (owned windows minimize and hide with it; on macOS an owned window is attached to its owner),
+  and the main window has to be the lifetime's `MainWindow` (`ShowRunCustom.mainWindow()`, `Graphics.RestartTheApplication`). So `DummyWindow` is a plain
+  object that keeps its jobs: its `Loaded()` (posted to the dispatcher once Avalonia runs, so exceptions in the MyWindow constructor reach the crash handlers,
+  as in WPF's Loaded handler) creates MyWindow, makes it the `MainWindow`, shows it and hides the console; `Close()` (when the main window closes, or after a
+  crash) shuts the app down (`ShutdownMode.OnExplicitShutdown`). Popouts and other windows are still owned by the main window (`ShowRunCustom.showOwned`).
+- **Crash handling.** `Application.DispatcherUnhandledException` → `Dispatcher.UIThread.UnhandledException` (same Handled flag). `Console.ReadKey` throws
+  when there's no console (a macOS .app, or the WinExe desktop host on Windows), so the "press a key" waits catch that, and `showCrashOnConsole` always sets
+  `waitForConsole` (WPF sets it only after a key press; here, with no console, the app would otherwise never exit after a crash). The HotKeys.txt error reveals
+  the file via `Platform.RevealInFileManager`. The crash log and `Z1R_Tracker_recent_loads.txt` are `Platform.Files.User` files. `Dungeon.stopLocalSignalRHost`
+  at exit is skipped when there's no CanvasManager (e.g. the "another instance is running" path), since touching Dungeon then throws (see Startup order).
+- **The Windows console (Needs Gob).** WPF's tracker is a console app: the console shows "Starting ZORATracker...", is hidden once the window is up, and comes
+  back on a crash with the error. `Z1R_Avalonia_Desktop` is a `WinExe`, so on Windows there's no console to show or hide (`GetConsoleWindow` returns 0) and crash
+  details only go to the crash log. Making the desktop host an `Exe` on Windows would bring WPF's behaviour back; decide when packaging (phase 5).
+- **Main window size and position (test at runtime).** WPF's Width/Height/MinWidth/MinHeight include the Windows frame (`CHROME_WIDTH` 16, `CHROME_HEIGHT` 39);
+  Avalonia's are the client size, so Program.cs subtracts the chrome when setting them and adds it back in its `ActualWidth`/`ActualHeight` helpers, keeping
+  WPF's formulas (including the "exactly the remembered scale" check) and the saved `MainWindowScale` meaning the same. The window's RenderTransform scales
+  from the top-left (`RenderTransformOrigin = TopLeft`; Avalonia's default is the centre). `MainWindowLT` is in WPF units: it's applied with the window's own
+  `DesktopScaling` (the main window isn't the lifetime's MainWindow yet, so ShowRunCustom.setLeftTop can't be used) and saved with `ShowRunCustom.leftOf/topOf`;
+  minimized is `Left < MINIMIZED_THRESHOLD` or `WindowState == Minimized`. `SystemParameters.WorkArea` → the primary screen's working area in WPF units.
+  Check resizing (the UI scales to fit), the remembered size and position, and minimizing/restoring on each OS.
+- **Start screen popups (test at runtime).** The 4th Sword level menu and the "Pick Overworld (Start Game)" menu are Avalonia `Popup`s (WPF `StaysOpen=false`
+  → `IsLightDismissEnabled`), added to the start screen's grid because an Avalonia popup has to be in a window's tree to open (they take no space). As in
+  WPF they're separate windows, so the Pick Overworld menu scales its buttons by the start screen's scale (`TransformToVisual` for `TransformToAncestor`).
+  Check both open in the right place and close on outside clicks. Their dark theme is on their own panel, as WPF's.
+- **Start screen details.** Wrapped tip text (hover explainer, Konami "ALL OF TIPS") is a `SelectableTextBlock` with the dark theme's orange on black set
+  directly; the Konami headers' bottom border is a `Border` around it. The type-keyed dark-theme styles (TextBox, Button, ToolTip) are `Styles` on the same
+  panels, and the root canvas's ToolTip style is in `rootCanvas.Styles` (**check** tooltips are orange on almost-black; Avalonia tooltips are popups and may
+  not pick up styles the same way). `Border.Style <- null` (making an option area plain) removes the `optionBorder` class. The Custom LEVEL Name box
+  upper-cases typed text in a tunnelling `TextInput` handler (as DungeonUI) and centres it with `TextAlignment` too. The version button's `LayoutTransform`
+  is a `LayoutTransformControl`, which takes its alignment and margin. The recent-saves toggle's `MouseLeftButtonUp` is `PointerReleased` with
+  `InitialPressMouseButton == Left`. `Canvas.SetZIndex`/`Panel.SetZIndex` → `ZIndex`. The unused `pairRow` is kept as a `Func` (an unused local function
+  is a compiler warning).
+- **File dialogs (test at runtime, each OS).** Load Save and the custom overworld map use `StorageProvider.OpenFilePickerAsync` with WPF's filters
+  (`*.*` → `*`); on macOS the picker filters by extension, so "ZTracker saves" (`zt-save-*.json`) shows all `.json` files. The map file dialog starts in
+  `Platform.UserDataDir()` (WPF: the exe folder; the same on Windows); the save dialog in `SaveAndLoad.SavesDirectory`, as WPF.
+- **Single-instance mutex.** The mutex name is the exe path with `\` replaced, as WPF; `/` is replaced too, since .NET's named mutexes on macOS/Linux don't
+  allow it.
+- **Button templates replaced after a button is shown (fixed in Graphics/Layout).** A headless run of Program.cs (start screen, then 1st Quest / 2nd Quest /
+  Mixed 2nd Quest started; makeAll completes) crashed when Layout gave the already-shown control-panel buttons `panelButtonTemplate`: the code button
+  templates set their presenter's `Content` themselves, so the old template's presenter kept the TextBox as its visual child and Avalonia refused a second
+  parent. `Graphics.adoptContent`/`isCurrentPresenter` (used by `roundedButtonTemplate` and Layout's button templates) release the content from the previous
+  presenter and stop the old template's refresh. The checkbox templates have the same pattern but aren't re-templated anywhere today.
+- **Timer box (compare on Windows).** As in WPF, MyWindow sets `hmsTimeTextBox.Padding = 0` after its 32pt FontSize, which replaces the `matchWpfTextTop`
+  top padding (as Broadcast does); the digits are centred vertically, so check their position off Windows.
 
 ## Decisions needed from TheGobOne
 

@@ -57,8 +57,8 @@ public static class OverworldItemGridUI
     }
 
     // some global variables needed across various UI components
-    public static readonly int TCH = 127;  // timeline height
-    public static readonly int TH = DungeonUI.TH; // text height
+    public const int TCH = 127;  // timeline height   (port: const; see DungeonUI.TH)
+    public const int TH = DungeonUI.TH; // text height   (port: const; see DungeonUI.TH)
     public static readonly double THRU_MAIN_MAP_H = (double)(150 + 8 * 11 * 3);
     public static readonly double THRU_MAP_AND_LEGEND_H = THRU_MAIN_MAP_H + (double)(11 * 3);
     public static readonly double THRU_MAIN_MAP_AND_ITEM_PROGRESS_H = THRU_MAP_AND_LEGEND_H + 30.0;

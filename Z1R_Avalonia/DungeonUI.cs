@@ -52,7 +52,7 @@ public static class DungeonUI
         public static Action resetDungeonsForRouters = () => { };
     }
 
-    public static readonly int TH = 24; // text height
+    public const int TH = 24; // text height   (port: const, as F# compiles this constant, so reading it does not run the static initializers; Program.cs needs it before the CanvasManager exists)
 
     // (F#: `module FloatHelper` with a `System.Double` extension member. C# extension methods must live in a top-level static class,
     // so `FloatHelper` is at namespace level, at the end of this file.)
