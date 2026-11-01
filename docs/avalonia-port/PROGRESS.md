@@ -35,7 +35,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 16 | DungeonPopups.fs | 406 | 1 | ported (C#) | straight translation; async → `Task`; detail popups return `(hasResult, result)` (see Judgement calls) |
 | 17 | DungeonUI.fs | 2554 | 1 | ported (C#) | straight translation; drag-paint via Avalonia drag-and-drop in a nested dispatcher frame; summary-tab previews via `VisualBrush`; room-tile flash tweened on a timer; module events are C# events (see Judgement calls) |
 | 18 | SpeechRecognition.fs | 102 | 4 | ported (C#) | recognizer via `Platform.SpeechRecognitionEngine`: System.Speech on Windows (as WPF), stubbed on macOS/Linux; `ConvertSpokenPhraseToMapCell` returns `int?` (see Judgement calls) |
-| 19 | OverworldMapTileCustomization.fs | 1545 | 2 | todo | |
+| 19 | OverworldMapTileCustomization.fs | 1545 | 2 | ported (C#) | straight translation; accelerators are `Func<CanvasManager, Canvas, int, int, Task>`; "no hotkeys" reveals HotKeys.txt via `Platform.RevealInFileManager` (see Judgement calls) |
 | 20 | LinkRouting.fs | 240 | 2 | todo | |
 | 21 | Popouts.fs | 547 | 3 | todo | |
 | 22 | OverworldItemGridUI.fs | 1034 | 2 | todo | |
@@ -450,6 +450,24 @@ runtime-test lists in the entries below.
   `SpeechRecognitionInstance.ConvertSpokenPhraseToMapCell` returns `int?` (WPF: `int option`); `AttachSpeechRecognizedToApp` takes `Action<string>`;
   `appMainCanvas.Dispatcher.Invoke` → `Dispatcher.UIThread.Invoke` (the canvas parameter is kept, unused). **Test on Windows:** voice commands with and without PTT
   (PTT itself needs the gamepad, still a stub).
+- **OverworldMapTileCustomization C# shapes.** `OW_ITEM_GRID_LOCATIONS` is a nested static class; its grid coords are `(int, int)` value tuples and
+  `Locate((int, int))` returns `(double, double)`, so `Locate(BOMB_BOX)` reads as in WPF. `MapStateProxy(s)` → `new MapStateProxy(s)`. `overworldAcceleratorTable` is
+  `Dictionary<int, Func<CanvasManager, Canvas, int, int, Task>>` (filled by `_init1`..`_init5`, as WPF's top-level `Add`s), `swordCaveAccelerator` returns that `Func`.
+  `GetIconBMPAndExtraDecorations` returns `(bool, System.Drawing.Bitmap, List<(Control, double, double)>)`; `computeExtraDecorationArrow` `(Control, double, double)[]`;
+  `takenSwordCheck`/`takenProgressiveSwordCheck` `(Canvas, double, double)`; `caveCheckmark` a `Control`. `DoLeftClick` is `Task<(bool, bool)>`, `DoNonShopItemIconPopup`
+  `Task<bool>`, `DoRemote/LocalItemComboBox` `Task`. `takeAnyTaken` is `Dictionary<(int, int), (int, bool, int)>`; `twoItemShopBmpCache`/`threeItemShopBmpCache` use value-tuple
+  keys; `hintShopColors` is the model's `Dictionary<Tuple<int, int>, int>` (also `shuffledWoodSwordTiles`/`progressiveTileTier` keep `System.Tuple` keys). Hooks:
+  `setDecorIconsHook` `Action<int, int, int>`, `goToDungeon` `Action<int>`, `decorBitmapHook` `Func<int, Bitmap>` (null for none), `shopItemBitmapsHook`
+  `Func<int, List<(Bitmap, bool)>>`. `armosLeftSideBrightBmp`/`DarkBmp` are `Lazy<Bitmap>` (`.Value` as in F#). `MakeRemainderSummaryDisplay(Ex)` return the `Border`;
+  `MakeMappedHotKeysDisplay` returns `(bool noHotKeys, Border)`; its dungeon panel lists `HotKeys.DungeonRoomHotKey` cases (WPF: `Choice1Of4`..`Choice4Of4`).
+- **Overworld tile clicks.** The cave-item icons' `MouseDown` (`ButtonState = Pressed` and `ChangedButton` Left/Right) → `PointerPressed` reading `PointerUpdateKind`; the
+  non-shop item icon popup's right-click test reads the press's `PointerUpdateKind` (WPF: `ChangedButton = Right`). Tooltip → `ToolTip.SetTip`. The check mark's
+  `StrokeStartLineCap`/`StrokeEndLineCap` → one `StrokeLineCap` (both Round).
+- **Spot Summary layout (compare on Windows).** `halveGap` measures each `UniformGrid` before it is in the window (as WPF does) to set its `MinWidth`, which sets the whole
+  summary's width; the potion-shop "= icon" alignment runs on `LayoutUpdated` with `Bounds.Width` for `ActualWidth` and `TranslatePoint(...).Value` (a null — not in the same
+  tree — is swallowed by the same try/catch as WPF's exception). Check the summary's width, the three-column grid, and that the = and potion icon line up.
+- **"You have no HotKeys mapped"** opens the file manager with HotKeys.txt selected via `Platform.RevealInFileManager` (WPF: `Explorer.exe /Select,`; same on Windows,
+  Finder on macOS, the folder on Linux).
 
 ## Decisions needed from TheGobOne
 
