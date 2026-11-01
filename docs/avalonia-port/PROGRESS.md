@@ -88,6 +88,14 @@ Already real, not stubs: the co-op host launch on Windows (the same kernel32 Job
 
 ## Judgement calls / needs a human
 
+- **Startup order (for whoever ports Program.cs).** In an F# exe, every file's top-level values and `do` blocks run at
+  startup, in compile order. In C#, a static class runs its field initializers only when it's first used. Some WPF files
+  rely on running early or in order (e.g. Dungeon's `do` block subscribes to `CanvasManager` events and needs the
+  CanvasManager to exist). The ported `Program.cs` has to force every ported class's static initialization at the same
+  points WPF reaches them, in compile order (e.g. `RuntimeHelpers.RunClassConstructor(typeof(X).TypeHandle)`), and
+  check that nothing touches a class too early (a static initializer that throws leaves the class broken for the rest
+  of the run).
+
 - **System.Drawing stays `System.Drawing`.** `System.Drawing.Bitmap` (System.Drawing.Common) only works on Windows in
   .NET, so the `Z1R_Avalonia_DrawingShim` project re-implements the parts the trackers use (`Bitmap`, `Image`,
   `Graphics.FromImage` with Clear/DrawImage/FillEllipse/DrawLine/…, `Pen`, `Brushes`, `Icon`, `SystemIcons`,
