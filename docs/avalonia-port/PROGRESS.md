@@ -34,7 +34,7 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 15 | DungeonHighlightsUI.fs | 200 | 1 | ported (C#) | straight translation; repeating animations tweened on a timer; `blockersHoverEvent` is a `Graphics.SharedEvent<bool>` (see Judgement calls) |
 | 16 | DungeonPopups.fs | 406 | 1 | ported (C#) | straight translation; async → `Task`; detail popups return `(hasResult, result)` (see Judgement calls) |
 | 17 | DungeonUI.fs | 2554 | 1 | ported (C#) | straight translation; drag-paint via Avalonia drag-and-drop in a nested dispatcher frame; summary-tab previews via `VisualBrush`; room-tile flash tweened on a timer; module events are C# events (see Judgement calls) |
-| 18 | SpeechRecognition.fs | 102 | 4 | todo | stub in phase 2 (compile order), real in phase 4 |
+| 18 | SpeechRecognition.fs | 102 | 4 | ported (C#) | recognizer via `Platform.SpeechRecognitionEngine`: System.Speech on Windows (as WPF), stubbed on macOS/Linux; `ConvertSpokenPhraseToMapCell` returns `int?` (see Judgement calls) |
 | 19 | OverworldMapTileCustomization.fs | 1545 | 2 | todo | |
 | 20 | LinkRouting.fs | 240 | 2 | todo | |
 | 21 | Popouts.fs | 547 | 3 | todo | |
@@ -69,9 +69,10 @@ Temporary; every one has to be replaced before parity.
 | Fake clicks and scroll wheel on Linux | `Platform.*MouseClick`, `ScrollWheelRotate*` | log once |
 | Co-op host launch (`Z1R_SignalRHost`) on macOS/Linux | `Platform.StartChildProcessTiedToApp` (from `Dungeon.startLocalSignalRHost`) | logs once, starts nothing; today the host executable doesn't ship there, so `startLocalSignalRHost` prints "Host EXE not found" first, as WPF does when it's missing. Co-op is phase 4 |
 | Speech synthesis and voice choice on macOS/Linux | `Platform.SpeechSynthesizer` (`OptionsMenu.voice`) | logs once; `Speak` prints the text; lists no voices, so "Change Voice" doesn't appear; `Volume` is kept. Windows uses System.Speech, as WPF (risk 6) |
+| Speech recognition on macOS/Linux | `Platform.SpeechRecognitionEngine` (`SpeechRecognition.speechRecognizer`) | prints which engine at startup, logs once on use, never recognizes anything; the grammar is still built. Windows uses System.Speech, as WPF (risk 4) |
 | In-app update install on macOS/Linux | `CustomComboBoxes.makeVersionButtonWithBehavior` | "Install update" opens the release page instead (risk 11); `downloadAndStageUpdate` refuses off Windows, so no files are ever replaced there |
 
-Already real, not stubs: speech synthesis on Windows (System.Speech, as in WPF), the co-op host launch on Windows (the same kernel32 Job Object calls as WPF), cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
+Already real, not stubs: speech synthesis and speech recognition on Windows (System.Speech, as in WPF), the co-op host launch on Windows (the same kernel32 Job Object calls as WPF), cursor warping and fake clicks/scrolls on Windows (the same user32 calls as WPF) and macOS
 (CoreGraphics; fake input needs Accessibility permission).
 
 ## Early risk checks (phase 0)
@@ -441,6 +442,14 @@ runtime-test lists in the entries below.
   `SourceRect`/`DestinationRect` (WPF `Viewbox`/`Viewport`) and one square `LineCap`; compare it. `rainbowBrush` (WPF: angle 90°) runs top to bottom. The hidden-dungeon letter
   button's "Courier New" falls back to another font off Windows (risk 5). `Image.Source.Clone()` for the placeholder icons shares the (immutable) Avalonia bitmap.
 - **Avalonia versions pinned** to 11.3.22 (risk 18), with SkiaSharp 2.88.9 (the version Avalonia 11.3 uses).
+- **Speech recognition: `Platform.SpeechRecognitionEngine`.** WPF's `SpeechRecognition.speechRecognizer` (a System.Speech `SpeechRecognitionEngine`) is a
+  `Platform.SpeechRecognitionEngine` with the members the tracker uses: `LoadGrammar(wakePhrase, choices)` (builds the same `GrammarBuilder(wakePhrase)` +
+  `Choices` grammar), `SetInputToDefaultAudioDevice()`, `RecognizeAsyncMultiple()` (WPF `RecognizeAsync(RecognizeMode.Multiple)`; Program.cs calls these two), and
+  `event Action<Platform.RecognizedSpeech> SpeechRecognized` (`r.Text`, `r.Confidence`; WPF `r.Result.Text`/`r.Result.Confidence`). On Windows it wraps
+  System.Speech.Recognition from the same `System.Speech` NuGet package as synthesis (no new reference). Its constructor prints which engine is used.
+  `SpeechRecognitionInstance.ConvertSpokenPhraseToMapCell` returns `int?` (WPF: `int option`); `AttachSpeechRecognizedToApp` takes `Action<string>`;
+  `appMainCanvas.Dispatcher.Invoke` → `Dispatcher.UIThread.Invoke` (the canvas parameter is kept, unused). **Test on Windows:** voice commands with and without PTT
+  (PTT itself needs the gamepad, still a stub).
 
 ## Decisions needed from TheGobOne
 

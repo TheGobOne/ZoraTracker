@@ -444,4 +444,68 @@ public static class Platform
         public static void SelectVoice(object o, string name) => s(o).SelectVoice(name);
         public static void Speak(object o, string text) => s(o).Speak(text);
     }
+
+    ////////////////////////////////////////////////////////////
+    // speech recognition
+
+    /// <summary>One recognized phrase, as WPF's System.Speech `SpeechRecognizedEventArgs.Result` (`r.Result.Text`, `r.Result.Confidence`).</summary>
+    public sealed record RecognizedSpeech(string Text, float Confidence);
+
+    /// <summary>The speech recognizer (WPF: a System.Speech.Recognition.SpeechRecognitionEngine), with the members the tracker uses.
+    /// Windows: System.Speech (the System.Speech NuGet package, which includes System.Speech.Recognition), so it behaves as in WPF.
+    /// macOS/Linux: a stub (risk 4) that accepts grammars, logs once and never recognizes anything.</summary>
+    public sealed class SpeechRecognitionEngine
+    {
+        private readonly object impl;   // a System.Speech.Recognition.SpeechRecognitionEngine on Windows, else null
+        /// <summary>Raised (on a background thread, as System.Speech does) for each recognized phrase (WPF: `SpeechRecognized`).</summary>
+        public event Action<RecognizedSpeech> SpeechRecognized;
+        public SpeechRecognitionEngine()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                impl = WinSpeechRecognition.Create(r => SpeechRecognized?.Invoke(r));
+                Console.WriteLine("speech recognition: System.Speech (Windows)");
+            }
+            else
+                Console.WriteLine("speech recognition: not available on this platform yet (stub; nothing will be recognized)");
+        }
+        /// <summary>WPF: `LoadGrammar(new Grammar(let gb = new GrammarBuilder(wakePhrase) in gb.Append(new Choices(choices)); gb))`.</summary>
+        public void LoadGrammar(string wakePhrase, string[] choices)
+        {
+            if (OperatingSystem.IsWindows()) WinSpeechRecognition.LoadGrammar(impl, wakePhrase, choices);
+            else stub("speech recognition (planned: Vosk with a restricted grammar, or a native helper per OS)");
+        }
+        /// <summary>WPF: `SetInputToDefaultAudioDevice()`. On Windows it throws if there's no microphone, as System.Speech does.</summary>
+        public void SetInputToDefaultAudioDevice()
+        {
+            if (OperatingSystem.IsWindows()) WinSpeechRecognition.SetInputToDefaultAudioDevice(impl);
+            else stub("speech recognition (planned: Vosk with a restricted grammar, or a native helper per OS)");
+        }
+        /// <summary>WPF: `RecognizeAsync(RecognizeMode.Multiple)`.</summary>
+        public void RecognizeAsyncMultiple()
+        {
+            if (OperatingSystem.IsWindows()) WinSpeechRecognition.RecognizeAsyncMultiple(impl);
+            else stub("speech recognition (planned: Vosk with a restricted grammar, or a native helper per OS)");
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static class WinSpeechRecognition
+    {
+        private static System.Speech.Recognition.SpeechRecognitionEngine e(object o) => (System.Speech.Recognition.SpeechRecognitionEngine)o;
+        public static object Create(Action<RecognizedSpeech> onRecognized)
+        {
+            var engine = new System.Speech.Recognition.SpeechRecognitionEngine();
+            engine.SpeechRecognized += (_, r) => onRecognized(new RecognizedSpeech(r.Result.Text, r.Result.Confidence));
+            return engine;
+        }
+        public static void LoadGrammar(object o, string wakePhrase, string[] choices)
+        {
+            var gb = new System.Speech.Recognition.GrammarBuilder(wakePhrase);
+            gb.Append(new System.Speech.Recognition.Choices(choices));
+            e(o).LoadGrammar(new System.Speech.Recognition.Grammar(gb));
+        }
+        public static void SetInputToDefaultAudioDevice(object o) => e(o).SetInputToDefaultAudioDevice();
+        public static void RecognizeAsyncMultiple(object o) => e(o).RecognizeAsync(System.Speech.Recognition.RecognizeMode.Multiple);
+    }
 }
