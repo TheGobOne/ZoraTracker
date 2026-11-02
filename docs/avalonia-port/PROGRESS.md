@@ -896,7 +896,9 @@ TheGobOne says so.
 
 Differences TheGobOne has explicitly approved. Anything not listed here is a parity gap.
 
-(none yet)
+- **Option-click on macOS** as an alternative to middle-click and the thumb button (risk 2).
+- **Close-but-not-identical fonts** where the Windows fonts can't be used (risk 5).
+- **Our own "show mouse location" ring** in place of the Windows one (risk 8).
 
 ## Proposed upstream PRs to TheGobOne
 
