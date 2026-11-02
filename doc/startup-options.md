@@ -3,9 +3,10 @@
 Contents of this document:
 
   - [Supported z1r flagsets](#startup-flagsets)
-  - [Heart Shuffle option](#startup-hs)
+  - [Item Shuffle option](#startup-hs)
   - [Hide Dungeon Numbers option](#startup-hdn)
   - [Start buttons (choose overworld quest)](#startup-coq)
+  - [ZORA Extras and Paste Flags](#startup-zora)
   - [Options](#startup-o)
 
 ## <a id="startup-flagsets"></a> Supported z1r flagsets
@@ -15,7 +16,7 @@ a few of the more rarely used flags will result in a somewhat degraded experienc
 
 **Flags** that need to be specified at startup time:
 
- - [**Heart Shuffle**](#startup-hs)
+ - [**Item Shuffle**](#startup-hs)
  - [**Hide Dungeon Numbers**](#startup-hdn)
  - [**Overworld Quest**](#startup-coq)
 
@@ -36,9 +37,9 @@ are supported via buttons in the top portion of the tracker, but those options c
 None of these are sufficiently "breaking" to advise against using Z-Tracker, but be aware of the limitations.
 
 
-## <a id="startup-hs"></a> Heart Shuffle option
+## <a id="startup-hs"></a> Item Shuffle option
 
-Turning this option off will just cause the first item box of each of the first eight dungeons to be pre-populated with a Heart Container.
+Set this to match how the seed shuffled the heart containers: Off, Intra or Full.  With it Off, the first item box of each of the first eight dungeons is pre-populated with a Heart Container.
 
 
 ## <a id="startup-hdn"></a> Hide Dungeon Numbers option
@@ -90,7 +91,22 @@ You may need to compensate a small bit if you discover you are in a different qu
  - if you discover you are in (unmixed) second quest, consider clicking the [HFQ button](use.md#hfq-hsq)
 
 Alternatively, if you saved a prior session mid-game, or want to load a prior auto-save, you can choose the 'Start: from a previously saved state' option to load up a 
-prior save.  The Heart Shuffle, Hidden Dungeon Numbers, and Overworld settings will be loaded from the save data, rather than from the startup screen selections.
+prior save.  The Item Shuffle, Hidden Dungeon Numbers, and Overworld settings will be loaded from the save data, rather than from the startup screen selections.
+
+## <a id="startup-zora"></a> ZORA Extras and Paste Flags
+
+The **ZORA Extras** card holds options that only some (ZORA) seeds use:
+ - **4th Sword**: a fourth sword level above the magical sword. Choose where its item lives, the level 2 staircase slot (default) or a level 9 floor item. Checking it also turns on Progressive Items (not the other way round).
+ - **Progressive Items**: the blue candle, blue ring, wood arrows and swords become progressive (collecting the base item upgrades the others of it marked on the map).
+ - **Boots Replace Boomerangs**, **Extra Power Bracelet Blocks**, **Extra Raft Blocks**, **Dead Woods** and **Lost Hills**.
+ - **Custom LEVEL Name**: only works with ZORA seeds; in a non-ZORA seed it would replace 'LEVEL-n' and could be confusing, so leave it off.
+
+The checkbox beside the **ZORA Extras** header checks or unchecks all of them at once.
+
+**Paste Flags** (bottom of the ZORA Extras card): copy the Z1R and ZORA flag strings from the ZORA site, paste them in and click **Apply**.  The matching options are checked for you.
+
+Some flags are left to chance by the seed.  Those boxes show a **?** (Random).  Random counts as **On**, and the overworld tiles that might be blocked get a yellow dashed outline until you own the bracelet or raft (or enter the hint).  Boots counts as Off until you confirm it.  
+When the overworld comes up with a Random option, a pointer box shows you where to confirm it: **Overworld + Extras** on the main screen, where Extra Power Bracelet Blocks, Extra Raft Blocks, Dead Woods and Lost Hills cycle **Off, On, ?** with each click (so a wrong click can be undone), and where the **Mirrored Overworld** and **Boots Replace Boomerangs** boxes also live.  Changes there apply at once and are saved with your save file.
 
 ## <a id="startup-o"></a> Options
 

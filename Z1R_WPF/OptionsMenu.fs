@@ -510,6 +510,11 @@ let startScreenTourSteps : (string list * string * string) list =
       ["Guided Tour"; "v2."], "Tour, options and version",
         "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows what is new in this release, and glows when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen." ]
 
+// the titles of the start screen tour stops that would be left out because none of their labels is on screen (a stop with no anchor is skipped silently); used by the self-test
+let startScreenTourMissingStops(root:DependencyObject) : string list =
+    startScreenTourSteps |> List.choose (fun (pats, title, _) ->
+        if pats |> List.exists (fun p -> p.StartsWith("@") || (tourFind(root, p)).IsSome) then None else Some title)
+
 // the start screen tour raises the settings panel for the steps about it and lowers it for the rest (so it never hides the part being shown)
 do
     let panelSteps = [ "Overworld settings"; "Dungeon settings"; "Reminders"; "Auto-save"; "Other options"; "Co-Op and crash log" ]

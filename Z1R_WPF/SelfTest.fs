@@ -133,6 +133,12 @@ let private run (win:Window) = async {
             guard (sprintf "start screen button '%s'" text) (fun () -> click b)
             do! pause 200
             do! settle (sprintf "start screen button '%s'" text)
+    // the Guided Tour: every start screen stop (Paste Flags included) must find its anchors, or the tour silently leaves it out
+    // (the settings panel's stops are only on screen while it is raised, so those are checked after raising it)
+    let tourPanelOnly = [ "Overworld settings"; "Dungeon settings"; "Reminders"; "Auto-save"; "Other options"; "Co-Op and crash log" ]
+    for title in OptionsMenu.startScreenTourMissingStops(win) do
+        if not (List.contains title tourPanelOnly) then fail (sprintf "Guided Tour: the start screen stop '%s' has no anchor on screen" title)
+    if not (OptionsMenu.startScreenTourSteps |> List.exists (fun (_, t, _) -> t = "Paste Flags")) then fail "Guided Tour: no Paste Flags stop"
     // Paste Flags: type both strings, Apply, expect it to close and the options to be set
     let pasteButton = find "Paste Flags"
     if pasteButton.IsSome && not stuck.Value then
