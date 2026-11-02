@@ -1500,7 +1500,7 @@ public static class Program
             var _border = new Border { BorderBrush = Brushes.DarkGray, BorderThickness = new Thickness(8.0, 8.0, 0.0, 0.0), Child = cutoffCanvas };
 
             var finalChildTipArea = new Canvas();
-            var explainerGrid = new Grid { Width = WIDTH*5.0/6.0, Height = 160.0 };
+            var explainerGrid = new Grid { Width = WIDTH*5.0/6.0 };   // (height fits the text)
             var explainerBorder = new Border { Child = explainerGrid, BorderThickness = new Thickness(1.0), BorderBrush = Brushes.Orange, Opacity = 0.0, Background = Brushes.Black, IsHitTestVisible = false };   // (never intercepts the mouse: it overhangs the Settings area below)
             var explainerLine = new Shapes.Line { Stroke = Brushes.Orange, StrokeThickness = 1.0, Opacity = 0.0, IsHitTestVisible = false };
             void hoverExplain(Control fe, string desc)
@@ -1520,8 +1520,13 @@ public static class Program
                         explainerLine.StartPoint = new Point(x, y);
                         finalChildTipArea.Children.Add(explainerLine);
                     }
-                    var p = finalChildTipArea.TranslatePoint(new Point(), fe) ?? new Point();
-                    explainerLine.EndPoint = new Point(-p.X, -p.Y);
+                    // (TransformToVisual, not TranslatePoint into the element: scaled-up controls like the checkboxes would otherwise throw the line off)
+                    // (WPF: TransformToVisual throws when there's no common ancestor, and then falls back; Avalonia returns null)
+                    var t = fe.TransformToVisual(finalChildTipArea);
+                    Point q;
+                    if (t.HasValue) q = new Point(0.0, fe.Bounds.Height / 2.0).Transform(t.Value);
+                    else { var p = finalChildTipArea.TranslatePoint(new Point(), fe) ?? new Point(); q = new Point(-p.X, -p.Y); }
+                    explainerLine.EndPoint = q;
                     explainerLine.Opacity = 1.0;
                 }
             }
@@ -1564,7 +1569,7 @@ public static class Program
                 Graphics.onUnchecked(hsBoxes[k], () => { if (!hsSetting) selectHeartMode(kk); });   // (clicking the selected one keeps it selected)
             }
             selectHeartMode(2);
-            var hsTitle = new TextBox { Text = "Heart Shuffle", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false, Margin = new Thickness(2.0), HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center };
+            var hsTitle = new TextBox { Text = "Item Shuffle", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false, Margin = new Thickness(2.0), HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center };
             var hsDivider = new Border { Height = 1.0, Background = Brushes.DarkGray, Margin = new Thickness(2.0, 2.0, 2.0, 4.0) };
             var hsRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
             foreach (var c in hsBoxes)
@@ -1574,8 +1579,22 @@ public static class Program
             hsStack.Children.Add(hsDivider);
             hsStack.Children.Add(hsRow);
             var hsArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = hsStack });
-            hsArea.PointerEntered += (_, _) => hoverExplain(hsArea, "These correspond to the randomizer setting:\n\nDungeon Items (tab)\n - Shuffle Dungeon Hearts (checkbox)\n\nOff: each dungeon's heart is already marked in its first item slot.\nIntra: each dungeon (not 9) has one heart, in its floor or basement slot. When you place another item, the open slot fills with an uncollected heart. Dungeons with 3 slots wait until the other two items are collected.\nFull: hearts can be anywhere.");
-            hsArea.PointerExited += (_, _) => explainHide();
+            // the explainer under the checkboxes uses the same bullet text as the tooltips: all three while over the area, just the hovered one while over a checkbox
+            var hsTexts = new[] { "• Dungeon Items\n      • Heart on floor of each dungeon", "• Items Anywhere, Hearts within Dungeons\n      • 1 heart per dungeon 1-8, may be in a stair", "• Items + Hearts\n      • Full Shuffle all hearts and items" };
+            var hsAllText = "Item Shuffle:\n\n• Off: Dungeon Items\n• Intra: Items Anywhere, Hearts within Dungeons\n• Full: Items + Hearts\n\nHover an option for details.";
+            var hsLast = -2;
+            void hsUpdate()
+            {
+                var k = Array.FindIndex(hsBoxes, b => b.IsPointerOver);
+                if (k != hsLast)
+                {
+                    hsLast = k;
+                    if (k >= 0) hoverExplain(hsBoxes[k], hsTexts[k]); else hoverExplain(hsArea, hsAllText);   // (the pointer line ends at the hovered checkbox)
+                }
+            }
+            hsArea.PointerEntered += (_, _) => { hsLast = -2; hsUpdate(); };
+            hsArea.PointerMoved += (_, _) => hsUpdate();
+            hsArea.PointerExited += (_, _) => { hsLast = -2; explainHide(); };
             // Mirrored Overworld checkbox, directly under Full Shuffle (same look); sets the same flag the old mirror icon toggled
             var mocb = new CheckBox { Content = new TextBox { Text = "Mirrored Overworld", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false, Margin = new Thickness(2.0) } };
             Graphics.scaleUpCheckBoxBox(mocb, 1.66);
@@ -1614,25 +1633,48 @@ public static class Program
             var fsArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = fscb, VerticalAlignment = VerticalAlignment.Top });
             fsArea.PointerEntered += (_, _) => hoverExplain(fsArea, "Checked: the 4th sword is the highest sword level, and you choose whether its item is in level 2 (the staircase item box is enabled) or in level 9 (a new floor item check is added there).\nUnchecked: the magical sword is the highest sword level, and the staircase box starts greyed out.");
             fsArea.PointerExited += (_, _) => explainHide();
-            // checking '4th Sword' pops up a small menu (above the checkbox) to choose where the 4th sword's item lives: the level 2 staircase slot (default), or a new level 9 floor item check
+            // next to '4th Sword' sit two radio-style checkboxes to choose where the 4th sword's item lives: the level 2 staircase slot (default), or a new level 9 floor item check
             var fourthSwordLevel = 2;
-            // (WPF: StaysOpen=false → IsLightDismissEnabled. The popup is added to the window's tree below (twoCols), which Avalonia needs to open it.)
-            var fsPopup = new Popup { PlacementTarget = fsArea, Placement = PlacementMode.Top, IsLightDismissEnabled = true };
+            CheckBox makeFsLevelCheckBox(string text)
             {
-                var sp = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Black };
-                sp.Children.Add(new TextBlock { Text = "4th sword item is in:", Foreground = Brushes.Gray, FontSize = 14.0, Margin = new Thickness(6.0, 3.0, 6.0, 0.0) });
-                Button mkOpt(string text, int lvl)
-                {
-                    var b = new Button { Content = new TextBlock { Text = text, FontSize = 18.0, Foreground = Brushes.Orange }, Background = Brushes.Black, BorderBrush = Brushes.SaddleBrown, Margin = new Thickness(3.0), Padding = new Thickness(12.0, 3.0, 12.0, 3.0) };
-                    b.Click += (_, _) => { fourthSwordLevel = lvl; fsPopup.IsOpen = false; };
-                    return b;
-                }
-                sp.Children.Add(mkOpt("Level 2", 2));
-                sp.Children.Add(mkOpt("Level 9", 9));
-                fsPopup.Child = new Border { Child = sp, BorderBrush = Brushes.SaddleBrown, BorderThickness = new Thickness(2.0), Background = Brushes.Black };
+                var c = new CheckBox { Content = new TextBox { Text = text, IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(10.0, 2.0, 2.0, 2.0) };
+                Graphics.scaleUpCheckBoxBox(c, 1.66);
+                return c;
             }
-            Graphics.onChecked(fscb, () => { fourthSwordLevel = 2; fsPopup.IsOpen = true; });
-            Graphics.onUnchecked(fscb, () => { fourthSwordLevel = 2; fsPopup.IsOpen = false; });
+            var fsLevelBoxes = new[] { makeFsLevelCheckBox("Level 2"), makeFsLevelCheckBox("Level 9") };
+            var fsLevelSetting = false;
+            void setFourthLevel(int lvl)
+            {
+                fourthSwordLevel = lvl;
+                fsLevelSetting = true;
+                var is2 = (lvl == 2);
+                var is9 = (lvl == 9);
+                fsLevelBoxes[0].IsChecked = is2;
+                fsLevelBoxes[1].IsChecked = is9;
+                fsLevelSetting = false;
+            }
+            setFourthLevel(2);
+            for (int k = 0; k <= 1; k++)
+            {
+                var lvl = k == 0 ? 2 : 9;
+                Graphics.onChecked(fsLevelBoxes[k], () => { if (!fsLevelSetting) setFourthLevel(lvl); });
+                Graphics.onUnchecked(fsLevelBoxes[k], () => { if (!fsLevelSetting) setFourthLevel(lvl); });   // (clicking the selected one keeps it selected)
+            }
+            void refreshFsLevelEnabled() { foreach (var c in fsLevelBoxes) c.IsEnabled = (fscb.IsChecked == true); }
+            refreshFsLevelEnabled();
+            Graphics.onChecked(fscb, () => { setFourthLevel(2); refreshFsLevelEnabled(); });
+            Graphics.onUnchecked(fscb, () => { setFourthLevel(2); refreshFsLevelEnabled(); });
+            fsArea.Child = null;   // (detach 4th Sword so it can move into the row)
+            {
+                // (Level 2 / Level 9 sit on their own row under 4th Sword: they don't fit beside it in a half-width card)
+                var sp = new StackPanel { Orientation = Orientation.Vertical };
+                sp.Children.Add(fscb);
+                var lv = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(34.0, 0.0, 0.0, 0.0) };
+                lv.Children.Add(fsLevelBoxes[0]);
+                lv.Children.Add(fsLevelBoxes[1]);
+                sp.Children.Add(lv);
+                fsArea.Child = sp;
+            }
             checkboxSP.Children.Add(hdnArea);
             checkboxSP.Children.Add(new DockPanel { Width = 10.0 });
             checkboxSP.Children.Add(moArea);   // Mirrored Overworld takes the third spot
@@ -1651,25 +1693,26 @@ public static class Program
             clnTextBox.AddHandler(InputElement.TextInputEvent, new EventHandler<TextInputEventArgs>((_, tea) => { if (tea.Text != null) tea.Text = tea.Text.ToUpper(); }), RoutingStrategies.Tunnel);
             var clncb = new CheckBox { Content = new TextBox { Text = "Custom LEVEL Name", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0) };
             Graphics.scaleUpCheckBoxBox(clncb, 1.66);
+            var clnTip = "Only works with ZORA seeds. In a non-ZORA seed, the custom name\nwould replace 'LEVEL-n' and could be confusing, so leave this off.";
+            ToolTip.SetTip(clncb, clnTip);
+            ToolTip.SetTip(clnTextBox, clnTip);
             clncb.IsChecked = false;
-            Graphics.onChecked(clncb, () => { clnTextBox.IsEnabled = true; clnTextBox.IsVisible = true; clnTextBox.Focus(); });
-            Graphics.onUnchecked(clncb, () => { clnTextBox.IsEnabled = false; clnTextBox.IsVisible = false; });
+            Graphics.onChecked(clncb, () => { clnTextBox.IsEnabled = true; clnTextBox.Focus(); });
+            Graphics.onUnchecked(clncb, () => clnTextBox.IsEnabled = false);
             var clnArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = clncb });
             clnArea.PointerEntered += (_, _) => hoverExplain(clnArea, "Type up to 7 letters/numbers to use in place of\n'LEVEL-1' at the top of each dungeon map.\n(Fewer than 7 keeps the dash; a 7th character replaces it.)");
             clnArea.PointerExited += (_, _) => explainHide();
-            clnTextBox.Margin = new Thickness(30.0, 2.0, 2.0, 2.0);   // leaves the check box itself visible and covers the words 'Custom LEVEL Name'
+            // the name box sits on its own row under the checkbox (in the Startup Options card), lined up with the checkbox's words; greyed out until the box is checked
+            clnTextBox.Margin = new Thickness(36.0, 0.0, 0.0, 4.0);
             clnTextBox.Width = double.NaN;
+            clnTextBox.Height = 34.0;
             clnTextBox.HorizontalAlignment = HorizontalAlignment.Stretch;
-            clnTextBox.VerticalAlignment = VerticalAlignment.Stretch;
-            clnTextBox.IsVisible = false;
+            clnTextBox.VerticalAlignment = VerticalAlignment.Center;
             clnTextBox.HorizontalContentAlignment = HorizontalAlignment.Center;   // text starts from the middle of the box
             clnTextBox.TextAlignment = TextAlignment.Center;   // (Avalonia: the TextBox centres its text by TextAlignment)
             clnTextBox.VerticalContentAlignment = VerticalAlignment.Center;
             clnTextBox.FontSize = 18.0;
             Graphics.styleRoundedTextBox(clnTextBox);
-            var clnAndBox = new Grid { VerticalAlignment = VerticalAlignment.Top };   // the name box sits on top of the checkbox's words
-            clnAndBox.Children.Add(clnArea);
-            clnAndBox.Children.Add(clnTextBox);
             // 'ZORA Extras' section below the main startup options: 4th Sword and the custom level name
             var extrasHeaderText = new TextBox { Text = "ZORA Extras", IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), FontWeight = FontWeight.Bold, FontSize = 16.0, VerticalAlignment = VerticalAlignment.Center };
             // checkbox beside the header: checks / unchecks every ZORA Extras option below it at once (it shows a partial state when only some are checked)
@@ -1682,14 +1725,13 @@ public static class Program
             extrasHeader.Children.Add(extrasHeaderText);
             var extrasSP = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = WIDTH, Margin = new Thickness(0.0, 4.0, 0.0, 0.0) };
             extrasSP.Children.Add(fsArea);
-            extrasSP.Children.Add(new DockPanel { Width = 10.0 });
-            extrasSP.Children.Add(clnAndBox);
             // 'Boots Replace Boomerangs' (what it does is still to be worked out; for now it just records the choice)
             var brcb = new CheckBox { Content = new TextBox { Text = "Boots Replace Boomerangs", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0) };
             Graphics.scaleUpCheckBoxBox(brcb, 1.66);
             brcb.IsChecked = false;
+            brcb.IsThreeState = true;   // Off, On, or Random (a dash): the flags can leave boots to chance
             var brArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = brcb, VerticalAlignment = VerticalAlignment.Top });
-            brArea.PointerEntered += (_, _) => hoverExplain(brArea, "Boots replace the boomerangs.\n(Details to come.)");
+            brArea.PointerEntered += (_, _) => hoverExplain(brArea, "Boots replace the boomerangs.\n\nClick again for Random (a ?): the flags left it to chance. The tracker keeps the boomerangs until you turn boots on in Overworld + Extras, once you know.");
             brArea.PointerExited += (_, _) => explainHide();
             extrasSP.Children.Add(new DockPanel { Width = 10.0 });
             extrasSP.Children.Add(brArea);
@@ -1706,15 +1748,21 @@ public static class Program
                 extrasSP.Children.Add(area);
                 return cb;
             }
-            var epbcb = makeExtraBlocksCheckBox("Extra Power Bracelet Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4");
-            var erbcb = makeExtraBlocksCheckBox("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16");
-            var dwcb = makeExtraBlocksCheckBox("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)");
-            var lhcb = makeExtraBlocksCheckBox("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)");
-            var pricb = makeExtraBlocksCheckBox("Progressive Items", "Blue candle, blue ring, wood arrows and swords become progressive:\ncollecting the base item upgrades the others of it marked on the map\nblue candle > red candle, blue ring > red ring, wood arrow > silver arrow,\nwood sword > white > magical > 4th sword");
+            // these four can also be Random on the ZORA site (the seed decides): a third click shows a ?, and the tracker then treats the option as On, so every mark is available
+            var randomNote = "\n\nClick again for Random (a ?): the flags left it to chance, so the tracker treats it as On.";
+            var epbcb = makeExtraBlocksCheckBox("Extra Power Bracelet Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4" + randomNote);
+            var erbcb = makeExtraBlocksCheckBox("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16" + randomNote);
+            var dwcb = makeExtraBlocksCheckBox("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)" + randomNote);
+            var lhcb = makeExtraBlocksCheckBox("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)" + randomNote);
+            foreach (var cb in new[] { epbcb, erbcb, dwcb, lhcb }) cb.IsThreeState = true;
+            var pricb = makeExtraBlocksCheckBox("Progressive Items", "Blue candle, blue ring, wood arrows and swords become progressive:\ncollecting the base item upgrades the others of it marked on the map\nblue candle > red candle, blue ring > red ring, wood arrow > silver arrow,\nwood sword > white > magical > 4th sword\n\nRequired by the 4th Sword: it is turned on, and held on, while 4th Sword is checked.");
             // the 'ZORA Extras' master checkbox
             var extrasCheckBoxes = new List<CheckBox> { fscb, clncb, brcb, epbcb, erbcb, dwcb, lhcb, pricb };
             var settingExtras = false;
             bool isOn(CheckBox cb) => cb.IsChecked == true;
+            // the 4th Sword needs Progressive Items (the other way round is fine): checking 4th Sword checks it, and it can't be unchecked while 4th Sword is on
+            Graphics.onChecked(fscb, () => pricb.IsChecked = true);
+            Graphics.onUnchecked(pricb, () => { if (isOn(fscb)) pricb.IsChecked = true; });
             void syncMaster()
             {
                 if (!settingExtras)
@@ -1736,8 +1784,7 @@ public static class Program
                 settingExtras = true;
                 foreach (var cb in extrasCheckBoxes)
                     cb.IsChecked = want;
-                fsPopup.IsOpen = false;   // (checking '4th Sword' pops its menu up; not when it is only being toggled along with the rest)
-                if (want) fourthSwordLevel = 2;   // checking everything puts the 4th Sword in level 2
+                if (want) setFourthLevel(2);   // checking everything puts the 4th Sword in level 2
                 settingExtras = false;
                 syncMaster();
             };
@@ -1753,7 +1800,7 @@ public static class Program
                 if (on) allExtrasCB.IsChecked = false;
                 allExtrasCB.IsEnabled = !on;
                 settingExtras = false;
-                fsPopup.IsOpen = false;
+                refreshFsLevelEnabled();
             }
             Graphics.onChecked(lmcb, () => applyLegacyMode());
             Graphics.onUnchecked(lmcb, () => applyLegacyMode());
@@ -1766,10 +1813,12 @@ public static class Program
                 if (saved.Count > 0)
                 {
                     foreach (var (key, cb) in rememberedCheckBoxes)
-                        cb.IsChecked = saved.Contains(key);
+                    {
+                        if (cb.IsThreeState && saved.Contains(key + "?")) cb.IsChecked = null;
+                        else cb.IsChecked = saved.Contains(key);
+                    }
                     selectHeartMode(saved.Contains("full") ? 2 : saved.Contains("hsintra") ? 1 : 0);
-                    fsPopup.IsOpen = false;   // (checking '4th Sword' pops its menu up; not when it is only being restored)
-                    fourthSwordLevel = (saved.Contains("4th") && saved.Contains("4th9") ? 9 : 2);
+                    setFourthLevel(saved.Contains("4th") && saved.Contains("4th9") ? 9 : 2);
                     clnTextBox.Text = TrackerModelOptions.SavedCustomLevelName;
                 }
             }
@@ -1809,21 +1858,39 @@ public static class Program
             startupOptionsTB.HorizontalAlignment = HorizontalAlignment.Center;   // centered over the quest button below it
             leftCol.Children.Add(startupOptionsTB);
             leftCol.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });   // line under the header
-            leftCol.Children.Add(plainRows(checkboxSP));
+            // every button and text box on the start screen is this tall
+            var startBoxHeight = 38.0;
+            // Custom LEVEL Name lives here: its checkbox is in the same block as the checkboxes above it (so it lines up with them), a blank row above it; its name box is docked at the bottom of the card (see below), level with Paste Flags
+            var startupRows = plainRows(checkboxSP);
+            startupRows.Children.Add(new Border { Height = 34.0 });
+            clnArea.HorizontalAlignment = HorizontalAlignment.Left;
+            clnArea.Margin = new Thickness(0.0, 0.0, 0.0, 4.0);
+            startupRows.Children.Add(clnArea);
+            clnTextBox.Margin = new Thickness(0.0, 8.0, 0.0, 0.0);
+            clnTextBox.Height = startBoxHeight;
+            clnTextBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+            leftCol.Children.Add(startupRows);
             var rightCol = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(3.0, 0.0, 0.0, 0.0) };   // lines up with the left edge of the 'Mixed - 1st Quest Overworld' button (the quest buttons have a 3px margin)
             extrasHeader.Margin = new Thickness(0.0);
             extrasHeader.HorizontalAlignment = HorizontalAlignment.Center;   // centered over the quest button below it
             rightCol.Children.Add(extrasHeader);
             rightCol.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });   // line under the header
             rightCol.Children.Add(plainRows(extrasSP));
-            var twoCols = new Grid { Width = WIDTH*0.9, HorizontalAlignment = HorizontalAlignment.Center };
+            // the start screen's blocks are bordered cards of one width, a set distance apart
+            var startCardsWidth = WIDTH_SANS_CHROME - 32.0;
+            var startCardsGap = 80.0;
+            Border startCard(Control child) => new Border { Child = child, BorderBrush = Brushes.SaddleBrown, BorderThickness = new Thickness(1.0), CornerRadius = new CornerRadius(6.0), Padding = new Thickness(14.0, 10.0, 14.0, 12.0) };
+            var leftCard = startCard(leftCol);
+            leftCard.Margin = new Thickness(0.0, 0.0, 11.0, 0.0);
+            var rightCard = startCard(rightCol);
+            rightCard.Margin = new Thickness(11.0, 0.0, 0.0, 0.0);
+            var twoCols = new Grid { Width = startCardsWidth, HorizontalAlignment = HorizontalAlignment.Center };
             twoCols.ColumnDefinitions.Add(new ColumnDefinition(1.0, GridUnitType.Star));
             twoCols.ColumnDefinitions.Add(new ColumnDefinition(1.0, GridUnitType.Star));
-            Grid.SetColumn(leftCol, 0);
-            Grid.SetColumn(rightCol, 1);
-            twoCols.Children.Add(leftCol);
-            twoCols.Children.Add(rightCol);
-            twoCols.Children.Add(fsPopup);   // (Avalonia: a popup has to be in the window's tree to open; it takes no space)
+            Grid.SetColumn(leftCard, 0);
+            Grid.SetColumn(rightCard, 1);
+            twoCols.Children.Add(leftCard);
+            twoCols.Children.Add(rightCard);
             hsPanel.Children.Add(twoCols);
             // (the little dungeon preview graphic is no longer shown; its hidden state is still driven by the checkboxes)
             stackPanel.Children.Add(hsPanel);
@@ -1836,7 +1903,12 @@ public static class Program
                 // remember which startup checkboxes were checked (if the user asked for that)
                 if (loadData == null && TrackerModelOptions.RememberStartupSelection.Value)
                 {
-                    var keys = rememberedCheckBoxes.Where(kc => kc.Item2.IsChecked == true).Select(kc => kc.Item1).ToList();
+                    var keys = new List<string>();
+                    foreach (var (key, cb) in rememberedCheckBoxes)
+                    {
+                        if (cb.IsChecked == true) keys.Add(key);
+                        else if (cb.IsThreeState && !cb.IsChecked.HasValue) keys.Add(key + "?");   // ("epb?" and so on: Random)
+                    }
                     if (keys.Contains("4th") && fourthSwordLevel == 9) keys.Add("4th9");
                     switch (heartModeSelected()) { case 2: keys.Add("full"); break; case 1: keys.Add("hsintra"); break; default: break; }
                     TrackerModelOptions.SavedStartupSelection = string.Join(",", keys);
@@ -1872,7 +1944,7 @@ public static class Program
                     TrackerModel.SetLevel2StairBoxEnabled(fourth && !inLevel9);   // Level 2: the staircase item slot is enabled; Level 9: it is not, and level 9 gets a floor item check instead
                     TrackerModel.SetLevel9FloorBoxEnabled(inLevel9);
                     // with no ZORA Extras selected (any quest), the letter and magical sword item boxes start out holding their (uncollected) items
-                    if (extrasCheckBoxes.All(cb => !(cb.IsChecked == true)))
+                    if (extrasCheckBoxes.All(cb => cb.IsChecked == false))   // (a Random dash counts as selected)
                     {
                         TrackerModel.letterBox.Set(TrackerModel.ITEMS.LETTER, TrackerModel.PlayerHas.NO);
                         TrackerModel.sword3Box.Set(TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.PlayerHas.NO);
@@ -1880,10 +1952,17 @@ public static class Program
                 }
                 TrackerModel.BootsReplaceBoomerangs = brcb.IsChecked == true;
                 OverworldData.IsMirroredFunc = FuncConvert.FromFunc(() => TrackerModel.MirrorOverworld);
-                OverworldData.ExtraPBBlocks = epbcb.IsChecked == true;
-                OverworldData.ExtraRaftBlocks = erbcb.IsChecked == true;
-                OverworldData.DeadWoodsEnabled = dwcb.IsChecked == true;
-                OverworldData.LostHillsEnabled = lhcb.IsChecked == true;
+                // (Random, the dash, counts as On: the option may be in play, so every mark has to be available)
+                bool onOrRandom(CheckBox cb) => cb.IsChecked != false;
+                OverworldData.ExtraPBBlocks = onOrRandom(epbcb);
+                OverworldData.ExtraRaftBlocks = onOrRandom(erbcb);
+                OverworldData.DeadWoodsEnabled = onOrRandom(dwcb);
+                OverworldData.LostHillsEnabled = onOrRandom(lhcb);
+                bool isRandom(CheckBox cb) => loadData == null && !cb.IsChecked.HasValue;
+                OverworldData.ExtraPBRandom = isRandom(epbcb);
+                OverworldData.ExtraRaftRandom = isRandom(erbcb);
+                OverworldData.DeadWoodsRandom = isRandom(dwcb);
+                OverworldData.LostHillsRandom = isRandom(lhcb);
                 OverworldData.DeadWoodsHintKnown = false;
                 OverworldData.LostHillsHintKnown = false;
                 TrackerModel.MarkBombDroppers = mbcb.IsChecked == true;
@@ -2084,7 +2163,21 @@ public static class Program
                     }
                     else
                     {
+                        // (an extra left on Random, the dash, is decided by the seed: point at the Overworld + Extras button once the overworld is up)
+                        var anyRandomExtra = loadData == null && new[] { brcb, epbcb, erbcb, dwcb, lhcb }.Any(cb => !cb.IsChecked.HasValue);
                         await doStartup(n, loadData);
+                        if (anyRandomExtra)
+                            // the reminder (voice and/or on-screen, as set in Reminders): some extras are Random, so check Overworld + Extras
+                            Dispatcher.UIThread.Post(() =>
+                                Reminders.SendReminder(TrackerModel.ReminderCategory.RandomExtras, "Check Overworld and Extras: some options are random",
+                                                       new[] { Reminders.ReminderTextBox("Check Overworld + Extras") }), DispatcherPriority.ApplicationIdle);
+                        if (anyRandomExtra && !TrackerModelOptions.HideRandomExtrasHint && !OptionsMenu.mainTourAfterStart)
+                            Dispatcher.UIThread.Post(() =>
+                                OptionsMenu.showRandomExtrasPointer(cm, () =>
+                                {
+                                    TrackerModelOptions.HideRandomExtrasHint = true;
+                                    TrackerModelOptions.writeSettings();
+                                }), DispatcherPriority.ApplicationIdle);
                         if (OptionsMenu.mainTourAfterStart)
                         {
                             // the start screen tour continues on the main screen, once it has been laid out
@@ -2097,10 +2190,10 @@ public static class Program
             }
             OptionsMenu.startBlankRunHook = () => startButtonBehavior(0);   // (the start screen tour's Continue starts a 1st Quest Overworld run)
             var quests = new (int, string)[] {
-                (0, "1st Quest Overworld"),
-                (1, "2nd Quest Overworld"),
-                (2, "Mixed - 1st Quest Overworld"),
-                (3, "Mixed - 2nd Quest Overworld"),
+                (0, "1st Quest"),
+                (1, "2nd Quest"),
+                (2, "Mixed - 1Q"),
+                (3, "Mixed - 2Q"),
                 (999, "Load Save"),
                 };
             void addQuestExplainer(Control startButton)
@@ -2248,140 +2341,282 @@ public static class Program
             var randomizedQuestButton = Graphics.makeButton("Randomized Quest", null, null);
             Layout.styleStartupButton(randomizedQuestButton);
             randomizedQuestButton.Click += (_, _) => startButtonBehavior(3);   // 'Randomized quest' does exactly what 'Mixed - 2nd Quest Overworld' does; it's just its own entry
-            var overworldButton = Graphics.makeButton("Pick Overworld (Start Game)", null, null);
-            Layout.styleStartupButton(overworldButton);
-            overworldButton.Margin = new Thickness(0.0, 19.0, 0.0, 12.0);   // (room above and below, so it stands apart from the header line and Heart Shuffle)
-            overworldButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-            addQuestExplainer(overworldButton);
-            var overworldPopup = new Popup { PlacementTarget = overworldButton, Placement = PlacementMode.Bottom, IsLightDismissEnabled = true };
-            var popupButtons = new List<Button> { startButtons[0], startButtons[2], startButtons[1], startButtons[3], randomizedQuestButton, moreOptionsButton };
+            // the six overworld choices sit in one block above the Startup Options and ZORA Extras columns (3 across, 2 rows)
+            var popupButtons = new List<Button> { startButtons[0], startButtons[2], randomizedQuestButton, startButtons[1], startButtons[3], moreOptionsButton };
+            var owGrid = new UniformGrid { Columns = 3, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, 10.0, 0.0, 6.0) };
+            foreach (var b in popupButtons)
             {
-                var sp = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Black };
-                addDarkTheme(sp);   // (a popup is its own window, so it does not inherit the dark theme)
-                foreach (var b in popupButtons)
-                {
-                    b.Margin = new Thickness(4.0);
-                    b.Width = 540.0;
-                    b.Height = 50.0;
-                    switch (b.Content)
-                    {
-                        case TextBox t: t.FontSize = 24.0; break;
-                        default: break;
-                    }
-                    b.Click += (_, _) => overworldPopup.IsOpen = false;
-                    sp.Children.Add(b);
-                }
-                overworldPopup.Child = new Border { Child = sp, BorderBrush = Brushes.SaddleBrown, BorderThickness = new Thickness(2.0), Background = Brushes.Black };
+                b.Margin = new Thickness(4.0);
+                b.Width = double.NaN;
+                b.Height = startBoxHeight;
+                b.HorizontalAlignment = HorizontalAlignment.Stretch;
+                owGrid.Children.Add(b);
             }
-            twoCols.Children.Add(overworldPopup);   // (Avalonia: a popup has to be in the window's tree to open; it takes no space)
-            overworldButton.Click += (_, _) =>
+            owGrid.HorizontalAlignment = HorizontalAlignment.Stretch;
+            // the start screen is a stack of equal-width bordered cards, 40 apart: overworld, the two option cards, recent saves, and a row of four buttons
             {
-                // the popup is its own window, so it is not scaled with the rest of the UI: scale its buttons by the same factor, to match Start Game on screen
-                double sc;
-                try
-                {
-                    var t = overworldButton.TransformToVisual(this).Value;
-                    sc = ((new Point(100.0, 0.0) * t).X - (new Point(0.0, 0.0) * t).X) / 100.0;
-                }
-                catch (Exception) { sc = 1.0; }
-                sc = sc > 0.1 ? sc : 1.0;
-                var fs = (overworldButton.Content is TextBox ot ? ot.FontSize : 16.0) * sc;
-                foreach (var b in popupButtons)
-                {
-                    b.Width = Math.Max(100.0, overworldButton.Bounds.Width * sc - 12.0);   // (minus the menu border and button margins)
-                    b.Height = overworldButton.Bounds.Height * sc;
-                    switch (b.Content)
-                    {
-                        case TextBox t: t.FontSize = fs; break;
-                        default: break;
-                    }
-                }
-                overworldPopup.IsOpen = true;
-            };
-            leftCol.Children.Insert(2, overworldButton);   // right under the 'Startup Options' header line, above Heart Shuffle
-            // Load Save and the recently loaded saves box sit side by side, centered along the bottom, just above the options section
-            Action<bool> raiseBottom = _ => { };   // raises the bottom section above the rest only while the recent saves list is open (set once that section exists)
-            var loadRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, 0.0, 0.0, 10.0) };
-            startButtons[999].Width = 300.0;
-            startButtons[999].VerticalAlignment = VerticalAlignment.Bottom;
-            startButtons[999].Margin = new Thickness(0.0, 0.0, 10.0, 4.0);
-            loadRow.Children.Add(startButtons[999]);
-
-            // box listing the save files loaded before, for fast re-selection
+                var idx = hsPanel.Children.IndexOf(twoCols);
+                hsPanel.Children.RemoveAt(idx);
+                var colsWrap = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center, Width = startCardsWidth };
+                var owSP = new StackPanel { Orientation = Orientation.Vertical };
+                var owHeader = new TextBox { Text = "Overworld (clicking starts the tracker)", IsReadOnly = true, IsHitTestVisible = false, FontWeight = FontWeight.Bold, FontSize = 16.0, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, BorderThickness = new Thickness(0.0), Margin = new Thickness(0.0) };
+                owSP.Children.Add(owHeader);
+                owSP.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });   // line under the header
+                owSP.Children.Add(owGrid);
+                colsWrap.Children.Add(startCard(owSP));
+                twoCols.Margin = new Thickness(0.0, startCardsGap, 0.0, 0.0);
+                colsWrap.Children.Add(twoCols);
+                hsPanel.Children.Insert(idx, colsWrap);
+            }
+            Action<bool> raiseBottom = _ => { };   // raises the bottom section above the rest while the settings panel is up (set once that section exists)
+            // the settings panel is hidden until the Options button is clicked; it then flies up from the bottom edge
+            var optionsToggle = Graphics.makeButton("Options ▲", null, null);
+            Layout.styleStartupButton(optionsToggle);
+            // Load Save, Guided Tour, Options and the version button make one row of four equal buttons
+            var tourButton = OptionsMenu.makeGuidedTourButton(cm, false);
+            Layout.styleStartupButton(tourButton);
+            var vbButton = CustomComboBoxes.makeVersionButtonWithBehavior(cm);
+            Layout.styleStartupButton(vbButton);
+            if (vbButton.Content is TextBox vbt) vbt.FontSize = 16.0;   // (the version button was made with a 12pt label; match the others)
+            // Paste Flags: reads the Z1R and ZORA flag strings from the ZORA site and sets the matching startup options
+            var pasteFlagsButton = Graphics.makeButton("Paste Flags", null, null);
+            Layout.styleStartupButton(pasteFlagsButton);
+            pasteFlagsButton.Click += (_, _) =>
             {
-                var recents = readRecentLoads();
-                var listSP = new StackPanel { Orientation = Orientation.Vertical };
-                var header = new TextBox { Text = "Recently loaded saves:", IsReadOnly = true, BorderThickness = new Thickness(0.0), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 14.0, Margin = new Thickness(0.0, 0.0, 0.0, 3.0) };
-                if (recents.Count == 0)
-                    listSP.Children.Add(new TextBox { Text = "(none yet - files you load will show up here)", IsReadOnly = true, BorderThickness = new Thickness(0.0), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 13.0 });
-                foreach (var p in recents)
+                if (popupIsActive) return;
+                popupIsActive = true;
+                var dialog = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Black };
+                addDarkTheme(dialog);
+                TextBox mkInfo(string t) => new TextBox { Text = t, IsReadOnly = true, BorderThickness = new Thickness(0.0), Foreground = Brushes.Orange, TextWrapping = TextWrapping.Wrap, Width = 600.0, Margin = new Thickness(0.0, 0.0, 0.0, 8.0) };
+                TextBox mkInput() => new TextBox { Width = 600.0, FontSize = 16.0, Foreground = Brushes.Orange, Background = Brushes.Black, BorderBrush = Brushes.Orange, CaretBrush = Brushes.Orange, Margin = new Thickness(0.0, 0.0, 0.0, 10.0) };
+                var intro = mkInfo("Paste the flag strings from the ZORA site and the tracker ticks the matching startup options right away. Leave a box empty to leave those settings alone.");
+                var (z1rBox, zoraBox) = (mkInput(), mkInput());
+                var result = mkInfo("");
+                result.IsVisible = false;
+                var inputs = new StackPanel { Orientation = Orientation.Vertical };
+                inputs.Children.Add(mkInfo("Z1R flags"));
+                inputs.Children.Add(z1rBox);
+                inputs.Children.Add(mkInfo("ZORA flags (like 13.abc)"));
+                inputs.Children.Add(zoraBox);
+                dialog.Children.Add(intro);
+                dialog.Children.Add(inputs);
+                dialog.Children.Add(result);
+                var wh = new ManualResetEvent(false);
+                var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+                var applyBtn = Graphics.makeButton(" Apply ", null, null);
+                var closeBtn = Graphics.makeButton(" Close ", null, null);
+                Layout.styleStartupButton(applyBtn);
+                Layout.styleStartupButton(closeBtn);
+                applyBtn.Margin = new Thickness(6.0);
+                closeBtn.Margin = new Thickness(6.0);
+                applyBtn.Height = startBoxHeight;
+                closeBtn.Height = startBoxHeight;
+                buttons.Children.Add(applyBtn);
+                buttons.Children.Add(closeBtn);
+                dialog.Children.Add(buttons);
+                closeBtn.Click += (_, _) => wh.Set();
+                // applying sets the checkboxes and lists what was done under the boxes (the dialog stays open, so the second string can still be pasted)
+                void doApply()
                 {
-                    string when_;
-                    try { when_ = File.GetLastWriteTime(p).ToString("yyyy-MM-dd HH:mm"); } catch (Exception) { when_ = ""; }
-                    var b = Graphics.makeButton(Path.GetFileNameWithoutExtension(p), null, null);
-                    Layout.styleStartupButton(b);
-                    b.Margin = new Thickness(0.0, 1.0, 0.0, 1.0);
-                    b.FontSize = 14.0;
-                    ToolTip.SetTip(b, $"{p}\nlast modified {when_}");
-                    b.Click += (_, _) =>
+                    var lines = new List<string>();
+                    void setChk(CheckBox cb, bool b) => cb.IsChecked = b;
+                    void setTri(CheckBox cb, FlagPaste.Tri t, string name)
                     {
-                        if (!(File.Exists(p)))
+                        switch (t)
                         {
-                            b.IsEnabled = false;
-                            ToolTip.SetTip(b, "This file no longer exists");
+                            case FlagPaste.Tri.On: setChk(cb, true); lines.Add("Checked: " + name); break;
+                            case FlagPaste.Tri.Off: setChk(cb, false); break;
+                            case FlagPaste.Tri.Random: lines.Add(name + " is Random in these flags, so it was left as it was."); break;
                         }
+                    }
+                    var (z1r, zora) = ((z1rBox.Text ?? "").Trim(), (zoraBox.Text ?? "").Trim());
+                    if (z1r != "")
+                    {
+                        var (p, err) = FlagPaste.decodeZ1R(z1r);
+                        if (err != null) lines.Add("Z1R flags: " + err);
                         else
                         {
-                            pendingLoadPath = p;
-                            startButtonBehavior(999);
+                            if (p.ItemShuffle.HasValue)
+                            {
+                                var m = p.ItemShuffle.Value;
+                                selectHeartMode(m);
+                                lines.Add("Item Shuffle: " + new[] { "Off", "Intra", "Full" }[m]);
+                            }
+                            setTri(mocb, p.Mirror, "Mirrored Overworld");
+                            setTri(hdcb, p.HideNumbers, "Hide Dungeon Numbers");
+                            foreach (var b in new[] { startButtons[0], startButtons[1], startButtons[2], startButtons[3] }) b.Effect = null;
+                            if (p.Quest.HasValue)
+                            {
+                                var q = p.Quest.Value;
+                                startButtons[q].Effect = new DropShadowDirectionEffect { ShadowDepth = 0.0, BlurRadius = 24.0, Opacity = 1.0, Color = Colors.Orange };
+                                lines.Add("Overworld: click " + new[] { "1st Quest", "2nd Quest", "Mixed - 1Q", "Mixed - 2Q" }[q] + " (highlighted) to start");
+                            }
+                            foreach (var n in p.Notes) lines.Add(n);
                         }
-                    };
-                    listSP.Children.Add(b);
+                    }
+                    if (zora != "")
+                    {
+                        var (z, err) = FlagPaste.decodeZora(zora);
+                        if (err != null) lines.Add("ZORA flags: " + err);
+                        else
+                        {
+                            var anyOn = z.FourthSword == FlagPaste.Tri.On
+                                        || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
+                                        || z.Progressive;
+                            if (anyOn && isOn(lmcb))
+                            {
+                                setChk(lmcb, false);   // (Legacy Mode locks every ZORA Extra off)
+                                lines.Add("Legacy Mode turned off");
+                            }
+                            switch (z.FourthSword)
+                            {
+                                case FlagPaste.Tri.On:
+                                    setChk(fscb, true);
+                                    setFourthLevel(z.FourthInLevel2 ? 2 : 9);
+                                    lines.Add($"Checked: 4th Sword (Level {(z.FourthInLevel2 ? 2 : 9)})");
+                                    break;
+                                case FlagPaste.Tri.Off: setChk(fscb, false); break;
+                                case FlagPaste.Tri.Random: lines.Add("4th Sword is Random in these flags, so it was left as it was."); break;
+                            }
+                            setTri(pricb, (z.Progressive || z.FourthSword == FlagPaste.Tri.On) ? FlagPaste.Tri.On : FlagPaste.Tri.Off, "Progressive Items");   // (the 4th Sword needs Progressive Items)
+                            if (z.BootsReplaceBoomerangs == FlagPaste.Tri.Random)
+                            {
+                                brcb.IsChecked = null;
+                                lines.Add("Random (?, counts as Off until you set it in Overworld + Extras): Boots Replace Boomerangs");
+                            }
+                            else setTri(brcb, z.BootsReplaceBoomerangs, "Boots Replace Boomerangs");
+                            // the four block/hint options can be Random: shown as a ?, which the tracker treats as On
+                            void setTri3(CheckBox cb, FlagPaste.Tri t, string name)
+                            {
+                                if (t == FlagPaste.Tri.Random)
+                                {
+                                    cb.IsChecked = null;
+                                    lines.Add("Random (?, counts as On): " + name);
+                                }
+                                else setTri(cb, t, name);
+                            }
+                            setTri3(epbcb, z.ExtraPowerBlocks, "Extra Power Bracelet Blocks");
+                            setTri3(erbcb, z.ExtraRaftBlocks, "Extra Raft Blocks");
+                            setTri3(dwcb, z.RandomizeDeadWoods, "Randomize Dead Woods");
+                            setTri3(lhcb, z.RandomizeLostHills, "Randomize Lost Hills");
+                        }
+                    }
+                    result.Text = lines.Count == 0 ? "Nothing to change." : string.Join("\n", lines);
+                    result.IsVisible = true;
                 }
-                var scroll = new ScrollViewer { Content = listSP, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 150.0 };
-                // collapsed by default behind an arrow (Expander); the list inside is still newest-loaded first
-                // (a hand-built toggle rather than an Expander, so the arrow and the text can be centered together)
-                var arrow = new Canvas { Width = 18.0, Height = 18.0, Margin = new Thickness(0.0, 0.0, 7.0, 0.0), VerticalAlignment = VerticalAlignment.Center, RenderTransformOrigin = RelativePoint.Center };
-                arrow.Children.Add(new Shapes.Ellipse { Stroke = Brushes.Orange, StrokeThickness = 1.5, Width = 18.0, Height = 18.0 });
-                arrow.Children.Add(new Shapes.Polyline { Points = new List<Point> { new Point(5.0, 7.0), new Point(9.0, 11.0), new Point(13.0, 7.0) }, Stroke = Brushes.Orange, StrokeThickness = 2.0, StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round });
-                header.IsHitTestVisible = false;
-                header.Margin = new Thickness(0.0);
-                var headerRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-                headerRow.Children.Add(arrow);
-                headerRow.Children.Add(header);
-                var toggleHost = new Border { Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand), Child = headerRow, HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(0.0, 2.0, 0.0, 3.0) };
-                scroll.IsVisible = false;
-                // (WPF: MouseLeftButtonUp)
-                toggleHost.PointerReleased += (_, ea) =>
+                applyBtn.Click += (_, _) =>
                 {
-                    if (ea.InitialPressMouseButton != MouseButton.Left) return;
-                    var nowOpen = !scroll.IsVisible;
-                    scroll.IsVisible = nowOpen;
-                    raiseBottom(nowOpen);
-                    arrow.RenderTransform = new RotateTransform(nowOpen ? 180.0 : 0.0);
+                    doApply();
+                    if ((z1rBox.Text ?? "").Trim() != "" || (zoraBox.Text ?? "").Trim() != "") wh.Set();
                 };
-                var recentsSP = new StackPanel { Orientation = Orientation.Vertical };
-                recentsSP.Children.Add(toggleHost);
-                recentsSP.Children.Add(scroll);
-                var recentBox = new Border { Child = recentsSP, BorderBrush = Graphics.roundedBorderBrush, CornerRadius = new CornerRadius(8.0), BorderThickness = new Thickness(1.0), Padding = new Thickness(4.0), Width = WIDTH/2.0, HorizontalAlignment = HorizontalAlignment.Center, Margin = smallSpacing };
-                recentBox.Width = 300.0;
-                recentBox.HorizontalAlignment = HorizontalAlignment.Left;
-                // the list opens over the quest buttons instead of pushing them down: it sits in a canvas that only takes up the collapsed box's height
-                recentBox.Background = Brushes.Black;
-                var recentHost = new Canvas { Height = 46.0, Width = 300.0, VerticalAlignment = VerticalAlignment.Bottom };
-                Canvas.SetLeft(recentBox, 0.0);
-                Canvas.SetBottom(recentBox, 4.0);   // anchored at the bottom, so the opened list grows upward over the empty space above
-                recentHost.Children.Add(recentBox);
-                // the Load Save button takes the same height as the (collapsed) recent saves box, so the two match
-                recentBox.SizeChanged += (_, _) =>
+                // pasting into either box applies straight away
+                // (WPF: DataObject.AddPastingHandler, then doApply at Background priority once the text is in; Avalonia: PastingFromClipboard)
+                foreach (var box in new[] { z1rBox, zoraBox })
+                    box.PastingFromClipboard += (_, _) => Dispatcher.UIThread.Post(doApply, DispatcherPriority.Background);
+                async Task show()
                 {
-                    if (!scroll.IsVisible && recentBox.Bounds.Height > 0.0)
-                        startButtons[999].Height = recentBox.Bounds.Height;
-                };
-                loadRow.Children.Add(recentHost);
+                    var dialogBorder = new Border { Child = dialog, BorderThickness = new Thickness(3.0), BorderBrush = Brushes.Orange, Background = Brushes.Black, Padding = new Thickness(8.0) };
+                    dialogBorder.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    var areaW = cm.AppMainCanvas.Width > 0.0 ? cm.AppMainCanvas.Width : WIDTH;
+                    var areaH = cm.AppMainCanvas.Height > 0.0 ? cm.AppMainCanvas.Height : dialogBorder.DesiredSize.Height + 60.0;
+                    // the cursor starts in the top box
+                    z1rBox.Loaded += (_, _) => Dispatcher.UIThread.Post(() => z1rBox.Focus(), DispatcherPriority.Background);
+                    await CustomComboBoxes.DoModalSticky(cm, wh, Math.Max(0.0, (areaW - dialogBorder.DesiredSize.Width) / 2.0), Math.Max(0.0, (areaH - dialogBorder.DesiredSize.Height) / 3.0), dialogBorder);
+                    popupIsActive = false;   // (so the button works again after Cancel or Done)
+                }
+                CustomComboBoxes.StartImmediate(show());
+            };
+            // the button sits at the bottom of the ZORA Extras card, one checkbox row of space below the last option (the card grows to fit, and Startup Options matches its height)
+            {
+                rightCard.Child = null;
+                var dp = new DockPanel { LastChildFill = true };
+                pasteFlagsButton.Margin = new Thickness(0.0, 8.0, 0.0, 0.0);
+                pasteFlagsButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+                pasteFlagsButton.Height = startBoxHeight;
+                DockPanel.SetDock(pasteFlagsButton, Dock.Bottom);
+                // (an empty row above the button: the same height as the checkbox rows)
+                var gapRow = new Border { Height = 34.0 };
+                DockPanel.SetDock(gapRow, Dock.Bottom);
+                dp.Children.Add(pasteFlagsButton);
+                dp.Children.Add(gapRow);
+                dp.Children.Add(rightCol);
+                rightCard.Child = dp;
+            }
+            // the Custom LEVEL Name box sits at the bottom of the Startup Options card, level with Paste Flags and the same size
+            {
+                leftCard.Child = null;
+                var dp = new DockPanel { LastChildFill = true };
+                DockPanel.SetDock(clnTextBox, Dock.Bottom);
+                dp.Children.Add(clnTextBox);
+                dp.Children.Add(leftCol);
+                leftCard.Child = dp;
+            }
+            var toolsButtons = new List<Button> { startButtons[999], tourButton, optionsToggle, vbButton };
+            var toolsGrid = new UniformGrid { Columns = 4, Width = startCardsWidth, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, startCardsGap, 0.0, 0.0) };
+            foreach (var b in toolsButtons)
+            {
+                b.Width = double.NaN;
+                b.Height = startBoxHeight;
+                b.Margin = new Thickness(4.0);
+                b.HorizontalAlignment = HorizontalAlignment.Stretch;
+                toolsGrid.Children.Add(b);
+            }
+
+            // card listing the save files loaded before (newest first), for fast re-selection: three slots across
+            Border recentsCard;
+            {
+                var recents = readRecentLoads().Take(3).ToList();
+                var slots = new UniformGrid { Columns = 3, HorizontalAlignment = HorizontalAlignment.Stretch };
+                for (int i = 0; i <= 2; i++)
+                {
+                    if (i < recents.Count)
+                    {
+                        var p = recents[i];
+                        string when_;
+                        try { when_ = File.GetLastWriteTime(p).ToString("yyyy-MM-dd HH:mm"); } catch (Exception) { when_ = ""; }
+                        var b = Graphics.makeButton(Path.GetFileNameWithoutExtension(p), null, null);
+                        Layout.styleStartupButton(b);
+                        b.Margin = new Thickness(4.0);
+                        b.Width = double.NaN;
+                        b.Height = startBoxHeight;
+                        b.HorizontalAlignment = HorizontalAlignment.Stretch;
+                        if (b.Content is TextBox t) t.FontSize = 14.0;
+                        ToolTip.SetTip(b, $"{p}\nlast modified {when_}");
+                        b.Click += (_, _) =>
+                        {
+                            if (!(File.Exists(p)))
+                            {
+                                b.IsEnabled = false;
+                                ToolTip.SetTip(b, "This file no longer exists");
+                            }
+                            else
+                            {
+                                pendingLoadPath = p;
+                                startButtonBehavior(999);
+                            }
+                        };
+                        slots.Children.Add(b);
+                    }
+                    else
+                        slots.Children.Add(new Border { Margin = new Thickness(4.0), BorderBrush = Brushes.DimGray, BorderThickness = new Thickness(1.0), CornerRadius = new CornerRadius(4.0), Opacity = 0.4 });   // (an empty slot keeps the five equal)
+                }
+                var sp = new StackPanel { Orientation = Orientation.Vertical };
+                sp.Children.Add(new TextBox { Text = "Recently loaded saves:", IsReadOnly = true, IsHitTestVisible = false, FontWeight = FontWeight.Bold, FontSize = 16.0, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, BorderThickness = new Thickness(0.0) });
+                sp.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });
+                if (recents.Count == 0)
+                    sp.Children.Add(new TextBox { Text = "(none yet - files you load will show up here)", IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 13.0, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) });
+                sp.Children.Add(slots);
+                var c = startCard(sp);
+                c.Width = startCardsWidth;
+                c.HorizontalAlignment = HorizontalAlignment.Center;
+                c.Margin = new Thickness(0.0, startCardsGap, 0.0, 0.0);
+                recentsCard = c;
             }
 
             stackPanel.Children.Add(finalChildTipArea);  // finalChildTipArea still used for explainer arrows on startup options
+            finalChildTipArea.ZIndex = 10;   // (the hover description is drawn over the cards that follow it)
+            stackPanel.Children.Add(recentsCard);
+            stackPanel.Children.Add(toolsGrid);
 
             // Tip lives inside bottomSP so it's in proper layout flow — can never overlap the Settings header
             var bottomSP = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -2394,7 +2629,6 @@ public static class Program
             tipsp.Children.Add(tipTB);
             var _tip = new Border { Child = tipsp, BorderThickness = new Thickness(1.0), Padding = new Thickness(5.0), BorderBrush = Brushes.Orange, Width = WIDTH*2.0/3.0, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Center };
             //bottomSP.Children.Add(tip) |> ignore   // random tip box removed from the startup screen
-            bottomSP.Children.Add(loadRow);
             bottomSP.Children.Add(new Shapes.Rectangle { HorizontalAlignment = HorizontalAlignment.Stretch, Fill = Brushes.Black, Height = 2.0, Margin = spacing });
             var settingsTB = new TextBox { Text = "Settings (most can be changed later, using 'Options' button above timeline):", HorizontalAlignment = HorizontalAlignment.Center,
                                            Margin = new Thickness(0.0, 0.0, 0.0, 5.0), BorderThickness = new Thickness(0.0) };
@@ -2402,23 +2636,75 @@ public static class Program
             var options = OptionsMenu.makeOptionsCanvas(cm, false, true);
             var optionsWithVersion = new Grid();   // the version button sits at the bottom right of the other settings
             optionsWithVersion.Children.Add(options);
+            // the settings panel takes no layout room: it sits just under the bottom edge (hidden) and flies up over the startup screen when the Options button is clicked
+            // (a close button sits at the top of the panel: the panel covers the row of buttons at the bottom of the start screen when it is up)
+            var closeBar = Graphics.makeButton("Options ▼", null, null);
+            Layout.styleStartupButton(closeBar);
+            closeBar.Width = 240.0;
+            closeBar.Height = startBoxHeight;
+            closeBar.Margin = new Thickness(0.0, 6.0, 0.0, 6.0);
+            closeBar.HorizontalAlignment = HorizontalAlignment.Center;
+            var optionsPanelSP = new StackPanel { Orientation = Orientation.Vertical };
+            optionsPanelSP.Children.Add(closeBar);
+            optionsPanelSP.Children.Add(optionsWithVersion);
+            var optionsPanel = new Border { Child = optionsPanelSP, Background = Brushes.Black, BorderBrush = Brushes.SaddleBrown, BorderThickness = new Thickness(2.0), Width = WIDTH_SANS_CHROME };
+            var optionsHost = new Canvas { Height = 0.0 };
+            Canvas.SetLeft(optionsPanel, 0.0);
+            Canvas.SetTop(optionsPanel, 0.0);
+            optionsHost.Children.Add(optionsPanel);
+            bottomSP.Children.Add(optionsHost);
+            mainDock.ClipToBounds = true;
+            var optionsShown = false;
+            var optionsH = 0.0;
+            // (WPF: a 0.25s DoubleAnimation of Canvas.Top with a cubic ease-out; tweened by hand here, as elsewhere in the port, and stopped by setting Top directly)
+            DispatcherTimer optionsAnim = null;
+            void setOptionsShown(bool show, bool animate)
             {
-                var vbButton = CustomComboBoxes.makeVersionButtonWithBehavior(cm);
-                Layout.styleStartupButton(vbButton);   // (styled before it is wrapped in the dock panel)
-                switch (vbButton.Content)
+                if (optionsH == 0.0)
                 {
-                    case TextBox vt: vt.Padding = new Thickness(8.0, 1.0, 8.0, 1.0); break;
-                    default: break;
+                    optionsPanel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    optionsH = optionsPanel.DesiredSize.Height;
                 }
-                var vb = Graphics.dock(vbButton, Dock.Top);
-                // (WPF: vb.LayoutTransform; Avalonia has no LayoutTransform property, so vb sits in a LayoutTransformControl, which takes vb's alignment and margin)
-                var vbScaled = new LayoutTransformControl { Child = vb, LayoutTransform = new ScaleTransform(16.0/9.0, 16.0/9.0) };
-                vbScaled.HorizontalAlignment = HorizontalAlignment.Right;
-                vbScaled.VerticalAlignment = VerticalAlignment.Bottom;
-                vbScaled.Margin = new Thickness(0.0, 0.0, 12.0, 8.0);
-                optionsWithVersion.Children.Add(vbScaled);
+                optionsShown = show;
+                if (optionsToggle.Content is TextBox ot) ot.Text = show ? "Options ▼" : "Options ▲";
+                raiseBottom(show);
+                var target = show ? -optionsH : 0.0;
+                optionsAnim?.Stop();
+                if (animate)
+                {
+                    var from = Canvas.GetTop(optionsPanel);
+                    if (double.IsNaN(from)) from = 0.0;
+                    var start = DateTime.Now;
+                    optionsAnim = new DispatcherTimer(TimeSpan.FromMilliseconds(16.0), DispatcherPriority.Render, (_, _) =>
+                    {
+                        var f = Math.Min(1.0, (DateTime.Now - start).TotalSeconds / 0.25);
+                        var e = 1.0 - Math.Pow(1.0 - f, 3.0);   // (CubicEase, EaseOut)
+                        Canvas.SetTop(optionsPanel, from + (target - from) * e);
+                        if (f >= 1.0) optionsAnim.Stop();
+                    });
+                    optionsAnim.Start();
+                }
+                else
+                {
+                    Canvas.SetTop(optionsPanel, target);
+                    mainDock.UpdateLayout();
+                }
             }
-            bottomSP.Children.Add(optionsWithVersion);
+            optionsToggle.Click += (_, _) => setOptionsShown(!optionsShown, true);
+            closeBar.Click += (_, _) => setOptionsShown(false, true);
+            // the block of cards and buttons sits in the middle of the window: the same margin above and below (once, after the first layout)
+            var centerBlockOnce = false;
+            void centerBlock()
+            {
+                if (!centerBlockOnce && mainDock.IsLoaded && stackPanel.Bounds.Height > 0.0 && mainDock.Bounds.Height > stackPanel.Bounds.Height)
+                {
+                    centerBlockOnce = true;
+                    Canvas.SetTop(stackPanel, (mainDock.Bounds.Height - stackPanel.Bounds.Height) / 2.0);
+                }
+            }
+            mainDock.LayoutUpdated += (_, _) => centerBlock();
+            mainDock.Loaded += (_, _) => Dispatcher.UIThread.Post(centerBlock, DispatcherPriority.ApplicationIdle);
+            OptionsMenu.showStartOptionsHook = show => setOptionsShown(show, false);
             mainDock.Children.Add(bottomSP);
             raiseBottom = on => bottomSP.ZIndex = (on ? 100 : 0);   // (so the opened recent-saves list is drawn over the startup options above it, while the hover explainer stays on top the rest of the time)
             DockPanel.SetDock(bottomSP, Dock.Bottom);

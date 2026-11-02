@@ -53,6 +53,7 @@ public static class Reminders
                 case TrackerModel.ReminderCategory.Tags.SwordHearts:     (shouldRemindVoice, shouldRemindVisual) = (TrackerModelOptions.VoiceReminders.SwordHearts.Value,     TrackerModelOptions.VisualReminders.SwordHearts.Value); break;
                 case TrackerModel.ReminderCategory.Tags.DoorRepair:      (shouldRemindVoice, shouldRemindVisual) = (TrackerModelOptions.VoiceReminders.DoorRepair.Value,      TrackerModelOptions.VisualReminders.DoorRepair.Value); break;
                 case TrackerModel.ReminderCategory.Tags.OverworldOverwrites: (shouldRemindVoice, shouldRemindVisual) = (TrackerModelOptions.VoiceReminders.OverworldOverwrites.Value, TrackerModelOptions.VisualReminders.OverworldOverwrites.Value); break;
+                case TrackerModel.ReminderCategory.Tags.RandomExtras:    (shouldRemindVoice, shouldRemindVisual) = (TrackerModelOptions.VoiceReminders.RandomExtras.Value,    TrackerModelOptions.VisualReminders.RandomExtras.Value); break;
                 case TrackerModel.ReminderCategory.Tags.Asterisk:        (shouldRemindVoice, shouldRemindVisual) = (false, false); break;
                 default: throw new InvalidOperationException("unknown ReminderCategory");
             }

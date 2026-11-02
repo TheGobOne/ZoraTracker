@@ -1277,15 +1277,19 @@ public static class OverworldItemGridUI
                     blocksTxt.Margin = new Thickness(0.0, 10.0, 0.0, 2.0);
                     sp.Children.Add(blocksTxt);
                     var blocksRow = new StackPanel { Orientation = Orientation.Horizontal };
-                    CheckBox mkBlocksCB(string label, string tip, Func<bool> getV, Action<bool> setV)
+                    // rnd: for options that can be Random on the start screen, the Random flag; the box then cycles off / on / Random (a dash, counts as On), so a wrong click can be undone
+                    CheckBox mkBlocksCB(string label, string tip, Func<bool> getV, Action<bool> setV, (Func<bool>, Action<bool>)? rnd)
                     {
                         var t = mkTxt(label);
                         t.FontSize = 14.0;
-                        var cb = new CheckBox { Content = t, IsChecked = getV(), Margin = new Thickness(6.0, 2.0, 14.0, 2.0) };
-                        ToolTip.SetTip(cb, tip);
+                        var isRnd = rnd.HasValue && rnd.Value.Item1();
+                        var cb = new CheckBox { Content = t, IsChecked = (isRnd ? null : getV()), Margin = new Thickness(6.0, 2.0, 14.0, 2.0), IsThreeState = rnd.HasValue };
+                        ToolTip.SetTip(cb, rnd.HasValue ? tip + "\n\nClicks cycle Off, On, Random (?). Random counts as On, with yellow outlines on the tiles that might be blocked." : tip);
                         cb.Click += (_, _) =>
                         {
-                            setV(cb.IsChecked.HasValue && cb.IsChecked.Value);
+                            if (rnd.HasValue && !cb.IsChecked.HasValue) { setV(true); rnd.Value.Item2(true); }
+                            else if (rnd.HasValue) { setV(cb.IsChecked.Value); rnd.Value.Item2(false); }
+                            else setV(cb.IsChecked.HasValue && cb.IsChecked.Value);
                             TrackerModel.recomputeMapStateSummary();
                             TrackerModel.forceUpdate();
                             OptionsMenu.triggerRequestRedrawOverworldEvent();
@@ -1293,11 +1297,26 @@ public static class OverworldItemGridUI
                         };
                         return cb;
                     }
-                    blocksRow.Children.Add(mkBlocksCB("Extra Power Bracelet Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4", (() => OverworldData.ExtraPBBlocks), (v => OverworldData.ExtraPBBlocks = v)));
-                    blocksRow.Children.Add(mkBlocksCB("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16", (() => OverworldData.ExtraRaftBlocks), (v => OverworldData.ExtraRaftBlocks = v)));
+                    blocksRow.Children.Add(mkBlocksCB("Extra Power Bracelet Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4", (() => OverworldData.ExtraPBBlocks), (v =>
+                    {
+                        OverworldData.ExtraPBBlocks = v;
+                        OverworldData.ExtraPBRandom = false;
+                        // on or Random puts the vanilla any roads back (1 in H10, 2 in B14, 3 in C4, 4 in E10; only on empty tiles); off takes away the ones still marked in their vanilla spots
+                        foreach (var (state, col, row) in new[] { (TrackerModel.MapSquareChoiceDomainHelper.WARP_1, 10, 7), (TrackerModel.MapSquareChoiceDomainHelper.WARP_2, 14, 1),
+                                                                  (TrackerModel.MapSquareChoiceDomainHelper.WARP_3, 4, 2),  (TrackerModel.MapSquareChoiceDomainHelper.WARP_4, 10, 4) })
+                        {
+                            var cell = TrackerModel.overworldMapMarks[col - 1, row];
+                            if (!v)
+                            {
+                                if (cell.Current() == state) cell.Set(-1);
+                            }
+                            else if (cell.Current() == -1 && !(TrackerModel.owInstance.AlwaysEmpty(col - 1, row))) cell.Set(state);
+                        }
+                    }), ((() => OverworldData.ExtraPBRandom), (r => OverworldData.ExtraPBRandom = r))));
+                    blocksRow.Children.Add(mkBlocksCB("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16", (() => OverworldData.ExtraRaftBlocks), (v => { OverworldData.ExtraRaftBlocks = v; OverworldData.ExtraRaftRandom = false; }), ((() => OverworldData.ExtraRaftRandom), (r => OverworldData.ExtraRaftRandom = r))));
                     var hintsRow = new StackPanel { Orientation = Orientation.Horizontal };
-                    hintsRow.Children.Add(mkBlocksCB("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)", (() => OverworldData.DeadWoodsEnabled), (v => OverworldData.DeadWoodsEnabled = v)));
-                    hintsRow.Children.Add(mkBlocksCB("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)", (() => OverworldData.LostHillsEnabled), (v => OverworldData.LostHillsEnabled = v)));
+                    hintsRow.Children.Add(mkBlocksCB("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)", (() => OverworldData.DeadWoodsEnabled), (v => { OverworldData.DeadWoodsEnabled = v; OverworldData.DeadWoodsRandom = false; }), ((() => OverworldData.DeadWoodsRandom), (r => OverworldData.DeadWoodsRandom = r))));
+                    hintsRow.Children.Add(mkBlocksCB("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)", (() => OverworldData.LostHillsEnabled), (v => { OverworldData.LostHillsEnabled = v; OverworldData.LostHillsRandom = false; }), ((() => OverworldData.LostHillsRandom), (r => OverworldData.LostHillsRandom = r))));
                     var hideQuestPanel = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10.0, 0.0, 10.0, 0.0) };
                     DockPanel.SetDock(hideQuestPanel, Dock.Right);
                     if (nowMixed)
@@ -1314,6 +1333,11 @@ public static class OverworldItemGridUI
                     var blocksCol = new StackPanel { Orientation = Orientation.Vertical };
                     blocksCol.Children.Add(blocksRow);
                     blocksCol.Children.Add(hintsRow);
+                    // boots: on or off any time too (for when the flags left Boots on Random). The boomerang pickers use it at once; the boomerang icons already drawn in the item boxes update the next time the tracker starts
+                    var bootsRow = new StackPanel { Orientation = Orientation.Horizontal };
+                    bootsRow.Children.Add(mkBlocksCB("Boots Replace Boomerangs", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (() => TrackerModel.BootsReplaceBoomerangs), (v => TrackerModel.BootsReplaceBoomerangs = v), null));
+                    bootsRow.Children.Add(mkBlocksCB("Mirrored Overworld", "Flip the overworld map East<->West (same as the mirror icon at the top left).", (() => TrackerModel.MirrorOverworld), (v => setMirroredOverworld(v)), null));
+                    blocksCol.Children.Add(bootsRow);
                     // the Hide 1st / 2nd Quest checkboxes (mixed overworlds only) sit in a third column, level with the four checkboxes
                     var blocksArea = new DockPanel { LastChildFill = true };
                     blocksArea.Children.Add(hideQuestPanel);
@@ -1326,9 +1350,14 @@ public static class OverworldItemGridUI
                     var shopLeft = new StackPanel { Orientation = Orientation.Vertical };
                     shopRow.Children.Add(shopLeft);
                     sp.Children.Add(shopRow);
+                    var closeBtn = Graphics.makeButton("Close", 16.0, Brushes.Orange);
+                    closeBtn.Margin = new Thickness(0.0, 10.0, 8.0, 8.0);
+                    closeBtn.HorizontalAlignment = HorizontalAlignment.Right;
+                    closeBtn.Click += (_, _) => CustomComboBoxes.DismissTopModal();
+                    sp.Children.Add(closeBtn);
                     var b = new Border { Child = sp, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(5.0), Background = Brushes.Black };
                     clearOW();
-                    await CustomComboBoxes.DoModalCore(cm, wh, ((c, e) => canvasAdd(c, e, 10.0, 10.0)), ((c, e) => c.Children.Remove(e)), b, 0.25);
+                    await CustomComboBoxes.DoModalCore(cm, wh, ((c, e) => canvasAdd(c, e, 10.0, START_DUNGEON_AND_NOTES_AREA_H)), ((c, e) => c.Children.Remove(e)), b, 0.25);
                     hideQuestPanel.Children.Clear();   // release the checkboxes so the next popup can reuse them
                     popupIsActive = false;
                 }

@@ -1,6 +1,6 @@
 # Avalonia port — progress
 
-Caught up to WPF commit: `9292b0b` (v17hotfxi, 2026-10-30)
+Caught up to WPF commit: `4efdf82` (b18 hotfix, 2026-11-01)
 
 Parity: **not reached.** The goal is complete feature parity with the WPF tracker (see
 [PLAN.md](./PLAN.md#goal-complete-feature-parity)). A file marked `stubbed` or `skipped` is still
@@ -55,6 +55,8 @@ switch to C#; the F# version is still in `Z1R_Avalonia/` and out of the build un
 | 36 | DungeonModelSync.fs | 79 | 4 | ported (C#) | straight translation; curried functions take normal parameters; `failwithf` → `throw new Exception` |
 | 37 | WPFUI.fs | 4218 | 2 | ported (C#) | straight translation; `makeAll` is one `async Task<Action<int>>`; the `ITrackerEvents` object expression is a delegate-forwarding class; no global mouse position, so the last pointer position is tracked; Notes.txt and the completion screenshots are user files (see Judgement calls) |
 | 38 | Program.fs | 2028 | 2 | ported (C#) | startup screen, main window, crash handling and recovery, co-op message handling complete; global F10/F5 hotkeys, console window and ZTracker.lnk via Platform (as WPF on Windows, stubbed on macOS/Linux); static initializers forced in WPF compile order once the CanvasManager exists; file dialogs via StorageProvider (see Judgement calls) |
+| 39 | FlagPaste.fs | 130 | 2 | ported (C#) | straight translation; `Tri` is an enum, the records are C# records, `Result<T, string>` is a `(value, error)` pair (error null when it worked) |
+| 40 | SelfTest.fs | 349 | – | skipped | Gob's `--selftest` mode (with `selftest.ps1`): drives the WPF tracker by calling WPF internals (`ButtonBase.OnClick` by reflection) on a Windows release build. A developer tool, not something players see; the port would need its own Avalonia version. `CustomComboBoxes.DismissTopModal`, which it adds, is ported (the Overworld + Extras Close button uses it) |
 
 ## Stubs
 
@@ -197,10 +199,10 @@ and nothing reached the crash handlers (after fixing the button-template crash i
 screen or clicked by a person yet.
 
 Not checked yet (needs a person at the Mac, and ideally Windows next to it). Runtime checklist:
-- Start screen: layout against WPF (two columns, Pick Overworld button, Load Save + recent saves box, options, version button); hover
-  explainers and their line; the Pick Overworld and 4th Sword popups open in place, scale with the window and close on outside clicks;
-  Legacy Mode locks the ZORA Extras; Remember startup selection; Custom LEVEL Name box; More Options... (blank grid / custom map file).
-- Starting each quest, Randomized Quest, Hide Dungeon Numbers, Heart Shuffle Off/Intra/Full, 4th Sword in level 2 and 9, Progressive Items.
+- Start screen: layout against WPF (the overworld card, the two option cards, recent saves card, the row of four buttons, the Options panel
+  flying up and down); hover explainers and their line; Legacy Mode locks the ZORA Extras; Remember startup selection (including Random);
+  Custom LEVEL Name box; More Options... (blank grid / custom map file); Paste Flags by pasting (applies at once) on each OS.
+- Starting each quest, Randomized Quest, Hide Dungeon Numbers, Item Shuffle Off/Intra/Full, 4th Sword in level 2 and 9, Progressive Items.
 - Load Save: the file dialog (each OS), a WPF save file, the version-mismatch box, a recent save, a missing/broken file (back to the start
   screen); crash recovery (a recent crash log entry plus an auto-save offers to load it).
 - Main window: resizing scales the UI and is remembered (MainWindowScale), position remembered (MainWindowLT), restart from the options
@@ -455,9 +457,6 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
   after the duration; OptionsMenu sets 10 s). Kept as a no-op `setToolTipShowDuration` call so lines still match WPF.
 - **Option sliders.** WPF `TickPlacement.Both` → Avalonia `TickPlacement.Outside`. The Fluent slider looks different (and is taller) than WPF's; compare
   the options screen's column heights on Windows.
-- **Reset All Settings deletes the model's settings file**, `Z1R_Tracker_settings.json` in `AppDomain.CurrentDomain.BaseDirectory`, because that's where
-  `TrackerModelOptions` (shared F# model, not editable here) reads and writes it. On Windows that's `Platform.UserDataDir()` anyway; on macOS it's inside
-  the app bundle, which a signed app can't write (see Proposed upstream PRs).
 - **"Show Crash Log..."** reveals `Platform.Files.User("Z1R_Tracker_crash_log.txt")` with `Platform.RevealInFileManager`, or opens `Platform.UserDataDir()`
   with `Platform.OpenWithShell` if there's no log yet (WPF: `Explorer.exe` on the exe folder; the same on Windows).
 - **Co-op host settings: an unshown `Window`.** As in WPF, `showCoopHostSettingsWindow` creates a `Window` it never shows and `Close()`s it from Launch/Stop.
@@ -835,10 +834,12 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
   `DesktopScaling` (the main window isn't the lifetime's MainWindow yet, so ShowRunCustom.setLeftTop can't be used) and saved with `ShowRunCustom.leftOf/topOf`;
   minimized is `Left < MINIMIZED_THRESHOLD` or `WindowState == Minimized`. `SystemParameters.WorkArea` → the primary screen's working area in WPF units.
   Check resizing (the UI scales to fit), the remembered size and position, and minimizing/restoring on each OS.
-- **Start screen popups (test at runtime).** The 4th Sword level menu and the "Pick Overworld (Start Game)" menu are Avalonia `Popup`s (WPF `StaysOpen=false`
-  → `IsLightDismissEnabled`), added to the start screen's grid because an Avalonia popup has to be in a window's tree to open (they take no space). As in
-  WPF they're separate windows, so the Pick Overworld menu scales its buttons by the start screen's scale (`TransformToVisual` for `TransformToAncestor`).
-  Check both open in the right place and close on outside clicks. Their dark theme is on their own panel, as WPF's.
+- **Start screen (b18 hotfix).** Gob's beta18 redesign is ported line for line: the overworld buttons and the four tool buttons are `UniformGrid`s, as WPF's.
+  The Options panel's 0.25s cubic ease-out slide and the Guided Tour button's pulsing glow are WPF `DoubleAnimation`s; here they're tweened by hand on a
+  16 ms `DispatcherTimer`, as elsewhere in the port. Paste Flags applies on paste: WPF's `DataObject.AddPastingHandler` → Avalonia's
+  `TextBox.PastingFromClipboard`, then `doApply` at Background priority as in WPF. The Random ("?") state is `IsThreeState`/`IsChecked = null`, which
+  cycles Off → On → Random on click in both. Checked in the browser build: the layout, the Options panel, Paste Flags with Z1R and ZORA strings built to a
+  known answer, the Random-extras pointer and reminder, the dashed yellow outlines, and the Overworld + Extras popup.
 - **Start screen details.** Wrapped tip text (hover explainer, Konami "ALL OF TIPS") is a `SelectableTextBlock` with the dark theme's orange on black set
   directly; the Konami headers' bottom border is a `Border` around it. The type-keyed dark-theme styles (TextBox, Button, ToolTip) are `Styles` on the same
   panels, and the root canvas's ToolTip style is in `rootCanvas.Styles` (**check** tooltips are orange on almost-black; Avalonia tooltips are popups and may
@@ -874,9 +875,6 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
     10ms on a background thread (WPF: a tight DirectInput poll loop), with SDL told to keep reading while the tracker isn't focused. As WPF, only a
     gamepad present at startup is used. A disconnect raises `ControllerFailureEvent`, as a DirectInput read error does. **Test with a real gamepad.**
   - Linux (untested): fake input and warping use SharpHook (X11; Wayland doesn't allow them), and the beep is a generated 880Hz tone.
-- **Newer ZORA logo (ahead of WPF).** The logo above the ZORA Site link (`CustomLogo.png`) is the newer one from zora.gg (`tetraly/zora`
-  `web/zora-logo.png`, 30 Oct 2026), scaled from 512px to 128px, in `Z1R_Avalonia_WPFResources/icons/` (Z1R_WPF isn't edited). WPF beta18 still
-  has the older pixel-art Zora; see Proposed upstream PRs.
 
 ## Decisions needed from TheGobOne
 
@@ -902,14 +900,7 @@ Differences TheGobOne has explicitly approved. Anything not listed here is a par
 
 ## Proposed upstream PRs to TheGobOne
 
-- **Newer ZORA logo.** Replace `Z1R_WPF/icons/CustomLogo.png` with the zora.gg logo (`Z1R_Avalonia_WPFResources/icons/CustomLogo.png`, 128px),
-  so both trackers show it.
-
 - **Settings file location.** `TrackerModelOptions.readSettings`/`writeSettings` always use `AppDomain.CurrentDomain.BaseDirectory/Z1R_Tracker_settings.json`.
   A way to set the folder (e.g. a `settingsDirectory` the app sets at startup) would let the cross-platform tracker keep settings in
-  `Platform.UserDataDir()` on macOS/Linux, unchanged on Windows. OptionsMenu's "Reset All Settings" would then delete that file.
+  `Platform.UserDataDir()` on macOS/Linux, unchanged on Windows.
 
-- **Don't crash when ZTracker.lnk can't be written.** MyWindow's constructor saves the shortcut with `IPersistFile.Save` and nothing catches
-  an error. A user on Windows 10 had an old ZTracker.lnk (pointing at a folder that no longer existed) that Windows wouldn't let the tracker
-  replace: `UnauthorizedAccessException` (E_ACCESSDENIED) at startup, before the window opened, wherever the folder was moved. Deleting the
-  .lnk fixed it. Wrapping the shortcut block in `try ... with _ -> ()` would; the port's `Platform.CreateShortcut` logs and carries on.

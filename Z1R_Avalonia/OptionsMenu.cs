@@ -14,6 +14,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 
@@ -144,6 +145,8 @@ public static class OptionsMenu
             TrackerModelOptions.VoiceReminders.DoorRepair,        TrackerModelOptions.VisualReminders.DoorRepair),
         (TrackerModel.ReminderCategory.OverworldOverwrites.DisplayName, "Each time you make a destructive change to an overworld mark, remind the change, in case it was accidental",
             TrackerModelOptions.VoiceReminders.OverworldOverwrites, TrackerModelOptions.VisualReminders.OverworldOverwrites),
+        (TrackerModel.ReminderCategory.RandomExtras.DisplayName, "When a run starts with any of the ZORA extras (extra blocks, Dead Woods, Lost Hills) set to Random, remind you to check the Overworld + Extras menu and turn them on or off once you know",
+            TrackerModelOptions.VoiceReminders.RandomExtras, TrackerModelOptions.VisualReminders.RandomExtras),
         };
 
     public static void showCoopHostSettingsWindow(CustomComboBoxes.CanvasManager cm)
@@ -343,6 +346,31 @@ public static class OptionsMenu
     // the start screen tour ends by starting a run, then the main window tour follows (the hook starts the run; Program.fs sets it)
     public static Action startBlankRunHook = () => { };
     public static bool mainTourAfterStart = false;
+    // the start screen keeps its settings in a panel that flies up from the bottom: the tour opens it first (Program.fs sets the hook)
+    public static Action<bool> showStartOptionsHook = _ => { };
+    public static Action<string> tourStepEnterHook = _ => { };   // called with a step's title as the tour shows it (the start screen uses it to raise or lower the settings panel)
+    // a step can demo its point on the live tracker: returns an undo that puts things back when the tour leaves the step (null for None)
+    private static Action tourDemo(string title)
+    {
+        if (title == "Triforce in the basement")
+        {
+            // use the first dungeon whose item boxes are all empty, so a real run is never disturbed (dungeon 1 first, whose basement slot is easy to see)
+            for (int i = 0; i <= 7; i++)
+            {
+                var d = TrackerModel.GetDungeon(i);
+                if (d.Boxes.All(bx => bx.CellCurrent() == -1))
+                {
+                    // the box that shows the basement staircase (else the last one)
+                    var b = d.Boxes.FirstOrDefault(x => x.CurrentlyHasBasementStair) ?? d.Boxes[d.Boxes.Length - 1];
+                    var (oldCell, oldHas) = (b.CellCurrent(), b.PlayerHas());
+                    b.Set(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO);
+                    return () => b.Set(oldCell, oldHas);
+                }
+            }
+            return null;
+        }
+        else return null;
+    }
     // (continueLabel: when not empty, the last step's button has this label and, once clicked, onContinue runs after the tour closes)
     public static void runGuidedTourCore(CustomComboBoxes.CanvasManager cm, IEnumerable<(string[] labels, string title, string body)> steps, string continueLabel, Action onContinue)
     {
@@ -392,6 +420,7 @@ public static class OptionsMenu
                 CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
                 {
                     var continued = false;
+                    Action undoDemo = () => { };
                     try
                     {
                         var wh = new ManualResetEvent(false);
@@ -404,6 +433,9 @@ public static class OptionsMenu
                         {
                             overlay.Children.Clear();
                             var (r, title, body) = found[idx];
+                            undoDemo();
+                            tourStepEnterHook(title);
+                            undoDemo = tourDemo(title) ?? (() => { });
                             var pad = 5.0;
                             var (hx, hy) = (Math.Max(0.0, r.X - pad), Math.Max(0.0, r.Y - pad));
                             var hole = new Rect(hx, hy, Math.Min(W - hx, r.Width + 2.0 * pad), Math.Min(H - hy, r.Height + 2.0 * pad));
@@ -468,6 +500,7 @@ public static class OptionsMenu
                     }
                     finally
                     {
+                        undoDemo();
                         CustomComboBoxes.GlobalFlag.popupIsActive = false;
                     }
                     if (continued) onContinue();
@@ -480,24 +513,96 @@ public static class OptionsMenu
         runGuidedTourCore(cm, steps, "", () => { });
     }
 
+    // shown when the overworld comes up with a ZORA extra set to Random: the screen is dimmed except the Overworld + Extras button, with a note beside it.
+    // "Don't show again" runs dontShowAgain (which saves that choice).
+    public static void showRandomExtrasPointer(CustomComboBoxes.CanvasManager cm, Action dontShowAgain)
+    {
+        if (!CustomComboBoxes.GlobalFlag.popupIsActive)
+        {
+            var fe = tourFind(cm.AppMainCanvas, "Overworld + Extras");
+            if (fe == null) return;
+            var w = tourWholeControl(fe);
+            // (WPF: TransformToAncestor(...).TransformBounds, an empty Rect when it throws; Avalonia returns null when w isn't under the canvas)
+            var r = new Rect(0.0, 0.0, 0.0, 0.0);
+            try
+            {
+                var t = w.TransformToVisual(cm.AppMainCanvas);
+                if (t.HasValue) r = new Rect(0.0, 0.0, w.Bounds.Width, w.Bounds.Height).TransformToAABB(t.Value);
+            }
+            catch { }
+            if (r.Width > 0.0)
+            {
+                CustomComboBoxes.GlobalFlag.popupIsActive = true;
+                CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
+                {
+                    var dont = false;
+                    try
+                    {
+                        var wh = new ManualResetEvent(false);
+                        var (W, H) = (cm.AppMainCanvas.Width, cm.AppMainCanvas.Height);
+                        var overlay = new Canvas { Width = W, Height = H, Background = Brushes.Transparent };
+                        var pad = 5.0;
+                        var (hx, hy) = (Math.Max(0.0, r.X - pad), Math.Max(0.0, r.Y - pad));
+                        var hole = new Rect(hx, hy, Math.Min(W - hx, r.Width + 2.0 * pad), Math.Min(H - hy, r.Height + 2.0 * pad));
+                        var geo = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(0.0, 0.0, W, H)), new RectangleGeometry(hole));
+                        overlay.Children.Add(new Path { Data = geo, Fill = Brushes.Black, Opacity = 0.75, IsHitTestVisible = false });
+                        var frame = new Rectangle { Width = hole.Width, Height = hole.Height, Stroke = Brushes.Orange, StrokeThickness = 3.0, RadiusX = 4.0, RadiusY = 4.0, IsHitTestVisible = false };
+                        Canvas.SetLeft(frame, hole.X);
+                        Canvas.SetTop(frame, hole.Y);
+                        overlay.Children.Add(frame);
+                        Button mkButton(string text) =>
+                            new Button { Content = text, Margin = new Thickness(3.0), Padding = new Thickness(10.0, 2.0, 10.0, 2.0), Focusable = false, FontSize = 15.0, Background = Brushes.Black, Foreground = Brushes.Orange, BorderBrush = Brushes.Orange };
+                        var sp = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(10.0) };
+                        sp.Children.Add(new TextBlock { Text = "Turn Extras on/off once you confirm.", Foreground = Brushes.White, FontSize = 17.0, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0.0, 0.0, 0.0, 8.0) });
+                        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+                        var okBtn = mkButton(" OK ");
+                        var dontBtn = mkButton(" Don't show again ");
+                        okBtn.Click += (_, _) => wh.Set();
+                        dontBtn.Click += (_, _) => { dont = true; wh.Set(); };
+                        buttons.Children.Add(dontBtn);
+                        buttons.Children.Add(okBtn);
+                        sp.Children.Add(buttons);
+                        var callout = new Border { Child = sp, Background = Brushes.Black, BorderBrush = Brushes.Orange, BorderThickness = new Thickness(3.0), Width = 330.0 };
+                        callout.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                        var (cw, ch) = (callout.DesiredSize.Width, callout.DesiredSize.Height);
+                        var gap = 12.0;
+                        var cx = Math.Max(0.0, Math.Min(W - cw, hole.Right - cw));   // (lined up under the right end of the button)
+                        var cy = hole.Bottom + gap + ch <= H ? hole.Bottom + gap : Math.Max(0.0, hole.Top - gap - ch);
+                        Canvas.SetLeft(callout, cx);
+                        Canvas.SetTop(callout, cy);
+                        overlay.Children.Add(callout);
+                        await CustomComboBoxes.DoModalOpa(cm, wh, 0.0, 0.0, overlay, 0.0);
+                    }
+                    finally
+                    {
+                        CustomComboBoxes.GlobalFlag.popupIsActive = false;
+                    }
+                    if (dont) dontShowAgain();
+                }))());
+            }
+        }
+    }
+
     // the main window tour. ("@x0,y0,x1,y1" regions are fractions of the window, for parts with no label text)
     public static readonly List<(string[] labels, string title, string body)> mainScreenTourSteps = new List<(string[], string, string)> {
         (new[] { "@0.0,0.0,0.358,0.063" }, "Triforce and levels",
             "The dungeon level numbers and triforce pieces along the top. Mark each dungeon as you finish it."),
         (new[] { "@0.0,0.063,0.358,0.154" }, "Dungeon item boxes",
             "One row of boxes for each dungeon, holding what you found there. Click a box to set its item; a green border means collected."),
+        (new[] { "@0.0,0.0,0.358,0.154" }, "Triforce in the basement",
+            "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it."),
         (new[] { "@0.363,0.03,0.572,0.156" }, "Items and hearts",
             "The items you have found, your hearts, and Max Hearts. Click to mark what you own."),
         (new[] { "@0.572,0.004,0.684,0.13" }, "Counters",
             "Progress counters: how many overworld spots are left to check, plus counts of items and open spots."),
-        (new[] { "Popout Windows", "1Q/2Q/Blocks" }, "Tools",
-            "Popout Windows opens extra windows, Hint Decoder helps with hints, Hotkeys lists the keyboard shortcuts, Log shows the reminders that have played, Draw/Custom Icons lets you draw on the map, and 1Q/2Q/Blocks sets the quest and block options."),
+        (new[] { "Popout Windows", "Overworld + Extras" }, "Tools",
+            "Popout Windows opens extra windows, Hint Decoder helps with hints, Hotkeys lists the keyboard shortcuts, Log shows the reminders that have played, Draw/Custom Icons lets you draw on the map, and Overworld + Extras sets the quest and block options."),
         (new[] { "TIMER", "Save" }, "Timer and file",
             "Pause/Reset timer controls the run clock. Options opens the settings (and this tour). Save writes a save file you can load later."),
         (new[] { "@0.0,0.154,1.0,0.43" }, "Overworld map",
             "Click a tile to mark what is there: caves, shops, dungeon entrances and more. Right click for more choices, and fill in the details as you explore."),
         (new[] { "Any Road", "Lost Hills" }, "Marker legend",
-            "The special spots you can place on the map: Any Road (warp), completed dungeons, the recorder destination, your Start Spot, Dead Woods and Lost Hills."),
+            "The special spots you can place on the map: Any Road (warp), completed dungeons, the recorder destination, your Start Spot. Enter your Dead Woods/Lost Hills hints."),
         (new[] { "@0.0,0.467,0.726,0.495" }, "Item Progress",
             "A quick view of the items and upgrades you have collected so far."),
         (new[] { "@0.0,0.496,0.586,0.517" }, "Dungeon tabs",
@@ -513,29 +618,97 @@ public static class OptionsMenu
 
     // the start screen tour: (labels that mark the section, title, description)
     public static readonly List<(string[] labels, string title, string body)> startScreenTourSteps = new List<(string[], string, string)> {
-        (new[] { "Pick Overworld (Start Game)" }, "Start a new run",
-            "Click here and pick which overworld the seed uses to begin a new run. The checkboxes below it are set before you start."),
-        (new[] { "Heart Shuffle", "Full" }, "Heart Shuffle",
+        (new[] { "1st Quest", "More Options..." }, "Start a new run",
+            "Click the overworld your seed uses to begin a new run. The checkboxes below are set before you start."),
+        (new[] { "Item Shuffle", "Full" }, "Item Shuffle",
             "Set this to match how the seed shuffled the heart containers: Off, Intra or Full."),
         (new[] { "Legacy Mode", "Mark Bomb Droppers" }, "Startup options",
             "Check the ones your seed uses. Legacy Mode limits shops to the original game's items, Hide Dungeon Numbers hides the level numbers, Mirrored Overworld flips the map, and Mark Bomb Droppers lets you mark bomb-dropper spots."),
         (new[] { "ZORA Extras", "Progressive Items" }, "ZORA Extras",
             "Extra randomizer options that only some seeds use, such as 4th Sword, Boots Replace Boomerangs and Progressive Items. Check the ones your seed uses."),
-        (new[] { "Load Save", "Recently loaded saves:" }, "Load a save",
-            "Resume an earlier run from a save file, or pick one from the recently loaded list."),
+        (new[] { "Paste Flags" }, "Paste Flags",
+            "Copy the Z1R and ZORA flag strings from the ZORA site, paste them in and click Apply. The matching options are checked for you, and any that the flags left to chance show a ? (Random)."),
+        (new[] { "Recently loaded saves:" }, "Recent saves",
+            "Your three most recently loaded save files, newest first. Click one to resume that run."),
+        (new[] { "Load Save" }, "Load a save",
+            "Resume an earlier run from any save file on your computer."),
         (new[] { "Overworld Settings", "Use Old Popups" }, "Overworld settings",
             "How the map behaves: route drawing, highlighting nearby tiles, the magnifier and popups. Most of these can be changed later from the Options button."),
         (new[] { "Dungeon Settings", "Hide Lock And Hints" }, "Dungeon settings",
             "How the dungeon screens behave and look: hint icons, BOARD instead of LEVEL, basement info, door inference and more."),
         (new[] { "Reminders", "Change Voice" }, "Reminders",
-            "Volume, which voice and visual reminders you get (dungeon feedback, sword hearts, coast item and more), how often they repeat, and which voice speaks them."),
+            "Volume, which voice and visual reminders you get (dungeon feedback, sword hearts, coast item, a check of Overworld + Extras when an option is Random, and more), how often they repeat, and which voice speaks them."),
         (new[] { "Auto-save", "Auto-save Interval" }, "Auto-save",
             "How often the tracker saves your run by itself, in minutes."),
         (new[] { "Other", "Race Mode" }, "Other options",
-            "General settings: animations, remembering your startup choices, update checks, seed and flags, listening for speech, the broadcast window, the timer and Race Mode."),
-        (new[] { "Co-Op Client Settings", "Guided Tour" }, "Co-Op, crash log and this tour",
-            "Co-Op Client and Host settings are for tracking together with a partner. Show Crash Log opens the log file to send along when reporting a problem. Guided Tour starts this walkthrough again. Click Continue to start a new run (1st Quest Overworld) and tour the main screen.") };
+            "General settings: animations, remembering your startup choices, update checks, Display Seed + Flags, listening for speech, the broadcast window, the timer and Race Mode."),
+        (new[] { "Co-Op Client Settings", "Show Crash Log..." }, "Co-Op and crash log",
+            "Co-Op Client and Host settings are for tracking together with a partner. Show Crash Log opens the log file to send along when reporting a problem."),
+        (new[] { "Guided Tour", "v2." }, "Tour, options and version",
+            "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows what is new in this release, and glows when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen.") };
 
+    // the start screen tour raises the settings panel for the steps about it and lowers it for the rest (so it never hides the part being shown)
+    // (F#: a module-level `do`, run when the module is first used; here a static constructor, which runs before any of OptionsMenu is used)
+    static OptionsMenu()
+    {
+        var panelSteps = new[] { "Overworld settings", "Dungeon settings", "Reminders", "Auto-save", "Other options", "Co-Op and crash log" };
+        tourStepEnterHook = title =>
+        {
+            if (startScreenTourSteps.Any(st => st.title == title))
+                showStartOptionsHook(panelSteps.Contains(title));
+        };
+    }
+
+    // the Guided Tour button: in the in-app Options popup (includePopupExplainer) it runs the main window tour, on the start screen it runs the start screen tour
+    public static Button makeGuidedTourButton(CustomComboBoxes.CanvasManager cm, bool includePopupExplainer)
+    {
+        var tourButton = Graphics.makeButton(" Guided Tour ", null, null);
+        tourButton.HorizontalAlignment = HorizontalAlignment.Left;
+        tourButton.Margin = new Thickness(0.0, 6.0, 0.0, 0.0);
+        // pulses until the first click so new users notice it
+        // (WPF: a DoubleAnimation of the glow's BlurRadius, 6 to 30 over 0.8s, reversing, forever; tweened by hand here, as elsewhere in the port)
+        DispatcherTimer pulse = null;
+        if (!TrackerModelOptions.GuidedTourSeen)
+        {
+            var glow = new DropShadowDirectionEffect { ShadowDepth = 0.0, BlurRadius = 30.0, Opacity = 1.0, Color = Colors.Orange };
+            var start = DateTime.Now;
+            pulse = new DispatcherTimer(TimeSpan.FromMilliseconds(16.0), DispatcherPriority.Render, (_, _) =>
+            {
+                var p = (DateTime.Now - start).TotalSeconds % 1.6;
+                var f = p < 0.8 ? p / 0.8 : (1.6 - p) / 0.8;
+                glow.BlurRadius = 6.0 + 24.0 * f;
+            });
+            pulse.Start();
+            tourButton.Effect = glow;
+        }
+        tourButton.Click += (_, _) =>
+        {
+            if (!TrackerModelOptions.GuidedTourSeen)
+            {
+                TrackerModelOptions.GuidedTourSeen = true;
+                TrackerModelOptions.writeSettings();
+                pulse?.Stop();
+                tourButton.Effect = null;
+            }
+        };
+        if (includePopupExplainer)
+            tourButton.Click += (_, _) =>
+            {   // (closes this menu first, then the main window tour starts)
+                optionsTourRequested = true;
+                closeOptionsPopupHook();
+            };
+        else
+            tourButton.Click += (_, _) =>
+            {
+                showStartOptionsHook(true);
+                runGuidedTourCore(cm, startScreenTourSteps, " Continue to main screen ", () =>
+                {
+                    mainTourAfterStart = true;
+                    startBlankRunHook();
+                });
+            };
+        return tourButton;
+    }
     public static Border makeOptionsCanvas(CustomComboBoxes.CanvasManager cm, bool includePopupExplainer, bool isStandardHyrule)
     {
         var width = cm.AppMainCanvas.Width;
@@ -679,34 +852,6 @@ public static class OptionsMenu
         Graphics.onChecked(muteCB, () => { TrackerModelOptions.IsMuted = true; voice.Volume = 0; });
         Graphics.onUnchecked(muteCB, () => { TrackerModelOptions.IsMuted = false; voice.Volume = TrackerModelOptions.Volume; });
         options2sp.Children.Add(muteCB);
-        // reset every setting to its default: delete the settings file and restart (only offered in the in-app options popup)
-        if (includePopupExplainer)
-        {
-            var resetButton = Graphics.makeButton(" Reset All Settings To Defaults... ", null, null);
-            resetButton.HorizontalAlignment = HorizontalAlignment.Left;
-            resetButton.Margin = new Thickness(0.0, 10.0, 0.0, 0.0);
-            ToolTip.SetTip(resetButton, "Delete your saved settings and restart the app, so that every option goes back to its default");
-            resetButton.Click += (_, _) =>
-            {
-                CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
-                {
-                    var wasActive = CustomComboBoxes.GlobalFlag.popupIsActive;
-                    if (!wasActive) CustomComboBoxes.GlobalFlag.popupIsActive = true;
-                    var resetText = "Reset and restart";
-                    var r = await CustomComboBoxes.DoModalMessageBoxCore(cm, System.Drawing.SystemIcons.Warning,
-                                    "This will delete your saved settings and restart the application,\nso every option goes back to its default.\nYour current tracker session will not be saved.",
-                                    new[] { resetText, "Cancel" }, 100.0, 300.0);
-                    if (!wasActive) CustomComboBoxes.GlobalFlag.popupIsActive = false;
-                    if (r == resetText)
-                    {
-                        // (the same file TrackerModelOptions reads and writes, which the shared model keeps in the app folder; see PROGRESS.md)
-                        try { System.IO.File.Delete(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_settings.json")); } catch { }
-                        Graphics.RestartTheApplication();
-                    }
-                }))());
-            };
-            options2sp.Children.Add(resetButton);
-        }
         // other settings
         var options2Grid = new Grid();
         for (int i = 1; i <= 3; i++)
@@ -1169,19 +1314,25 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Snoop For Seed&flags", IsReadOnly = true } };
+        // one checkbox does both jobs: look for the seed and flags in other windows' titles (e.g. fceux), and show them in the bottom corner of the Notes box
+        TrackerModelOptions.DisplaySeedAndFlags.Value = TrackerModelOptions.SnoopSeedAndFlags.Value;   // (older settings had these two apart: the one checkbox now sets both)
+        cb3 = new CheckBox { Content = new TextBox { Text = "Display Seed + Flags", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.SnoopSeedAndFlags.Value;
-        Graphics.onChecked(cb3, () => { TrackerModelOptions.SnoopSeedAndFlags.Value = true; SaveAndLoad.MaybePollSeedAndFlags(); });
-        Graphics.onUnchecked(cb3, () => TrackerModelOptions.SnoopSeedAndFlags.Value = false);
-        ToolTip.SetTip(cb3, "Periodically check for other system windows (e.g. fceux)\nthat appear to have a seed and flag in the title, to\ninclude with save data and optionally display");
+        Graphics.onChecked(cb3, () =>
+        {
+            TrackerModelOptions.SnoopSeedAndFlags.Value = true;
+            TrackerModelOptions.DisplaySeedAndFlags.Value = true;
+            SaveAndLoad.MaybePollSeedAndFlags();
+            SaveAndLoad.seedAndFlagsUpdated.Trigger(null);
+        });
+        Graphics.onUnchecked(cb3, () =>
+        {
+            TrackerModelOptions.SnoopSeedAndFlags.Value = false;
+            TrackerModelOptions.DisplaySeedAndFlags.Value = false;
+            SaveAndLoad.seedAndFlagsUpdated.Trigger(null);
+        });
+        ToolTip.SetTip(cb3, "Periodically check for other system windows (e.g. fceux)\nthat appear to have a seed and flag in the title, to\ninclude with save data, and display them in the\nbottom corner of the Notes box");
         setToolTipShowDuration(cb3, 10000);
-        options3sp.Children.Add(cb3);
-
-        cb3 = new CheckBox { Content = new TextBox { Text = "Display Seed&flags", IsReadOnly = true }, Margin = new Thickness(20.0, 0.0, 0.0, 0.0) };
-        cb3.IsChecked = TrackerModelOptions.DisplaySeedAndFlags.Value;
-        Graphics.onChecked(cb3, () => { TrackerModelOptions.DisplaySeedAndFlags.Value = true; SaveAndLoad.seedAndFlagsUpdated.Trigger(null); });
-        Graphics.onUnchecked(cb3, () => { TrackerModelOptions.DisplaySeedAndFlags.Value = false; SaveAndLoad.seedAndFlagsUpdated.Trigger(null); });
-        ToolTip.SetTip(cb3, "Display seed & flags (if known) in the bottom corner of Notes box");
         options3sp.Children.Add(cb3);
 
         cb3 = new CheckBox { Content = new TextBox { Text = "Listen For Speech", IsReadOnly = true } };
@@ -1292,26 +1443,7 @@ public static class OptionsMenu
         coopHostSettingsButton.Click += (_, _) => showCoopHostSettingsWindow(cm);
         options3sp.Children.Add(coopHostSettingsButton);
         options3sp.Children.Add(crashLogButton);
-        {
-            var tourButton = Graphics.makeButton(" Guided Tour ", null, null);
-            tourButton.HorizontalAlignment = HorizontalAlignment.Left;
-            tourButton.Margin = new Thickness(0.0, 6.0, 0.0, 0.0);
-            ToolTip.SetTip(tourButton, "Walk through each section of this screen and see what it does");
-            if (includePopupExplainer)
-                tourButton.Click += (_, _) =>
-                {   // (closes this menu first, then the main window tour starts)
-                    optionsTourRequested = true;
-                    closeOptionsPopupHook();
-                };
-            else
-                tourButton.Click += (_, _) =>
-                    runGuidedTourCore(cm, startScreenTourSteps, " Continue to main screen ", () =>
-                    {
-                        mainTourAfterStart = true;
-                        startBlankRunHook();
-                    });
-            options3sp.Children.Add(tourButton);
-        }
+        options3sp.Children.Add(makeGuidedTourButton(cm, includePopupExplainer));   // (the start screen also has its own Guided Tour button in the main section)
 
         optionsAllsp.Children.Add(options3sp);
 

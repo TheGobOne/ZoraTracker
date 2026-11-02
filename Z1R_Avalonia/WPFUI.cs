@@ -3238,7 +3238,7 @@ public static class WPFUI
         if (isStandardHyrule && moreFQSQoptionsButton != null)
         {
             // (the 1Q/2Q button now lives in the control panel at the top, under the OVERWORLD OPTIONS heading; it forwards its click to the real 1Q/2Q button)
-            var fqsqPanelButton = Graphics.makeButton("1Q/2Q/Blocks", 11.0, Brushes.Orange);
+            var fqsqPanelButton = Graphics.makeButton("Overworld + Extras", 11.0, Brushes.Orange);
             fqsqPanelButton.Click += (_, _) => moreFQSQoptionsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             layout.AddOverworldOptionsButton(fqsqPanelButton);
             // ZORA Hints: Lost Woods / Lost Hills direction sequences, in the open legend space right of the 1Q/2Q button
@@ -4636,6 +4636,31 @@ public static class WPFUI
 
         canvasAdd(overworldCanvas, owLocatorGrid, 0.0, 0.0);
         canvasAdd(overworldCanvas, owLocatorCanvas, 0.0, 0.0);
+
+        // tiles that a Random (dash) ZORA Extra might block: a dashed yellow outline (like the sometimes-empty spots) until the tile is marked or the option is confirmed in Overworld + Extras
+        var owMaybeCanvas = new Canvas { IsHitTestVisible = false };
+        var owMaybeRects = new Rectangle[16, 8];
+        for (int i = 0; i < 16; i++)
+            for (int j = 0; j < 8; j++)
+            {
+                var r = new Rectangle { Width = OMTW - 4.0, Height = (double)(11 * 3) - 4.0, Stroke = Brushes.Yellow, StrokeThickness = 2.0, IsVisible = false, IsHitTestVisible = false };
+                r.StrokeDashArray = new AvaloniaList<double>(new[] { 3.0, 2.0 });
+                canvasAdd(owMaybeCanvas, r, OMTW * (double)i + 2.0, (double)(j * 11 * 3) + 2.0);
+                owMaybeRects[i, j] = r;
+            }
+        canvasAdd(overworldCanvas, owMaybeCanvas, 0.0, 0.0);
+        var owMaybeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500.0) };
+        owMaybeTimer.Tick += (_, _) =>
+        {
+            var maybe = OverworldData.maybeBlockedTiles(TrackerModel.playerComputedStateSummary.HavePowerBracelet, TrackerModel.playerComputedStateSummary.HaveRaft);
+            for (int i = 0; i <= 15; i++)
+                for (int j = 0; j <= 7; j++)
+                {
+                    var show = maybe.Contains(Tuple.Create(i, j)) && TrackerModel.overworldMapMarks[i, j].Current() == -1;
+                    owMaybeRects[i, j].IsVisible = show;
+                }
+        };
+        owMaybeTimer.Start();
 
         showLocatorExactLocation = (x, y) =>
         {

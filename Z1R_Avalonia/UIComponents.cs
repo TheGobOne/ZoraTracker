@@ -838,8 +838,16 @@ public static class UIComponents
         canvasAdd(itemProgressCanvas, have_letter, x, y);
         canvasAdd(itemProgressCanvas, grey_letter, x, y);
 
+        var boomerangsShownAsBoots = TrackerModel.BootsReplaceBoomerangs;
         void redrawItemProgressBar()
         {
+            if (boomerangsShownAsBoots != TrackerModel.BootsReplaceBoomerangs)   // (the Overworld + Extras boots box was clicked: swap the boomerang icons)
+            {
+                boomerangsShownAsBoots = TrackerModel.BootsReplaceBoomerangs;
+                grey_boomer.Source = Graphics.BMPtoImage(Graphics.greyscale(Graphics.magicBoomerangOrMagicalBootsBmp())).Source;
+                wood_boomer.Source = Graphics.BMPtoImage(Graphics.boomerangOrBootsBmp()).Source;
+                magi_boomer.Source = Graphics.BMPtoImage(Graphics.magicBoomerangOrMagicalBootsBmp()).Source;
+            }
             var hasSword4 = (TrackerModel.playerHasSword4.Value == 1);
             for (int i = 0; i < swordsByLevel.Length; i++) { var sword = swordsByLevel[i]; if (!hasSword4 && i == TrackerModel.playerComputedStateSummary.SwordLevel) sword.Opacity = 1.0; else sword.Opacity = 0.0; }
             sword4.Opacity = (hasSword4 ? 1.0 : 0.0);

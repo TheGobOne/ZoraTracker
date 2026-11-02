@@ -343,9 +343,20 @@ public static class CustomComboBoxes
         }
     }
 
+    // closes the topmost modal popup the way Escape does (used by the --selftest mode); false when no modal popup is open
+    public static bool DismissTopModal()
+    {
+        if (modalDismissStack.Count > 0)
+        {
+            modalDismissStack.Peek().Set();
+            return true;
+        }
+        else return false;
+    }
+
     // TODO rename DoModals
     // (placeElementOntoCanvas / removeElementFromCanvas: F# functions of a (Canvas, element) tuple)
-    public static async Task DoModalCore(CanvasManager cm, ManualResetEvent wh, Action<Canvas, Control> placeElementOntoCanvas, Action<Canvas, Control> removeElementFromCanvas, Control element, double blackSunglassesOpacity)
+    public static async Task DoModalCoreEx(CanvasManager cm, ManualResetEvent wh, Action<Canvas, Control> placeElementOntoCanvas, Action<Canvas, Control> removeElementFromCanvas, Control element, double blackSunglassesOpacity, bool closeOnOutsideClick)
     {
         if (!GlobalFlag.popupIsActive)
             throw new Exception("DoModalCore: popupIsActive was not set, which indicates programming error where a re-entrant UI thread may crash the program");
@@ -362,7 +373,9 @@ public static class CustomComboBoxes
                 if ((pos.X < 0.0 || pos.X > element.Bounds.Width) || (pos.Y < 0.0 || pos.Y > element.Bounds.Height))
                 {
                     var kind = ea.GetCurrentPoint(c).Properties.PointerUpdateKind;
-                    if (kind == PointerUpdateKind.LeftButtonPressed || kind == PointerUpdateKind.MiddleButtonPressed || kind == PointerUpdateKind.RightButtonPressed)
+                    if (!closeOnOutsideClick)
+                        ea.Handled = true;   // (swallow the click: only the popup's own buttons or Escape close it)
+                    else if (kind == PointerUpdateKind.LeftButtonPressed || kind == PointerUpdateKind.MiddleButtonPressed || kind == PointerUpdateKind.RightButtonPressed)
                     {
                         ea.Handled = true;
                         wh.Set();
@@ -407,6 +420,13 @@ public static class CustomComboBoxes
             cm.DismissPopupCanvas(c);
         }
     }
+
+    public static Task DoModalCore(CanvasManager cm, ManualResetEvent wh, Action<Canvas, Control> placeElementOntoCanvas, Action<Canvas, Control> removeElementFromCanvas, Control element, double blackSunglassesOpacity) =>
+        DoModalCoreEx(cm, wh, placeElementOntoCanvas, removeElementFromCanvas, element, blackSunglassesOpacity, true);
+
+    // like DoModal, but clicking outside the element does not close it
+    public static Task DoModalSticky(CanvasManager cm, ManualResetEvent wh, double x, double y, Control element) =>
+        DoModalCoreEx(cm, wh, (c, e) => canvasAdd(c, e, x, y), (c, e) => c.Children.Remove(e), element, 0.5, false);
 
     public static Task DoModalOpa(CanvasManager cm, ManualResetEvent wh, double x, double y, Control element, double opa) =>
         DoModalCore(cm, wh, (c, e) => canvasAdd(c, e, x, y), (c, e) => c.Children.Remove(e), element, opa);
@@ -1651,7 +1671,7 @@ public static class CustomComboBoxes
     // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
     public static readonly List<Action> versionGlowClearers = new List<Action>();
     // ---- update check (GitHub releases) ----
-    public static readonly string CurrentReleaseLabel = "2.2.0-beta17-hotfix1";   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+    public static readonly string CurrentReleaseLabel = "2.2.0-beta18";   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
     // (F#: returns (int list, (int * string * int * string)) and the callers compare those with F#'s structural `>`; compareTagKeys below
     // does the same comparison: the number list element by element (a shorter list that is a prefix sorts first), then the tuple field
     // by field, with strings compared ordinally as F# does)

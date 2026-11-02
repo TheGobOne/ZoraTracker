@@ -279,9 +279,8 @@ public static class Graphics
             };
             return bd;
         });
-    // rounded checkbox: dark rounded box, orange fill with a dark check when checked, orange dash when indeterminate
+    // rounded checkbox: dark rounded box, orange fill with a dark check when checked, light blue fill with a dark '?' when indeterminate (Random)
     private static readonly string checkMarkGeometry = "M 2,5.5 L 4.6,8.2 L 9,2.5";
-    private static readonly string indeterminateMarkGeometry = "M 2,5.5 L 9,5.5";
     public static readonly FuncControlTemplate<CheckBox> roundedCheckBoxTemplate =
         new FuncControlTemplate<CheckBox>((cb, _scope) =>
         {
@@ -290,14 +289,19 @@ public static class Graphics
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
             var mark = new Path { Stroke = new SolidColorBrush(Color.Parse("#0C0C0C")), StrokeThickness = 2.0, IsVisible = false,
                                   HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            var box = new Border { Name = "box", Width = 14.0, Height = 14.0, CornerRadius = new CornerRadius(3.0), BorderThickness = new Thickness(1.5), Child = mark };
+            var q = new TextBlock { Text = "?", FontSize = 13.0, FontWeight = FontWeight.Bold, Foreground = new SolidColorBrush(Color.Parse("#0C0C0C")), IsVisible = false,
+                                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0.0, -2.0, 0.0, 0.0) };
+            var markGrid = new Grid();
+            markGrid.Children.Add(mark);
+            markGrid.Children.Add(q);
+            var box = new Border { Name = "box", Width = 14.0, Height = 14.0, CornerRadius = new CornerRadius(3.0), BorderThickness = new Thickness(1.5), Child = markGrid };
             var boxScale = new LayoutTransformControl { Name = "boxScale", Child = box, VerticalAlignment = VerticalAlignment.Center };
             _scope.Register("boxScale", boxScale);
             var cp = new ContentPresenter { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
             Grid.SetColumn(cp, 1);
             grid.Children.Add(boxScale);
             grid.Children.Add(cp);
-            var (grey, dark, orange) = (new SolidColorBrush(Color.Parse("#8A8A8A")), new SolidColorBrush(Color.Parse("#171717")), hoverOrange);
+            var (grey, dark, orange, lightBlue) = (new SolidColorBrush(Color.Parse("#8A8A8A")), new SolidColorBrush(Color.Parse("#171717")), hoverOrange, new SolidColorBrush(Color.Parse("#4FC3F7")));
             void refresh()
             {
                 cp.Content = cb.Content;
@@ -307,15 +311,15 @@ public static class Graphics
                 {
                     case true:
                         box.Background = orange; box.BorderBrush = orange;
-                        mark.Data = Geometry.Parse(checkMarkGeometry); mark.IsVisible = true;
+                        mark.Data = Geometry.Parse(checkMarkGeometry); mark.IsVisible = true; q.IsVisible = false;
                         break;
                     case null:
-                        box.Background = orange; box.BorderBrush = orange;
-                        mark.Data = Geometry.Parse(indeterminateMarkGeometry); mark.IsVisible = true;
+                        box.Background = lightBlue; box.BorderBrush = lightBlue;
+                        mark.IsVisible = false; q.IsVisible = true;
                         break;
                     case false:
                         box.Background = dark; box.BorderBrush = grey;
-                        mark.IsVisible = false;
+                        mark.IsVisible = false; q.IsVisible = false;
                         break;
                 }
                 if (cb.IsPointerOver) box.BorderBrush = orange;
