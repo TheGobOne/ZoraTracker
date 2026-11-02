@@ -1440,8 +1440,12 @@ type MyWindow() as this =
                 | Some d when not (isNull d.Overworld) && d.Overworld.LegacyMode >= 0 -> d.Overworld.LegacyMode = 1
                 | _ -> isOn lmcb
             TrackerModel.LegacyMode <- legacyMode
-            let heartMode = heartModeSelected()
-            TrackerModel.HeartShuffleMode <- heartMode   // (a loaded save follows the startup checkbox too, like Progressive Items)
+            // (a loaded save restores its Heart Shuffle mode; older saves do not say, so they follow the start screen)
+            let heartMode =
+                match loadData with
+                | Some d when not (isNull d.Overworld) && d.Overworld.HeartShuffleMode >= 0 -> d.Overworld.HeartShuffleMode
+                | _ -> heartModeSelected()
+            TrackerModel.HeartShuffleMode <- heartMode
             let heartShuffle = loadData.IsSome || heartMode <> 0
             let kind = 
                 if loadData.IsSome then

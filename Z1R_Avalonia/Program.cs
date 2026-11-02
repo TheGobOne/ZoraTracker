@@ -1922,8 +1922,12 @@ public static class Program
                         ? loadData.Overworld.LegacyMode == 1
                         : isOn(lmcb);
                 TrackerModel.LegacyMode = legacyMode;
-                var heartMode = heartModeSelected();
-                TrackerModel.HeartShuffleMode = heartMode;   // (a loaded save follows the startup checkbox too, like Progressive Items)
+                // (a loaded save restores its Heart Shuffle mode; older saves do not say, so they follow the start screen)
+                var heartMode =
+                    (loadData != null && !(loadData.Overworld == null) && loadData.Overworld.HeartShuffleMode >= 0)
+                        ? loadData.Overworld.HeartShuffleMode
+                        : heartModeSelected();
+                TrackerModel.HeartShuffleMode = heartMode;
                 var heartShuffle = loadData != null || heartMode != 0;
                 var kind =
                     loadData != null

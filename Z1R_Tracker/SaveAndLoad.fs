@@ -19,7 +19,8 @@ type Overworld() =
     member val BombDroppers : int[] = null with get,set
     member val ShopStash : int[] = null with get,set
     member val CheapKeyShops : int[] = null with get,set
-    member val LegacyMode = -1 with get,set   // 1 = the game was in Legacy Mode, 0 = it was not, -1 = older save: keep what the start screen chose
+    member val HeartShuffleMode = -1 with get,set   // 0 = Off, 1 = Intra, 2 = Full; -1 = older save: keep what the start screen chose
+    member val LegacyMode = -1 with get,set  // 1 = the game was in Legacy Mode, 0 = it was not, -1 = older save: keep what the start screen chose
     member val ExtraBlocks = -1 with get,set   // bit 0 = extra power bracelet blocks, bit 1 = extra raft blocks, bit 2 = Dead Woods hint, bit 3 = Lost Hills hint (-1 = older save: keep what the start screen chose)
 
 [<AllowNullLiteral>]
@@ -222,6 +223,7 @@ let SaveOverworld(prefix) =
     lines.Add(sprintf """    "ShopStash": [%s],""" (System.String.Join(",", [| for k = 0 to 5 do yield string TrackerModel.shopStash.[k] |])))
     lines.Add(sprintf """    "CheapKeyShops": [%s],""" (System.String.Join(",", [| for k = 0 to 5 do yield (if TrackerModel.cheapKeyShops.[k] then "1" else "0") |])))
     lines.Add(sprintf """    "LegacyMode": %d,""" (if TrackerModel.LegacyMode then 1 else 0))
+    lines.Add(sprintf """    "HeartShuffleMode": %d,""" TrackerModel.HeartShuffleMode)
     lines.Add(sprintf """    "ExtraBlocks": %d,""" ((if OverworldData.ExtraPBBlocks then 1 else 0) + (if OverworldData.ExtraRaftBlocks then 2 else 0) + (if OverworldData.DeadWoodsEnabled then 4 else 0) + (if OverworldData.LostHillsEnabled then 8 else 0)))
     lines.Add(sprintf """    "Map": [""")
     for j = 0 to 7 do
