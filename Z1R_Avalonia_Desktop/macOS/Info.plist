@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The Mac app's Info.plist; make-app.sh fills in __VERSION__ -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>ZORA Tracker</string>
+    <key>CFBundleDisplayName</key>
+    <string>ZORA Tracker</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.tetraly.ZoraTracker</string>
+    <key>CFBundleExecutable</key>
+    <string>ZoraTracker.CrossPlatform</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__VERSION__</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.games</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>ZORA Tracker by TheGobOne; based on Z-Tracker by Dr. Brian Lorgon111</string>
+</dict>
+</plist>

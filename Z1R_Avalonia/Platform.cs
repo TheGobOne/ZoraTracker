@@ -375,10 +375,15 @@ public static class Platform
     }
 
     /// <summary>Writes a shortcut file that launches the app (WPF: an `IShellLink` saved via `IPersistFile` as ZTracker.lnk next to the exe).
-    /// Windows: the same shell COM calls as WPF. macOS/Linux: a stub (macOS: the .app in Applications; Linux: a .desktop file).</summary>
+    /// Windows: the same shell COM calls as WPF. macOS/Linux: a stub (macOS: the .app in Applications; Linux: a .desktop file).
+    /// Failing to write it is logged and ignored (WPF crashes at startup: an old ZTracker.lnk Windows won't let it replace gives "Access is denied").</summary>
     public static void CreateShortcut(string lnkPath, string targetPath, string workingDirectory, string iconPath, string description)
     {
-        if (OperatingSystem.IsWindows()) WinShellLink.Create(lnkPath, targetPath, workingDirectory, iconPath, description);
+        if (OperatingSystem.IsWindows())
+        {
+            try { WinShellLink.Create(lnkPath, targetPath, workingDirectory, iconPath, description); }
+            catch (Exception e) { Console.WriteLine($"couldn't write the shortcut {lnkPath}: {e.Message}"); }
+        }
         else stub("app shortcut (WPF: ZTracker.lnk next to the exe; macOS: the .app in Applications, Linux: a .desktop file)");
     }
 

@@ -2702,6 +2702,7 @@ public class ZoraTrackerApp : Application
 {
     public override void Initialize()
     {
+        Name = "ZORA Tracker";   // (macOS shows it as the app menu's title; Avalonia's default is "Avalonia Application")
         Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
         RequestedThemeVariant = ThemeVariant.Light;
     }

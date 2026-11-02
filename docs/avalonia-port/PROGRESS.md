@@ -109,6 +109,25 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it): mou
 drag-paint, hotkeys, cursor warps, MOVE/GRAB, the summary hover previews), save/load against a WPF save file, and the
 runtime-test lists in the entries below.
 
+## Mac app
+
+`Z1R_Avalonia_Desktop/macOS/make-app.sh [arm64|x64]` publishes the desktop app self-contained (no .NET install needed) and wraps it as
+`Z1R_Avalonia_Desktop/bin/macOS/<arch>/ZORA Tracker.app` (about 120 MB each): the publish output in `Contents/MacOS`, `Info.plist` from
+`macOS/Info.plist` (bundle id `io.github.tetraly.ZoraTracker`, the version from `GlobalAssemblyInfo.fs`, macOS 14 or later), and
+`macOS/AppIcon.icns`. Two apps, not one universal app: the .NET runtime's own libraries are compiled for each processor, so they can't be
+merged with `lipo`. The icon is WPF's `ztlogo64x64.ico` (its 48px image) scaled up by whole pixels onto a black rounded square.
+
+Signed ad hoc only (`codesign --sign -`), which Apple silicon needs to run anything; there's no Developer ID yet (risk 9 in PLAN.md),
+so a downloaded copy is quarantined and needs right-click > Open the first time, and macOS may move it to a read-only location (App
+Translocation) until it's moved to Applications. As a real app it gets its own Accessibility entry, for the F10 hotkeys and fake input.
+
+Known: Gob's settings file and `Saves` folder are written next to the program, so inside the app (`Contents/MacOS`); this works for an app
+the user can write to (one they built or moved to Applications) but not from a read-only location, and it invalidates the bundle's
+signature seal (launching still works; risk 10 and the settings-location upstream PR). `Application.Name` is now "ZORA Tracker", which
+macOS shows as the app menu's title (it said "Avalonia Application").
+
+Checked on the Mac (arm64): the app builds, its signature verifies, it launches and the menu bar says ZORA Tracker. x64 builds (not run).
+
 ## Browser build
 
 A limited build of the same tracker for web browsers (PLAN.md, phase 6). `Z1R_Avalonia_Browser` (C#, `net10.0-browser`) compiles
@@ -889,3 +908,8 @@ Differences TheGobOne has explicitly approved. Anything not listed here is a par
 - **Settings file location.** `TrackerModelOptions.readSettings`/`writeSettings` always use `AppDomain.CurrentDomain.BaseDirectory/Z1R_Tracker_settings.json`.
   A way to set the folder (e.g. a `settingsDirectory` the app sets at startup) would let the cross-platform tracker keep settings in
   `Platform.UserDataDir()` on macOS/Linux, unchanged on Windows. OptionsMenu's "Reset All Settings" would then delete that file.
+
+- **Don't crash when ZTracker.lnk can't be written.** MyWindow's constructor saves the shortcut with `IPersistFile.Save` and nothing catches
+  an error. A user on Windows 10 had an old ZTracker.lnk (pointing at a folder that no longer existed) that Windows wouldn't let the tracker
+  replace: `UnauthorizedAccessException` (E_ACCESSDENIED) at startup, before the window opened, wherever the folder was moved. Deleting the
+  .lnk fixed it. Wrapping the shortcut block in `try ... with _ -> ()` would; the port's `Platform.CreateShortcut` logs and carries on.

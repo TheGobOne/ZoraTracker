@@ -284,8 +284,8 @@ be checked**. In practice:
   `Z1R_SignalRHost` to net10.
 
 **Phase 5 — ship**
-- macOS `.app` bundle (osx-arm64 + osx-x64), signing and notarisation, Linux build, per-OS
-  auto-update, testing on each OS.
+- Done: macOS `.app` bundle (osx-arm64 and osx-x64, ad-hoc signed; `Z1R_Avalonia_Desktop/macOS/make-app.sh`).
+- Signing and notarisation (risk 9), Linux build, per-OS auto-update, testing on each OS.
 
 **Phase 6 — browser build (limited)**: started early; the first steps are done
 - Done: `Z1R_Avalonia_Browser` runs the ported tracker and `Z1R_Avalonia_Prototype` is deleted.
