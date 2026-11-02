@@ -179,6 +179,19 @@ let private run (win:Window) = async {
         do! pause 1500
         do! settle "tracker start"
         log(sprintf "tracker started (%d failures so far)" failures.Value)
+        // a save remembers the Heart Shuffle mode (Off / Intra / Full), so a reload does not follow the start screen
+        guard "heart shuffle save round trip" (fun () ->
+            let saved = TrackerModel.HeartShuffleMode
+            try
+                for m in [0; 1; 2] do
+                    TrackerModel.HeartShuffleMode <- m
+                    let json = "{ " + String.concat "\n" (SaveAndLoad.SaveOverworld("")) + " }"
+                    let d = DungeonSaveAndLoad.LoadAll(json)
+                    if d.Overworld.HeartShuffleMode <> m then fail (sprintf "Heart Shuffle mode %d saved and loaded back as %d" m d.Overworld.HeartShuffleMode)
+                let old = DungeonSaveAndLoad.LoadAll("{ \"Overworld\": { \"Quest\": 2 } }")
+                if old.Overworld.HeartShuffleMode <> -1 then fail "a save without a Heart Shuffle mode should load as -1"
+            finally
+                TrackerModel.HeartShuffleMode <- saved)
 
     if not stuck.Value then
         // 3a. every ordinary button on the main screen
