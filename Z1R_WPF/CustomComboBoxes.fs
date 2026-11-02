@@ -1194,10 +1194,11 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta18"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta-18-hotfix"  // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))
+    let pre = System.Text.RegularExpressions.Regex.Replace(pre, @"^([A-Za-z]+)-(\d)", "$1$2")   // 'beta-18-hotfix' compares like 'beta18-hotfix'
     let nums = main.Split('.') |> Array.map (fun p -> match System.Int32.TryParse(p) with | true, v -> v | _ -> 0) |> Array.toList
     let nums = nums @ List.replicate (max 0 (4 - nums.Length)) 0
     let preKey =
@@ -1343,7 +1344,7 @@ let downloadAndStageUpdate(zipUrl:string, onProgress:int -> unit) : string optio
 
 let makeVersionButtonWithBehavior(cm:CanvasManager) =
     // shows the current release (e.g. "v2.2-b3" for 2.2.0-beta3), so it only needs updating via CurrentReleaseLabel
-    let shortLabel = CurrentReleaseLabel.Replace(".0-","-").Replace("-beta","-b")
+    let shortLabel = CurrentReleaseLabel.Replace(".0-","-").Replace("-beta-","-b").Replace("-beta","-b")
     let vb = Graphics.makeButton(sprintf "v%s" shortLabel, Some(12.), Some(Brushes.Orange))
     // a green glow plus tooltip when a newer release is available on GitHub
     let showUpdateGlow(tag:string, _url:string) =
