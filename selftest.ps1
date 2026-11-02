@@ -9,6 +9,8 @@ foreach ($q in $Quests) {
     $dir = Join-Path $env:TEMP ($(if ($Port) {"zt_selftest_port_$q"} else {"zt_selftest_$q"}))
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
     Copy-Item $src $dir -Recurse
+    # (the copy must start clean: remembered settings and the recent-loads list are the developer's own, and the test would click the recent-load buttons and start a game from a save mid-test)
+    foreach ($leftover in "Z1R_Tracker_settings.json", "Z1R_Tracker_recent_loads.txt") { $f = Join-Path $dir $leftover; if (Test-Path $f) { Remove-Item $f -Force } }
     $crash = Join-Path $dir "Z1R_Tracker_crash_log.txt"
     if (Test-Path $crash) { Remove-Item $crash -Force }
     $p = Start-Process (Join-Path $dir $exeName) -ArgumentList "--selftest","--quest=$q" -WorkingDirectory $dir -PassThru
