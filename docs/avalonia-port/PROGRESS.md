@@ -883,14 +883,14 @@ TheGobOne says so.
 
 | Risk | Question | Answer |
 |---|---|---|
-| 1 | Is X11 the supported Linux setup, and which Wayland limits are acceptable? | |
-| 2 | Is a Mac-only alternative to middle-click and the thumb button (e.g. Option-click) OK? | |
-| 4 | Is "same voice commands, different speech engine" acceptable? | |
-| 5 | Are close-but-not-identical fonts acceptable where Windows fonts can't be used? | |
-| 8 | Is our own "show mouse location" ring OK in place of the Windows one? | |
-| 9 | Whose Apple Developer account signs and notarises the Mac build? | |
-| 10 | Where should user files live on macOS (`~/Library/Application Support/ZoraTracker`)? | |
-| – | What's on the cut-over checklist before WPF is retired? | |
+| 1 | Is X11 the supported Linux setup, and which Wayland limits are acceptable? | Yes: X11 is the supported Linux setup. Wayland limits are accepted but documented. |
+| 2 | Is a Mac-only alternative to middle-click and the thumb button (e.g. Option-click) OK? | Yes: Option-click is fine on Mac. |
+| 4 | Is "same voice commands, different speech engine" acceptable? | Yes. |
+| 5 | Are close-but-not-identical fonts acceptable where Windows fonts can't be used? | Yes. |
+| 8 | Is our own "show mouse location" ring OK in place of the Windows one? | Yes. |
+| 9 | Whose Apple Developer account signs and notarises the Mac build? | Provisional: Tetra signs and notarises with her own account (TheGobOne has not confirmed an account of his own). |
+| 10 | Where should user files live on macOS (`~/Library/Application Support/ZoraTracker`)? | Yes: `~/Library/Application Support/ZoraTracker`. |
+| – | What's on the cut-over checklist before WPF is retired? | The port passes selftest.ps1 -Port on every platform, and TheGobOne has done a Windows side-by-side check. |
 
 ## Agreed platform deviations
 
