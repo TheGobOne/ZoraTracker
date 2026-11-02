@@ -647,6 +647,10 @@ public static class OptionsMenu
         (new[] { "Guided Tour", "v2." }, "Tour, options and version",
             "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows what is new in this release, and glows when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen.") };
 
+    // the titles of the start screen tour stops that would be left out because none of their labels is on screen (a stop with no anchor is skipped silently); used by the self-test
+    public static List<string> startScreenTourMissingStops(Visual root) =>
+        startScreenTourSteps.Where(s => !s.labels.Any(p => p.StartsWith("@") || tourFind(root, p) != null)).Select(s => s.title).ToList();
+
     // the start screen tour raises the settings panel for the steps about it and lowers it for the rest (so it never hides the part being shown)
     // (F#: a module-level `do`, run when the module is first used; here a static constructor, which runs before any of OptionsMenu is used)
     static OptionsMenu()

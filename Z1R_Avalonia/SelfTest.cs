@@ -1,0 +1,462 @@
+// Port of Z1R_WPF/SelfTest.fs.
+// Background self-test: `ZoraTracker.CrossPlatform.exe --selftest --quest=N` (N = 0 1st, 1 2nd, 2 Mixed 1Q, 3 Mixed 2Q).
+// It runs on the tracker's own UI thread: it clicks controls by calling their click code and raises pointer events on whatever is under a grid of
+// points, so it never touches the real mouse or keyboard. Run it from a COPY of the release folder (it changes settings), see selftest.ps1 -Port.
+// Writes selftest_report.txt next to the exe, then exits. A crash shows up as a new Z1R_Tracker_crash_log.txt entry.
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+
+namespace Z1R_Avalonia;
+
+public static class SelfTest
+{
+    private static readonly string[] args = Environment.GetCommandLineArgs();
+    public static readonly bool isSelfTest = args.Contains("--selftest");
+    private static readonly int questArg =
+        args.Where(a => a.StartsWith("--quest=")).Select(a => int.Parse(a.Substring(8))).DefaultIfEmpty(2).First();
+    private static readonly string reportPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selftest_report.txt");
+    private static int failures = 0;
+    private static int popupsSeen = 0;   // popups the test opened and closed (a test that never opens one is not testing much)
+    private static int clicks = 0;
+    private static readonly Dictionary<string, int> hitsByType = new Dictionary<string, int>();
+    private static readonly Dictionary<string, int> popupsByType = new Dictionary<string, int>();
+    private static void log(string s) { try { File.AppendAllText(reportPath, s + "\n"); } catch { } }
+    private static void fail(string s) { failures++; log("FAIL: " + s); }
+
+    private static IEnumerable<Visual> descendants(Visual d) => d.GetVisualDescendants();
+
+    private static string label(Visual e)
+    {
+        if (e is ContentControl cc)
+        {
+            switch (cc.Content)
+            {
+                case string s: return s.Trim();
+                case TextBox t: return (t.Text ?? "").Trim();
+                case TextBlock t: return (t.Text ?? "").Trim();
+            }
+        }
+        return "";
+    }
+
+    // Avalonia has no ButtonBase: a Button, or a ToggleButton (check boxes), is what the WPF test calls a ButtonBase
+    private static bool isButtonLike(Visual d) => d is Button || d is ToggleButton;
+    private static MethodInfo findOnClick(Type t)
+    {
+        for (var x = t; x != null; x = x.BaseType)
+        {
+            var m = x.GetMethod("OnClick", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null);
+            if (m != null) return m;
+        }
+        return null;
+    }
+    private static void click(Control b)
+    {
+        clicks++;
+        findOnClick(b.GetType()).Invoke(b, null);
+    }
+
+    // runs an action; an exception it throws is a finding, not the end of the test
+    private static void guard(string what, Action f)
+    {
+        try { f(); }
+        catch (Exception e0)
+        {
+            var e = e0 is TargetInvocationException t && t.InnerException != null ? t.InnerException : e0;
+            var lines = string.Join(" | ", e.ToString().Split('\n').Take(4));
+            fail($"{what}: {lines}");
+        }
+    }
+
+    private static readonly Avalonia.Input.Pointer mouse = new Avalonia.Input.Pointer(Avalonia.Input.Pointer.GetNextFreeId(), PointerType.Mouse, true);
+    private static void raisePointer(Control target, bool press, MouseButton button)
+    {
+        var root = TopLevel.GetTopLevel(target);
+        var pos = target.TranslatePoint(new Point(target.Bounds.Width / 2.0, target.Bounds.Height / 2.0), root) ?? new Point(0, 0);
+        var mods = button == MouseButton.Left ? RawInputModifiers.LeftMouseButton : RawInputModifiers.RightMouseButton;
+        var kind = button == MouseButton.Left
+            ? (press ? PointerUpdateKind.LeftButtonPressed : PointerUpdateKind.LeftButtonReleased)
+            : (press ? PointerUpdateKind.RightButtonPressed : PointerUpdateKind.RightButtonReleased);
+        var props = new PointerPointProperties(press ? mods : RawInputModifiers.None, kind);
+        var ts = (ulong)Environment.TickCount;
+        if (press) target.RaiseEvent(new PointerPressedEventArgs(target, mouse, root, pos, ts, props, KeyModifiers.None));
+        else target.RaiseEvent(new PointerReleasedEventArgs(target, mouse, root, pos, ts, props, KeyModifiers.None, button));
+    }
+    private static void raiseClick(Control target, MouseButton button) { raisePointer(target, true, button); raisePointer(target, false, button); }
+    private static void raiseWheel(Control target, double delta)
+    {
+        var root = TopLevel.GetTopLevel(target);
+        var pos = target.TranslatePoint(new Point(target.Bounds.Width / 2.0, target.Bounds.Height / 2.0), root) ?? new Point(0, 0);
+        var props = new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.Other);
+        target.RaiseEvent(new PointerWheelEventArgs(target, mouse, root, pos, (ulong)Environment.TickCount, props, KeyModifiers.None, new Vector(0, delta)));
+    }
+
+    private static int popupCount() { try { return CustomComboBoxes.CanvasManager.TheOnlyCanvasManager.PopupCanvasStack.Count; } catch { return 0; } }
+    private static Visual popupRoot() { try { return CustomComboBoxes.CanvasManager.TheOnlyCanvasManager.PopupCanvasStack.Peek(); } catch { return null; } }
+
+    // buttons the test must not press (they open file dialogs, other programs, web pages, or windows that need a person)
+    private static readonly string[] avoid = { "save", "load", "hotkey", "popout", "site", "discord", "exit", "restart", "update", "quit", "download", "import", "export", "guided tour", "v2.", "-b1", "log" };
+    private static bool isAvoided(string text) { var t = text.ToLowerInvariant(); return avoid.Any(a => t.Contains(a)); }
+    private static readonly string[] questButtons = { "1st Quest", "2nd Quest", "Mixed - 1Q", "Mixed - 2Q", "Randomized Quest", "More Options..." };
+
+    private static IList<Window> allWindows() =>
+        (Application.Current.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Windows?.ToList() ?? new List<Window>();
+
+    private static async Task run(Window win)
+    {
+        async Task pause(int ms) { await Task.Delay(ms); }
+        var stuck = false;
+        // buttons like the popout ones open separate windows: close every window except the main one (and keep it from sitting on screen meanwhile)
+        var initialWindows = allWindows();   // (the ones that exist before the test starts are left alone)
+        void closeExtraWindows()
+        {
+            foreach (var w in allWindows())
+                if (w.IsVisible && !initialWindows.Any(i => ReferenceEquals(i, w)))
+                    try { w.Close(); } catch { }
+        }
+        // closes every popup that is open; a popup that will not close is a failure (the gray-screen kind), and ends the test
+        async Task settle(string what)
+        {
+            if (popupCount() > 0) popupsSeen++;
+            var tries = 0;
+            while (popupCount() > 0 && tries < 10)
+            {
+                if (!CustomComboBoxes.DismissTopModal()) tries = 10; else tries++;
+                await pause(120);
+            }
+            closeExtraWindows();
+            if (popupCount() > 0 || CustomComboBoxes.GlobalFlag.popupIsActive)
+            {
+                fail($"a popup was left open after: {what}");
+                stuck = true;
+            }
+        }
+        Control find(string text) => descendants(win).FirstOrDefault(d => isButtonLike(d) && label(d) == text) as Control;
+        List<CheckBox> checkboxes(Visual root) => descendants(root).OfType<CheckBox>().ToList();
+        List<Button> buttons(Visual root) => descendants(root).OfType<Button>().ToList();
+        async Task cycle(string what, CheckBox cb)
+        {
+            for (var i = 1; i <= (cb.IsThreeState ? 4 : 3); i++)
+                if (!stuck)
+                {
+                    guard($"{what} checkbox '{label(cb)}' click {i}", () => click(cb));
+                    await settle($"clicking checkbox '{label(cb)}'");
+                }
+        }
+
+        log($"ZORATracker selftest (port), quest {questArg}, {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+
+        // 0. flag decoding (no UI)
+        guard("flag decode", () =>
+        {
+            var (p, err1) = FlagPaste.decodeZ1R("GmCbTYod8E8ige6igkDR1ZyxsOpshPXUUTcU5");
+            if (p == null) fail("Z1R flags: " + err1);
+            else if (p.Quest != 2) fail("Z1R flags did not decode to Mixed 1Q");
+            var (z, err2) = FlagPaste.decodeZora("10.Km67jtU");
+            if (z == null) fail("ZORA flags: " + err2);
+            else if (!(z.Progressive && z.FourthSword == FlagPaste.Tri.On && z.FourthInLevel2 && z.BootsReplaceBoomerangs == FlagPaste.Tri.Random)) fail("ZORA flags decoded wrong");
+        });
+        log("flag decode done");
+
+        // 1. start screen: every checkbox through all its states
+        foreach (var cb in checkboxes(win))
+            if (!stuck && !isAvoided(label(cb))) await cycle("start screen", cb);
+        log($"start screen checkboxes done ({failures} failures so far)");
+        // start screen buttons that open things (not the ones that start the tracker)
+        foreach (var b in buttons(win))
+        {
+            var text = label(b);
+            if (!stuck && text != "" && !isAvoided(text) && !questButtons.Contains(text) && text != "Paste Flags")
+            {
+                guard($"start screen button '{text}'", () => click(b));
+                await pause(200);
+                await settle($"start screen button '{text}'");
+            }
+        }
+        // the Guided Tour: every start screen stop (Paste Flags included) must find its anchors, or the tour silently leaves it out
+        // (the settings panel's stops are only on screen while it is raised, so those are not checked here)
+        var tourPanelOnly = new[] { "Overworld settings", "Dungeon settings", "Reminders", "Auto-save", "Other options", "Co-Op and crash log" };
+        foreach (var title in OptionsMenu.startScreenTourMissingStops(win))
+            if (!tourPanelOnly.Contains(title)) fail($"Guided Tour: the start screen stop '{title}' has no anchor on screen");
+        if (!OptionsMenu.startScreenTourSteps.Any(s => s.title == "Paste Flags")) fail("Guided Tour: no Paste Flags stop");
+        // Paste Flags: type both strings, Apply, expect it to close and the options to be set
+        var pasteButton = find("Paste Flags");
+        if (pasteButton != null && !stuck)
+        {
+            guard("Paste Flags click", () => click(pasteButton));
+            await pause(400);
+            var root = popupRoot();
+            if (root == null) fail("Paste Flags: the box did not open");
+            else
+            {
+                var boxes = descendants(root).OfType<TextBox>().Where(t => !t.IsReadOnly).ToList();
+                var apply = descendants(root).FirstOrDefault(d => isButtonLike(d) && label(d) == "Apply") as Control;
+                if (boxes.Count < 2) fail("Paste Flags: the two text boxes were not found");
+                else if (apply == null) fail("Paste Flags: no Apply button");
+                else
+                {
+                    boxes[0].Text = "GmCbTYod8E8ige6igkDR1ZyxsOpshPXUUTcU5";
+                    boxes[1].Text = "10.Km67jtU";
+                    guard("Paste Flags Apply", () => click(apply));
+                    await pause(400);
+                    if (popupCount() > 0) fail("Paste Flags: Apply did not close the box");
+                    var progressive = checkboxes(win).FirstOrDefault(c => label(c).StartsWith("Progressive"));
+                    if (progressive == null) fail("Paste Flags: no Progressive Items checkbox");
+                    else if (progressive.IsChecked != true) fail("Paste Flags: Progressive Items was not checked");
+                }
+            }
+            await settle("Paste Flags");
+        }
+        log($"start screen done ({failures} failures so far)");
+
+        // 2. start the tracker
+        var questLabel = new[] { "1st Quest", "2nd Quest", "Mixed - 1Q", "Mixed - 2Q" }[questArg];
+        var questButton = find(questLabel);
+        if (questButton == null || stuck) fail($"no '{questLabel}' start button");
+        else guard($"start '{questLabel}'", () => click(questButton));
+        var waited = 0;
+        while (find("Overworld + Extras") == null && waited < 60) { await pause(500); waited++; }
+        if (find("Overworld + Extras") == null)
+        {
+            fail("the main screen never appeared");
+            stuck = true;
+        }
+        else
+        {
+            await pause(1500);
+            await settle("tracker start");
+            log($"tracker started ({failures} failures so far)");
+        }
+
+        if (!stuck)
+        {
+            // 3a. every ordinary button on the main screen
+            foreach (var b in buttons(win))
+            {
+                var text = label(b);
+                if (!stuck && text != "" && !isAvoided(text))
+                {
+                    guard($"button '{text}'", () => click(b));
+                    await pause(200);
+                    // inside whatever opened: every checkbox through its states, then close it
+                    var root = popupRoot();
+                    if (popupCount() > 0 && root != null)
+                        foreach (var cb in checkboxes(root))
+                            if (!stuck && !isAvoided(label(cb))) await cycle($"'{text}' popup", cb);
+                    await settle($"button '{text}'");
+                }
+            }
+            log($"main screen buttons done ({failures} failures so far)");
+
+            // 3b. a click, right click and wheel on whatever is under each point of a grid over the window
+            var content = (Visual)win.Content;
+            var w = (int)win.Bounds.Width; var h = (int)win.Bounds.Height;
+            var step = 20;
+            var n = 0;
+            log($"grid starts: popupIsActive={CustomComboBoxes.GlobalFlag.popupIsActive} popups={popupCount()} window {w}x{h}");
+            for (var y = step / 2; y < h; y += step)
+            {
+                for (var x = step / 2; x < w; x += step)
+                {
+                    if (stuck) continue;
+                    Visual hit = null;
+                    try { hit = content.GetVisualAt(new Point(x, y)); } catch { }
+                    var target = hit?.GetSelfAndVisualAncestors().OfType<Control>().FirstOrDefault();
+                    if (target == null) continue;
+                    n++;
+                    var tname = target.GetType().Name;
+                    var where = $"({x},{y}) {tname}";
+                    hitsByType[tname] = hitsByType.GetValueOrDefault(tname) + 1;
+                    async Task afterwards(string what)
+                    {
+                        if (popupCount() > 0)
+                        {
+                            popupsByType[tname] = popupsByType.GetValueOrDefault(tname) + 1;
+                            await pause(80);
+                            await settle(what);
+                        }
+                    }
+                    // (three left clicks: an unmarked overworld tile first marks X, then DontCare, and only then opens its popup)
+                    for (var k = 1; k <= 3; k++)
+                        if (!stuck)
+                        {
+                            guard($"left click {k} {where}", () => raiseClick(target, MouseButton.Left));
+                            await afterwards($"left click {k} {where}");
+                        }
+                    guard("right click " + where, () => raiseClick(target, MouseButton.Right));
+                    await afterwards("right click " + where);
+                    guard("wheel " + where, () => { raiseWheel(target, 120); raiseWheel(target, -120); });
+                    await afterwards("wheel " + where);
+                }
+                await pause(1);   // (let the window breathe between rows)
+            }
+            // 3c. the overworld tile canvases themselves (48x33, one per tile): left click each 4 times, right click once
+            var tiles = descendants(content).OfType<Canvas>().Where(c => c.Width == 48.0 && c.Height == 33.0 && c.IsHitTestVisible).ToList();
+            log($"overworld tile canvases found: {tiles.Count} (popupIsActive={CustomComboBoxes.GlobalFlag.popupIsActive})");
+            var tilePopups = 0;
+            foreach (var t in tiles)
+            {
+                if (stuck) break;
+                for (var k = 1; k <= 4; k++)
+                    if (!stuck)
+                    {
+                        guard("tile left click", () => raiseClick(t, MouseButton.Left));
+                        await pause(5);
+                        if (popupCount() > 0) { tilePopups++; await pause(80); await settle("tile left click"); }
+                    }
+                guard("tile right click", () => raiseClick(t, MouseButton.Right));
+                await pause(5);
+                if (popupCount() > 0) { tilePopups++; await pause(80); await settle("tile right click"); }
+            }
+            log($"tile clicks done: {tilePopups} popups opened");
+            log($"grid done: {n} points");
+            log("grid targets (type: points, popups opened): " + string.Join(" | ", hitsByType.OrderByDescending(kv => kv.Value).Take(12).Select(kv => $"{kv.Key}: {kv.Value}, {popupsByType.GetValueOrDefault(kv.Key)}")));
+
+            // 3d. Overworld + Extras: what the checkboxes actually do (not just that they can be clicked)
+            var anyRoads = new[] { (TrackerModel.MapSquareChoiceDomainHelper.WARP_1, 10, 7), (TrackerModel.MapSquareChoiceDomainHelper.WARP_2, 14, 1),
+                                   (TrackerModel.MapSquareChoiceDomainHelper.WARP_3, 4, 2), (TrackerModel.MapSquareChoiceDomainHelper.WARP_4, 10, 4) };
+            var owExtras = stuck ? null : find("Overworld + Extras");
+            if (owExtras != null)
+            {
+                guard("Overworld + Extras open", () => click(owExtras));
+                await pause(400);
+                var root = popupRoot();
+                if (root == null) fail("Overworld + Extras: the window did not open");
+                else
+                {
+                    CheckBox cbNamed(string text) => checkboxes(root).FirstOrDefault(c => label(c).StartsWith(text));
+                    async Task clickTo(CheckBox cb, bool? target)
+                    {
+                        var tries = 0;
+                        while (cb.IsChecked != target && tries < 4)
+                        {
+                            guard("Overworld + Extras checkbox", () => click(cb));
+                            tries++;
+                            await pause(50);
+                        }
+                    }
+                    // mirror: the checkbox flips the map and the model, and back
+                    var mirrorCb = cbNamed("Mirrored Overworld");
+                    if (mirrorCb == null) fail("Overworld + Extras: no Mirrored Overworld checkbox");
+                    else
+                    {
+                        var before = TrackerModel.MirrorOverworld;
+                        guard("mirror click", () => click(mirrorCb));
+                        await pause(300);
+                        if (TrackerModel.MirrorOverworld == before) fail("Mirrored Overworld: clicking the box did not flip the map");
+                        guard("mirror click back", () => click(mirrorCb));
+                        await pause(300);
+                        if (TrackerModel.MirrorOverworld != before) fail("Mirrored Overworld: clicking again did not flip it back");
+                    }
+                    // Extra PB blocks: Off removes the vanilla any roads, On brings them back, then the box shows ? (Random, counts as On)
+                    var pbCb = cbNamed("Extra Power Bracelet Blocks");
+                    if (pbCb == null) fail("Overworld + Extras: no Extra Power Bracelet Blocks checkbox");
+                    else
+                    {
+                        await clickTo(pbCb, false);
+                        if (OverworldData.ExtraPBBlocks || OverworldData.ExtraPBRandom) fail("Extra PB Off: the model is not Off");
+                        foreach (var (state, col, row) in anyRoads)
+                            if (TrackerModel.overworldMapMarks[col - 1, row].Current() == state) fail($"Extra PB Off: the any road at {col},{row} is still marked");
+                        await clickTo(pbCb, true);
+                        if (!OverworldData.ExtraPBBlocks || OverworldData.ExtraPBRandom) fail("Extra PB On: the model is not On");
+                        foreach (var (state, col, row) in anyRoads)
+                        {
+                            var cur = TrackerModel.overworldMapMarks[col - 1, row].Current();
+                            if (cur == -1 && !TrackerModel.owInstance.AlwaysEmpty(col - 1, row)) fail($"Extra PB On: the any road at {col},{row} was not brought back");
+                        }
+                        await clickTo(pbCb, null);
+                        if (!OverworldData.ExtraPBBlocks || !OverworldData.ExtraPBRandom) fail("Extra PB ?: Random should be set and count as On");
+                        // Random: the maybe-blocked outlines show until the bracelet is owned, then they are gone
+                        var without = OverworldData.maybeBlockedTiles(false, false);
+                        var withPB = OverworldData.maybeBlockedTiles(true, false);
+                        if (!OverworldData.extraPBBlockTiles.All(t => without.Contains(t))) fail("Extra PB ?: the maybe-blocked tiles are missing");
+                        if (OverworldData.extraPBBlockTiles.Any(t => withPB.Contains(t))) fail("Extra PB ?: the outlines stay after the bracelet is owned");
+                        await clickTo(pbCb, false);
+                    }
+                    // the other three that can be Random: Random sets the flag and counts as On; Off clears both
+                    foreach (var name in new[] { "Extra Raft Blocks", "Randomize Dead Woods", "Randomize Lost Hills" })
+                    {
+                        var cb = cbNamed(name);
+                        if (cb == null) fail($"Overworld + Extras: no '{name}' checkbox");
+                        else
+                        {
+                            await clickTo(cb, null);
+                            if (cb.IsChecked.HasValue) fail($"{name}: could not reach the ? state");
+                            if (OverworldData.maybeBlockedTiles(false, false).IsEmpty) fail($"{name} ?: no maybe-blocked tiles");
+                            await clickTo(cb, false);
+                        }
+                    }
+                    // Boots has no ? state (two states only)
+                    var bootsCb = cbNamed("Boots Replace Boomerangs");
+                    if (bootsCb == null) fail("Overworld + Extras: no Boots checkbox");
+                    else if (bootsCb.IsThreeState) fail("Boots Replace Boomerangs should only be on/off");
+                    if (!OverworldData.maybeBlockedTiles(false, false).IsEmpty) fail("everything is Off but tiles are still maybe-blocked");
+                    // the Close button closes the window
+                    var closeBtn = descendants(root).FirstOrDefault(d => isButtonLike(d) && label(d) == "Close") as Control;
+                    if (closeBtn == null) fail("Overworld + Extras: no Close button");
+                    else
+                    {
+                        guard("Overworld + Extras Close", () => click(closeBtn));
+                        await pause(300);
+                        if (popupCount() > 0) fail("Overworld + Extras: the Close button did not close the window");
+                    }
+                }
+                await settle("Overworld + Extras checks");
+            }
+            log($"overworld + extras checks done ({failures} failures so far)");
+        }
+
+        closeExtraWindows();
+        log($"{clicks} button/checkbox clicks, {popupsSeen} popups opened and closed");
+        log(failures == 0 ? "RESULT: PASS" : $"RESULT: FAIL ({failures})");
+        (Application.Current.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown(failures == 0 ? 0 : 1);
+    }
+
+    public static void arm()
+    {
+        try { File.Delete(reportPath); } catch { }
+        // any window the test opens (popouts and so on) goes off the screen and out of the taskbar as soon as it loads
+        Control.LoadedEvent.AddClassHandler<Window>((w, _) =>
+        {
+            w.WindowStartupLocation = WindowStartupLocation.Manual;
+            w.Position = new PixelPoint(-4000, 0);
+            w.ShowInTaskbar = false;
+        });
+        var started = false;
+        var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.0) };
+        t.Tick += (_, _) =>
+        {
+            if (started) return;
+            var w = Graphics.theWindow;
+            if (w != null && w.IsLoaded && w.Content != null)
+            {
+                started = true;
+                t.Stop();
+                w.WindowStartupLocation = WindowStartupLocation.Manual;
+                w.Position = new PixelPoint(-4000, 0);   // off the screen, so it does not get in the way
+                w.ShowInTaskbar = false;
+                run(w).ContinueWith(task =>
+                {
+                    if (task.IsFaulted)
+                    {
+                        log("FAIL: the test itself broke: " + task.Exception);
+                        Dispatcher.UIThread.Post(() => (Application.Current.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown(2));
+                    }
+                }, TaskScheduler.FromCurrentSynchronizationContext());
+            }
+        };
+        t.Start();
+    }
+}

@@ -2997,6 +2997,7 @@ public class ZoraTrackerApp : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d)
         {
+            if (SelfTest.isSelfTest) SelfTest.arm();   // (WPF arms it before app.Run; here Avalonia's dispatcher only exists once the app is running)
             Program.theDummyWindow = new Program.DummyWindow(d);
             d.Exit += (_, _) => Program.stopLocalSignalRHost();
             Dispatcher.UIThread.Post(() => Program.theDummyWindow.Loaded());
