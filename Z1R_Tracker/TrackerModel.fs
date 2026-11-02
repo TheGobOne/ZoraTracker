@@ -18,6 +18,7 @@ type ReminderCategory =
     | BoomstickBook
     | HaveMagicKey
     | HaveLadder
+    | RandomExtras                     // reminder to check Overworld + Extras when a ZORA extra is left on Random
     member this.DisplayName =
         match this with
         | DungeonFeedback -> "Dungeon Feedback"
@@ -34,6 +35,7 @@ type ReminderCategory =
         | BoomstickBook -> "Boomstick Book"
         | HaveMagicKey -> "Have Magic Key"
         | HaveLadder -> "Have Ladder"
+        | RandomExtras -> "Overworld + Extras"
 
 ///////////////////////////////////////////////////////////////////////////
 

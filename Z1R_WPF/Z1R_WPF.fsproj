@@ -158,6 +158,8 @@
     <Compile Include="CoopSync.fs" />
     <Compile Include="DungeonModelSync.fs" />
     <Compile Include="WPFUI.fs" />
+    <Compile Include="FlagPaste.fs" />
+    <Compile Include="SelfTest.fs" />
     <Compile Include="Program.fs" />
     <Content Include="..\Z1R_Tracker\README.txt">
       <Link>README.txt</Link>

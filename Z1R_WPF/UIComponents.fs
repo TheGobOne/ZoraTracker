@@ -655,7 +655,13 @@ let MakeItemProgressBar(_owInstance:OverworldData.OverworldInstance) =
     canvasAdd(itemProgressCanvas, have_letter, x, y)
     canvasAdd(itemProgressCanvas, grey_letter, x, y)
 
-    let redrawItemProgressBar() = 
+    let mutable boomerangsShownAsBoots = TrackerModel.BootsReplaceBoomerangs
+    let redrawItemProgressBar() =
+        if boomerangsShownAsBoots <> TrackerModel.BootsReplaceBoomerangs then   // (the Overworld + Extras boots box was clicked: swap the boomerang icons)
+            boomerangsShownAsBoots <- TrackerModel.BootsReplaceBoomerangs
+            grey_boomer.Source <- Graphics.BMPtoImage(Graphics.greyscale (Graphics.magicBoomerangOrMagicalBootsBmp())).Source
+            wood_boomer.Source <- Graphics.BMPtoImage(Graphics.boomerangOrBootsBmp()).Source
+            magi_boomer.Source <- Graphics.BMPtoImage(Graphics.magicBoomerangOrMagicalBootsBmp()).Source
         let hasSword4 = (TrackerModel.playerHasSword4.Value = 1)
         swordsByLevel |> Array.iteri (fun i sword -> if not hasSword4 && i = TrackerModel.playerComputedStateSummary.SwordLevel then sword.Opacity <- 1. else sword.Opacity <- 0.)
         sword4.Opacity <- (if hasSword4 then 1. else 0.)

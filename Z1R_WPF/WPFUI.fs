@@ -2301,7 +2301,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     // (a default Button around a 29px-high black canvas) so height and border match; it forwards its click to the real 1Q/2Q button
     if isStandardHyrule && moreFQSQoptionsButton <> null then
         // (the 1Q/2Q button now lives in the control panel at the top, under the OVERWORLD OPTIONS heading; it forwards its click to the real 1Q/2Q button)
-        let fqsqPanelButton = Graphics.makeButton("1Q/2Q/Blocks", Some(11.), Some(Brushes.Orange))
+        let fqsqPanelButton = Graphics.makeButton("Overworld + Extras", Some(11.), Some(Brushes.Orange))
         fqsqPanelButton.Click.Add(fun _ -> moreFQSQoptionsButton.RaiseEvent(new RoutedEventArgs(Primitives.ButtonBase.ClickEvent)))
         layout.AddOverworldOptionsButton(fqsqPanelButton)
         // ZORA Hints: Lost Woods / Lost Hills direction sequences, in the open legend space right of the 1Q/2Q button
@@ -3350,7 +3350,24 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     canvasAdd(overworldCanvas, owLocatorGrid, 0., 0.)
     canvasAdd(overworldCanvas, owLocatorCanvas, 0., 0.)
 
-    showLocatorExactLocation <- (fun (x,y) ->
+    // tiles that a Random (dash) ZORA Extra might block: a dashed yellow outline (like the sometimes-empty spots) until the tile is marked or the option is confirmed in Overworld + Extras
+    let owMaybeCanvas = new Canvas(IsHitTestVisible=false)
+    let owMaybeRects = Array2D.init 16 8 (fun i j ->
+        let r = new Shapes.Rectangle(Width=OMTW-4., Height=float(11*3)-4., Stroke=Brushes.Yellow, StrokeThickness=2., Visibility=Visibility.Collapsed, IsHitTestVisible=false)
+        r.StrokeDashArray <- new DoubleCollection( seq[3.; 2.] )
+        canvasAdd(owMaybeCanvas, r, OMTW*float i+2., float(j*11*3)+2.)
+        r)
+    canvasAdd(overworldCanvas, owMaybeCanvas, 0., 0.)
+    let owMaybeTimer = new System.Windows.Threading.DispatcherTimer(Interval=TimeSpan.FromMilliseconds(500.))
+    owMaybeTimer.Tick.Add(fun _ ->
+        let maybe = OverworldData.maybeBlockedTiles(TrackerModel.playerComputedStateSummary.HavePowerBracelet, TrackerModel.playerComputedStateSummary.HaveRaft)
+        for i = 0 to 15 do
+            for j = 0 to 7 do
+                let show = maybe.Contains((i,j)) && TrackerModel.overworldMapMarks.[i,j].Current() = -1
+                owMaybeRects.[i,j].Visibility <- (if show then Visibility.Visible else Visibility.Collapsed))
+    owMaybeTimer.Start()
+
+    showLocatorExactLocation <-(fun (x,y) ->
         if (x,y) <> TrackerModel.NOTFOUND then
             hideLocator()  // clear prior locators, there are various scenarios where prior might not be cleared
             owLocatorTileRectangles.[x,y].MakeMagenta()
