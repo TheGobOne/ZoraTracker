@@ -35,6 +35,7 @@ module VoiceReminders =
     let mutable BoomstickBook = Bool(false)
     let mutable HaveMagicKey = Bool(true)
     let mutable HaveLadder = Bool(true)
+    let mutable RandomExtras = Bool(false)
 module VisualReminders =
     let mutable DungeonFeedback = Bool(true)
     let mutable SwordHearts = Bool(true)
@@ -49,6 +50,7 @@ module VisualReminders =
     let mutable BoomstickBook = Bool(true)
     let mutable HaveMagicKey = Bool(true)
     let mutable HaveLadder = Bool(true)
+    let mutable RandomExtras = Bool(true)
 module OverworldTilesToHide =
     let mutable Sword3 = Bool(false)
     let mutable Sword2 = Bool(false)
@@ -153,6 +155,8 @@ let mutable ShorterAppWindow = Bool(false)
 let mutable IsMuted = false
 let mutable Volume = 30
 let mutable LastSeenVersionNotes = ""   // version whose About/patch notes the user has opened (version button glows until then)
+let mutable GuidedTourSeen = false   // set once the user clicks Guided Tour (the button glows until then)
+let mutable HideRandomExtrasHint = false   // set when the user clicks "Don't show again" on the note about Random extras (shown when the overworld comes up)
 //How often should reminders fire?  In milliseconds.
 let mutable ReminderFrequency = 1000
 // Base interval (in minutes) for periodic reminders. Actual intervals scale proportionally.
@@ -230,11 +234,13 @@ type ReadWrite() =
     member val Voice_BoomstickBook = false with get,set
     member val Voice_HaveMagicKey = true with get,set
     member val Voice_HaveLadder = true with get,set
+    member val Voice_RandomExtras = false with get,set
     member val Visual_RecorderSpots = true with get,set
     member val Visual_PowerBraceletSpots = true with get,set
     member val Visual_BoomstickBook = true with get,set
     member val Visual_HaveMagicKey = true with get,set
     member val Visual_HaveLadder = true with get,set
+    member val Visual_RandomExtras = true with get,set
 
     member val HideOverworldTile_Sword3 = false with get,set
     member val HideOverworldTile_Sword2 = false with get,set
@@ -296,6 +302,8 @@ type ReadWrite() =
     member val IsMuted = false with get, set
     member val Volume = 30 with get, set
     member val LastSeenVersionNotes = "" with get, set
+    member val GuidedTourSeen = false with get, set
+    member val HideRandomExtrasHint = false with get, set
     member val PreferredVoice = "" with get,set
     member val ReminderIntervalMinutes = 5 with get,set
     member val AutoSaveMinutes = 2 with get,set
@@ -380,11 +388,13 @@ let private writeImpl(filename) =
     data.Voice_BoomstickBook <- VoiceReminders.BoomstickBook.Value
     data.Voice_HaveMagicKey <- VoiceReminders.HaveMagicKey.Value
     data.Voice_HaveLadder <- VoiceReminders.HaveLadder.Value
+    data.Voice_RandomExtras <- VoiceReminders.RandomExtras.Value
     data.Visual_RecorderSpots <- VisualReminders.RecorderSpots.Value
     data.Visual_PowerBraceletSpots <- VisualReminders.PowerBraceletSpots.Value
     data.Visual_BoomstickBook <- VisualReminders.BoomstickBook.Value
     data.Visual_HaveMagicKey <- VisualReminders.HaveMagicKey.Value
     data.Visual_HaveLadder <- VisualReminders.HaveLadder.Value
+    data.Visual_RandomExtras <- VisualReminders.RandomExtras.Value
 
     data.HideOverworldTile_Sword3 <- OverworldTilesToHide.Sword3.Value
     data.HideOverworldTile_Sword2 <- OverworldTilesToHide.Sword2.Value
@@ -444,6 +454,8 @@ let private writeImpl(filename) =
     data.IsMuted <- IsMuted
     data.Volume <- Volume
     data.LastSeenVersionNotes <- LastSeenVersionNotes
+    data.GuidedTourSeen <- GuidedTourSeen
+    data.HideRandomExtrasHint <- HideRandomExtrasHint
     data.PreferredVoice <- PreferredVoice
     data.ReminderIntervalMinutes <- ReminderIntervalMinutes
     data.AutoSaveMinutes <- AutoSaveMinutes
@@ -536,11 +548,13 @@ let private read(filename) =
         VoiceReminders.BoomstickBook.Value <- data.Voice_BoomstickBook
         VoiceReminders.HaveMagicKey.Value <- data.Voice_HaveMagicKey
         VoiceReminders.HaveLadder.Value <- data.Voice_HaveLadder
+        VoiceReminders.RandomExtras.Value <- data.Voice_RandomExtras
         VisualReminders.RecorderSpots.Value <- data.Visual_RecorderSpots
         VisualReminders.PowerBraceletSpots.Value <- data.Visual_PowerBraceletSpots
         VisualReminders.BoomstickBook.Value <- data.Visual_BoomstickBook
         VisualReminders.HaveMagicKey.Value <- data.Visual_HaveMagicKey
         VisualReminders.HaveLadder.Value <- data.Visual_HaveLadder
+        VisualReminders.RandomExtras.Value <- data.Visual_RandomExtras
 
         OverworldTilesToHide.Sword3.Value <- data.HideOverworldTile_Sword3
         OverworldTilesToHide.Sword2.Value <- data.HideOverworldTile_Sword2
@@ -603,6 +617,8 @@ let private read(filename) =
         IsMuted <- data.IsMuted
         Volume <- max 0 (min 100 data.Volume)
         LastSeenVersionNotes <- (if data.LastSeenVersionNotes = null then "" else data.LastSeenVersionNotes)
+        GuidedTourSeen <- data.GuidedTourSeen
+        HideRandomExtrasHint <- data.HideRandomExtrasHint
         PreferredVoice <- data.PreferredVoice
         ReminderIntervalMinutes <- max 1 (min 60 data.ReminderIntervalMinutes)
         AutoSaveMinutes <- (if data.AutoSaveMinutes < 1 then 2 else min 10 data.AutoSaveMinutes)

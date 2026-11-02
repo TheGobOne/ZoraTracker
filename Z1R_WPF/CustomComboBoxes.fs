@@ -218,8 +218,15 @@ let private ensureEscapeHandler() =
                     ea.Handled <- true
                     modalDismissStack.Peek().Set() |> ignore))
 
+// closes the topmost modal popup the way Escape does (used by the --selftest mode); false when no modal popup is open
+let DismissTopModal() =
+    if modalDismissStack.Count > 0 then
+        modalDismissStack.Peek().Set() |> ignore
+        true
+    else false
+
 // TODO rename DoModals
-let DoModalCore(cm:CanvasManager, wh:System.Threading.ManualResetEvent, placeElementOntoCanvas, removeElementFromCanvas, element:FrameworkElement, blackSunglassesOpacity) = async {
+let DoModalCoreEx(cm:CanvasManager, wh:System.Threading.ManualResetEvent, placeElementOntoCanvas, removeElementFromCanvas, element:FrameworkElement, blackSunglassesOpacity, closeOnOutsideClick:bool) = async {
     if not popupIsActive then
         failwith "DoModalCore: popupIsActive was not set, which indicates programming error where a re-entrant UI thread may crash the program"
     // rather than use MouseCapture() API, just draw a canvas over entire window which will intercept all mouse gestures
@@ -231,7 +238,9 @@ let DoModalCore(cm:CanvasManager, wh:System.Threading.ManualResetEvent, placeEle
       c.MouseDown.Add(fun ea ->
           let pos = ea.GetPosition(element)
           if (pos.X < 0. || pos.X > element.ActualWidth) || (pos.Y < 0. || pos.Y > element.ActualHeight) then
-              if ea.ButtonState = Input.MouseButtonState.Pressed &&
+              if not closeOnOutsideClick then
+                  ea.Handled <- true   // (swallow the click: only the popup's own buttons or Escape close it)
+              elif ea.ButtonState = Input.MouseButtonState.Pressed &&
                       (ea.ChangedButton = Input.MouseButton.Left || ea.ChangedButton = Input.MouseButton.Middle || ea.ChangedButton = Input.MouseButton.Right) then
                   ea.Handled <- true
                   wh.Set() |> ignore
@@ -262,6 +271,13 @@ let DoModalCore(cm:CanvasManager, wh:System.Threading.ManualResetEvent, placeEle
       (try removeElementFromCanvas(c, element) with _ -> ())
       cm.DismissPopupCanvas(c)
     }
+
+let DoModalCore(cm, wh, placeElementOntoCanvas, removeElementFromCanvas, element, blackSunglassesOpacity) =
+    DoModalCoreEx(cm, wh, placeElementOntoCanvas, removeElementFromCanvas, element, blackSunglassesOpacity, true)
+
+// like DoModal, but clicking outside the element does not close it
+let DoModalSticky(cm, wh, x, y, element) =
+    DoModalCoreEx(cm, wh, (fun (c,e) -> canvasAdd(c, e, x, y)), (fun (c,e) -> c.Children.Remove(e)), element, 0.5, false)
 
 let DoModalOpa(cm:CanvasManager, wh:System.Threading.ManualResetEvent, x, y, element, opa) =
     DoModalCore(cm, wh, (fun (c,e) -> canvasAdd(c, e, x, y)), (fun (c,e) -> c.Children.Remove(e)), element, opa)
@@ -1178,7 +1194,7 @@ let DisplayItemComboBox(cm:CanvasManager, boxX, boxY, boxCellCurrent, activation
 // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
 let versionGlowClearers = new System.Collections.Generic.List<unit -> unit>()
 // ---- update check (GitHub releases) ----
-let CurrentReleaseLabel = "2.2.0-beta17-hotfix1"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+let CurrentReleaseLabel = "2.2.0-beta18"   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
 let private parseTagForCompare(tag:string) =
     let t = tag.Trim().TrimStart('v','V')
     let main, pre = (match t.IndexOf('-') with | -1 -> t, "" | i -> t.Substring(0,i), t.Substring(i+1))

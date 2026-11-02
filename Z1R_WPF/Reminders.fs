@@ -30,6 +30,7 @@ let SendReminderImpl(category, text:string, icons:seq<FrameworkElement>, visualU
             | TrackerModel.ReminderCategory.SwordHearts ->     TrackerModelOptions.VoiceReminders.SwordHearts.Value,     TrackerModelOptions.VisualReminders.SwordHearts.Value
             | TrackerModel.ReminderCategory.DoorRepair ->      TrackerModelOptions.VoiceReminders.DoorRepair.Value,      TrackerModelOptions.VisualReminders.DoorRepair.Value
             | TrackerModel.ReminderCategory.OverworldOverwrites -> TrackerModelOptions.VoiceReminders.OverworldOverwrites.Value, TrackerModelOptions.VisualReminders.OverworldOverwrites.Value
+            | TrackerModel.ReminderCategory.RandomExtras ->    TrackerModelOptions.VoiceReminders.RandomExtras.Value,    TrackerModelOptions.VisualReminders.RandomExtras.Value
             | TrackerModel.ReminderCategory.Asterisk ->        false, false
         if not(Timeline.isCurrentlyLoadingASave) then 
             reminderAgent.Post(text, category, TrackerModelOptions.IsMuted, shouldRemindVoice, icons, shouldRemindVisual, visualUpdateToSynchronizeWithReminder)

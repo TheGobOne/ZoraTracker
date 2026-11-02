@@ -285,6 +285,11 @@ let mutable DeadWoodsEnabled = false     // h1 h2 h3
 let mutable LostHillsEnabled = false     // a12 a13 a14
 let mutable DeadWoodsHintKnown = false   // set once a Dead Woods hint has been entered in the hint button
 let mutable LostHillsHintKnown = false
+// true while the start-screen option was Random (a dash): the tiles it affects are drawn yellow until the user confirms the option in Overworld + Extras
+let mutable ExtraPBRandom = false
+let mutable ExtraRaftRandom = false
+let mutable DeadWoodsRandom = false
+let mutable LostHillsRandom = false
 let deadWoodsTiles = set [ (0,7); (1,7); (2,7) ]
 let lostHillsTiles = set [ (11,0); (12,0); (13,0) ]
 let mutable IsMirroredFunc : unit -> bool = fun () -> false
@@ -293,6 +298,13 @@ let isExtraTile(tiles:Set<int*int>, x, y) = tiles.Contains((x, y))
 let ladderBlockTilesAllQuests = set [ (15,5) ]   // F16 (the coast item) is always a ladder block
 let extraPBBlockTiles = set [ for x in 0..3 do for y in 0..1 -> (x,y) ]
 let extraRaftBlockTiles = set [ (4,3); (4,4); (14,0); (15,0); (14,1); (15,1) ]
+// tiles that might or might not be blocked, because a Random (dash) ZORA Extra could affect them
+// (once the player has the item that would block a group of tiles, or knows the hint, they just try them, so no outline)
+let maybeBlockedTiles(havePowerBracelet, haveRaft) =
+    Set.unionMany [ (if ExtraPBRandom && not havePowerBracelet then extraPBBlockTiles else Set.empty)
+                    (if ExtraRaftRandom && not haveRaft then extraRaftBlockTiles else Set.empty)
+                    (if DeadWoodsRandom && not DeadWoodsHintKnown then deadWoodsTiles else Set.empty)
+                    (if LostHillsRandom && not LostHillsHintKnown then lostHillsTiles else Set.empty) ]
 type OverworldInstance(quest) =
     member this.Quest = quest
     member this.AlwaysEmpty(x,y) =

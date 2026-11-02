@@ -981,22 +981,36 @@ let MakeFQSQStuff(cm, _isMixed, owLocatorTilesZone:Graphics.TileHighlightRectang
                 blocksTxt.Margin <- Thickness(0.,10.,0.,2.)
                 sp.Children.Add(blocksTxt) |> ignore
                 let blocksRow = new StackPanel(Orientation=Orientation.Horizontal)
-                let mkBlocksCB(label:string, tip:string, getV:unit->bool, setV:bool->unit) =
+                // rnd: for options that can be Random on the start screen, the Random flag; the box then cycles off / on / Random (a dash, counts as On), so a wrong click can be undone
+                let mkBlocksCB(label:string, tip:string, getV:unit->bool, setV:bool->unit, rnd:((unit->bool)*(bool->unit)) option) =
                     let t = mkTxt(label)
                     t.FontSize <- 14.
-                    let cb = new CheckBox(Content=t, IsChecked=System.Nullable<bool>(getV()), Margin=Thickness(6.,2.,14.,2.), ToolTip=tip)
+                    let isRnd = (match rnd with Some(g,_) -> g() | None -> false)
+                    let cb = new CheckBox(Content=t, IsChecked=(if isRnd then System.Nullable<bool>() else System.Nullable<bool>(getV())), Margin=Thickness(6.,2.,14.,2.), ToolTip=(if rnd.IsSome then tip + "\n\nClicks cycle Off, On, Random (?). Random counts as On, with yellow outlines on the tiles that might be blocked." else tip), IsThreeState=rnd.IsSome)
                     cb.Click.Add(fun _ ->
-                        setV(cb.IsChecked.HasValue && cb.IsChecked.Value)
+                        (match rnd with
+                         | Some(_, setR) when not cb.IsChecked.HasValue -> setV true; setR true
+                         | Some(_, setR) -> setV cb.IsChecked.Value; setR false
+                         | None -> setV(cb.IsChecked.HasValue && cb.IsChecked.Value))
                         TrackerModel.recomputeMapStateSummary()
                         TrackerModel.forceUpdate()
                         OptionsMenu.requestRedrawOverworldEvent.Trigger()
                         refreshUIAfterOverworldTemplateChange())
                     cb
-                blocksRow.Children.Add(mkBlocksCB("Extra Power Bracelet Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4", (fun () -> OverworldData.ExtraPBBlocks), (fun v -> OverworldData.ExtraPBBlocks <- v))) |> ignore
-                blocksRow.Children.Add(mkBlocksCB("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16", (fun () -> OverworldData.ExtraRaftBlocks), (fun v -> OverworldData.ExtraRaftBlocks <- v))) |> ignore
+                blocksRow.Children.Add(mkBlocksCB("Extra Power Bracelet Blocks", "These overworld tiles are also blocked by the power bracelet:\nA1, A2, A3, A4, B1, B2, B3, B4", (fun () -> OverworldData.ExtraPBBlocks), (fun v ->
+                    OverworldData.ExtraPBBlocks <- v
+                    OverworldData.ExtraPBRandom <- false
+                    // on or Random puts the vanilla any roads back (1 in H10, 2 in B14, 3 in C4, 4 in E10; only on empty tiles); off takes away the ones still marked in their vanilla spots
+                    for (state, col, row) in [ (TrackerModel.MapSquareChoiceDomainHelper.WARP_1, 10, 7); (TrackerModel.MapSquareChoiceDomainHelper.WARP_2, 14, 1)
+                                               (TrackerModel.MapSquareChoiceDomainHelper.WARP_3, 4, 2);  (TrackerModel.MapSquareChoiceDomainHelper.WARP_4, 10, 4) ] do
+                        let cell = TrackerModel.overworldMapMarks.[col-1, row]
+                        if not v then
+                            if cell.Current() = state then cell.Set(-1)
+                        elif cell.Current() = -1 && not (TrackerModel.owInstance.AlwaysEmpty(col-1, row)) then cell.Set(state)), Some((fun () -> OverworldData.ExtraPBRandom), (fun r -> OverworldData.ExtraPBRandom <- r)))) |> ignore
+                blocksRow.Children.Add(mkBlocksCB("Extra Raft Blocks", "These overworld tiles are also blocked by the raft:\nD5, E5, A15, A16, B15, B16", (fun () -> OverworldData.ExtraRaftBlocks), (fun v -> OverworldData.ExtraRaftBlocks <- v; OverworldData.ExtraRaftRandom <- false), Some((fun () -> OverworldData.ExtraRaftRandom), (fun r -> OverworldData.ExtraRaftRandom <- r)))) |> ignore
                 let hintsRow = new StackPanel(Orientation=Orientation.Horizontal)
-                hintsRow.Children.Add(mkBlocksCB("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)", (fun () -> OverworldData.DeadWoodsEnabled), (fun v -> OverworldData.DeadWoodsEnabled <- v))) |> ignore
-                hintsRow.Children.Add(mkBlocksCB("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)", (fun () -> OverworldData.LostHillsEnabled), (fun v -> OverworldData.LostHillsEnabled <- v))) |> ignore
+                hintsRow.Children.Add(mkBlocksCB("Randomize Dead Woods", "These overworld tiles are locked by the Dead Woods hint:\nH1, H2, H3\n(hovering one highlights the Dead Woods button)", (fun () -> OverworldData.DeadWoodsEnabled), (fun v -> OverworldData.DeadWoodsEnabled <- v; OverworldData.DeadWoodsRandom <- false), Some((fun () -> OverworldData.DeadWoodsRandom), (fun r -> OverworldData.DeadWoodsRandom <- r)))) |> ignore
+                hintsRow.Children.Add(mkBlocksCB("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)", (fun () -> OverworldData.LostHillsEnabled), (fun v -> OverworldData.LostHillsEnabled <- v; OverworldData.LostHillsRandom <- false), Some((fun () -> OverworldData.LostHillsRandom), (fun r -> OverworldData.LostHillsRandom <- r)))) |> ignore
                 let hideQuestPanel = new StackPanel(Orientation=Orientation.Vertical, VerticalAlignment=VerticalAlignment.Top, Margin=Thickness(10.,0.,10.,0.))
                 DockPanel.SetDock(hideQuestPanel, Dock.Right)
                 if nowMixed then
@@ -1011,6 +1025,11 @@ let MakeFQSQStuff(cm, _isMixed, owLocatorTilesZone:Graphics.TileHighlightRectang
                 let blocksCol = new StackPanel(Orientation=Orientation.Vertical)
                 blocksCol.Children.Add(blocksRow) |> ignore
                 blocksCol.Children.Add(hintsRow) |> ignore
+                // boots: on or off any time too (for when the flags left Boots on Random). The boomerang pickers use it at once; the boomerang icons already drawn in the item boxes update the next time the tracker starts
+                let bootsRow = new StackPanel(Orientation=Orientation.Horizontal)
+                bootsRow.Children.Add(mkBlocksCB("Boots Replace Boomerangs", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (fun () -> TrackerModel.BootsReplaceBoomerangs), (fun v -> TrackerModel.BootsReplaceBoomerangs <- v), None)) |> ignore
+                bootsRow.Children.Add(mkBlocksCB("Mirrored Overworld", "Flip the overworld map East<->West (same as the mirror icon at the top left).", (fun () -> TrackerModel.MirrorOverworld), (fun v -> setMirroredOverworld v), None)) |> ignore
+                blocksCol.Children.Add(bootsRow) |> ignore
                 // the Hide 1st / 2nd Quest checkboxes (mixed overworlds only) sit in a third column, level with the four checkboxes
                 let blocksArea = new DockPanel(LastChildFill=true)
                 blocksArea.Children.Add(hideQuestPanel) |> ignore
@@ -1023,9 +1042,14 @@ let MakeFQSQStuff(cm, _isMixed, owLocatorTilesZone:Graphics.TileHighlightRectang
                 let shopLeft = new StackPanel(Orientation=Orientation.Vertical)
                 shopRow.Children.Add(shopLeft) |> ignore
                 sp.Children.Add(shopRow) |> ignore
+                let closeBtn = Graphics.makeButton("Close", Some(16.), Some(Brushes.Orange))
+                closeBtn.Margin <- Thickness(0.,10.,8.,8.)
+                closeBtn.HorizontalAlignment <- HorizontalAlignment.Right
+                closeBtn.Click.Add(fun _ -> CustomComboBoxes.DismissTopModal() |> ignore)
+                sp.Children.Add(closeBtn) |> ignore
                 let b = new Border(Child=sp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(5.), Background=Brushes.Black)
                 clearOW()
-                do! CustomComboBoxes.DoModalCore(cm, wh, (fun (c,e) -> canvasAdd(c, e, 10., 10.)), (fun (c,e) -> c.Children.Remove(e)), b, 0.25)
+                do! CustomComboBoxes.DoModalCore(cm, wh, (fun (c,e) -> canvasAdd(c, e, 10., START_DUNGEON_AND_NOTES_AREA_H)), (fun (c,e) -> c.Children.Remove(e)), b, 0.25)
                 hideQuestPanel.Children.Clear()   // release the checkboxes so the next popup can reuse them
                 popupIsActive <- false
             } |> Async.StartImmediate
