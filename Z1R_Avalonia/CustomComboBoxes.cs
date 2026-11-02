@@ -1802,10 +1802,13 @@ public static class CustomComboBoxes
     // HotKeys.txt, settings file and custom images alone) and starts the new version. Returns an error message on failure, or None once the script is running (the caller then closes the app).
     // (null for None. Windows only: it replaces the app's files with the release's Windows build, so on other systems it refuses and changes nothing;
     // the version button opens the release page there instead. See PROGRESS.md, Stubs.)
+    // the release's .zip is the WPF Windows build; unpacking it over this app's folder swaps in the wrong FSharp.Core and Z1R_Tracker.dll and the app no longer starts.
+    // So the in-app install stays off until the releases carry a cross-platform zip; the version button opens the release page instead.
+    public static readonly bool inAppInstallIsSafe = false;
     public static string downloadAndStageUpdate(string zipUrl, Action<int> onProgress)
     {
-        if (!Platform.isWindows)
-            return "the automatic update install only exists for the Windows build";
+        if (!Platform.isWindows || !inAppInstallIsSafe)
+            return "the automatic update install only exists for the Windows (WPF) build";
         try
         {
             var work = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ZoraTrackerUpdate");
@@ -1945,7 +1948,7 @@ public static class CustomComboBoxes
                         if (updateAvailable.HasValue)
                         {
                             var (tag, url) = updateAvailable.Value;
-                            if (!Platform.isWindows)
+                            if (!Platform.isWindows || !inAppInstallIsSafe)
                             {
                                 // (the in-app install replaces the Windows build's files; on macOS/Linux there's nothing to install yet, so open the release page,
                                 // as WPF does when the install fails. Risk 11 in PLAN.md; listed under Stubs in PROGRESS.md.)
