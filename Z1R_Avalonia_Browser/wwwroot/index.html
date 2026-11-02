@@ -2,10 +2,39 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>ZORA Tracker (web preview)</title>
+  <title>ZORA Tracker (web)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#out{height:100%;width:100%}</style>
+  <style>
+    html,body{margin:0;height:100%;background:#000;overflow:hidden}#out{height:100%;width:100%}
+    #note{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.75);z-index:10;font:15px/1.45 system-ui,sans-serif;color:#ddd}
+    #note>div{max-width:34em;margin:16px;padding:20px 24px;background:#111;border:4px solid gray}
+    #note h1{margin:0 0 .5em;font-size:18px;color:#fff}#note ul{padding-left:1.2em;margin:.4em 0}
+    #note button{margin-top:.8em;padding:6px 18px;font:inherit;background:#222;color:#fff;border:2px solid gray;cursor:pointer}
+    #about{position:fixed;right:6px;bottom:4px;z-index:5;font:12px system-ui,sans-serif;color:#666;cursor:pointer;background:none;border:0}
+  </style>
   <script type="module" src="./main.js"></script>
 </head>
-<body><div id="out"></div></body>
+<body>
+  <div id="out"></div>
+  <!-- what the web version leaves out; shown on the first visit, and again from the "web version" link -->
+  <div id="note"><div>
+    <h1>ZORA Tracker, web version</h1>
+    This is the same tracker as the desktop app, with what a web page can't do turned off:
+    <ul>
+      <li>global hotkeys (keys work only while this page has focus), gamepad and voice commands</li>
+      <li>pop-out windows: HUDs, the broadcast window and other separate windows</li>
+      <li>co-op sync, auto-update, and fake clicks or mouse movement</li>
+    </ul>
+    Settings and the autosave are kept in this browser. Other saves are also downloaded; open them with <b>Load Save</b> on the start screen.
+    For everything else, get the desktop app.
+    <br><button id="noteOk">OK</button>
+  </div></div>
+  <button id="about">web version</button>
+  <script>
+    const note = document.getElementById("note"), show = v => note.style.display = v ? "flex" : "none";
+    document.getElementById("noteOk").onclick = () => { show(false); try { localStorage.setItem("zt-web-note-seen", "1"); } catch {} };
+    document.getElementById("about").onclick = () => show(true);
+    try { if (!localStorage.getItem("zt-web-note-seen")) show(true); } catch { show(true); }
+  </script>
+</body>
 </html>

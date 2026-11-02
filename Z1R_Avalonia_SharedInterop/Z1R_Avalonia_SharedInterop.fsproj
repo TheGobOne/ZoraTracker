@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- net10 build of Gob's Z1R_SharedInterop (net472), from the same source file, unchanged. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Z1R_SharedInterop</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Z1R_SharedInterop\TrackerOptionsBridge.fs" Link="TrackerOptionsBridge.fs" />
+    <Compile Include="..\GlobalAssemblyInfo.fs" Link="GlobalAssemblyInfo.fs" />
+  </ItemGroup>
+
+</Project>
