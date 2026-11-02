@@ -1264,6 +1264,7 @@ let fetchReleaseZipUrl(tag:string) : string option =
             let name = a.GetProperty("name").GetString()
             let url = a.GetProperty("browser_download_url").GetString()
             if found.IsNone && not (isNull name) && name.EndsWith(".zip", System.StringComparison.OrdinalIgnoreCase)
+               && name.IndexOf("CrossPlatform", System.StringComparison.OrdinalIgnoreCase) < 0   // (the cross-platform port's zips are named ...CrossPlatform...; this is the WPF updater)
                && not (isNull url) && url.StartsWith("https://github.com/TheGobOne/ZoraTracker/releases/download/") then
                 found <- Some url
         found

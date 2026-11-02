@@ -899,6 +899,20 @@ Differences TheGobOne has explicitly approved. Anything not listed here is a par
 - **Option-click on macOS** as an alternative to middle-click and the thumb button (risk 2).
 - **Close-but-not-identical fonts** where the Windows fonts can't be used (risk 5).
 - **Our own "show mouse location" ring** in place of the Windows one (risk 8).
+- **Message box icons** drawn as look-alikes of the Windows ones.
+- **No console window on Windows** (`WinExe`); crash details go to the crash log only.
+
+## Answers to the "Needs Gob" notes (TheGobOne, 2026-11-02)
+
+- **Shop-highlight stroke:** don't copy WPF's stuck 4px stroke; the port's behaviour stays.
+- **Cmd on macOS:** Cmd counts as Ctrl for hotkeys, Uncollected Items Ctrl+wheel and Ctrl+Z.
+- **Release zips:** the port's zips have `CrossPlatform` in the file name. The WPF updater skips those (done in b19) and the port's updater picks only those
+  (done; `inAppInstallIsSafe` stays false until the first port zip ships, then Tetra flips it). Don't attach a port zip to a release before the WPF build with
+  the skip is out, or older WPF builds would offer to install it.
+- **RUN with `.app` bundles on macOS:** yes; launch them with `open`.
+- **Co-op host executable off Windows:** deferred to phase 4.
+- **Co-op door format:** keep the converter; needs a real WPF-to-Avalonia co-op test.
+- **`sendDungeonMapsUpdate` early return:** keep WPF's behaviour for parity; any fix goes in WPF first.
 
 ## Proposed upstream PRs to TheGobOne
 

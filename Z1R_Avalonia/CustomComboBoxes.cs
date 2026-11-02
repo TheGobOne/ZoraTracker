@@ -1791,6 +1791,7 @@ public static class CustomComboBoxes
                 var name = a.GetProperty("name").GetString();
                 var url = a.GetProperty("browser_download_url").GetString();
                 if (found == null && name != null && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                   && name.IndexOf("CrossPlatform", StringComparison.OrdinalIgnoreCase) >= 0   // (the port's zips have CrossPlatform in the name; the WPF build's zip does not)
                    && url != null && url.StartsWith("https://github.com/TheGobOne/ZoraTracker/releases/download/"))
                     found = url;
             }
