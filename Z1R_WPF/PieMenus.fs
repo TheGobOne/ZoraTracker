@@ -695,9 +695,13 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
         | None ->
             // the overworld item hotkeys (candle, arrow, bomb, ...) also work here: the item goes in the shop under the mouse
             match HotKeys.OverworldHotKeyProcessor.TryGetValue(ea.Key) with
-            | Some(st) when TrackerModel.MapSquareChoiceDomainHelper.IsItem(st) && st <> TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP ->
+            | Some(st) when (TrackerModel.MapSquareChoiceDomainHelper.IsItem(st) && st <> TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP)
+                            || st = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || st = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || st = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 ->
                 let ident =
-                    if st = TrackerModel.MapSquareChoiceDomainHelper.ARROW then TrackerModel.ITEMS.WOODARROW
+                    if st = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER then TrackerModel.ITEMS.LETTER
+                    elif st = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 then TrackerModel.ITEMS.WHITESWORD
+                    elif st = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 then TrackerModel.ITEMS.MAGICALSWORD
+                    elif st = TrackerModel.MapSquareChoiceDomainHelper.ARROW then TrackerModel.ITEMS.WOODARROW
                     elif st = TrackerModel.MapSquareChoiceDomainHelper.BOMB then TrackerModel.DECOR_BOMB
                     elif st = TrackerModel.MapSquareChoiceDomainHelper.BOOK then TrackerModel.ITEMS.BOOKSHIELD
                     elif st = TrackerModel.MapSquareChoiceDomainHelper.BLUE_CANDLE then TrackerModel.ITEMS.BLUECANDLE

@@ -269,6 +269,9 @@ let mutable decorStateChanged = fun () -> ()   // set once the main UI exists: r
 // potion shops: a tile counts as one if it carries the "P SHOP" label (shop label 5) or is marked as an old-style potion shop; the blue potion marker icon is just a marker and does not count
 let tileHasPotionShop(i:int, j:int) =
     TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) = 5 || TrackerModel.overworldMapMarks.[i,j].Current() = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP
+// a tile that is already a shop: it has a shop label (1-4, P) or is marked as an old-style item shop / potion shop
+let isShopTile(i:int, j:int) =
+    TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j]) <> 0 || TrackerModel.MapSquareChoiceDomainHelper.IsItem(TrackerModel.overworldMapMarks.[i,j].Current()) || tileHasPotionShop(i,j)
 let canPlacePotionShop(i:int, j:int) =
     if tileHasPotionShop(i,j) then true
     else
@@ -2168,10 +2171,15 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     | Some(hotKeyedState) when hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP && not(canPlacePotionShop(i,j)) ->
                         ea.Handled <- true
                         Graphics.ErrorBeepWithReminderLogText "All the potion shops are already placed"
-                    | Some(hotKeyedState) when hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState) ->
+                    | Some(hotKeyedState) when hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)
+                                               || (isShopTile(i,j) && (hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.SWORD3)) ->
                         // the shop hotkeys place the new marker icons, exactly like picking the item from the tile menu (the potion shop is the blue + red potion pair)
+                        // (on a tile that is already a shop, the Letter / White Sword / Magical Sword hotkeys put that item in the shop instead of turning the tile into a cave)
                         let shopIdent =
-                            if hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP then TrackerModel.ITEMS.BLUEPOTION
+                            if hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER then TrackerModel.ITEMS.LETTER
+                            elif hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 then TrackerModel.ITEMS.WHITESWORD
+                            elif hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 then TrackerModel.ITEMS.MAGICALSWORD
+                            elif hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP then TrackerModel.ITEMS.BLUEPOTION
                             elif hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.ARROW then TrackerModel.ITEMS.WOODARROW
                             elif hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.BOMB then TrackerModel.DECOR_BOMB
                             elif hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.BOOK then TrackerModel.ITEMS.BOOKSHIELD

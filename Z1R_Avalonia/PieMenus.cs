@@ -909,10 +909,14 @@ public static class PieMenus
             else
             {
                 // the overworld item hotkeys (candle, arrow, bomb, ...) also work here: the item goes in the shop under the mouse
-                if (HotKeys.OverworldHotKeyProcessor.TryGetValue(ea.Key, out var st) && TrackerModel.MapSquareChoiceDomainHelper.IsItem(st) && st != TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP)
+                if (HotKeys.OverworldHotKeyProcessor.TryGetValue(ea.Key, out var st) && ((TrackerModel.MapSquareChoiceDomainHelper.IsItem(st) && st != TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP)
+                        || st == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || st == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || st == TrackerModel.MapSquareChoiceDomainHelper.SWORD3))
                 {
                     int ident;
-                    if (st == TrackerModel.MapSquareChoiceDomainHelper.ARROW) ident = TrackerModel.ITEMS.WOODARROW;
+                    if (st == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER) ident = TrackerModel.ITEMS.LETTER;
+                    else if (st == TrackerModel.MapSquareChoiceDomainHelper.SWORD2) ident = TrackerModel.ITEMS.WHITESWORD;
+                    else if (st == TrackerModel.MapSquareChoiceDomainHelper.SWORD3) ident = TrackerModel.ITEMS.MAGICALSWORD;
+                    else if (st == TrackerModel.MapSquareChoiceDomainHelper.ARROW) ident = TrackerModel.ITEMS.WOODARROW;
                     else if (st == TrackerModel.MapSquareChoiceDomainHelper.BOMB) ident = TrackerModel.DECOR_BOMB;
                     else if (st == TrackerModel.MapSquareChoiceDomainHelper.BOOK) ident = TrackerModel.ITEMS.BOOKSHIELD;
                     else if (st == TrackerModel.MapSquareChoiceDomainHelper.BLUE_CANDLE) ident = TrackerModel.ITEMS.BLUECANDLE;

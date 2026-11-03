@@ -297,7 +297,8 @@ public static class HotKeys
                 TrackerModel.ITEMS.BLUERING, TrackerModel.ITEMS.REDRING, TrackerModel.ITEMS.WOODARROW, TrackerModel.ITEMS.SILVERARROW, TrackerModel.ITEMS.WAND,
                 TrackerModel.ITEMS.KEY, TrackerModel.ITEMS.BLUECANDLE, TrackerModel.ITEMS.REDCANDLE, TrackerModel.ITEMS.BOOMERANG, TrackerModel.ITEMS.MAGICBOOMERANG,
                 TrackerModel.ITEMS.BOOKSHIELD, TrackerModel.ITEMS.SHIELD, TrackerModel.ITEMS.MEAT, TrackerModel.DECOR_BOMB, TrackerModel.ITEMS.OLDKEY,
-                TrackerModel.ITEMS.BLUEPOTION, TrackerModel.ITEMS.LETTER, TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.ITEMS.BOMBUPGRADE };
+                TrackerModel.ITEMS.BLUEPOTION, TrackerModel.ITEMS.LETTER, TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.ITEMS.BOMBUPGRADE,
+                TrackerModel.ITEMS.WHITESWORD, TrackerModel.ITEMS.MAGICALSWORD };
     // 'BookOrShield' is split: the first item slot is now 'Book' (it still displays as the Magical Shield in a boomstick seed); the separate 'Shield' item keeps its own name.
     // (the old 'Item_BookOrShield' name is still accepted in an existing HotKeys.txt)
     // the Item_X hotkeys also work when hovering an overworld tile (toggling that marker icon); the bomb marker is not an item, so it alone gets its own 'OverworldMarker_Bomb' entry

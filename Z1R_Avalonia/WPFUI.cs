@@ -413,6 +413,9 @@ public static class WPFUI
     // potion shops: a tile counts as one if it carries the "P SHOP" label (shop label 5) or is marked as an old-style potion shop; the blue potion marker icon is just a marker and does not count
     public static bool tileHasPotionShop(int i, int j) =>
         TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]) == 5 || TrackerModel.overworldMapMarks[i, j].Current() == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP;
+    // a tile that is already a shop: it has a shop label (1-4, P) or is marked as an old-style item shop / potion shop
+    public static bool isShopTile(int i, int j) =>
+        TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]) != 0 || TrackerModel.MapSquareChoiceDomainHelper.IsItem(TrackerModel.overworldMapMarks[i, j].Current()) || tileHasPotionShop(i, j);
     public static bool canPlacePotionShop(int i, int j)
     {
         if (tileHasPotionShop(i, j)) return true;
@@ -3067,11 +3070,16 @@ public static class WPFUI
                             ea.Handled = true;
                             Graphics.ErrorBeepWithReminderLogText("All the potion shops are already placed");
                         }
-                        else if (hasHotKeyedState && (hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)))
+                        else if (hasHotKeyedState && (hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)
+                                 || (isShopTile(i, j) && (hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.SWORD3))))
                         {
                             // the shop hotkeys place the new marker icons, exactly like picking the item from the tile menu (the potion shop is the blue + red potion pair)
+                            // (on a tile that is already a shop, the Letter / White Sword / Magical Sword hotkeys put that item in the shop instead of turning the tile into a cave)
                             var shopIdent =
-                                hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP ? TrackerModel.ITEMS.BLUEPOTION
+                                hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER ? TrackerModel.ITEMS.LETTER
+                                : hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 ? TrackerModel.ITEMS.WHITESWORD
+                                : hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.SWORD3 ? TrackerModel.ITEMS.MAGICALSWORD
+                                : hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP ? TrackerModel.ITEMS.BLUEPOTION
                                 : hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.ARROW ? TrackerModel.ITEMS.WOODARROW
                                 : hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.BOMB ? TrackerModel.DECOR_BOMB
                                 : hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.BOOK ? TrackerModel.ITEMS.BOOKSHIELD
