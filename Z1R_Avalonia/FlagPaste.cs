@@ -47,9 +47,20 @@ public static class FlagPaste
         l.Add(("disable_custom_music", 2, 11));
         l.Add(("gatekeeper_bosses", 4, 12));
         l.Add(("full_health", 3, 13));
+        l.Add(("harder_bosses", 4, 14));
+        l.Add(("harder_ganon", 4, 14));
+        l.Add(("offense_pacing", 4, 15));
+        l.Add(("defense_pacing", 4, 15));
+        l.Add(("recorder_warping", 2, 15));
+        l.Add(("swap_swords_and_rings", 3, 16));
+        l.Add(("swordlish", 3, 16));
+        l.Add(("swordlish_lowest", 8, 16));
+        l.Add(("swordlish_highest", 8, 16));
+        l.Add(("item_shuffle_no_vanilla", 2, 17));
+        l.Add(("compass_chime", 3, 18));
         return l;
     }
-    private const int zoraCurrentVersion = 13;
+    private const int zoraCurrentVersion = 18;
 
     private static BigInteger? parseBase63(string s)   // (null for None)
     {
@@ -145,7 +156,7 @@ public static class FlagPaste
         var version = 0;
         var versionOk = dot > 0 && int.TryParse(s.Substring(0, dot), out version);
         if (!versionOk || version < 1)
-            return (null, "That doesn't look like a ZORA flag string (it should look like 13.abc: a version, a dot, then letters and digits).");
+            return (null, "That doesn't look like a ZORA flag string (it should look like 18.abc: a version, a dot, then letters and digits).");
         else if (version > zoraCurrentVersion)
             return (null, $"These ZORA flags are version {version}, newer than this tracker understands (up to {zoraCurrentVersion}). Update the tracker.");
         var number = parseBase63(s.Substring(dot + 1));

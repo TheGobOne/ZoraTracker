@@ -167,6 +167,10 @@ public static class SelfTest
             var (z, err2) = FlagPaste.decodeZora("10.Km67jtU");
             if (z == null) fail("ZORA flags: " + err2);
             else if (!(z.Progressive && z.FourthSword == FlagPaste.Tri.On && z.FourthInLevel2 && z.BootsReplaceBoomerangs == FlagPaste.Tri.Random)) fail("ZORA flags decoded wrong");
+            // a version 18 string (the newest fields sit above the ones the tracker reads, so it must still decode and leave them unread)
+            var (z18, err18) = FlagPaste.decodeZora("18.1!5I5HHHX0dg");
+            if (z18 == null) fail("ZORA flags (version 18): " + err18);
+            else if (!(z18.Progressive && z18.FourthSword == FlagPaste.Tri.On && z18.BootsReplaceBoomerangs == FlagPaste.Tri.On)) fail("ZORA flags (version 18) decoded wrong");
         });
         log("flag decode done");
 

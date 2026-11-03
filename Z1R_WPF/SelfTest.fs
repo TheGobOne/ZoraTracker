@@ -119,7 +119,11 @@ let private run (win:Window) = async {
          | Error m -> fail ("Z1R flags: " + m))
         (match FlagPaste.decodeZora "10.Km67jtU" with
          | Ok z -> if not (z.Progressive && z.FourthSword = FlagPaste.On && z.FourthInLevel2 && z.BootsReplaceBoomerangs = FlagPaste.Random) then fail "ZORA flags decoded wrong"
-         | Error m -> fail ("ZORA flags: " + m)))
+         | Error m -> fail ("ZORA flags: " + m))
+        // a version 18 string (the newest fields sit above the ones the tracker reads, so it must still decode and leave them unread)
+        (match FlagPaste.decodeZora "18.1!5I5HHHX0dg" with
+         | Ok z -> if not (z.Progressive && z.FourthSword = FlagPaste.On && z.BootsReplaceBoomerangs = FlagPaste.On) then fail "ZORA flags (version 18) decoded wrong"
+         | Error m -> fail ("ZORA flags (version 18): " + m)))
     log("flag decode done")
 
     // 1. start screen: every checkbox through all its states

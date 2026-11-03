@@ -37,8 +37,19 @@ let private zoraFields : (string * int * int) list =
       yield ("do_not_segment_dungeons", 3, 10)
       yield ("disable_custom_music", 2, 11)
       yield ("gatekeeper_bosses", 4, 12)
-      yield ("full_health", 3, 13) ]
-let private zoraCurrentVersion = 13
+      yield ("full_health", 3, 13)
+      yield ("harder_bosses", 4, 14)
+      yield ("harder_ganon", 4, 14)
+      yield ("offense_pacing", 4, 15)
+      yield ("defense_pacing", 4, 15)
+      yield ("recorder_warping", 2, 15)
+      yield ("swap_swords_and_rings", 3, 16)
+      yield ("swordlish", 3, 16)
+      yield ("swordlish_lowest", 8, 16)
+      yield ("swordlish_highest", 8, 16)
+      yield ("item_shuffle_no_vanilla", 2, 17)
+      yield ("compass_chime", 3, 18) ]
+let private zoraCurrentVersion = 18
 
 let private parseBase63 (s:string) : BigInteger option =
     let mutable n = BigInteger.Zero
@@ -114,7 +125,7 @@ let decodeZora (s:string) : Result<ZoraPart, string> =
         let dot = s.IndexOf('.')
         let versionOk, version = (if dot > 0 then System.Int32.TryParse(s.Substring(0, dot)) else (false, 0))
         if not versionOk || version < 1 then
-            Error "That doesn't look like a ZORA flag string (it should look like 13.abc: a version, a dot, then letters and digits)."
+            Error "That doesn't look like a ZORA flag string (it should look like 18.abc: a version, a dot, then letters and digits)."
         elif version > zoraCurrentVersion then
             Error (sprintf "These ZORA flags are version %d, newer than this tracker understands (up to %d). Update the tracker." version zoraCurrentVersion)
         else
