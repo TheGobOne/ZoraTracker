@@ -5,6 +5,9 @@
 ### Track your whole Zelda 1 Randomizer run in one window, so you never have to rely on memory.
 
 A tracker for [ZORA](https://zora.gg) and Z1R racers, casual and competitive.
+Free your head for the run: the tracker remembers where everything is.
+
+**[Download](https://github.com/TheGobOne/ZoraTracker/releases/latest)** · **[Guides](#guides)** · **[Report a bug](https://github.com/TheGobOne/ZoraTracker/issues)**
 
 [![Latest release](https://img.shields.io/github/v/release/TheGobOne/ZoraTracker?include_prereleases&label=latest&color=orange)](https://github.com/TheGobOne/ZoraTracker/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/TheGobOne/ZoraTracker/total?color=orange)](https://github.com/TheGobOne/ZoraTracker/releases)
@@ -16,6 +19,19 @@ A tracker for [ZORA](https://zora.gg) and Z1R racers, casual and competitive.
 
 <img src="images/zoratracker.png" alt="The ZORATracker main screen mid-run: dungeon item boxes and counters across the top, the overworld map with marked caves and dungeon entrances, a hand-drawn BOARD-1 dungeon map, blockers and notes panels, and a timeline along the bottom" width="640">
 
+</div>
+
+## Quick start (Windows)
+
+1. [Download the latest zip](https://github.com/TheGobOne/ZoraTracker/releases/latest) and unzip it somewhere you want to keep. Settings, hotkeys and saves live beside the program.
+2. Run `Z1R_WPF.exe`. If Windows warns about an unknown app, choose **More info**, then **Run anyway**.
+3. On the start screen, click **Paste Flags**, paste your Z1R and ZORA flag strings, and click **Apply**.
+4. Click the overworld your seed uses (1st Quest, 2nd Quest, Mixed or Randomized). The tracker starts.
+
+Stuck? Click **Guided Tour** on the start screen. The app also checks for new releases and tells you when one is available.
+
+<div align="center">
+<img src="images/start-screen.png" alt="The ZORATracker start screen: overworld buttons at the top, Startup Options (Item Shuffle, Legacy Mode, Hide Dungeon Numbers, Mirrored Overworld) and ZORA Extras with Paste Flags in the middle, recent saves, and Load Save, Guided Tour, Options and version buttons at the bottom" width="480">
 </div>
 
 ## What it tracks
@@ -31,19 +47,6 @@ A tracker for [ZORA](https://zora.gg) and Z1R racers, casual and competitive.
 | **Keyboard play** | Map hotkeys to items, tiles, rooms and doors. |
 | **Streaming and co-op** | Popout windows, a broadcast window, and Co-Op host/client settings. |
 | **Saves** | Manual and auto-save, with your recent saves one click away. |
-
-## Quick start (Windows)
-
-1. [Download the latest zip](https://github.com/TheGobOne/ZoraTracker/releases/latest) and unzip it somewhere you want to keep. Settings, hotkeys and saves live beside the program.
-2. Run `Z1R_WPF.exe`. If Windows warns about an unknown app, choose **More info**, then **Run anyway**.
-3. On the start screen, click **Paste Flags**, paste your Z1R and ZORA flag strings, and click **Apply**.
-4. Click the overworld your seed uses (1st Quest, 2nd Quest, Mixed or Randomized). The tracker starts.
-
-Stuck? Click **Guided Tour** on the start screen. The app also checks for new releases and tells you when one is available.
-
-<div align="center">
-<img src="images/start-screen.png" alt="The ZORATracker start screen: overworld buttons at the top, Startup Options (Item Shuffle, Legacy Mode, Hide Dungeon Numbers, Mirrored Overworld) and ZORA Extras with Paste Flags in the middle, recent saves, and Load Save, Guided Tour, Options and version buttons at the bottom" width="480">
-</div>
 
 ## Guides
 
@@ -64,7 +67,7 @@ Stuck? Click **Guided Tour** on the start screen. The app also checks for new re
 
 ## Feedback
 
-Found a bug or have an idea? [Open an issue](https://github.com/TheGobOne/ZoraTracker/issues). If the app crashed, attach the log from **Options, Show Crash Log...**.
+Found a bug or have an idea? [Open an issue](https://github.com/TheGobOne/ZoraTracker/issues) or ask in the [ZORA Discord](https://discord.gg/zescSjDtme) or the [Z1R Racing Discord](https://discord.gg/z1rracing). If the app crashed, attach the log from **Options, Show Crash Log...**.
 
 ## Credits
 
