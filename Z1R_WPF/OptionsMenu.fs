@@ -34,6 +34,7 @@ let bookForHelpfulHintsOptionChanged = new Event<unit>()
 let requestRedrawOverworldEvent = new Event<unit>()
 let hideTimerChanged = new Event<unit>()
 let dungeonSunglassesChanged = new Event<unit>()
+let dungeonOffTileEdgesChanged = new Event<unit>()
 let raceModeChanged = new Event<unit>()
 
 let isValidUrl (url: string) =
@@ -73,6 +74,7 @@ let data1d = [|
     "Do Door Inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, fun()->()
     "Book For Helpful Hints", "Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, bookForHelpfulHintsOptionChanged.Trigger
     "Alphabetize Hint Zone List", "When checked, the hint zone dropdown (where you mark which zone a dungeon/sword is in)\nshows zones in alphabetical order instead of geographic order.", TrackerModelOptions.AlphabetizeHintZones, false, (fun()->())
+    "Red Edge By OFF Tiles", "Uncheck to stop drawing a red 'no bomb' edge on the side of a dungeon room\nthat touches an OFF tile", TrackerModelOptions.ShowOffTileEdges, false, dungeonOffTileEdgesChanged.Trigger
     "Left-Drag Auto-Inverts", "Painting maps: When checked, If your first drag is with left-click,\nand you've not yet inverted OffTheMap with Unmarked, then\nauto-invert when left-click-dragging, to immediately start painting a map.", TrackerModelOptions.LeftClickDragAutoInverts, false, (fun()->())
     "Default To NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, (fun()->())
     "Dungeon 'Sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, dungeonSunglassesChanged.Trigger
@@ -590,7 +592,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
         ToolTipService.SetShowDuration(cb, 10000)
         link(cb, b, needFU, oe)
         options1sp.Children.Add(cb) |> ignore
-    options1sp.Children.Add(new DockPanel(Height=24.)) |> ignore   // a blank row between the overworld settings and this header
+    options1sp.Children.Add(new DockPanel(Height=17.)) |> ignore   // a gap between the overworld settings and this header (24 originally, trimmed to make room for the extra dungeon option, then half a row back)
     let tb = new TextBox(Text="Dungeon Settings", IsReadOnly=true, FontWeight=FontWeights.Bold) |> header
     options1sp.Children.Add(tb) |> ignore
     // open the folder containing the crash log (with the log file selected), to make it easy to send to the developer

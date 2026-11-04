@@ -804,6 +804,39 @@ let TakeAnyButtonBoxAsync(cm:CustomComboBoxes.CanvasManager) = async {
         return true
     }
 
+// a question with a row of buttons, in the same in-app style as the take-any cave's box (no Windows dialog); returns the clicked button's text, or null if dismissed (clicked outside)
+let ConfirmBoxAsync(cm:CustomComboBoxes.CanvasManager, question:string, buttonTexts:string list) = async {
+    let wh = new System.Threading.ManualResetEvent(false)
+    let result : string ref = ref null
+    let col = new StackPanel(Orientation=Orientation.Vertical, Background=Brushes.Black, Margin=Thickness(16.))
+    col.Children.Add(new TextBlock(Text=question, Foreground=Brushes.White, FontSize=16., TextWrapping=TextWrapping.Wrap, MaxWidth=360., Margin=Thickness(0.,0.,0.,12.))) |> ignore
+    let row = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center)
+    for text in buttonTexts do
+        let b = new Button(Height=34., MinWidth=120., Margin=Thickness(6.,0.,6.,0.), Focusable=false, Background=Graphics.almostBlack, BorderBrush=Brushes.Orange)
+        b.Content <- new TextBox(Text=text, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, VerticalContentAlignment=VerticalAlignment.Center, BorderThickness=Thickness(0.), FontSize=18., Foreground=Brushes.Orange, Background=Graphics.almostBlack)
+        b.HorizontalContentAlignment <- HorizontalAlignment.Stretch
+        b.VerticalContentAlignment <- VerticalAlignment.Stretch
+        b.Click.Add(fun _ -> result.Value <- text; wh.Set() |> ignore)
+        row.Children.Add(b) |> ignore
+    col.Children.Add(row) |> ignore
+    let b = new Border(Child=col, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray)
+    b.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let c = new Canvas(Width=b.DesiredSize.Width, Height=b.DesiredSize.Height)
+    c.Children.Add(b) |> ignore
+    c.MyKeyAdd(fun ea -> ea.Handled <- true)
+    let areaW, areaH = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
+    let cx = if areaW > 0. then max 0. ((areaW - c.Width) / 2.) else 150.
+    let cy = if areaH > 0. then max 0. ((areaH - c.Height) / 2.) else 200.
+    // measured before it was in the window, so re-center it once it has its real size
+    b.SizeChanged.Add(fun _ ->
+        c.Width <- b.ActualWidth
+        c.Height <- b.ActualHeight
+        if areaW > 0. then Canvas.SetLeft(c, max 0. ((areaW - b.ActualWidth) / 2.))
+        if areaH > 0. then Canvas.SetTop(c, max 0. ((areaH - b.ActualHeight) / 2.)))
+    do! CustomComboBoxes.DoModal(cm, wh, cx, cy, c)
+    return result.Value
+    }
+
 // the other sword caves and the letter cave use the same style of choice box as the wood sword cave (without the hotkeys); returns the chosen label, or null if dismissed
 let CaveChoiceBoxAsync(cm:CustomComboBoxes.CanvasManager, labels:string list) = async {
     let crossed = crossedOutChoices

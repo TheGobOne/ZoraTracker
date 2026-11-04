@@ -125,6 +125,7 @@ public static class DungeonUI
 
     public static DungeonRoomState getSyncedRoom(int level, int x, int y) => roomStatesPerLevel[level - 1][x, y];
 
+    public static DungeonRoomState[][,] masterRoomStatesPublic = null;   // the live rooms of the 9 dungeon maps (set when the dungeon UI is built); the selftest reads these
     public static Action redrawAllRoomsPublic = null;   // (F#: `(unit -> unit) option`; null for None)
 
     public static readonly Action<DungeonRoomState>[][,] setNewValueFunctions =
@@ -752,6 +753,7 @@ public static class DungeonUI
             return arr;
         }
         var masterRoomStates = make_masterRoomStates();
+        masterRoomStatesPublic = masterRoomStates;
 
         var masterRedrawAllRooms = Enumerable.Range(0, 9).Select(_ => (Action)(() => { })).ToArray();
 
@@ -1464,7 +1466,7 @@ public static class DungeonUI
                     var (i, j) = (i_, j_);
                     var d = new Canvas { Width = 12.0, Height = 16.0, Background = Brushes.Black };
                     var rect = new Rectangle { Width = 12.0, Height = 15.0, Stroke = unknown, StrokeThickness = 2.0, Fill = unknown };
-                    var line = new Line { StartPoint = new Point(6.0, -12.0), EndPoint = new Point(6.0, 28.0), StrokeThickness = 3.0, Stroke = no, Opacity = 0.0 };
+                    var line = new Line { StartPoint = new Point(6.0, -6.0), EndPoint = new Point(6.0, 21.0), StrokeThickness = 3.0, Stroke = no, Opacity = 0.0 };
                     d.Children.Add(rect);
                     var door = new Dungeon.Door(Dungeon.DoorState.UNKNOWN, newState =>
                     {
@@ -1553,7 +1555,7 @@ public static class DungeonUI
                     var (i, j) = (i_, j_);
                     var d = new Canvas { Width = 24.0, Height = 12.0, Background = Brushes.Black };
                     var rect = new Rectangle { Width = 21.0, Height = 12.0, Stroke = unknown, StrokeThickness = 2.0, Fill = unknown };
-                    var line = new Line { StartPoint = new Point(-14.0, 6.0), EndPoint = new Point(38.0, 6.0), StrokeThickness = 3.0, Stroke = no, Opacity = 0.0 };
+                    var line = new Line { StartPoint = new Point(-9.0, 6.0), EndPoint = new Point(30.0, 6.0), StrokeThickness = 3.0, Stroke = no, Opacity = 0.0 };
                     d.Children.Add(rect);
                     var door = new Dungeon.Door(Dungeon.DoorState.UNKNOWN, newState =>
                     {
@@ -2064,6 +2066,19 @@ public static class DungeonUI
                                 canvasAdd(c, ph, -BUFFER, -BUFFER);
                             }
 
+                            // a marked room next to an OFF tile gets a red 'no bomb' edge on each side that touches one (an unmarked room gets none)
+                            if (TrackerModelOptions.ShowOffTileEdges.Value && !roomStates[i, j].IsEmpty)
+                            {
+                                bool isOffAt(int x, int y) => x >= 0 && x <= 7 && y >= 0 && y <= 7 && roomStates[x, y].RoomType.IsOffMap();
+                                var (x0, x1, y0, y1) = (-BUFFER + 1.5, -BUFFER + (double)(13 * 3) - 1.5, -BUFFER + 1.5, -BUFFER + (double)(9 * 3) - 1.5);   // (inside the room picture's edge)
+                                void edge(double ax, double ay, double bx, double by) =>
+                                    canvasAdd(c, new Line { StartPoint = new Point(ax, ay), EndPoint = new Point(bx, by), Stroke = Brushes.Red, StrokeThickness = 3.0, IsHitTestVisible = false }, 0.0, 0.0);
+                                if (isOffAt(i, j - 1)) edge(x0, y0, x1, y0);
+                                if (isOffAt(i, j + 1)) edge(x0, y1, x1, y1);
+                                if (isOffAt(i - 1, j)) edge(x0, y0, x0, y1);
+                                if (isOffAt(i + 1, j)) edge(x1, y0, x1, y1);
+                            }
+
                             if (roomIsCircled[i, j])
                             {
                                 var ellipse = new Ellipse { Width = (double)(13 * 3 + 12), Height = (double)(9 * 3 + 12), Stroke = Brushes.Yellow, StrokeThickness = 3.0, IsHitTestVisible = false };
@@ -2077,10 +2092,28 @@ public static class DungeonUI
                     //RPT new. Order unsure
                     redraw();
                     roomRedrawFuncs.Add(() => redraw());
+                    // what a room turning OFF (or back on) does to its neighbors: runs from every path that changes a room (Changed event and SetNewValue)
+                    void offTileNeighborEffects()
+                    {
+                        // an OFF room gets the red 'no bomb' edge on its marked neighbors, so a hand-placed 'no' door wall between them is redundant: remove it
+                        // (not when applying a partner's update: their app already sent the door changes)
+                        if (TrackerModelOptions.ShowOffTileEdges.Value && roomStates[i, j].RoomType.IsOffMap() && !TrackerModelOptions.isCurrentlyApplyingRemoteUpdate())
+                        {
+                            void clearNo(Dungeon.Door d) { if (d.State == Dungeon.DoorState.NO) d.State = Dungeon.DoorState.UNKNOWN; }
+                            if (i > 0 && !roomStates[i - 1, j].IsEmpty) clearNo(horizontalDoors[i - 1, j]);
+                            if (i < 7 && !roomStates[i + 1, j].IsEmpty) clearNo(horizontalDoors[i, j]);
+                            if (j > 0 && !roomStates[i, j - 1].IsEmpty) clearNo(verticalDoors[i, j - 1]);
+                            if (j < 7 && !roomStates[i, j + 1].IsEmpty) clearNo(verticalDoors[i, j]);
+                        }
+                        // the neighbors' red 'no bomb' edges depend on whether this room is OFF
+                        foreach (var (nx, ny) in new[] { (i - 1, j), (i + 1, j), (i, j - 1), (i, j + 1) })
+                            if (nx >= 0 && nx <= 7 && ny >= 0 && ny <= 7 && nx * 8 + ny < roomRedrawFuncs.Count) roomRedrawFuncs[nx * 8 + ny]();
+                    }
                     roomStates[i, j].Changed += _ =>
                     {
                         System.Diagnostics.Debug.WriteLine($"[Changed] triggered for ({i},{j})");
                         redraw();
+                        offTileNeighborEffects();
                     };
 
                     //let usedTransportsRemoveState(roomState:DungeonRoomState) =
@@ -2158,6 +2191,7 @@ public static class DungeonUI
                                 roomStates[i, j].CSharp.Level = level;  // level is 1-indexed (outer loop var)
                                 roomStates[i, j].CSharp.X = i;
                                 roomStates[i, j].CSharp.Y = j;
+                                if (originalState.RoomType.IsOffMap() != newState.RoomType.IsOffMap() && !skipRedrawInsideCurrentImport) offTileNeighborEffects();
                                 //roomStates.[i,j].Changed.Add(fun _ -> redraw())
                                 //RPT maybe flip this
                                 if (TrackerModelOptions.isCurrentlyApplyingRemoteUpdate())
@@ -2245,6 +2279,31 @@ public static class DungeonUI
                                 }
                                 var princessWallsChanged = make_princessWallsChanged();
 
+                                // the other way round: leaving a Princess / Old Man / Bomb Upgrade room takes back the unbombable walls placed when it was marked
+                                bool make_wallsReverted()
+                                {
+                                    bool isTopWall(RoomType rt) => rt == RoomType.OldManHint || rt == RoomType.BombUpgrade;
+                                    var wasPrincess = originalState.RoomType == RoomType.PrincessRoom && newState.RoomType != RoomType.PrincessRoom;
+                                    var wasTopWallRoom = isTopWall(originalState.RoomType) && !isTopWall(newState.RoomType);
+                                    if (wasPrincess || wasTopWallRoom)
+                                    {
+                                        var walls = new List<Dungeon.Door>();
+                                        if (wasPrincess && i > 0) walls.Add(horizontalDoors[i - 1, j]);
+                                        if (wasPrincess && i < 7) walls.Add(horizontalDoors[i, j]);
+                                        if (j > 0) walls.Add(verticalDoors[i, j - 1]);
+                                        var changed = false;
+                                        foreach (var door in walls)
+                                            if (door.State == Dungeon.DoorState.NO)
+                                            {
+                                                door.State = Dungeon.DoorState.UNKNOWN;
+                                                changed = true;
+                                            }
+                                        return changed;
+                                    }
+                                    else return false;
+                                }
+                                var wallsReverted = make_wallsReverted();
+
                                 // placing a ladder-requiring room (and not having the ladder) puts a ladder in this level's first blocker box
                                 if (level >= 1 && level <= 8 && newState.RoomType != originalState.RoomType && !TrackerModel.playerComputedStateSummary.HaveLadder && !(TrackerModelOptions.isCurrentlyApplyingRemoteUpdate()))
                                 {
@@ -2290,7 +2349,7 @@ public static class DungeonUI
                                 redraw();
                                 // Only redraw doors when something actually changed: a transport was added/removed
                                 // (already causes redrawAllRooms above) or door inference set a new door state.
-                                if (removedTransport || addedTransport || doorInferenceChanged || princessWallsChanged)
+                                if (removedTransport || addedTransport || doorInferenceChanged || princessWallsChanged || wallsReverted)
                                     redrawAllDoors();
                                 animateDungeonRoomTile(i, j);
                                 if (!CustomComboBoxes.GlobalFlag.popupIsActive)
@@ -2402,7 +2461,8 @@ public static class DungeonUI
                                             {
                                                 var roomType = rtObj;
                                                 ea.Handled = true;
-                                                var room = roomStates[i, j];
+                                                // work on a copy: SetNewValue compares against roomStates[i,j] (the OLD state, for the old-man count and transport use) and may refuse the change (a third copy of a transport)
+                                                var room = roomStates[i, j].Clone();
                                                 if (room.RoomType == roomType)
                                                 {
                                                     room.RoomType = RoomType.Unmarked;
@@ -2622,6 +2682,20 @@ public static class DungeonUI
                             }
                         }
                     };
+                    // mouse 4: back to a brand new room (type, monster, floor drop, completed mark and circle all cleared)
+                    void resetRoom()
+                    {
+                        var rs = new DungeonRoomState();
+                        rs.Level = level;
+                        rs.X = i;
+                        rs.Y = j;
+                        SetNewValue(rs);
+                        roomIsCircled[i, j] = false;
+                        redraw();
+                        redrawAllDoors();
+                        showMinimaps();
+                        TrackerModel.dungeonRoomModelChanged.SetNow();   // circles reach a co-op partner only through this
+                    }
                     void dragBehavior(string whichButtonStr)
                     {
                         if (!CustomComboBoxes.GlobalFlag.popupIsActive)
@@ -2723,15 +2797,12 @@ public static class DungeonUI
 
 
                                             redrawAllRooms();  // make updated changes visual
-                                            var cmb = new CustomMessageBox("Verify changes", System.Drawing.SystemIcons.Question, "You moved a dungeon segment. Keep this change?", new[] { "Keep changes", "Undo" });
-#if BROWSER
-                                            cmb.OwnerWindow = BrowserWindow.Of(c);
-#else
-                                            cmb.OwnerWindow = TopLevel.GetTopLevel(c) as Window;
-#endif
-                                            cmb.ShowDialogBlocking();
+                                            CustomComboBoxes.GlobalFlag.popupIsActive = true;   // (DoModal requires this to be set by the caller)
+                                            string keepOrUndo;
+                                            try { keepOrUndo = await PieMenus.ConfirmBoxAsync(cm, "You moved a dungeon segment. Keep this change?", new[] { "Keep changes", "Undo" }); }
+                                            finally { CustomComboBoxes.GlobalFlag.popupIsActive = false; }   // (never leave the UI locked, even if the box throws)
                                             grabRedraw();  // DoDrop completes the grab, neeed to update the visual
-                                            if (cmb.MessageBoxResult == null || cmb.MessageBoxResult == "Undo")
+                                            if (keepOrUndo == null || keepOrUndo == "Undo")
                                             {
                                                 // copy back from old state
                                                 for (int x = 0; x < 8; x++)
@@ -2767,13 +2838,10 @@ public static class DungeonUI
 
                                             if (!(isFirstTimeClickingAnyRoom[level - 1].Value) && roomStates[i, j].RoomType.IsNotMarked())
                                             {
-                                                var room = roomStates[i, j];
-                                                var original = room.Clone();
+                                                var room = roomStates[i, j].Clone();   // (change a copy: SetNewValue compares against the OLD state in roomStates and may refuse)
                                                 room.RoomType = defaultRoom();
                                                 room.IsComplete = true;
-                                                roomStates[i, j] = original;
                                                 SetNewValue(room);
-                                                roomStates[i, j] = room;
                                                 justUnmarked = null;
                                                 ea.Handled = true;
 
@@ -2782,16 +2850,13 @@ public static class DungeonUI
                                             {
                                                 if (isFirstTimeClickingAnyRoom[level - 1].Value)
                                                 {
-                                                    var room = roomStates[i, j];
+                                                    var room = roomStates[i, j].Clone();
 #if DEBUG
                                                     Console.Write($"Room X at {room.X} and y at {room.Y}");
 #endif
-                                                    var original = room.Clone();
                                                     room.RoomType = RoomType.StartEnterFromS;
                                                     room.IsComplete = true;
-                                                    roomStates[i, j] = original;
                                                     SetNewValue(room);
-                                                    roomStates[i, j] = room;
                                                     isFirstTimeClickingAnyRoom[level - 1].Value = false;
                                                     numeral.Opacity = 0.0;
                                                     justUnmarked = null;
@@ -2800,15 +2865,12 @@ public static class DungeonUI
                                                 }
                                                 else
                                                 {
-                                                    var room = roomStates[i, j];
+                                                    var room = roomStates[i, j].Clone();
                                                     var next = RoomTypeExtensions.NextEntranceRoom(room.RoomType);
                                                     if (room.RoomType.IsEntranceRoom())
                                                     {
-                                                        var original = room.Clone();
                                                         room.RoomType = next.Value;
-                                                        roomStates[i, j] = original;
                                                         SetNewValue(room);
-                                                        roomStates[i, j] = room;
                                                         justUnmarked = null;
                                                         ea.Handled = true;
 
@@ -2820,10 +2882,7 @@ public static class DungeonUI
                                                         else
                                                             room.IsComplete = !room.IsComplete;
 
-                                                        var original = room.Clone();
-                                                        roomStates[i, j] = original;
                                                         SetNewValue(room);
-                                                        roomStates[i, j] = room;
                                                         justUnmarked = null;
                                                         ea.Handled = true;
                                                     }
@@ -2898,6 +2957,21 @@ public static class DungeonUI
                         dragBehavior(whichButtonStr);
                     });
                     DragDrop.SetAllowDrop(c, true);
+                    // mouse 4 resets a room, and holding it while sliding over more rooms resets each one (not part of the drag-and-drop above, which only follows left / right / middle)
+                    c.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, ea) =>
+                    {
+                        if (ea.GetCurrentPoint(c).Properties.PointerUpdateKind == PointerUpdateKind.XButton1Pressed && !CustomComboBoxes.GlobalFlag.popupIsActive && !grabHelper.IsGrabMode)
+                        {
+                            ea.Handled = true;
+                            ea.Pointer.Capture(null);   // no capture, so PointerEntered keeps firing on the other rooms while the button is held
+                            resetRoom();
+                        }
+                    }), RoutingStrategies.Tunnel);
+                    c.PointerEntered += (_, ea) =>
+                    {
+                        if (ea.GetCurrentPoint(c).Properties.IsXButton1Pressed && !CustomComboBoxes.GlobalFlag.popupIsActive && !grabHelper.IsGrabMode)
+                            resetRoom();
+                    };
                 }
             }
             canvasAdd(dungeonCanvas, outlineDrawingCanvases[level - 1], 0.0, 0.0);
@@ -3021,6 +3095,38 @@ public static class DungeonUI
                 redrawAllRooms();
             };
             masterRedrawAllRooms[level - 1] = () => redrawAllRooms();
+            OptionsMenu.dungeonOffTileEdgesChanged += () => redrawAllRooms();
+            // right-click the dungeon's number in the tab row to clear this whole dungeon map (after a confirmation)
+            // (attached to the header itself: a right click anywhere in the tab's panel must not bring this up)
+            // (the number is a read-only TextBox: its own Cut / Copy / Paste context menu must not pop up on that same right click)
+            ((Control)levelTab.Header).AddHandler(Control.ContextRequestedEvent, new EventHandler<ContextRequestedEventArgs>((_, ea) => ea.Handled = true), RoutingStrategies.Tunnel);
+            ((Control)levelTab.Header).PointerPressed += (_, ea) =>
+            {
+                if (ea.GetCurrentPoint((Control)levelTab.Header).Properties.PointerUpdateKind != PointerUpdateKind.RightButtonPressed) return;
+                ea.Handled = true;
+                if (CustomComboBoxes.GlobalFlag.popupIsActive || grabHelper.IsGrabMode) return;
+                CustomComboBoxes.GlobalFlag.popupIsActive = true;   // (DoModal requires this to be set by the caller)
+                async Task clearIt()
+                {
+                    string pick;
+                    try { pick = await PieMenus.ConfirmBoxAsync(cm, $"Clear the whole map of dungeon {labelChar} (rooms, doors, circles and icons)?", new[] { "Clear", "Cancel" }); }
+                    finally { CustomComboBoxes.GlobalFlag.popupIsActive = false; }   // (never leave the UI locked, even if the box throws)
+                    if (pick == "Clear")
+                    {
+                        var blank = new DungeonSaveAndLoad.DungeonModel();
+                        // (the import reads every array as [row][column], i.e. [j][i])
+                        blank.HorizontalDoors = Enumerable.Range(0, 8).Select(_ => new int[7]).ToArray();
+                        blank.VerticalDoors = Enumerable.Range(0, 7).Select(_ => new int[8]).ToArray();
+                        blank.RoomIsCircled = Enumerable.Range(0, 8).Select(_ => new bool[8]).ToArray();
+                        blank.RoomStates = Enumerable.Range(0, 8).Select(_ => Enumerable.Range(0, 8).Select(_ => DungeonSaveAndLoad.DungeonRoomStateAsModel(new DungeonRoomState())).ToArray()).ToArray();
+                        importFunctions[level - 1](blank);
+                        isFirstTimeClickingAnyRoom[level - 1].Value = true;   // back to a fresh dungeon: the big numeral and the first-click shortcut return
+                        numeral.Opacity = 0.25;
+                        TrackerModel.dungeonRoomModelChanged.SetNow();   // circles reach a co-op partner only through this
+                    }
+                }
+                CustomComboBoxes.StartImmediate(clearIt());
+            };
             await showProgress($"finish dungeon level {level}");
         }
         // end -- for level in 1 to 9 do

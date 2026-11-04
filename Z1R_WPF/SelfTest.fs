@@ -13,6 +13,8 @@ open System.Windows.Controls
 open System.Windows.Controls.Primitives
 open System.Windows.Input
 open System.Windows.Media
+open Z1R_Sync
+open Z1R_Tracker.Models.Z1R_TrackerInterop
 
 let private args = Environment.GetCommandLineArgs()
 let isSelfTest = args |> Array.contains "--selftest"
@@ -111,6 +113,7 @@ let private run (win:Window) = async {
                 do! settle (sprintf "clicking checkbox '%s'" (label cb)) }
 
     log(sprintf "ZORATracker selftest, quest %d, %s" questArg (DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")))
+    TrackerModelOptions.SuppressAudioForSelfTest <- true   // hundreds of clicks fire real reminders: keep the run quiet
 
     // 0. flag decoding (no UI)
     guard "flag decode" (fun () ->
@@ -342,6 +345,54 @@ let private run (win:Window) = async {
                     if popupCount() > 0 then fail "Overworld + Extras: the Close button did not close the window"
             do! settle "Overworld + Extras checks"
         log(sprintf "overworld + extras checks done (%d failures so far)" failures.Value)
+
+    // dungeon + shop checks: in-process, they call the same SetNewValue / helpers the clicks and hotkeys end up in (nothing is clicked, nothing is heard)
+    guard "dungeon and shop checks" (fun () ->
+        let rooms = DungeonUI.masterRoomStatesPublic
+        if isNull (box rooms) then failwith "the dungeon rooms were not built"
+        TrackerModelOptions.ShowOffTileEdges.Value <- true
+        let set x y (rt:RoomType) =
+            let f = DungeonUI.setNewValueFunctions.[0].[x,y]
+            if obj.ReferenceEquals(f, null) then failwithf "no SetNewValue for dungeon 1 room (%d,%d)" x y
+            let r = rooms.[0].[x,y].Clone()
+            r.RoomType <- rt
+            f r
+        let typeAt x y = rooms.[0].[x,y].RoomType
+        let hDoor x y = DungeonUI.horizontalDoorsPerLevel.[0].[x,y]
+        let vDoor x y = DungeonUI.verticalDoorsPerLevel.[0].[x,y]
+        let marked = RoomType.StartEnterFromS
+        let off, unmarked = RoomType.OffTheMap, RoomType.Unmarked
+        // 1. a room set OFF removes a hand-placed 'no' wall between it and a marked neighbour
+        set 3 3 marked
+        (hDoor 3 3).State <- Dungeon.DoorState.NO
+        set 4 3 off
+        if (hDoor 3 3).State <> Dungeon.DoorState.UNKNOWN then fail "OFF room: the 'no' wall toward the marked neighbour was not removed"
+        // 2. a third copy of a transport is refused and leaves the room untouched; after unmarking one, a third fits
+        let t1 = RoomType.Transport1
+        set 0 6 t1
+        set 2 6 t1
+        set 4 6 t1
+        if typeAt 4 6 <> unmarked then fail "transport: a third copy was placed"
+        set 0 6 unmarked
+        set 4 6 t1
+        if typeAt 4 6 <> t1 then fail "transport: after unmarking one copy, the third could not be placed"
+        // 3. an Old Man (hint) room puts an unbombable wall on its top side, and taking the room away takes the wall back
+        set 6 5 RoomType.OldManHint
+        if (vDoor 6 4).State <> Dungeon.DoorState.NO then fail "old man room: no top wall was placed"
+        set 6 5 unmarked
+        if (vDoor 6 4).State <> Dungeon.DoorState.UNKNOWN then fail "old man room: the top wall stayed after the room was removed"
+        // 4. shops: a numbered shop label goes away with the tile's icons; only secrets / door repair / money making game replace a shop
+        let ms = TrackerModel.MapSquareChoiceDomainHelper.LARGE_SECRET
+        if not (WPFUI.tileTypeReplacesShop ms) then fail "shop: a secret should replace a shop"
+        if WPFUI.tileTypeReplacesShop TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER then fail "shop: the letter cave should not replace a shop"
+        WPFUI.setShopLabel(2, 2, 1)
+        if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[2,2]) <> 1 then fail "shop: the SHOP 1 label was not set"
+        WPFUI.clearAllTileIcons(2, 2)
+        if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[2,2]) <> 0 then fail "shop: clearing the tile left the shop label"
+        // put everything back
+        for (x, y) in [ (3,3); (4,3); (0,6); (2,6); (4,6); (6,5) ] do (try set x y unmarked with _ -> ())
+        for (x, y) in [ (3,3) ] do (hDoor x y).State <- Dungeon.DoorState.UNKNOWN)
+    log(sprintf "dungeon and shop checks done (%d failures so far)" failures.Value)
 
     closeExtraWindows ()
     log(sprintf "%d button/checkbox clicks, %d popups opened and closed" clicks.Value popupsSeen.Value)

@@ -99,7 +99,7 @@ let SetupReminderDisplayAndProcessing(cm) =
             let muted = (wasMuted || TrackerModelOptions.IsMuted)   
             if not(muted) then
                 let iconCount = sp.Children.Count
-                if shouldRemindVisual then
+                if shouldRemindVisual && not TrackerModelOptions.SuppressAudioForSelfTest then
                     Graphics.PlaySoundForReminder()
                 if shouldRemindVisual || category=TrackerModel.ReminderCategory.Asterisk then
                     reminderDisplayInnerBorder.Child <- sp
@@ -113,7 +113,7 @@ let SetupReminderDisplayAndProcessing(cm) =
                 if shouldRemindVisual then
                     do! Async.Sleep(200) // give reminder clink sound time to play
                 let startSpeakTime = DateTime.Now
-                if shouldRemindVoice && voice.Volume <> 0 then
+                if shouldRemindVoice && voice.Volume <> 0 && not TrackerModelOptions.SuppressAudioForSelfTest then
                     voice.Speak(text) 
                 if shouldRemindVisual || category=TrackerModel.ReminderCategory.Asterisk then
                     let minimumDuration = TimeSpan.FromSeconds(max 3 iconCount |> float)  // ensure at least 3s, and at least 1s per icon

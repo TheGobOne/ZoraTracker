@@ -66,6 +66,8 @@ public static class OptionsMenu
     public static void triggerHideTimerChanged() => hideTimerChanged?.Invoke();
     public static event Action dungeonSunglassesChanged;
     public static void triggerDungeonSunglassesChanged() => dungeonSunglassesChanged?.Invoke();
+    public static event Action dungeonOffTileEdgesChanged;
+    public static void triggerDungeonOffTileEdgesChanged() => dungeonOffTileEdgesChanged?.Invoke();
     public static event Action raceModeChanged;
     public static void triggerRaceModeChanged() => raceModeChanged?.Invoke();
 
@@ -115,6 +117,7 @@ public static class OptionsMenu
         ("Do Door Inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, () => { }),
         ("Book For Helpful Hints", "Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, triggerBookForHelpfulHintsOptionChanged),
         ("Alphabetize Hint Zone List", "When checked, the hint zone dropdown (where you mark which zone a dungeon/sword is in)\nshows zones in alphabetical order instead of geographic order.", TrackerModelOptions.AlphabetizeHintZones, false, () => { }),
+        ("Red Edge By OFF Tiles", "Uncheck to stop drawing a red 'no bomb' edge on the side of a dungeon room\nthat touches an OFF tile", TrackerModelOptions.ShowOffTileEdges, false, triggerDungeonOffTileEdgesChanged),
         ("Left-Drag Auto-Inverts", "Painting maps: When checked, If your first drag is with left-click,\nand you've not yet inverted OffTheMap with Unmarked, then\nauto-invert when left-click-dragging, to immediately start painting a map.", TrackerModelOptions.LeftClickDragAutoInverts, false, () => { }),
         ("Default To NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, () => { }),
         ("Dungeon 'Sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, triggerDungeonSunglassesChanged),
@@ -763,7 +766,7 @@ public static class OptionsMenu
             link(cb, b, needFU, oe);
             options1sp.Children.Add(cb);
         }
-        options1sp.Children.Add(new DockPanel { Height = 24.0 });   // a blank row between the overworld settings and this header
+        options1sp.Children.Add(new DockPanel { Height = 17.0 });   // a blank row between the overworld settings and this header
         tb = header(new TextBox { Text = "Dungeon Settings", IsReadOnly = true, FontWeight = FontWeight.Bold });
         options1sp.Children.Add(tb);
         // open the folder containing the crash log (with the log file selected), to make it easy to send to the developer

@@ -157,6 +157,9 @@ public static class SelfTest
         }
 
         log($"ZORATracker selftest (port), quest {questArg}, {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        TrackerModelOptions.SuppressAudioForSelfTest = true;   // hundreds of clicks fire real reminders: keep the run quiet
+        // the test right-clicks everything: swallow the built-in Cut / Copy / Paste menus, which pop up at the screen's top-left because the test window sits off-screen
+        Control.ContextRequestedEvent.AddClassHandler<Control>((_, ea) => ea.Handled = true, RoutingStrategies.Tunnel);
 
         // 0. flag decoding (no UI)
         guard("flag decode", () =>
@@ -421,6 +424,58 @@ public static class SelfTest
             }
             log($"overworld + extras checks done ({failures} failures so far)");
         }
+
+        // dungeon + shop checks: in-process, they call the same SetNewValue / helpers the clicks and hotkeys end up in (nothing is clicked, nothing is heard)
+        guard("dungeon and shop checks", () =>
+        {
+            var rooms = DungeonUI.masterRoomStatesPublic;
+            if (rooms == null) throw new Exception("the dungeon rooms were not built");
+            TrackerModelOptions.ShowOffTileEdges.Value = true;
+            void set(int x, int y, Z1R_Tracker.Models.Z1R_TrackerInterop.RoomType rt)
+            {
+                var f = DungeonUI.setNewValueFunctions[0][x, y];
+                if (f == null) throw new Exception($"no SetNewValue for dungeon 1 room ({x},{y})");
+                var r = rooms[0][x, y].Clone();
+                r.RoomType = rt;
+                f(r);
+            }
+            Z1R_Tracker.Models.Z1R_TrackerInterop.RoomType typeAt(int x, int y) => rooms[0][x, y].RoomType;
+            Dungeon.Door hDoor(int x, int y) => DungeonUI.horizontalDoorsPerLevel[0][x, y];
+            Dungeon.Door vDoor(int x, int y) => DungeonUI.verticalDoorsPerLevel[0][x, y];
+            var marked = Z1R_Tracker.Models.Z1R_TrackerInterop.RoomType.StartEnterFromS;
+            var off = Z1R_Tracker.Models.Z1R_TrackerInterop.RoomType.OffTheMap;
+            var unmarked = Z1R_Tracker.Models.Z1R_TrackerInterop.RoomType.Unmarked;
+            // 1. a room set OFF removes a hand-placed 'no' wall between it and a marked neighbour
+            set(3, 3, marked);
+            hDoor(3, 3).State = Dungeon.DoorState.NO;
+            set(4, 3, off);
+            if (hDoor(3, 3).State != Dungeon.DoorState.UNKNOWN) fail("OFF room: the 'no' wall toward the marked neighbour was not removed");
+            // 2. a third copy of a transport is refused and leaves the room untouched; after unmarking one, a third fits
+            var t1 = Z1R_Tracker.Models.Z1R_TrackerInterop.RoomType.Transport1;
+            set(0, 6, t1);
+            set(2, 6, t1);
+            set(4, 6, t1);
+            if (typeAt(4, 6) != unmarked) fail("transport: a third copy was placed");
+            set(0, 6, unmarked);
+            set(4, 6, t1);
+            if (typeAt(4, 6) != t1) fail("transport: after unmarking one copy, the third could not be placed");
+            // 3. an Old Man (hint) room puts an unbombable wall on its top side, and taking the room away takes the wall back
+            set(6, 5, Z1R_Tracker.Models.Z1R_TrackerInterop.RoomType.OldManHint);
+            if (vDoor(6, 4).State != Dungeon.DoorState.NO) fail("old man room: no top wall was placed");
+            set(6, 5, unmarked);
+            if (vDoor(6, 4).State != Dungeon.DoorState.UNKNOWN) fail("old man room: the top wall stayed after the room was removed");
+            // 4. shops: a numbered shop label goes away with the tile's icons; only secrets / door repair / money making game replace a shop
+            if (!WPFUI.tileTypeReplacesShop(TrackerModel.MapSquareChoiceDomainHelper.LARGE_SECRET)) fail("shop: a secret should replace a shop");
+            if (WPFUI.tileTypeReplacesShop(TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER)) fail("shop: the letter cave should not replace a shop");
+            WPFUI.setShopLabel(2, 2, 1);
+            if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[2, 2]) != 1) fail("shop: the SHOP 1 label was not set");
+            WPFUI.clearAllTileIcons(2, 2);
+            if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[2, 2]) != 0) fail("shop: clearing the tile left the shop label");
+            // put everything back
+            foreach (var (x, y) in new[] { (3, 3), (4, 3), (0, 6), (2, 6), (4, 6), (6, 5) }) { try { set(x, y, unmarked); } catch { } }
+            hDoor(3, 3).State = Dungeon.DoorState.UNKNOWN;
+        });
+        log($"dungeon and shop checks done ({failures} failures so far)");
 
         closeExtraWindows();
         log($"{clicks} button/checkbox clicks, {popupsSeen} popups opened and closed");

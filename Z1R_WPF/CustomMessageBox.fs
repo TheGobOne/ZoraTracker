@@ -28,6 +28,7 @@ type CustomMessageBox(title, icon:System.Drawing.Icon, mainText, buttonTexts:seq
         this.Topmost <- true
         this.Title <- title
         this.SizeToContent <- SizeToContent.WidthAndHeight
+        this.Background <- Brushes.Black   // same look as the tracker's other popups: black, white text, orange-on-dark buttons
 
         let grid = new Grid()
         grid.RowDefinitions.Add(new RowDefinition(Height=GridLength(1.0, GridUnitType.Star)))
@@ -39,7 +40,7 @@ type CustomMessageBox(title, icon:System.Drawing.Icon, mainText, buttonTexts:seq
         image.Margin <- Thickness(30.,0.,0.,0.)
         mainDock.Children.Add(image) |> ignore
         DockPanel.SetDock(image, Dock.Left)
-        let mainTextBlock = new TextBox(Text=mainText, Background=Brushes.Transparent, BorderThickness=Thickness(0.), IsReadOnly=true, 
+        let mainTextBlock = new TextBox(Text=mainText, Background=Brushes.Transparent, BorderThickness=Thickness(0.), IsReadOnly=true, Foreground=Brushes.White, FontSize=14.,
                                             TextWrapping=TextWrapping.Wrap, MaxWidth=500., Width=System.Double.NaN, 
                                             VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(12.,20.,41.,15.))
         mainDock.Children.Add(mainTextBlock) |> ignore
@@ -49,13 +50,14 @@ type CustomMessageBox(title, icon:System.Drawing.Icon, mainText, buttonTexts:seq
         let buttonDock = new DockPanel(Margin=Thickness(5.,0.,0.,0.))
         let mutable first = true
         for bt in buttonTexts |> Seq.rev do
-            let b = new Button(MinWidth=88., MaxWidth=160., Height=26., Margin=Thickness(5.), HorizontalAlignment=HorizontalAlignment.Right)
+            let b = new Button(MinWidth=88., MaxWidth=160., Height=26., Margin=Thickness(5.), HorizontalAlignment=HorizontalAlignment.Right,
+                                Background=Graphics.almostBlack, BorderBrush=Brushes.Orange)
             if first then
                 b.Focus() |> ignore
                 first <- false
             DockPanel.SetDock(b, Dock.Right)
             buttonDock.Children.Add(b) |> ignore
-            b.Content <- new Label(Content=bt, Padding=Thickness(0.), Margin=Thickness(10.,0.,10.,0.))
+            b.Content <- new Label(Content=bt, Foreground=Brushes.Orange, FontSize=14., Padding=Thickness(0.), Margin=Thickness(10.,0.,10.,0.))   // (a Label ignores the button's Foreground, so it is set here: orange like the other popups' buttons)
             b.Click.Add(fun _ -> result <- bt; this.Close())
         grid.Children.Add(buttonDock) |> ignore
         Grid.SetRow(buttonDock, 1)

@@ -46,6 +46,7 @@ public class CustomMessageBox : Window
         this.Topmost = true;
         this.Title = title;
         this.SizeToContent = SizeToContent.WidthAndHeight;
+        this.Background = Brushes.Black;   // same look as the tracker's other boxes: black, white text, orange-edged buttons
 
         var grid = new Grid();
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.0, GridUnitType.Star) });
@@ -59,7 +60,7 @@ public class CustomMessageBox : Window
         DockPanel.SetDock(image, Dock.Left);
         // (WPF: a read-only, borderless, transparent TextBox, i.e. selectable text. Avalonia's TextBox measures wrapped text a pixel or two
         // too narrow, which pushes the last word onto a clipped second line, so this uses Avalonia's SelectableTextBlock, made for exactly this.)
-        var mainTextBlock = new SelectableTextBlock { Text = mainText, Background = Brushes.Transparent,
+        var mainTextBlock = new SelectableTextBlock { Text = mainText, Background = Brushes.Transparent, Foreground = Brushes.White, FontSize = 14.0,
                                             TextWrapping = TextWrapping.Wrap, MaxWidth = 500.0, Width = double.NaN,
                                             VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12.0, 20.0, 41.0, 15.0) };
         mainDock.Children.Add(mainTextBlock);
@@ -70,7 +71,8 @@ public class CustomMessageBox : Window
         var first = true;
         foreach (var bt in buttonTexts.Reverse())
         {
-            var b = new Button { MinWidth = 88.0, MaxWidth = 160.0, Height = 26.0, Margin = new Thickness(5.0), HorizontalAlignment = HorizontalAlignment.Right };
+            var b = new Button { MinWidth = 88.0, MaxWidth = 160.0, Height = 26.0, Margin = new Thickness(5.0), HorizontalAlignment = HorizontalAlignment.Right,
+                                  Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
             if (first)
             {
                 b.Focus();
@@ -78,7 +80,7 @@ public class CustomMessageBox : Window
             }
             DockPanel.SetDock(b, Dock.Right);
             buttonDock.Children.Add(b);
-            b.Content = new Label { Content = bt, Padding = new Thickness(0.0), Margin = new Thickness(10.0, 0.0, 10.0, 0.0) };
+            b.Content = new Label { Content = bt, Foreground = Brushes.Orange, FontSize = 14.0, Padding = new Thickness(0.0), Margin = new Thickness(10.0, 0.0, 10.0, 0.0) };
             b.Click += (_, _) => { result = bt; this.Close(); };
         }
         grid.Children.Add(buttonDock);

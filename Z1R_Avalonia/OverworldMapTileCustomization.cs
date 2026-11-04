@@ -344,6 +344,7 @@ public static class OverworldMapTileCustomization
             var swordTakenElsewhere =
                 allTiles().Any(t => t != (i, j) && TrackerModel.overworldMapMarks[t.Item1, t.Item2].Current() == TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.getOverworldMapExtraData(t.Item1, t.Item2, TrackerModel.MapSquareChoiceDomainHelper.SWORD1) == TrackerModel.MapSquareChoiceDomainHelper.SWORD1);
             PieMenus.legacyDisabledChoices = TrackerModel.LegacyMode ? new List<string> { "Shuffled Item", "Sword Icon" } : new List<string>();
+            PieMenus.crossedOutChoices = new List<string>();   // (start clean: a sword cave that skipped its popup used to leave 'Took Sword' struck out here)
             var crossedBase = (swordTakenElsewhere ? new List<string> { "Took Sword" } : new List<string>()).Concat(TrackerModel.LegacyMode ? new List<string> { "Shuffled Item", "Sword Icon" } : new List<string>()).ToList();   // (Legacy Mode: no shuffled item in the wood sword cave)
             if (TrackerModel.shuffledWoodSwordTiles.Count > 0 || candleTakenElsewhere) PieMenus.crossedOutChoices = crossedBase.Concat(new[] { "Shuffled Item", "Took Candle" }).ToList();
             else if (hadShuffled) PieMenus.crossedOutChoices = crossedBase.Concat(new[] { "Shuffled Item" }).ToList();
@@ -439,6 +440,8 @@ public static class OverworldMapTileCustomization
             var preplaced = box.CellCurrent() != -1 && box.CellCurrent() != decorIdent && !hadShuffled && !(shuffledItemAlreadyPlaced(state));
             var autoTake = TrackerModel.LegacyMode && state == TrackerModel.MapSquareChoiceDomainHelper.SWORD3 && !TrackerModel.ProgressiveItems;   // (Legacy Mode: the magical sword cave only ever holds the sword, so no menu)
             var choice = autoTake ? "Placed" : preplaced ? "Preplaced" : await PieMenus.CaveChoiceBoxAsync(cm, new[] { "Took Sword", "Shuffled Item", "Sword Icon" });
+            PieMenus.crossedOutChoices = new List<string>();   // (when the popup was skipped nothing consumed it)
+            PieMenus.legacyDisabledChoices = new List<string>();
             var doneValue = 0;   // 0 = nothing yet, state = took the sword, SHUFFLED_ITEM = the cave holds a shuffled item
             switch (choice)
             {

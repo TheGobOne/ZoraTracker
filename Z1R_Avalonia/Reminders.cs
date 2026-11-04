@@ -147,7 +147,7 @@ public static class Reminders
                 if (!(muted))
                 {
                     var iconCount = sp.Children.Count;
-                    if (shouldRemindVisual)
+                    if (shouldRemindVisual && !TrackerModelOptions.SuppressAudioForSelfTest)
                         Graphics.PlaySoundForReminder();
                     if (shouldRemindVisual || category.Equals(TrackerModel.ReminderCategory.Asterisk))
                     {
@@ -163,7 +163,7 @@ public static class Reminders
                         if (shouldRemindVisual)
                             await Task.Delay(200); // give reminder clink sound time to play
                         var startSpeakTime = DateTime.Now;
-                        if (shouldRemindVoice && voice.Volume != 0)
+                        if (shouldRemindVoice && voice.Volume != 0 && !TrackerModelOptions.SuppressAudioForSelfTest)
                             voice.Speak(text);
                         if (shouldRemindVisual || category.Equals(TrackerModel.ReminderCategory.Asterisk))
                         {

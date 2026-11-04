@@ -253,6 +253,7 @@ overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD1, (
         seq { for x in 0..15 do for y in 0..7 do yield (x,y) }
         |> Seq.exists (fun (x,y) -> (x,y) <> (i,j) && TrackerModel.overworldMapMarks.[x,y].Current() = TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.getOverworldMapExtraData(x,y,TrackerModel.MapSquareChoiceDomainHelper.SWORD1) = TrackerModel.MapSquareChoiceDomainHelper.SWORD1)
     PieMenus.legacyDisabledChoices <- (if TrackerModel.LegacyMode then ["Shuffled Item"; "Sword Icon"] else [])
+    PieMenus.crossedOutChoices <- []   // (start clean: a sword cave that skipped its popup used to leave 'Took Sword' struck out here)
     let crossedBase = (if swordTakenElsewhere then ["Took Sword"] else []) @ (if TrackerModel.LegacyMode then ["Shuffled Item"; "Sword Icon"] else [])   // (Legacy Mode: no shuffled item in the wood sword cave)
     if TrackerModel.shuffledWoodSwordTiles.Count > 0 || candleTakenElsewhere then PieMenus.crossedOutChoices <- crossedBase @ ["Shuffled Item"; "Took Candle"]
     elif hadShuffled then PieMenus.crossedOutChoices <- crossedBase @ ["Shuffled Item"]
@@ -320,6 +321,8 @@ let swordCaveAccelerator(state:int, box:TrackerModel.Box, boxX:float, boxY:float
         let preplaced = box.CellCurrent() <> -1 && box.CellCurrent() <> decorIdent && not hadShuffled && not (shuffledItemAlreadyPlaced state)
         let autoTake = TrackerModel.LegacyMode && state = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 && not TrackerModel.ProgressiveItems   // (Legacy Mode: the magical sword cave only ever holds the sword, so no menu)
         let! choice = if autoTake then async { return "Placed" } elif preplaced then async { return "Preplaced" } else PieMenus.CaveChoiceBoxAsync(cm, ["Took Sword"; "Shuffled Item"; "Sword Icon"])
+        PieMenus.crossedOutChoices <- []   // (when the popup was skipped nothing consumed it)
+        PieMenus.legacyDisabledChoices <- []
         let mutable doneValue = 0   // 0 = nothing yet, state = took the sword, SHUFFLED_ITEM = the cave holds a shuffled item
         match choice with
         | "Took Sword" ->

@@ -685,6 +685,8 @@ public static class WPFUI
         decorStateChanged();
     }
     // removes every marker icon AND the shop label from a tile
+    // placing a secret / door repair / money making game on a tile replaces whatever shop (label + item icons) was there
+    public static bool tileTypeReplacesShop(int state) => state >= TrackerModel.MapSquareChoiceDomainHelper.UNKNOWN_SECRET && state <= TrackerModel.MapSquareChoiceDomainHelper.MONEY_MAKING_GAME;
     public static void clearAllTileIcons(int i, int j)
     {
         setShopLabel(i, j, 0);
@@ -2704,7 +2706,7 @@ public static class WPFUI
                             }
                             else
                             {
-                                if (currentState == -1 || currentState == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY) clearAllTileIcons(i, j);   // 'Unmarked' also clears any sword icon; placing a take any cave clears every other item on the tile
+                                if (currentState == -1 || currentState == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY || tileTypeReplacesShop(currentState)) clearAllTileIcons(i, j);   // 'Unmarked' also clears any sword icon; placing a take any cave clears every other item on the tile
                                 if (OverworldMapTileCustomization.isSwordCaveState(originalState) && currentState != originalState)
                                 {
                                     OverworldMapTileCustomization.clearSwordCaveItemsForState(i, j, originalState);
@@ -3064,13 +3066,8 @@ public static class WPFUI
                             openShopFlyoutDirectly = true;
                             activatePopup(0);
                         }
-                        // (unreachable: the arm above catches every POTION_SHOP, as in WPF)
-                        else if (hasHotKeyedState && hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP && !(canPlacePotionShop(i, j)))
-                        {
-                            ea.Handled = true;
-                            Graphics.ErrorBeepWithReminderLogText("All the potion shops are already placed");
-                        }
-                        else if (hasHotKeyedState && (hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)
+                        // (the arm above already catches every POTION_SHOP hotkey, so it is not repeated below)
+                        else if (hasHotKeyedState && (TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)
                                  || (isShopTile(i, j) && (hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.SWORD3))))
                         {
                             // the shop hotkeys place the new marker icons, exactly like picking the item from the tile menu (the potion shop is the blue + red potion pair)
@@ -3128,6 +3125,17 @@ public static class WPFUI
                             async Task go()
                             {
                                 await SetNewValue(state, originalState);
+                                // a secret / door repair / money making game replaces the shop, but only when the tile really took it (the change can be refused)
+                                // (and, like the tile menu: a take any cave clears every other item on the tile, and changing away from a sword / letter / take any cave gives back what was taken there)
+                                if (state != originalState && TrackerModel.overworldMapMarks[i, j].Current() == state)
+                                {
+                                    if (tileTypeReplacesShop(state) || state == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY) clearAllTileIcons(i, j);
+                                    if (OverworldMapTileCustomization.isSwordCaveState(originalState))
+                                    {
+                                        OverworldMapTileCustomization.clearSwordCaveItemsForState(i, j, originalState);
+                                        UIComponents.itemProgressChanged();
+                                    }
+                                }
                                 popupIsActive = false;
                             }
                             CustomComboBoxes.StartImmediate(go());

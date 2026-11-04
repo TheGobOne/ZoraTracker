@@ -127,6 +127,7 @@ let MenuLayouts = new System.Collections.Generic.Dictionary<string,string[]>()
 let mutable UseOldPotionLetterIcons = Bool(true)   // the old potion/letter icons are always used now (no longer an option)
 let mutable DisplayIconsInDungeonMap = Bool(false)
 let mutable ShowDungeonHintIcons = Bool(true)
+let mutable ShowOffTileEdges = Bool(true)   // dungeon map: a red 'no bomb' edge on each side of a room that touches an OFF tile
 let mutable DungeonMapLocationHintOpacity = 0.3
 let mutable ReverseScrollWheelDirection = Bool(false)
 let mutable HidePopupHintAndLock = Bool(false)   // hide the tip box and lock bar on the dungeon room type / monster / floor drop menus
@@ -153,6 +154,7 @@ let mutable SavedStartupSelection = ""               // (comma separated keys of
 let mutable SmallerAppWindowScaleFactor = 2.0/3.0
 let mutable ShorterAppWindow = Bool(false)
 let mutable IsMuted = false
+let mutable SuppressAudioForSelfTest = false   // set only by the selftest: reminders still show and log, but make no sound and speak nothing
 let mutable Volume = 30
 let mutable LastSeenVersionNotes = ""   // version whose About/patch notes the user has opened (version button glows until then)
 let mutable GuidedTourSeen = false   // set once the user clicks Guided Tour (the button glows until then)
@@ -272,6 +274,7 @@ type ReadWrite() =
     member val MenuLayouts : System.Collections.Generic.Dictionary<string,string[]> = new System.Collections.Generic.Dictionary<string,string[]>() with get,set
     member val DisplayIconsInDungeonMap = false with get,set
     member val ShowDungeonHintIcons = true with get,set
+    member val ShowOffTileEdges = true with get,set
     member val DungeonMapLocationHintOpacity = 0.3 with get,set
     member val ReverseScrollWheelDirection = false with get,set
     member val HidePopupHintAndLock = false with get,set
@@ -426,6 +429,7 @@ let private writeImpl(filename) =
     data.MenuLayouts <- new System.Collections.Generic.Dictionary<string,string[]>(MenuLayouts)
     data.DisplayIconsInDungeonMap <- DisplayIconsInDungeonMap.Value
     data.ShowDungeonHintIcons <- ShowDungeonHintIcons.Value
+    data.ShowOffTileEdges <- ShowOffTileEdges.Value
     data.DungeonMapLocationHintOpacity <- DungeonMapLocationHintOpacity
     data.ReverseScrollWheelDirection <- ReverseScrollWheelDirection.Value
     data.HidePopupHintAndLock <- HidePopupHintAndLock.Value
@@ -588,6 +592,7 @@ let private read(filename) =
             for kv in data.MenuLayouts do MenuLayouts.[kv.Key] <- kv.Value
         DisplayIconsInDungeonMap.Value <- data.DisplayIconsInDungeonMap
         ShowDungeonHintIcons.Value <- data.ShowDungeonHintIcons
+        ShowOffTileEdges.Value <- data.ShowOffTileEdges
         DungeonMapLocationHintOpacity <- max 0.05 (min 1.0 data.DungeonMapLocationHintOpacity)
         ReverseScrollWheelDirection.Value <- data.ReverseScrollWheelDirection
         HidePopupHintAndLock.Value <- data.HidePopupHintAndLock

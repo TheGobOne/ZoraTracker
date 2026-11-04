@@ -475,7 +475,9 @@ let setShopLabel(i:int, j:int, label:int) =
 let clearAllTileIcons(i:int, j:int) =
     setShopLabel(i, j, 0)
     setDecorIcons(i, j, -1)
-let owRemainingScreensTextBox = new TextBox(Width=116., Height=18., FontSize=12., Margin=Thickness(0.,-5.,0.,0.), Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center,
+// placing a secret / door repair / money making game on a tile replaces whatever shop (label + item icons) was there
+let tileTypeReplacesShop(state:int) = state >= TrackerModel.MapSquareChoiceDomainHelper.UNKNOWN_SECRET && state <= TrackerModel.MapSquareChoiceDomainHelper.MONEY_MAKING_GAME
+let owRemainingScreensTextBox =new TextBox(Width=116., Height=18., FontSize=12., Margin=Thickness(0.,-5.,0.,0.), Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center,
                                             BorderThickness=Thickness(0.), Text="OW Spots Left")
 // the gettable/total numbers, twice the size of the label under them
 let owRemainingNumbersTextBox = new TextBox(Width=116., Height=34., FontSize=24., Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center,
@@ -1912,7 +1914,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                 do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1)
                             redrawGridSpot()
                         else
-                            if currentState = -1 || currentState = TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY then clearAllTileIcons(i, j)   // 'Unmarked' also clears any sword icon; placing a take any cave clears every other item on the tile
+                            if currentState = -1 || currentState = TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY || tileTypeReplacesShop currentState then clearAllTileIcons(i, j)  // 'Unmarked' also clears any sword icon; placing a take any cave clears every other item on the tile
                             if OverworldMapTileCustomization.isSwordCaveState(originalState) && currentState <> originalState then
                                 OverworldMapTileCustomization.clearSwordCaveItemsForState(i, j, originalState)
                                 UIComponents.itemProgressChanged()
@@ -2168,10 +2170,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         ea.Handled <- true
                         openShopFlyoutDirectly <- true
                         activatePopup(0)
-                    | Some(hotKeyedState) when hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP && not(canPlacePotionShop(i,j)) ->
-                        ea.Handled <- true
-                        Graphics.ErrorBeepWithReminderLogText "All the potion shops are already placed"
-                    | Some(hotKeyedState) when hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)
+                    // (the case above already catches every POTION_SHOP hotkey, so it is not repeated below)
+                    | Some(hotKeyedState) when TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)
                                                || (isShopTile(i,j) && (hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || hotKeyedState = TrackerModel.MapSquareChoiceDomainHelper.SWORD3)) ->
                         // the shop hotkeys place the new marker icons, exactly like picking the item from the tile menu (the potion shop is the blue + red potion pair)
                         // (on a tile that is already a shop, the Letter / White Sword / Magical Sword hotkeys put that item in the shop instead of turning the tile into a cave)
@@ -2217,6 +2217,13 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         let state = OverworldMapTileCustomization.DoSpecialHotKeyHandlingForOverworldTiles(i, j, originalState, hotKeyedState)
                         async {
                             do! SetNewValue(state, originalState)
+                            // a secret / door repair / money making game replaces the shop, but only when the tile really took it (the change can be refused)
+                            // (and, like the tile menu: a take any cave clears every other item on the tile, and changing away from a sword / letter / take any cave gives back what was taken there)
+                            if state <> originalState && TrackerModel.overworldMapMarks.[i,j].Current() = state then
+                                if tileTypeReplacesShop state || state = TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY then clearAllTileIcons(i, j)
+                                if OverworldMapTileCustomization.isSwordCaveState(originalState) then
+                                    OverworldMapTileCustomization.clearSwordCaveItemsForState(i, j, originalState)
+                                    UIComponents.itemProgressChanged()
                             popupIsActive <- false
                         } |> Async.StartImmediate
                     | None -> 

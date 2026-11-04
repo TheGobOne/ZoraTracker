@@ -1030,6 +1030,45 @@ public static class PieMenus
         }
     }
 
+    // a question with a row of buttons, in the same in-app style as the take-any cave's box (no OS dialog); returns the clicked button's text, or null if dismissed (clicked outside)
+    public static async Task<string> ConfirmBoxAsync(CustomComboBoxes.CanvasManager cm, string question, IEnumerable<string> buttonTexts)
+    {
+        var wh = new ManualResetEvent(false);
+        string result = null;
+        var col = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Black, Margin = new Thickness(16.0) };
+        col.Children.Add(new TextBlock { Text = question, Foreground = Brushes.White, FontSize = 16.0, TextWrapping = TextWrapping.Wrap, MaxWidth = 360.0, Margin = new Thickness(0.0, 0.0, 0.0, 12.0) });
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        foreach (var text in buttonTexts)
+        {
+            var b = new Button { Height = 34.0, MinWidth = 120.0, Margin = new Thickness(6.0, 0.0, 6.0, 0.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
+            b.Content = new TextBox { Text = text, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
+            b.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            b.VerticalContentAlignment = VerticalAlignment.Stretch;
+            var t = text;
+            b.Click += (_, _) => { result = t; wh.Set(); };
+            row.Children.Add(b);
+        }
+        col.Children.Add(row);
+        var bord = new Border { Child = col, Background = Brushes.Black, BorderThickness = new Thickness(5.0), BorderBrush = Brushes.Gray };
+        bord.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var c = new Canvas { Width = bord.DesiredSize.Width, Height = bord.DesiredSize.Height };
+        c.Children.Add(bord);
+        c.MyKeyAdd(ea => ea.Handled = true);
+        var (areaW, areaH) = (cm.AppMainCanvas.Width, cm.AppMainCanvas.Height);
+        var cx = areaW > 0.0 ? Math.Max(0.0, (areaW - c.Width) / 2.0) : 150.0;
+        var cy = areaH > 0.0 ? Math.Max(0.0, (areaH - c.Height) / 2.0) : 200.0;
+        // measured before it was in the window, so re-center it once it has its real size
+        bord.SizeChanged += (_, _) =>
+        {
+            c.Width = bord.Bounds.Width;
+            c.Height = bord.Bounds.Height;
+            if (areaW > 0.0) Canvas.SetLeft(c, Math.Max(0.0, (areaW - bord.Bounds.Width) / 2.0));
+            if (areaH > 0.0) Canvas.SetTop(c, Math.Max(0.0, (areaH - bord.Bounds.Height) / 2.0));
+        };
+        await CustomComboBoxes.DoModal(cm, wh, cx, cy, c);
+        return result;
+    }
+
     // the other sword caves and the letter cave use the same style of choice box as the wood sword cave (without the hotkeys); returns the chosen label, or null if dismissed
     public static async Task<string> CaveChoiceBoxAsync(CustomComboBoxes.CanvasManager cm, IEnumerable<string> labels)
     {

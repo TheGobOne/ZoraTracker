@@ -22,7 +22,7 @@ public static class Dungeon
     public static readonly double highlightOpacity = 1.0;
     public static readonly IBrush highlight = Brushes.Cyan; // new SolidColorBrush(Color.FromRgb(200uy, 200uy, 200uy)) :> Brush
     public static readonly IBrush unknown = Graphics.freeze(new SolidColorBrush(Color.FromRgb(30, 30, 45)));
-    public static readonly IBrush no      = Graphics.freeze(new SolidColorBrush(Color.FromRgb(145, 0, 0)));
+    public static readonly IBrush no      = Graphics.freeze(new SolidColorBrush(Color.FromRgb(255, 0, 0)));
     public static readonly IBrush yes     = Graphics.freeze(new SolidColorBrush(Color.FromRgb(60,120,60)));
     public static readonly IBrush yellow  = Graphics.freeze(new SolidColorBrush(Color.FromRgb(160, 160, 40)));
     public static readonly IBrush purple  = Graphics.freeze(new SolidColorBrush(Color.FromRgb(140, 30, 140)));
