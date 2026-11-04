@@ -4,7 +4,7 @@
 
 ### Track your whole Zelda 1 Randomizer run in one window.
 
-A tracker for [ZORA](https://zora.gg) and Z1R racers, casual and competitive.
+A tracker for [ZORA](https://zora.gg) (Zelda 1 Randomizer racing) and Z1R racers, casual and competitive.
 Free your head for the run: the tracker remembers where everything is.
 
 **[Download](https://github.com/TheGobOne/ZoraTracker/releases/latest)** · **[Guides](#guides)** · **[Report a bug](https://github.com/TheGobOne/ZoraTracker/issues)**
@@ -22,6 +22,8 @@ Free your head for the run: the tracker remembers where everything is.
 </div>
 
 ## Quick start (Windows)
+
+Needs Windows 10 (version 1903 or later) or Windows 11. The tracker uses .NET Framework 4.8, which those versions already include.
 
 1. [Download the latest zip](https://github.com/TheGobOne/ZoraTracker/releases/latest) and unzip it somewhere you want to keep. Settings, hotkeys and saves live beside the program.
 2. Run `Z1R_WPF.exe`. If Windows warns about an unknown app, choose **More info**, then **Run anyway**.
