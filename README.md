@@ -2,7 +2,7 @@
 
 # ZORATracker
 
-### Track your whole Zelda 1 Randomizer run in one window, so you never have to rely on memory.
+### Track your whole Zelda 1 Randomizer run in one window.
 
 A tracker for [ZORA](https://zora.gg) and Z1R racers, casual and competitive.
 Free your head for the run: the tracker remembers where everything is.
