@@ -199,6 +199,101 @@ let private run (win:Window) = async {
                 if old.Overworld.HeartShuffleMode <> -1 then fail "a save without a Heart Shuffle mode should load as -1"
             finally
                 TrackerModel.HeartShuffleMode <- saved)
+        // a save keeps every ZORA option, not just On / Off: Boots and the four Extra / Randomize options each come back Off / On / ? (Random), as do Progressive Items,
+        // the 4th Sword, Mirrored Overworld, the custom LEVEL name, the Dead Woods / Lost Hills hint letters, dungeon 9's items and the notes. Nothing is clicked or written to the Saves folder.
+        guard "ZORA options save round trip" (fun () ->
+            let (sBoots, sBootsR, sProg, sPB, sRaft, sDW, sLH, sPBR, sRaftR, sDWR, sLHR, sDWH, sLHH, sDWK, sLHK) =
+                (TrackerModel.BootsReplaceBoomerangs, TrackerModel.BootsRandom, TrackerModel.ProgressiveItems,
+                 OverworldData.ExtraPBBlocks, OverworldData.ExtraRaftBlocks, OverworldData.DeadWoodsEnabled, OverworldData.LostHillsEnabled,
+                 OverworldData.ExtraPBRandom, OverworldData.ExtraRaftRandom, OverworldData.DeadWoodsRandom, OverworldData.LostHillsRandom,
+                 OverworldData.DeadWoodsHint, OverworldData.LostHillsHint, OverworldData.DeadWoodsHintKnown, OverworldData.LostHillsHintKnown)
+            let sName, sMirror, sL2, sL9 = TrackerModel.CustomLevelName, TrackerModel.MirrorOverworld, TrackerModel.level2StairBoxEnabled, TrackerModel.level9FloorBoxEnabled
+            let box9 = (TrackerModel.GetDungeon(8)).Boxes.[0]
+            let sBox9Cell, sBox9Has = box9.CellCurrent(), box9.PlayerHas()
+            let build (notes:string) = String.concat "\n" (SaveAndLoad.BuildSaveLines(notes, 0, [| "}" |], [||], "", false, 0, false, false))
+            try
+                // states: 0 = Off, 1 = On, 2 = ? (Random, counts as On for the extra blocks and as Off for Boots)
+                let setModel (pb, raft, dw, lh, boots, prog) =
+                    OverworldData.ExtraPBBlocks <- (pb <> 0);  OverworldData.ExtraPBRandom <- (pb = 2)
+                    OverworldData.ExtraRaftBlocks <- (raft <> 0);  OverworldData.ExtraRaftRandom <- (raft = 2)
+                    OverworldData.DeadWoodsEnabled <- (dw <> 0);  OverworldData.DeadWoodsRandom <- (dw = 2)
+                    OverworldData.LostHillsEnabled <- (lh <> 0);  OverworldData.LostHillsRandom <- (lh = 2)
+                    TrackerModel.BootsReplaceBoomerangs <- (boots = 1);  TrackerModel.BootsRandom <- (boots = 2)
+                    TrackerModel.ProgressiveItems <- (prog = 1)
+                let st e r = if r then 2 elif e then 1 else 0
+                let readModel() =
+                    (st OverworldData.ExtraPBBlocks OverworldData.ExtraPBRandom, st OverworldData.ExtraRaftBlocks OverworldData.ExtraRaftRandom,
+                     st OverworldData.DeadWoodsEnabled OverworldData.DeadWoodsRandom, st OverworldData.LostHillsEnabled OverworldData.LostHillsRandom,
+                     (if TrackerModel.BootsRandom then 2 elif TrackerModel.BootsReplaceBoomerangs then 1 else 0), (if TrackerModel.ProgressiveItems then 1 else 0))
+                let mutable bad = 0
+                for i in 0 .. 80 do
+                    let pb, raft, dw, lh, boots, prog = i % 3, (i / 3) % 3, (i / 9) % 3, (i / 27) % 3, (i / 2) % 3, i % 2
+                    let dwHint, lhHint = (if i % 2 = 0 then "UDLR" else ""), (if i % 2 = 0 then "" else "LLRR")
+                    setModel (pb, raft, dw, lh, boots, prog)
+                    OverworldData.DeadWoodsHint <- dwHint
+                    OverworldData.LostHillsHint <- lhHint
+                    let d = DungeonSaveAndLoad.LoadAll(build "notes")
+                    // forget everything (the opposite of what was saved), then load it back the way a real load does
+                    setModel ((pb + 1) % 3, (raft + 1) % 3, (dw + 1) % 3, (lh + 1) % 3, (boots + 1) % 3, 1 - prog)
+                    OverworldData.DeadWoodsHint <- "ZZ"
+                    OverworldData.LostHillsHint <- "ZZ"
+                    SaveAndLoad.ApplyLoadedOptions(d.Overworld)
+                    let want = (pb, raft, dw, lh, boots, prog)
+                    if readModel() <> want && bad < 5 then
+                        bad <- bad + 1
+                        fail (sprintf "save round trip: (Extra PB, Raft, Dead Woods, Lost Hills, Boots, Progressive) = %A (0 = Off, 1 = On, 2 = ?) came back as %A" want (readModel()))
+                    elif OverworldData.DeadWoodsHint <> dwHint || OverworldData.LostHillsHint <> lhHint || OverworldData.DeadWoodsHintKnown <> (dwHint <> "") || OverworldData.LostHillsHintKnown <> (lhHint <> "") then
+                        if bad < 5 then
+                            bad <- bad + 1
+                            fail "save round trip: the Dead Woods / Lost Hills hint letters did not come back"
+                // an older save (no Random bits, no boots, no progressive items, no hint letters): those keep whatever is set, and the old On / Off bits still load
+                let old = DungeonSaveAndLoad.LoadAll("{ \"Overworld\": { \"Quest\": 2, \"ExtraBlocks\": 5 } }")
+                if old.Overworld.ExtraBlocksRandom <> -1 || old.Overworld.BootsReplaceBoomerangs <> -1 || old.Overworld.ProgressiveItems <> -1 || not (isNull old.Overworld.DeadWoodsHint) then
+                    fail "an older save should load the new fields as -1 / null"
+                setModel (0, 2, 0, 2, 1, 1)
+                OverworldData.DeadWoodsHint <- "UD"
+                SaveAndLoad.ApplyLoadedOptions(old.Overworld)
+                if readModel() <> (1, 0, 1, 0, 1, 1) then fail (sprintf "an older save (ExtraBlocks 5) loaded wrong: %A" (readModel()))
+                if OverworldData.DeadWoodsHint <> "UD" then fail "an older save should leave the hint letters alone"
+                // Mirrored Overworld, the custom LEVEL name (an empty name must come back empty, not as null), the notes
+                TrackerModel.MirrorOverworld <- true
+                TrackerModel.CustomLevelName <- "ZORA"
+                let notes = "line one\n\"quoted\" and a \\ backslash\ttab\nlast line"
+                let d1 = DungeonSaveAndLoad.LoadAll(build notes)
+                if not d1.Overworld.MirrorOverworld then fail "save round trip: Mirrored Overworld (on) came back off"
+                if d1.Items.CustomLevelName <> "ZORA" then fail (sprintf "save round trip: the custom LEVEL name came back as '%s'" d1.Items.CustomLevelName)
+                if d1.Notes <> notes then fail "save round trip: the notes came back different"
+                TrackerModel.MirrorOverworld <- false
+                TrackerModel.CustomLevelName <- ""
+                let d2 = DungeonSaveAndLoad.LoadAll(build "")
+                if d2.Overworld.MirrorOverworld then fail "save round trip: Mirrored Overworld (off) came back on"
+                if isNull d2.Items.CustomLevelName || d2.Items.CustomLevelName <> "" then fail "save round trip: an empty custom LEVEL name should come back empty, not missing"
+                // 4th Sword: its two slots (level 2 staircase / level 9 floor check) say whether it was on, and where
+                for (l2, l9) in [ (false, false); (true, false); (false, true) ] do
+                    TrackerModel.level2StairBoxEnabled <- l2
+                    TrackerModel.level9FloorBoxEnabled <- l9
+                    let d3 = DungeonSaveAndLoad.LoadAll(build "")
+                    if d3.Items.Level2StairBoxEnabled <> l2 || d3.Items.Level9FloorBoxEnabled <> l9 || SaveAndLoad.FourthSwordWasOn(d3.Items) <> (l2 || l9) then
+                        fail (sprintf "save round trip: 4th Sword slots (level 2 %b, level 9 %b) came back wrong" l2 l9)
+                // dungeon 9's items: an item and its got-it state are written, and put back by the load
+                let wantCell = (if sBox9Cell = TrackerModel.ITEMS.BOW then TrackerModel.ITEMS.RAFT else TrackerModel.ITEMS.BOW)
+                if not (box9.AttemptToSet(wantCell, TrackerModel.PlayerHas.YES)) then fail "save round trip: could not put a test item in a dungeon 9 box"
+                else
+                    let d4 = DungeonSaveAndLoad.LoadAll(build "")
+                    if d4.Items.Dungeons.[8].Boxes.[0].CellCurrent <> box9.CellCurrent() || d4.Items.Dungeons.[8].Boxes.[0].PlayerHas <> box9.PlayerHas().AsInt() then
+                        fail "save round trip: a dungeon 9 item box was not written to the save"
+                    box9.AttemptToSet(TrackerModel.ITEMS.LADDER, TrackerModel.PlayerHas.NO) |> ignore
+                    if not (d4.Items.Dungeons.[8].Boxes.[0].TryApply(box9)) || box9.CellCurrent() <> wantCell || box9.PlayerHas() <> TrackerModel.PlayerHas.YES then
+                        fail "save round trip: a dungeon 9 item box did not come back"
+            finally
+                OverworldData.ExtraPBBlocks <- sPB;  OverworldData.ExtraRaftBlocks <- sRaft;  OverworldData.DeadWoodsEnabled <- sDW;  OverworldData.LostHillsEnabled <- sLH
+                OverworldData.ExtraPBRandom <- sPBR;  OverworldData.ExtraRaftRandom <- sRaftR;  OverworldData.DeadWoodsRandom <- sDWR;  OverworldData.LostHillsRandom <- sLHR
+                OverworldData.DeadWoodsHint <- sDWH;  OverworldData.LostHillsHint <- sLHH;  OverworldData.DeadWoodsHintKnown <- sDWK;  OverworldData.LostHillsHintKnown <- sLHK
+                TrackerModel.BootsReplaceBoomerangs <- sBoots;  TrackerModel.BootsRandom <- sBootsR;  TrackerModel.ProgressiveItems <- sProg
+                TrackerModel.CustomLevelName <- sName;  TrackerModel.MirrorOverworld <- sMirror
+                TrackerModel.level2StairBoxEnabled <- sL2;  TrackerModel.level9FloorBoxEnabled <- sL9
+                box9.AttemptToSet(sBox9Cell, sBox9Has) |> ignore)
+        log(sprintf "ZORA options save round trip done (%d failures so far)" failures.Value)
 
     if not stuck.Value then
         // 3a. every ordinary button on the main screen
@@ -331,10 +426,18 @@ let private run (win:Window) = async {
                         if cb.IsChecked.HasValue then fail (sprintf "%s: could not reach the ? state" name)
                         if (OverworldData.maybeBlockedTiles(false, false)).IsEmpty then fail (sprintf "%s ?: no maybe-blocked tiles" name)
                         do! clickTo cb (Nullable false)
-                // Boots has no ? state (two states only)
+                // Boots: Off, On, or ? (the flags left it to chance: counts as Off, the boomerangs stay, until it is confirmed)
                 let bootsCb = cbNamed "Boots Replace Boomerangs"
                 if bootsCb.IsNone then fail "Overworld + Extras: no Boots checkbox"
-                elif bootsCb.Value.IsThreeState then fail "Boots Replace Boomerangs should only be on/off"
+                elif not bootsCb.Value.IsThreeState then fail "Boots Replace Boomerangs should have a ? (Random) state"
+                else
+                    let cb = bootsCb.Value
+                    do! clickTo cb (Nullable true)
+                    if not TrackerModel.BootsReplaceBoomerangs || TrackerModel.BootsRandom then fail "Boots On: the model is not On"
+                    do! clickTo cb (Nullable())
+                    if TrackerModel.BootsReplaceBoomerangs || not TrackerModel.BootsRandom then fail "Boots ?: should be Random and count as Off until confirmed"
+                    do! clickTo cb (Nullable false)
+                    if TrackerModel.BootsReplaceBoomerangs || TrackerModel.BootsRandom then fail "Boots Off: the model is not Off"
                 if (OverworldData.maybeBlockedTiles(false, false)).IsEmpty |> not then fail "everything is Off but tiles are still maybe-blocked"
                 // the Close button closes the window
                 let closeBtn = descendants root |> Seq.tryPick (fun d -> match d with :? ButtonBase as b when label d = "Close" -> Some b | _ -> None)

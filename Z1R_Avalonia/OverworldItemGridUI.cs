@@ -1284,7 +1284,7 @@ public static class OverworldItemGridUI
                         t.FontSize = 14.0;
                         var isRnd = rnd.HasValue && rnd.Value.Item1();
                         var cb = new CheckBox { Content = t, IsChecked = (isRnd ? null : getV()), Margin = new Thickness(6.0, 2.0, 14.0, 2.0), IsThreeState = rnd.HasValue };
-                        ToolTip.SetTip(cb, rnd.HasValue ? tip + "\n\nClicks cycle Off, On, Random (?). Random counts as On, with yellow outlines on the tiles that might be blocked." : tip);
+                        ToolTip.SetTip(cb, label.StartsWith("Boots") ? tip + "\n\nClicks cycle Off, On, Random (?). Random counts as Off (boomerangs) until you confirm it." : rnd.HasValue ? tip + "\n\nClicks cycle Off, On, Random (?). Random counts as On, with yellow outlines on the tiles that might be blocked." : tip);
                         cb.Click += (_, _) =>
                         {
                             if (rnd.HasValue && !cb.IsChecked.HasValue) { setV(true); rnd.Value.Item2(true); }
@@ -1335,7 +1335,7 @@ public static class OverworldItemGridUI
                     blocksCol.Children.Add(hintsRow);
                     // boots: on or off any time too (for when the flags left Boots on Random). The boomerang pickers use it at once; the boomerang icons already drawn in the item boxes update the next time the tracker starts
                     var bootsRow = new StackPanel { Orientation = Orientation.Horizontal };
-                    bootsRow.Children.Add(mkBlocksCB("Boots Replace Boomerangs", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (() => TrackerModel.BootsReplaceBoomerangs), (v => TrackerModel.BootsReplaceBoomerangs = v), null));
+                    bootsRow.Children.Add(mkBlocksCB("Boots Replace Boomerangs", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (() => TrackerModel.BootsReplaceBoomerangs), (v => { TrackerModel.BootsReplaceBoomerangs = v; TrackerModel.BootsRandom = false; }), ((() => TrackerModel.BootsRandom), (r => { TrackerModel.BootsRandom = r; if (r) TrackerModel.BootsReplaceBoomerangs = false; }))));   // (Random, the ?: the boomerangs stay until boots are confirmed)
                     bootsRow.Children.Add(mkBlocksCB("Mirrored Overworld", "Flip the overworld map East<->West (same as the mirror icon at the top left).", (() => TrackerModel.MirrorOverworld), (v => setMirroredOverworld(v)), null));
                     blocksCol.Children.Add(bootsRow);
                     // the Hide 1st / 2nd Quest checkboxes (mixed overworlds only) sit in a third column, level with the four checkboxes

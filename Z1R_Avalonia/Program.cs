@@ -1955,6 +1955,7 @@ public static class Program
                     }
                 }
                 TrackerModel.BootsReplaceBoomerangs = brcb.IsChecked == true;
+                TrackerModel.BootsRandom = loadData == null && !brcb.IsChecked.HasValue;   // (a Random dash counts as Off until confirmed in Overworld + Extras)
                 OverworldData.IsMirroredFunc = FuncConvert.FromFunc(() => TrackerModel.MirrorOverworld);
                 // (Random, the dash, counts as On: the option may be in play, so every mark has to be available)
                 bool onOrRandom(CheckBox cb) => cb.IsChecked != false;
@@ -1971,6 +1972,8 @@ public static class Program
                 OverworldData.LostHillsHintKnown = false;
                 TrackerModel.MarkBombDroppers = mbcb.IsChecked == true;
                 TrackerModel.ProgressiveItems = pricb.IsChecked == true;
+                // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
+                if (loadData != null) SaveAndLoad.ApplyLoadedOptions(loadData.Overworld);
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
                 foreach (var (id, maxUse) in new[] { (TrackerModel.ITEMS.PROGRESSIVESWORD, (TrackerModel.ProgressiveItems ? 4 : 3)), (TrackerModel.ITEMS.BLUERING, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.BLUECANDLE, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.WOODARROW, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.BOOMERANG, (TrackerModel.ProgressiveItems ? 2 : 1)) }) TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, maxUse);
                 TrackerModel.CustomLevelName =

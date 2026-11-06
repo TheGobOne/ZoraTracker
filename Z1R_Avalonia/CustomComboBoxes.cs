@@ -66,6 +66,21 @@ public static class CustomComboBoxes
     public static class GlobalFlag
     {
         public static bool popupIsActive = false;
+        // a popup that failed part-way: write the exception to the crash log (so a report of a dead overworld comes with a stack trace) and unlock the UI
+        public static void logPopupFailure(string where, System.Exception e)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(System.IO.Path.Combine(System.AppContext.BaseDirectory, "Z1R_Tracker_crash_log.txt"),
+                    $"\n\nPOPUP FAILURE -- {System.DateTime.Now:yyyy-MM-dd-HH:mm:ss} -- {where}\n{e}\n");
+            }
+            catch { }
+            popupIsActive = false;
+        }
+        public static async System.Threading.Tasks.Task Guard(System.Threading.Tasks.Task t, string where)
+        {
+            try { await t; } catch (System.Exception e) { logPopupFailure(where, e); }
+        }
     }
 
     ////////////////////////////////////////////////////////////

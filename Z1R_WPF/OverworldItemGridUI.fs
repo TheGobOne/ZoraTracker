@@ -986,7 +986,7 @@ let MakeFQSQStuff(cm, _isMixed, owLocatorTilesZone:Graphics.TileHighlightRectang
                     let t = mkTxt(label)
                     t.FontSize <- 14.
                     let isRnd = (match rnd with Some(g,_) -> g() | None -> false)
-                    let cb = new CheckBox(Content=t, IsChecked=(if isRnd then System.Nullable<bool>() else System.Nullable<bool>(getV())), Margin=Thickness(6.,2.,14.,2.), ToolTip=(if rnd.IsSome then tip + "\n\nClicks cycle Off, On, Random (?). Random counts as On, with yellow outlines on the tiles that might be blocked." else tip), IsThreeState=rnd.IsSome)
+                    let cb = new CheckBox(Content=t, IsChecked=(if isRnd then System.Nullable<bool>() else System.Nullable<bool>(getV())), Margin=Thickness(6.,2.,14.,2.), ToolTip=(if label.StartsWith("Boots") then tip + "\n\nClicks cycle Off, On, Random (?). Random counts as Off (boomerangs) until you confirm it." elif rnd.IsSome then tip + "\n\nClicks cycle Off, On, Random (?). Random counts as On, with yellow outlines on the tiles that might be blocked." else tip), IsThreeState=rnd.IsSome)
                     cb.Click.Add(fun _ ->
                         (match rnd with
                          | Some(_, setR) when not cb.IsChecked.HasValue -> setV true; setR true
@@ -1027,7 +1027,7 @@ let MakeFQSQStuff(cm, _isMixed, owLocatorTilesZone:Graphics.TileHighlightRectang
                 blocksCol.Children.Add(hintsRow) |> ignore
                 // boots: on or off any time too (for when the flags left Boots on Random). The boomerang pickers use it at once; the boomerang icons already drawn in the item boxes update the next time the tracker starts
                 let bootsRow = new StackPanel(Orientation=Orientation.Horizontal)
-                bootsRow.Children.Add(mkBlocksCB("Boots Replace Boomerangs", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (fun () -> TrackerModel.BootsReplaceBoomerangs), (fun v -> TrackerModel.BootsReplaceBoomerangs <- v), None)) |> ignore
+                bootsRow.Children.Add(mkBlocksCB("Boots Replace Boomerangs", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (fun () -> TrackerModel.BootsReplaceBoomerangs), (fun v -> TrackerModel.BootsReplaceBoomerangs <- v; TrackerModel.BootsRandom <- false), Some((fun () -> TrackerModel.BootsRandom), (fun r -> TrackerModel.BootsRandom <- r; if r then TrackerModel.BootsReplaceBoomerangs <- false)))) |> ignore   // (Random, the ?: the boomerangs stay until boots are confirmed)
                 bootsRow.Children.Add(mkBlocksCB("Mirrored Overworld", "Flip the overworld map East<->West (same as the mirror icon at the top left).", (fun () -> TrackerModel.MirrorOverworld), (fun v -> setMirroredOverworld v), None)) |> ignore
                 blocksCol.Children.Add(bootsRow) |> ignore
                 // the Hide 1st / 2nd Quest checkboxes (mixed overworlds only) sit in a third column, level with the four checkboxes

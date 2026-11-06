@@ -445,6 +445,7 @@ public static class WPFUI
     public static bool openShopFlyoutDirectly = false;   // set by the Overworld_Shop hotkey: the next tile popup goes straight to the Shop flyout (potion shop / shops 1-4)
     // the Dead Woods / Lost Hills hint buttons (set when the legend is built): hovering a tile locked by that hint highlights its button
     public static Action<int, bool> hintButtonHighlightHook = (_, _) => { };   // zone (1 = Dead Woods, 2 = Lost Hills), on/off
+    public static readonly System.Collections.Generic.Dictionary<string, Action<string>> hintLoadHooks = new();   // "Dead Woods" / "Lost Hills" -> puts a loaded hint's letters into that hint button
     // 'Progressive Items' (ZORA Extras): the next level of each base item; the UI sets the hook (notification + glow) once it exists
     public static Action<List<(int, int)>, System.Drawing.Bitmap, System.Drawing.Bitmap> progressiveUpgradeHook = (_, _, _) => { };   // upgraded tiles, from icon, to icon
     public static Action progressiveSwordCheckHook = () => { };   // the progressive sword's tier (P1..P4) may have changed
@@ -2144,7 +2145,13 @@ public static class WPFUI
                 var ST = CustomComboBoxes.borderThickness;
                 var gridWidth = (double)(GCOL * (7 * 3 + 2 * (int)ST) + (int)ST) * 1.25;   // cells are 21 wide so the item icons can be shown at full size; the menu is drawn 1.25x bigger (see gridScale in DoModalGridSelect)
                 var tileImage = Graphics.BItoImage(owMapBIsRef[i, j]);
+                // (a failure while building or running the tile menu must never leave the overworld locked)
                 void activatePopup(int activationDelta)
+                {
+                    try { activatePopupCore(activationDelta); }
+                    catch (Exception e) { CustomComboBoxes.GlobalFlag.logPopupFailure($"overworld tile menu setup, {(char)('A' + j)}{i + 1}", e); }
+                }
+                void activatePopupCore(int activationDelta)
                 {
                     // Recompute GROW/GCOUNT live on each popup call so they always match
                     // gridElementsSelectablesAndIDs, which is also built live from the current option value.
@@ -2720,7 +2727,7 @@ public static class WPFUI
                         popupIsActive = false;
                         if (reopenMenu) activatePopup(0);
                     }
-                    CustomComboBoxes.StartImmediate(go());
+                    CustomComboBoxes.StartImmediate(CustomComboBoxes.GlobalFlag.Guard(go(), $"overworld tile menu, {(char)('A' + j)}{i + 1}"));
                 }
                 // copy / paste item markers (mouse button 4; while markers are carried, a plain left click on an open tile also pastes); false if there was nothing to copy or paste here
                 bool copyOrPasteMarkers()
@@ -3279,6 +3286,14 @@ public static class WPFUI
                     tb.Padding = (hint == "" ? new Thickness(2.0, 0.0, 2.0, 0.0) : new Thickness(0.0));
                     tb.TextAlignment = TextAlignment.Center;
                 }
+                // a loaded save puts its hint letters back (the border goes green, like after typing them in)
+                hintLoadHooks[name] = s =>
+                {
+                    hint = s;
+                    refreshLabel();
+                    btn.BorderBrush = (s != "" ? Brushes.LimeGreen : defaultBorderBrush);
+                    btn.BorderThickness = (s != "" ? new Thickness(2.0) : defaultBorderThickness);
+                };
                 // when the matching 'Randomize ...' option is not enabled, hovering shows an orange-outlined note saying so (and the hint menu does not open)
                 bool hintOptionEnabled() => (name == "Dead Woods" ? OverworldData.DeadWoodsEnabled : OverworldData.LostHillsEnabled);
                 var noteTB = new TextBox { Text = $"Randomize {name} Not Enabled", IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), FontSize = 14.0, Foreground = Brushes.Orange, Background = Brushes.Black };
@@ -3411,7 +3426,7 @@ public static class WPFUI
                             }
                             hint = cur;
                             refreshLabel();
-                            if (name == "Dead Woods") OverworldData.DeadWoodsHintKnown = (hint != ""); else OverworldData.LostHillsHintKnown = (hint != "");
+                            if (name == "Dead Woods") { OverworldData.DeadWoodsHintKnown = (hint != ""); OverworldData.DeadWoodsHint = hint; } else { OverworldData.LostHillsHintKnown = (hint != ""); OverworldData.LostHillsHint = hint; }
                             // once a hint is entered the button gets a green border
                             btn.BorderBrush = (hint != "" ? Brushes.LimeGreen : defaultBorderBrush);
                             btn.BorderThickness = (hint != "" ? new Thickness(2.0) : defaultBorderThickness);
@@ -5444,13 +5459,10 @@ public static class WPFUI
             var data = loadData;
             // Overworld
             TrackerModel.MirrorOverworld = data.Overworld.MirrorOverworld;
-            if (data.Overworld.ExtraBlocks >= 0)   // (older saves do not have this: they keep what the start screen chose)
-            {
-                OverworldData.ExtraPBBlocks = (data.Overworld.ExtraBlocks & 1) != 0;
-                OverworldData.ExtraRaftBlocks = (data.Overworld.ExtraBlocks & 2) != 0;
-                OverworldData.DeadWoodsEnabled = (data.Overworld.ExtraBlocks & 4) != 0;
-                OverworldData.LostHillsEnabled = (data.Overworld.ExtraBlocks & 8) != 0;
-            }
+            SaveAndLoad.ApplyLoadedOptions(data.Overworld);   // (the extra blocks and their Random ? states, boots, progressive items, hint letters; also applied at startup, before the UI was built)
+            // the letters typed into the Dead Woods / Lost Hills hint buttons go back into the buttons (older saves do not have them)
+            if (data.Overworld.DeadWoodsHint != null && hintLoadHooks.TryGetValue("Dead Woods", out var dwHook)) dwHook(data.Overworld.DeadWoodsHint);
+            if (data.Overworld.LostHillsHint != null && hintLoadHooks.TryGetValue("Lost Hills", out var lhHook)) lhHook(data.Overworld.LostHillsHint);
             TrackerModel.startIconX = data.Overworld.StartIconX;
             TrackerModel.startIconY = data.Overworld.StartIconY;
             TrackerModel.customWaypointX = data.Overworld.CustomWaypointX;
@@ -5548,7 +5560,7 @@ public static class WPFUI
                 }
             }
             OptionsMenu.triggerRequestRedrawOverworldEvent();   // redraw the tiles now that the cave items are back
-            if (!(string.IsNullOrEmpty(data.Items.CustomLevelName)))
+            if (data.Items.CustomLevelName != null)   // (an empty name in the save means none was in use: it must not be replaced by the start screen's remembered name; older saves have no name at all: null)
             {
                 TrackerModel.CustomLevelName = data.Items.CustomLevelName;
                 DungeonUI.triggerCustomLevelNameChanged();   // the custom LEVEL name that was in use when this was saved
@@ -5558,10 +5570,8 @@ public static class WPFUI
                 if (!(data.Items.Level2StairBox.TryApply(TrackerModel.level2StairBox))) anySetProblems = true;
                 TrackerModel.SetLevel2StairBoxEnabled(data.Items.Level2StairBoxEnabled);
                 TrackerModel.SetLevel9FloorBoxEnabled(data.Items.Level9FloorBoxEnabled);   // (older saves: false)
-                TrackerModelOptions.FourthSwordEnabled = data.Items.Level2StairBoxEnabled || data.Items.Level9FloorBoxEnabled;
             }
-            else
-                TrackerModelOptions.FourthSwordEnabled = true;   // older saves predate this option: nothing is restricted
+            TrackerModelOptions.FourthSwordEnabled = SaveAndLoad.FourthSwordWasOn(data.Items);   // (older saves predate the 4th Sword option: nothing is restricted)
             for (int i = 0; i <= 8; i++)
             {
                 var ds = data.Items.Dungeons[i];

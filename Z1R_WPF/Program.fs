@@ -1472,6 +1472,7 @@ type MyWindow() as this =
                     TrackerModel.letterBox.Set(TrackerModel.ITEMS.LETTER, TrackerModel.PlayerHas.NO)
                     TrackerModel.sword3Box.Set(TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.PlayerHas.NO)
             TrackerModel.BootsReplaceBoomerangs <- brcb.IsChecked.HasValue && brcb.IsChecked.Value
+            TrackerModel.BootsRandom <- loadData.IsNone && not brcb.IsChecked.HasValue   // (a Random dash counts as Off until confirmed in Overworld + Extras)
             OverworldData.IsMirroredFunc <- (fun () -> TrackerModel.MirrorOverworld)
             // (Random, the dash, counts as On: the option may be in play, so every mark has to be available)
             let onOrRandom (cb:CheckBox) = not cb.IsChecked.HasValue || cb.IsChecked.Value
@@ -1488,6 +1489,8 @@ type MyWindow() as this =
             OverworldData.LostHillsHintKnown <- false
             TrackerModel.MarkBombDroppers <- mbcb.IsChecked.HasValue && mbcb.IsChecked.Value
             TrackerModel.ProgressiveItems <- pricb.IsChecked.HasValue && pricb.IsChecked.Value
+            // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
+            if loadData.IsSome then SaveAndLoad.ApplyLoadedOptions(loadData.Value.Overworld)
             // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
             for (id, n) in [ TrackerModel.ITEMS.PROGRESSIVESWORD, (if TrackerModel.ProgressiveItems then 4 else 3); TrackerModel.ITEMS.BLUERING, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.BLUECANDLE, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.WOODARROW, (if TrackerModel.ProgressiveItems then 2 else 1); TrackerModel.ITEMS.BOOMERANG, (if TrackerModel.ProgressiveItems then 2 else 1) ] do TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, n)
             TrackerModel.CustomLevelName <- 

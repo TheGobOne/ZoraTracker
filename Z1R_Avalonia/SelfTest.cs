@@ -245,6 +245,117 @@ public static class SelfTest
             await pause(1500);
             await settle("tracker start");
             log($"tracker started ({failures} failures so far)");
+            // a save keeps every ZORA option, not just On / Off: Boots and the four Extra / Randomize options each come back Off / On / ? (Random), as do Progressive Items,
+            // the 4th Sword, Mirrored Overworld, the custom LEVEL name, the Dead Woods / Lost Hills hint letters, dungeon 9's items and the notes. Nothing is clicked or written to the Saves folder.
+            guard("ZORA options save round trip", () =>
+            {
+                var sBoots = TrackerModel.BootsReplaceBoomerangs; var sBootsR = TrackerModel.BootsRandom; var sProg = TrackerModel.ProgressiveItems;
+                var sPB = OverworldData.ExtraPBBlocks; var sRaft = OverworldData.ExtraRaftBlocks; var sDW = OverworldData.DeadWoodsEnabled; var sLH = OverworldData.LostHillsEnabled;
+                var sPBR = OverworldData.ExtraPBRandom; var sRaftR = OverworldData.ExtraRaftRandom; var sDWR = OverworldData.DeadWoodsRandom; var sLHR = OverworldData.LostHillsRandom;
+                var sDWH = OverworldData.DeadWoodsHint; var sLHH = OverworldData.LostHillsHint; var sDWK = OverworldData.DeadWoodsHintKnown; var sLHK = OverworldData.LostHillsHintKnown;
+                var sName = TrackerModel.CustomLevelName; var sMirror = TrackerModel.MirrorOverworld; var sL2 = TrackerModel.level2StairBoxEnabled; var sL9 = TrackerModel.level9FloorBoxEnabled;
+                var box9 = TrackerModel.GetDungeon(8).Boxes[0];
+                var sBox9Cell = box9.CellCurrent(); var sBox9Has = box9.PlayerHas();
+                string build(string notes) => string.Join("\n", SaveAndLoad.BuildSaveLines(notes, 0, new[] { "}" }, new string[0], "", false, 0, false, false));
+                try
+                {
+                    // states: 0 = Off, 1 = On, 2 = ? (Random, counts as On for the extra blocks and as Off for Boots)
+                    void setModel(int pb, int raft, int dw, int lh, int boots, int prog)
+                    {
+                        OverworldData.ExtraPBBlocks = pb != 0; OverworldData.ExtraPBRandom = pb == 2;
+                        OverworldData.ExtraRaftBlocks = raft != 0; OverworldData.ExtraRaftRandom = raft == 2;
+                        OverworldData.DeadWoodsEnabled = dw != 0; OverworldData.DeadWoodsRandom = dw == 2;
+                        OverworldData.LostHillsEnabled = lh != 0; OverworldData.LostHillsRandom = lh == 2;
+                        TrackerModel.BootsReplaceBoomerangs = boots == 1; TrackerModel.BootsRandom = boots == 2;
+                        TrackerModel.ProgressiveItems = prog == 1;
+                    }
+                    int st(bool e, bool r) => r ? 2 : e ? 1 : 0;
+                    (int, int, int, int, int, int) readModel() =>
+                        (st(OverworldData.ExtraPBBlocks, OverworldData.ExtraPBRandom), st(OverworldData.ExtraRaftBlocks, OverworldData.ExtraRaftRandom),
+                         st(OverworldData.DeadWoodsEnabled, OverworldData.DeadWoodsRandom), st(OverworldData.LostHillsEnabled, OverworldData.LostHillsRandom),
+                         TrackerModel.BootsRandom ? 2 : TrackerModel.BootsReplaceBoomerangs ? 1 : 0, TrackerModel.ProgressiveItems ? 1 : 0);
+                    var bad = 0;
+                    for (var i = 0; i <= 80; i++)
+                    {
+                        int pb = i % 3, raft = (i / 3) % 3, dw = (i / 9) % 3, lh = (i / 27) % 3, boots = (i / 2) % 3, prog = i % 2;
+                        string dwHint = i % 2 == 0 ? "UDLR" : "", lhHint = i % 2 == 0 ? "" : "LLRR";
+                        setModel(pb, raft, dw, lh, boots, prog);
+                        OverworldData.DeadWoodsHint = dwHint;
+                        OverworldData.LostHillsHint = lhHint;
+                        var d = DungeonSaveAndLoad.LoadAll(build("notes"));
+                        // forget everything (the opposite of what was saved), then load it back the way a real load does
+                        setModel((pb + 1) % 3, (raft + 1) % 3, (dw + 1) % 3, (lh + 1) % 3, (boots + 1) % 3, 1 - prog);
+                        OverworldData.DeadWoodsHint = "ZZ";
+                        OverworldData.LostHillsHint = "ZZ";
+                        SaveAndLoad.ApplyLoadedOptions(d.Overworld);
+                        var want = (pb, raft, dw, lh, boots, prog);
+                        if (readModel() != want && bad < 5)
+                        {
+                            bad++;
+                            fail($"save round trip: (Extra PB, Raft, Dead Woods, Lost Hills, Boots, Progressive) = {want} (0 = Off, 1 = On, 2 = ?) came back as {readModel()}");
+                        }
+                        else if ((OverworldData.DeadWoodsHint != dwHint || OverworldData.LostHillsHint != lhHint || OverworldData.DeadWoodsHintKnown != (dwHint != "") || OverworldData.LostHillsHintKnown != (lhHint != "")) && bad < 5)
+                        {
+                            bad++;
+                            fail("save round trip: the Dead Woods / Lost Hills hint letters did not come back");
+                        }
+                    }
+                    // an older save (no Random bits, no boots, no progressive items, no hint letters): those keep whatever is set, and the old On / Off bits still load
+                    var old = DungeonSaveAndLoad.LoadAll("{ \"Overworld\": { \"Quest\": 2, \"ExtraBlocks\": 5 } }");
+                    if (old.Overworld.ExtraBlocksRandom != -1 || old.Overworld.BootsReplaceBoomerangs != -1 || old.Overworld.ProgressiveItems != -1 || old.Overworld.DeadWoodsHint != null)
+                        fail("an older save should load the new fields as -1 / null");
+                    setModel(0, 2, 0, 2, 1, 1);
+                    OverworldData.DeadWoodsHint = "UD";
+                    SaveAndLoad.ApplyLoadedOptions(old.Overworld);
+                    if (readModel() != (1, 0, 1, 0, 1, 1)) fail($"an older save (ExtraBlocks 5) loaded wrong: {readModel()}");
+                    if (OverworldData.DeadWoodsHint != "UD") fail("an older save should leave the hint letters alone");
+                    // Mirrored Overworld, the custom LEVEL name (an empty name must come back empty, not as null), the notes
+                    TrackerModel.MirrorOverworld = true;
+                    TrackerModel.CustomLevelName = "ZORA";
+                    var notes = "line one\n\"quoted\" and a \\ backslash\ttab\nlast line";
+                    var d1 = DungeonSaveAndLoad.LoadAll(build(notes));
+                    if (!d1.Overworld.MirrorOverworld) fail("save round trip: Mirrored Overworld (on) came back off");
+                    if (d1.Items.CustomLevelName != "ZORA") fail($"save round trip: the custom LEVEL name came back as '{d1.Items.CustomLevelName}'");
+                    if (d1.Notes != notes) fail("save round trip: the notes came back different");
+                    TrackerModel.MirrorOverworld = false;
+                    TrackerModel.CustomLevelName = "";
+                    var d2 = DungeonSaveAndLoad.LoadAll(build(""));
+                    if (d2.Overworld.MirrorOverworld) fail("save round trip: Mirrored Overworld (off) came back on");
+                    if (d2.Items.CustomLevelName == null || d2.Items.CustomLevelName != "") fail("save round trip: an empty custom LEVEL name should come back empty, not missing");
+                    // 4th Sword: its two slots (level 2 staircase / level 9 floor check) say whether it was on, and where
+                    foreach (var (l2, l9) in new[] { (false, false), (true, false), (false, true) })
+                    {
+                        TrackerModel.level2StairBoxEnabled = l2;
+                        TrackerModel.level9FloorBoxEnabled = l9;
+                        var d3 = DungeonSaveAndLoad.LoadAll(build(""));
+                        if (d3.Items.Level2StairBoxEnabled != l2 || d3.Items.Level9FloorBoxEnabled != l9 || SaveAndLoad.FourthSwordWasOn(d3.Items) != (l2 || l9))
+                            fail($"save round trip: 4th Sword slots (level 2 {l2}, level 9 {l9}) came back wrong");
+                    }
+                    // dungeon 9's items: an item and its got-it state are written, and put back by the load
+                    var wantCell = sBox9Cell == TrackerModel.ITEMS.BOW ? TrackerModel.ITEMS.RAFT : TrackerModel.ITEMS.BOW;
+                    if (!box9.AttemptToSet(wantCell, TrackerModel.PlayerHas.YES)) fail("save round trip: could not put a test item in a dungeon 9 box");
+                    else
+                    {
+                        var d4 = DungeonSaveAndLoad.LoadAll(build(""));
+                        var b4 = d4.Items.Dungeons[8].Boxes[0];
+                        if (b4.CellCurrent != box9.CellCurrent() || b4.PlayerHas != box9.PlayerHas().AsInt()) fail("save round trip: a dungeon 9 item box was not written to the save");
+                        box9.AttemptToSet(TrackerModel.ITEMS.LADDER, TrackerModel.PlayerHas.NO);
+                        if (!b4.TryApply(box9) || box9.CellCurrent() != wantCell || box9.PlayerHas().AsInt() != TrackerModel.PlayerHas.YES.AsInt())
+                            fail("save round trip: a dungeon 9 item box did not come back");
+                    }
+                }
+                finally
+                {
+                    OverworldData.ExtraPBBlocks = sPB; OverworldData.ExtraRaftBlocks = sRaft; OverworldData.DeadWoodsEnabled = sDW; OverworldData.LostHillsEnabled = sLH;
+                    OverworldData.ExtraPBRandom = sPBR; OverworldData.ExtraRaftRandom = sRaftR; OverworldData.DeadWoodsRandom = sDWR; OverworldData.LostHillsRandom = sLHR;
+                    OverworldData.DeadWoodsHint = sDWH; OverworldData.LostHillsHint = sLHH; OverworldData.DeadWoodsHintKnown = sDWK; OverworldData.LostHillsHintKnown = sLHK;
+                    TrackerModel.BootsReplaceBoomerangs = sBoots; TrackerModel.BootsRandom = sBootsR; TrackerModel.ProgressiveItems = sProg;
+                    TrackerModel.CustomLevelName = sName; TrackerModel.MirrorOverworld = sMirror;
+                    TrackerModel.level2StairBoxEnabled = sL2; TrackerModel.level9FloorBoxEnabled = sL9;
+                    box9.AttemptToSet(sBox9Cell, sBox9Has);
+                }
+            });
+            log($"ZORA options save round trip done ({failures} failures so far)");
         }
 
         if (!stuck)
@@ -405,10 +516,19 @@ public static class SelfTest
                             await clickTo(cb, false);
                         }
                     }
-                    // Boots has no ? state (two states only)
+                    // Boots: Off, On, or ? (the flags left it to chance: counts as Off, the boomerangs stay, until it is confirmed)
                     var bootsCb = cbNamed("Boots Replace Boomerangs");
                     if (bootsCb == null) fail("Overworld + Extras: no Boots checkbox");
-                    else if (bootsCb.IsThreeState) fail("Boots Replace Boomerangs should only be on/off");
+                    else if (!bootsCb.IsThreeState) fail("Boots Replace Boomerangs should have a ? (Random) state");
+                    else
+                    {
+                        await clickTo(bootsCb, true);
+                        if (!TrackerModel.BootsReplaceBoomerangs || TrackerModel.BootsRandom) fail("Boots On: the model is not On");
+                        await clickTo(bootsCb, null);
+                        if (TrackerModel.BootsReplaceBoomerangs || !TrackerModel.BootsRandom) fail("Boots ?: should be Random and count as Off until confirmed");
+                        await clickTo(bootsCb, false);
+                        if (TrackerModel.BootsReplaceBoomerangs || TrackerModel.BootsRandom) fail("Boots Off: the model is not Off");
+                    }
                     if (!OverworldData.maybeBlockedTiles(false, false).IsEmpty) fail("everything is Off but tiles are still maybe-blocked");
                     // the Close button closes the window
                     var closeBtn = descendants(root).FirstOrDefault(d => isButtonLike(d) && label(d) == "Close") as Control;

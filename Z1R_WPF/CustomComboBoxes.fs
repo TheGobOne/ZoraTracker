@@ -10,8 +10,21 @@ let makeGrid = Graphics.makeGrid
 
 open HotKeys.MyKey
 
-module GlobalFlag = 
+module GlobalFlag =
     let mutable popupIsActive = false
+    // a popup that failed part-way: write the exception to the crash log (so a report of a dead overworld comes with a stack trace) and unlock the UI
+    // TEMPORARY diagnostics: only writes when a file named debug_clicks.flag exists next to the exe
+    let dbg(msg:string) =
+        try
+            let dir = System.AppDomain.CurrentDomain.BaseDirectory
+            if System.IO.File.Exists(System.IO.Path.Combine(dir, "debug_clicks.flag")) then
+                System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "debug_clicks.txt"), sprintf "%s %s\n" (System.DateTime.Now.ToString("HH:mm:ss.fff")) msg)
+        with _ -> ()
+    let logPopupFailure(where:string, e:exn) =
+        try System.IO.File.AppendAllText(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_crash_log.txt"),
+                                         sprintf "\n\nPOPUP FAILURE -- %s -- %s\n%s\n" (System.DateTime.Now.ToString("yyyy-MM-dd-HH:mm:ss")) where (e.ToString()))
+        with _ -> ()
+        popupIsActive <- false
 open GlobalFlag
 
 ////////////////////////////////////////////////////////////
@@ -139,7 +152,8 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
         if not (isNull sunglasses.Parent) then (sunglasses.Parent :?> Canvas).Children.Remove(sunglasses)
     do
         // a click when no popup is supposed to be open but a popup layer is still there: remove the leftover layer so the tracker is usable again
-        rootCanvas.PreviewMouseDown.Add(fun _ ->
+        rootCanvas.PreviewMouseDown.Add(fun ea ->
+            dbg(sprintf "root %A flag=%b layers=%d src=%s" ea.ChangedButton popupIsActive popupCanvasStack.Count (if isNull ea.OriginalSource then "null" else ea.OriginalSource.GetType().Name))
             if popupCanvasStack.Count > 0 && not popupIsActive then
                 logPopupNote(sprintf "%d leftover popup layer(s) with no popup active; removed on click" popupCanvasStack.Count)
                 clearAllPopups()
@@ -562,6 +576,7 @@ let DoModalGridSelect<'State,'Result>
             shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH, appH)
         else gx, gy
     canvasAdd(popupCanvas, gridBorder, gx, gy)
+    dbg(sprintf "GRID %s tile=(%.0f,%.0f) gx,gy=(%.0f,%.0f) gridPix=(%.0f,%.0f) app=(%.0f,%.0f) total=%d defaultCount=%d origIdx=%d jump=%b" uniqueName tileX tileY gx gy gridPixW gridPixH appW appH total gridElementsSelectablesAndIDs.Length origIdx jumpMode.Value)
     // a moved menu stays at the same spot on screen (its position is saved absolutely, not relative to the tile you clicked)
     let applySavedAbs() =
         match TrackerModelOptions.MenuLayouts.TryGetValue(placeKey + "AbsV2") with
@@ -747,6 +762,7 @@ let DoModalGridSelect<'State,'Result>
                 layoutMovables()
             anchorBtn.MouseLeftButtonDown.Add(fun ea -> setMode false; ea.Handled <- true)
             jumpBtn.MouseLeftButtonDown.Add(fun ea -> setMode true; ea.Handled <- true)
+    dbg(sprintf "GRID placed: border left=%.0f top=%.0f scale=%.2f rect=%A visibility=%A" (Canvas.GetLeft(gridBorder)) (Canvas.GetTop(gridBorder)) userScale.Value MovableGridRect gridBorder.Visibility)
     let mutable currentState = origIdx   // the only bit of local mutable state during the modal - it ranges from 0..gridElements.Length-1
     let mutable allDoneSoNoLongerNeedToMouseLeaveSnapback = false
     let canvasesToClear = ResizeArray<Canvas>()
@@ -1043,6 +1059,24 @@ let DoModalGridSelect<'State,'Result>
     |  1 -> next()
     | _ -> failwith "bad activationDelta"
     // activate the modal
+    dbg(sprintf "GRID activating %s: popupCanvas children=%d gridBorder parent=%s" uniqueName popupCanvas.Children.Count (if isNull gridBorder.Parent then "null" else gridBorder.Parent.GetType().Name))
+    popupCanvas.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new System.Action(fun () ->
+        let rec rootOf(d:DependencyObject) = if isNull d then null else (let p = VisualTreeHelper.GetParent(d) in if isNull p then d else rootOf p)
+        dbg(sprintf "GRID after-render %s: popupCanvas visible=%b size=(%.0f,%.0f) parent=%s gridBorder visible=%b actual=(%.0f,%.0f) opacity=%.2f root=%s popupOpacity=%.2f"
+                uniqueName popupCanvas.IsVisible popupCanvas.ActualWidth popupCanvas.ActualHeight
+                (match VisualTreeHelper.GetParent(popupCanvas) with null -> "null" | p -> p.GetType().Name)
+                gridBorder.IsVisible gridBorder.ActualWidth gridBorder.ActualHeight gridBorder.Opacity
+                (match rootOf(popupCanvas) with null -> "null" | r -> r.GetType().Name) popupCanvas.Opacity)
+        let rc = cm.RootCanvas
+        dbg(sprintf "LAYERS rootCanvas children=%d stack=%d" rc.Children.Count cm.PopupCanvasStack.Count)
+        for k = 0 to rc.Children.Count - 1 do
+            match rc.Children.[k] with
+            | :? Canvas as cv ->
+                let kids = [ for ch in cv.Children -> ch.GetType().Name ] |> List.countBy id |> List.map (fun (n,c) -> sprintf "%s x%d" n c)
+                dbg(sprintf "  [%d] Canvas%s size=(%.0f,%.0f) opacity=%.2f hit=%b vis=%A kids=%d {%s}%s"
+                        k (if obj.ReferenceEquals(cv, popupCanvas) then " <-- THIS POPUP" else "") cv.Width cv.Height cv.Opacity cv.IsHitTestVisible cv.Visibility cv.Children.Count (String.concat ", " kids)
+                        (if cm.PopupCanvasStack.Contains(cv) then " (in stack)" else ""))
+            | other -> dbg(sprintf "  [%d] %s" k (other.GetType().Name)))) |> ignore
     match opaOpt with
     | Some opa -> do! DoModalOpa(cm, wh, tileX, tileY, popupCanvas, opa)
     | _ -> do! DoModal(cm, wh, tileX, tileY, popupCanvas)

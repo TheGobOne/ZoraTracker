@@ -285,6 +285,8 @@ let mutable DeadWoodsEnabled = false     // h1 h2 h3
 let mutable LostHillsEnabled = false     // a12 a13 a14
 let mutable DeadWoodsHintKnown = false   // set once a Dead Woods hint has been entered in the hint button
 let mutable LostHillsHintKnown = false
+let mutable DeadWoodsHint = ""           // the letters typed into the hint buttons (kept here so they are saved and loaded with the save file)
+let mutable LostHillsHint = ""
 // true while the start-screen option was Random (a dash): the tiles it affects are drawn yellow until the user confirms the option in Overworld + Extras
 let mutable ExtraPBRandom = false
 let mutable ExtraRaftRandom = false

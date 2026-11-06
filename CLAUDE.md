@@ -1,0 +1,6 @@
+<!-- claude-reflect: learned rules (saved from the band; edit freely) -->
+## Learned rules
+- Do not run the selftest suite after every small change; reserve it for meaningful changes or when asked.
+- When writing Discord release notes, always end them with "Download or update via the app." and "Please report any bugs here or on Issues on Github." with links.
+- In Discord drafts, format links as markdown hyperlinks like [Download](url) instead of bare angle-bracketed URLs.
+<!-- end claude-reflect -->

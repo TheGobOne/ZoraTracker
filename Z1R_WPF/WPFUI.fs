@@ -295,6 +295,7 @@ let mutable syncingShops = false
 let mutable openShopFlyoutDirectly = false   // set by the Overworld_Shop hotkey: the next tile popup goes straight to the Shop flyout (potion shop / shops 1-4)
 // the Dead Woods / Lost Hills hint buttons (set when the legend is built): hovering a tile locked by that hint highlights its button
 let mutable hintButtonHighlightHook : int -> bool -> unit = fun _ _ -> ()   // zone (1 = Dead Woods, 2 = Lost Hills), on/off
+let hintLoadHooks = System.Collections.Generic.Dictionary<string, string -> unit>()   // "Dead Woods" / "Lost Hills" -> puts a loaded hint's letters into that hint button
 // 'Progressive Items' (ZORA Extras): the next level of each base item; the UI sets the hook (notification + glow) once it exists
 let mutable progressiveUpgradeHook : (int*int) list -> System.Drawing.Bitmap -> System.Drawing.Bitmap -> unit = fun _ _ _ -> ()   // upgraded tiles, from icon, to icon
 let mutable progressiveSwordCheckHook : unit -> unit = fun () -> ()   // the progressive sword's tier (P1..P4) may have changed
@@ -1494,7 +1495,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             let ST = CustomComboBoxes.borderThickness
             let gridWidth = float(GCOL*(7*3+2*int ST)+int ST) * 1.25   // cells are 21 wide so the item icons can be shown at full size; the menu is drawn 1.25x bigger (see gridScale in DoModalGridSelect)
             let tileImage = Graphics.BItoImage(owMapBIsRef.Value.[i,j])
-            let rec activatePopup(activationDelta) =
+            let rec activatePopupCore(activationDelta) =
                 // Recompute GROW/GCOUNT live on each popup call so they always match
                 // gridElementsSelectablesAndIDs, which is also built live from the current option value.
                 // Capturing these at tile-init time causes a length mismatch crash if the option
@@ -1923,8 +1924,14 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     | None -> ()
                     tileCanvas.Children.Clear()   // deparent tileImage
                     popupIsActive <- false
+                    CustomComboBoxes.GlobalFlag.dbg(sprintf "popup done col=%d row=%d reopen=%b" (i+1) j reopenMenu.Value)
                     if reopenMenu.Value then activatePopup(0)
-                    } |> Async.StartImmediate
+                    } |> (fun a -> async { try do! a with e -> logPopupFailure(sprintf "overworld tile menu, %c%d" (char (int 'A' + j)) (i+1), e) }) |> Async.StartImmediate
+            // (a failure while building or running the tile menu must never leave the overworld locked)
+            and activatePopup(activationDelta) =
+                CustomComboBoxes.GlobalFlag.dbg(sprintf "activatePopup col=%d row=%d" (i+1) j)
+                try activatePopupCore(activationDelta)
+                with e -> logPopupFailure(sprintf "overworld tile menu setup, %c%d" (char (int 'A' + j)) (i+1), e)
             // copy / paste item markers (mouse button 4; while markers are carried, a plain left click on an open tile also pastes); false if there was nothing to copy or paste here
             let copyOrPasteMarkers() : bool =
                 let curMark = TrackerModel.overworldMapMarks.[i,j].Current()
@@ -1969,7 +1976,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     } |> Async.StartImmediate
                     true
                 else false
-            c.MouseDown.Add(fun ea -> 
+            c.MouseDown.Add(fun ea ->
+                CustomComboBoxes.GlobalFlag.dbg(sprintf "tile col=%d row=%d %A flag=%b" (i+1) j ea.ChangedButton popupIsActive)
                 if not popupIsActive then
                     if ea.ChangedButton = Input.MouseButton.Left then
                         let canPasteHere = not copiedMarkerIdents.IsEmpty && TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty && TrackerModel.overworldMapMarks.[i,j].Current() = -1 && not(owInstance.AlwaysEmpty(i,j))
@@ -2338,6 +2346,12 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 tb.VerticalContentAlignment <- VerticalAlignment.Center
                 tb.Padding <- (if hint.Value = "" then Thickness(2.,0.,2.,0.) else Thickness(0.))
                 tb.TextAlignment <- TextAlignment.Center
+            // a loaded save puts its hint letters back (the border goes green, like after typing them in)
+            hintLoadHooks.[name] <- (fun (s:string) ->
+                hint.Value <- s
+                refreshLabel()
+                btn.BorderBrush <- (if s <> "" then (Brushes.LimeGreen :> Brush) else defaultBorderBrush)
+                btn.BorderThickness <- (if s <> "" then Thickness(2.) else defaultBorderThickness))
             // when the matching 'Randomize ...' option is not enabled, hovering shows an orange-outlined note saying so (and the hint menu does not open)
             let hintOptionEnabled() = (if name = "Dead Woods" then OverworldData.DeadWoodsEnabled else OverworldData.LostHillsEnabled)
             let noteTB = new TextBox(Text=sprintf "Randomize %s Not Enabled" name, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=14., Foreground=Brushes.Orange, Background=Brushes.Black)
@@ -2433,7 +2447,12 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             HotKeys.suspendHotKeys <- false
                         hint.Value <- cur.Value
                         refreshLabel()
-                        if name = "Dead Woods" then OverworldData.DeadWoodsHintKnown <- (hint.Value <> "") else OverworldData.LostHillsHintKnown <- (hint.Value <> "")
+                        if name = "Dead Woods" then
+                            OverworldData.DeadWoodsHintKnown <- (hint.Value <> "")
+                            OverworldData.DeadWoodsHint <- hint.Value
+                        else
+                            OverworldData.LostHillsHintKnown <- (hint.Value <> "")
+                            OverworldData.LostHillsHint <- hint.Value
                         // once a hint is entered the button gets a green border
                         btn.BorderBrush <- (if hint.Value <> "" then (Brushes.LimeGreen :> Brush) else defaultBorderBrush)
                         btn.BorderThickness <- (if hint.Value <> "" then Thickness(2.) else defaultBorderThickness)
@@ -3926,11 +3945,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     | Some(data) ->
         // Overworld
         TrackerModel.MirrorOverworld <- data.Overworld.MirrorOverworld
-        if data.Overworld.ExtraBlocks >= 0 then   // (older saves do not have this: they keep what the start screen chose)
-            OverworldData.ExtraPBBlocks <- (data.Overworld.ExtraBlocks &&& 1) <> 0
-            OverworldData.ExtraRaftBlocks <- (data.Overworld.ExtraBlocks &&& 2) <> 0
-            OverworldData.DeadWoodsEnabled <- (data.Overworld.ExtraBlocks &&& 4) <> 0
-            OverworldData.LostHillsEnabled <- (data.Overworld.ExtraBlocks &&& 8) <> 0
+        SaveAndLoad.ApplyLoadedOptions(data.Overworld)   // (the extra blocks and their Random ? states, boots, progressive items, hint letters; also applied at startup, before the UI was built)
+        // the letters typed into the Dead Woods / Lost Hills hint buttons go back into the buttons (older saves do not have them)
+        if not (isNull data.Overworld.DeadWoodsHint) && hintLoadHooks.ContainsKey "Dead Woods" then hintLoadHooks.["Dead Woods"] data.Overworld.DeadWoodsHint
+        if not (isNull data.Overworld.LostHillsHint) && hintLoadHooks.ContainsKey "Lost Hills" then hintLoadHooks.["Lost Hills"] data.Overworld.LostHillsHint
         TrackerModel.startIconX <- data.Overworld.StartIconX
         TrackerModel.startIconY <- data.Overworld.StartIconY
         TrackerModel.customWaypointX <- data.Overworld.CustomWaypointX
@@ -4004,16 +4022,14 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                 if p.Length = 2 then
                     TrackerModel.shuffledWoodSwordTiles.Add((int p.[0], int p.[1])) |> ignore
         OptionsMenu.requestRedrawOverworldEvent.Trigger()   // redraw the tiles now that the cave items are back
-        if not(System.String.IsNullOrEmpty(data.Items.CustomLevelName)) then
+        if not (isNull data.Items.CustomLevelName) then   // (an empty name in the save means none was in use: it must not be replaced by the start screen's remembered name; older saves have no name at all: null)
             TrackerModel.CustomLevelName <- data.Items.CustomLevelName
             DungeonUI.customLevelNameChanged.Trigger()   // the custom LEVEL name that was in use when this was saved
         if data.Items.Level2StairBox <> null then   // (older saves do not have the optional level 2 staircase slot)
             if not(data.Items.Level2StairBox.TryApply(TrackerModel.level2StairBox)) then anySetProblems <- true
             TrackerModel.SetLevel2StairBoxEnabled(data.Items.Level2StairBoxEnabled)
             TrackerModel.SetLevel9FloorBoxEnabled(data.Items.Level9FloorBoxEnabled)   // (older saves: false)
-            TrackerModelOptions.FourthSwordEnabled <- data.Items.Level2StairBoxEnabled || data.Items.Level9FloorBoxEnabled
-        else
-            TrackerModelOptions.FourthSwordEnabled <- true   // older saves predate this option: nothing is restricted
+        TrackerModelOptions.FourthSwordEnabled <- SaveAndLoad.FourthSwordWasOn(data.Items)   // (older saves predate the 4th Sword option: nothing is restricted)
         for i = 0 to 8 do
             let ds = data.Items.Dungeons.[i]
             let dd = TrackerModel.GetDungeon(i)

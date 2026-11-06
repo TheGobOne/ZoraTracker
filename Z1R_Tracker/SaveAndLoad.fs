@@ -21,7 +21,12 @@ type Overworld() =
     member val CheapKeyShops : int[] = null with get,set
     member val HeartShuffleMode = -1 with get,set   // 0 = Off, 1 = Intra, 2 = Full; -1 = older save: keep what the start screen chose
     member val LegacyMode = -1 with get,set  // 1 = the game was in Legacy Mode, 0 = it was not, -1 = older save: keep what the start screen chose
-    member val ExtraBlocks = -1 with get,set   // bit 0 = extra power bracelet blocks, bit 1 = extra raft blocks, bit 2 = Dead Woods hint, bit 3 = Lost Hills hint (-1 = older save: keep what the start screen chose)
+    member val ExtraBlocks = -1 with get,set   // bit 0 = extra power bracelet blocks, bit 1 = extra raft blocks, bit 2 = Dead Woods hint, bit 3 = Lost Hills hint (-1 = older save: keep what the start screen chose). A Random (?) option is saved here as On (older trackers load it that way), and also in ExtraBlocksRandom
+    member val ExtraBlocksRandom = -1 with get,set   // same bits: which of those four were Random (?) rather than plain On (-1 = older save: none were)
+    member val BootsReplaceBoomerangs = -1 with get,set   // 0 = Off, 1 = On, 2 = Random (?, counts as Off until confirmed); -1 = older save: keep what the start screen chose
+    member val ProgressiveItems = -1 with get,set   // 0 = Off, 1 = On; -1 = older save: keep what the start screen chose
+    member val DeadWoodsHint : string = null with get,set   // the letters typed into the Dead Woods / Lost Hills hint buttons (null = older save)
+    member val LostHillsHint : string = null with get,set
 
 [<AllowNullLiteral>]
 type Box() =
@@ -225,6 +230,12 @@ let SaveOverworld(prefix) =
     lines.Add(sprintf """    "LegacyMode": %d,""" (if TrackerModel.LegacyMode then 1 else 0))
     lines.Add(sprintf """    "HeartShuffleMode": %d,""" TrackerModel.HeartShuffleMode)
     lines.Add(sprintf """    "ExtraBlocks": %d,""" ((if OverworldData.ExtraPBBlocks then 1 else 0) + (if OverworldData.ExtraRaftBlocks then 2 else 0) + (if OverworldData.DeadWoodsEnabled then 4 else 0) + (if OverworldData.LostHillsEnabled then 8 else 0)))
+    lines.Add(sprintf """    "ExtraBlocksRandom": %d,""" ((if OverworldData.ExtraPBRandom then 1 else 0) + (if OverworldData.ExtraRaftRandom then 2 else 0) + (if OverworldData.DeadWoodsRandom then 4 else 0) + (if OverworldData.LostHillsRandom then 8 else 0)))
+    lines.Add(sprintf """    "BootsReplaceBoomerangs": %d,""" (if TrackerModel.BootsReplaceBoomerangs then 1 elif TrackerModel.BootsRandom then 2 else 0))
+    lines.Add(sprintf """    "ProgressiveItems": %d,""" (if TrackerModel.ProgressiveItems then 1 else 0))
+    let cleanHint (s:string) = (if isNull s then "" else s).Replace("\\", "").Replace("\"", "")
+    lines.Add(sprintf """    "DeadWoodsHint": "%s",""" (cleanHint OverworldData.DeadWoodsHint))
+    lines.Add(sprintf """    "LostHillsHint": "%s",""" (cleanHint OverworldData.LostHillsHint))
     lines.Add(sprintf """    "Map": [""")
     for j = 0 to 7 do
         let sb = new System.Text.StringBuilder("        ")
@@ -381,10 +392,41 @@ let MaybePollSeedAndFlags() =
                             lastKnownFlags <- flags
                             seedAndFlagsUpdated.Trigger()
 
+/// Puts a loaded save's ZORA option choices back into the model. Older saves lack some of these (-1 / null): those keep whatever the start screen chose.
+/// (Shared by both the WPF and Avalonia trackers, and by the selftest's save / load round trip.)
+let ApplyLoadedOptions(ow:Overworld) =
+    if not (isNull ow) then
+        if ow.BootsReplaceBoomerangs >= 0 then
+            TrackerModel.BootsReplaceBoomerangs <- (ow.BootsReplaceBoomerangs = 1)
+            TrackerModel.BootsRandom <- (ow.BootsReplaceBoomerangs = 2)   // (Random, ?, counts as Off until confirmed)
+        if ow.ProgressiveItems >= 0 then
+            TrackerModel.ProgressiveItems <- (ow.ProgressiveItems = 1)
+        if ow.ExtraBlocks >= 0 then
+            OverworldData.ExtraPBBlocks <- (ow.ExtraBlocks &&& 1) <> 0
+            OverworldData.ExtraRaftBlocks <- (ow.ExtraBlocks &&& 2) <> 0
+            OverworldData.DeadWoodsEnabled <- (ow.ExtraBlocks &&& 4) <> 0
+            OverworldData.LostHillsEnabled <- (ow.ExtraBlocks &&& 8) <> 0
+            // which of them were Random (?) rather than plain On (older saves: none)
+            let rnd = max 0 ow.ExtraBlocksRandom
+            OverworldData.ExtraPBRandom <- (rnd &&& 1) <> 0
+            OverworldData.ExtraRaftRandom <- (rnd &&& 2) <> 0
+            OverworldData.DeadWoodsRandom <- (rnd &&& 4) <> 0
+            OverworldData.LostHillsRandom <- (rnd &&& 8) <> 0
+        if not (isNull ow.DeadWoodsHint) then
+            OverworldData.DeadWoodsHint <- ow.DeadWoodsHint
+            OverworldData.DeadWoodsHintKnown <- (ow.DeadWoodsHint <> "")
+        if not (isNull ow.LostHillsHint) then
+            OverworldData.LostHillsHint <- ow.LostHillsHint
+            OverworldData.LostHillsHintKnown <- (ow.LostHillsHint <> "")
+
+/// Whether the 4th Sword start option was on in a loaded save: the level 2 staircase slot or the level 9 floor check is only enabled by it (older saves predate the option: nothing is restricted)
+let FourthSwordWasOn(items:Items) =
+    if isNull items.Level2StairBox then true else (items.Level2StairBoxEnabled || items.Level9FloorBoxEnabled)
+
 let mutable pendingManualSaveName = ""   // set by the Save button's name popup just before a manual save; used once, then cleared (blank = date-time name)
-let SaveAll(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:string[], drawingLayerJsonLines:string[], 
-                alternativeOverworldMapFilename, shouldInitiallyHideOverworldMap:bool, currentRecorderDestinationIndex, isBoomstickSeed, isAtlasSeed, saveType) =  // can throw
-    MaybePollSeedAndFlags()
+/// The lines of a save file for the current state (SaveAll writes them to a file; the selftest reads them back without touching the Saves folder)
+let BuildSaveLines(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:string[], drawingLayerJsonLines:string[],
+                    alternativeOverworldMapFilename, shouldInitiallyHideOverworldMap:bool, currentRecorderDestinationIndex, isBoomstickSeed, isAtlasSeed) : string[] =
     let totalSeconds = int (System.DateTime.Now - TrackerModel.theStartTime.Time).TotalSeconds
     let lines = [|
         yield sprintf """{"""
@@ -438,7 +480,13 @@ let SaveAll(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:str
         yield sprintf """    ]"""
         yield sprintf """}"""
         |]
-    let filename = 
+    lines
+
+let SaveAll(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:string[], drawingLayerJsonLines:string[],
+                alternativeOverworldMapFilename, shouldInitiallyHideOverworldMap:bool, currentRecorderDestinationIndex, isBoomstickSeed, isAtlasSeed, saveType) =  // can throw
+    MaybePollSeedAndFlags()
+    let lines = BuildSaveLines(notesText, selectedDungeonTab, dungeonModelsJsonLines, drawingLayerJsonLines, alternativeOverworldMapFilename, shouldInitiallyHideOverworldMap, currentRecorderDestinationIndex, isBoomstickSeed, isAtlasSeed)
+    let filename =
         match saveType with
         | ManualSave ->
             let invalid = System.IO.Path.GetInvalidFileNameChars()
