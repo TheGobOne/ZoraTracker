@@ -1184,7 +1184,7 @@ type MyWindow() as this =
         Graphics.scaleUpCheckBoxBox(lmcb, 1.66)
         lmcb.IsChecked <- System.Nullable.op_Implicit false
         let lmArea = new Border(Style=Layout.optionBorderStyle, BorderThickness=Thickness(1.), Child=lmcb, VerticalAlignment=VerticalAlignment.Top)
-        lmArea.MouseEnter.Add(fun _ -> hoverExplain(lmArea,"For non-ZORA seeds"))
+        lmArea.MouseEnter.Add(fun _ -> hoverExplain(lmArea,"For non-ZORA seeds: turns off and locks the ZORA Extras and limits shops to the original game's items"))
         lmArea.MouseLeave.Add(fun _ -> explainHide())
         checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
         checkboxSP.Children.Add(lmArea) |> ignore

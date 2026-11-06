@@ -79,7 +79,7 @@ let data1d = [|
     "Default To NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, (fun()->())
     "Dungeon 'Sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, dungeonSunglassesChanged.Trigger
     "Reverse Scroll Wheel", "When unchecked: scroll up = monster popup, scroll down = floor-drop/item popup.\nWhen checked: scroll up = floor-drop/item popup, scroll down = monster popup.\n(Dungeon rooms)", TrackerModelOptions.ReverseScrollWheelDirection, false, (fun()->())
-    "Hide Lock And Hints", "Check this to hide the tip box and the lock bar on the dungeon room type,\nmonster and floor drop menus", TrackerModelOptions.HidePopupHintAndLock, false, (fun()->())
+    "Hide Lock And Hints", "Check this to hide the tip box and the lock bar on the item, tile, dungeon room type,\nmonster and floor drop menus", TrackerModelOptions.HidePopupHintAndLock, false, (fun()->())
     |]
 
 let data2 = [|
@@ -503,7 +503,7 @@ let mainScreenTourSteps : (string list * string * string) list =
       ["@0.0,0.063,0.358,0.154"], "Dungeon item boxes",
         "One row of boxes for each dungeon, holding what you found there. Click a box to set its item; a green border means collected."
       ["@0.2,0.2,0.8,0.62"], "Moving and resizing menus",
-        "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered."
+        "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered. If you don't see the LOCKED strip, uncheck Hide Lock And Hints in Options, Dungeon Settings."
       ["@0.0,0.0,0.358,0.154"], "Triforce in the basement",
         "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it."
       ["@0.363,0.03,0.67,0.175"], "Items and hearts",

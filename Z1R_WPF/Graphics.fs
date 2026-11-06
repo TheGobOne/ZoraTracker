@@ -257,6 +257,15 @@ let installAppWideStyles() =
         cs.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Orange))
         cs.Setters.Add(new Setter(FrameworkElement.FocusVisualStyleProperty, null))
         app.Resources.[typeof<CheckBox>] <- cs
+        // button and checkbox labels are read-only, non-clickable TextBoxes: they must not be extra Tab stops (focus landed on them with nothing visible)
+        System.Windows.EventManager.RegisterClassHandler(typeof<TextBox>, UIElement.GotKeyboardFocusEvent,
+            System.Windows.Input.KeyboardFocusChangedEventHandler(fun s _ ->
+                match s with
+                | :? TextBox as tb when tb.IsReadOnly && not tb.IsHitTestVisible ->
+                    // skip past it in the direction the user was tabbing
+                    let dir = if System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift) then System.Windows.Input.FocusNavigationDirection.Previous else System.Windows.Input.FocusNavigationDirection.Next
+                    tb.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new System.Action(fun () -> tb.MoveFocus(new System.Windows.Input.TraversalRequest(dir)) |> ignore)) |> ignore
+                | _ -> ()))
 let styleRoundedButton(b:Button) =
     b.Template <- roundedButtonTemplate
     b.BorderBrush <- roundedBorderBrush
