@@ -18,6 +18,13 @@ public static class Platform
     /// <summary>The browser (WebAssembly) build: no native libraries, processes or windows (see Browser.cs).</summary>
     public static readonly bool isBrowser = OperatingSystem.IsBrowser();
 
+    /// <summary>On macOS, Cmd counts as Ctrl (TheGobOne's answer to the "Needs Gob" notes): hotkeys, Uncollected Items Ctrl+wheel and Ctrl+Z.
+    /// Cmd (KeyModifiers.Meta) without Ctrl becomes Ctrl; Ctrl itself still works. Elsewhere the modifiers are returned unchanged.</summary>
+    public static Avalonia.Input.KeyModifiers CmdAsCtrl(Avalonia.Input.KeyModifiers m) =>
+        isMacOS && (m & Avalonia.Input.KeyModifiers.Meta) != 0 && (m & Avalonia.Input.KeyModifiers.Control) == 0
+            ? (m & ~Avalonia.Input.KeyModifiers.Meta) | Avalonia.Input.KeyModifiers.Control
+            : m;
+
     // stubs log once per feature, so a missing feature shows up in the console without flooding it
     private static readonly HashSet<string> reportedStubs = new HashSet<string>();
     public static void stub(string feature)
@@ -133,6 +140,42 @@ public static class Platform
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
         });
+    }
+
+    /// <summary>macOS: a .app bundle is a folder, so ShowRunCustom's RUN checks this as well as File.Exists (TheGobOne: RUN accepts .app bundles).</summary>
+    public static bool IsMacAppBundle(string path) =>
+        isMacOS && path.TrimEnd('/').EndsWith(".app", StringComparison.OrdinalIgnoreCase) && Directory.Exists(path);
+
+    /// <summary>macOS: launch a .app bundle with `open`, passing the RUN line's arguments to the app. Exceptions propagate, as StartProcessHidden's do.</summary>
+    public static void StartMacApp(string appPath, string arguments)
+    {
+        var psi = new ProcessStartInfo("open") { UseShellExecute = false };
+        psi.ArgumentList.Add(appPath);
+        if (!string.IsNullOrWhiteSpace(arguments))
+        {
+            psi.ArgumentList.Add("--args");
+            foreach (var a in SplitArguments(arguments)) psi.ArgumentList.Add(a);
+        }
+        Process.Start(psi);
+    }
+
+    // splits a command line the way .NET's ProcessStartInfo.Arguments does: spaces separate, double quotes group
+    private static List<string> SplitArguments(string s)
+    {
+        var result = new List<string>();
+        var cur = new System.Text.StringBuilder();
+        bool inQuotes = false, any = false;
+        foreach (var c in s)
+        {
+            if (c == '"') { inQuotes = !inQuotes; any = true; }
+            else if (char.IsWhiteSpace(c) && !inQuotes)
+            {
+                if (any) { result.Add(cur.ToString()); cur.Clear(); any = false; }
+            }
+            else { cur.Append(c); any = true; }
+        }
+        if (any) result.Add(cur.ToString());
+        return result;
     }
 
     // Windows Job Object: ties child process lifetime to the parent process.

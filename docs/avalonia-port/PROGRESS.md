@@ -338,8 +338,9 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
   element under the pointer per TopLevel (`IInputRoot.PointerOverElement`), and popups are TopLevels of their own, so `InitializeWindow` uses the
   main window's, falling back to the TopLevel the pointer last moved in (a class handler on `PointerMoved`). Check hotkeys while hovering popup
   menus, and that keys still arrive at the main window while a popup is open. With Alt held, WPF reports the key in `SystemKey`; Avalonia always uses `Key`.
-- **HotKeys on macOS: which modifiers? Needs Gob.** As in WPF, only exactly Shift, Ctrl or Alt (Option) count; anything with the Windows key /
-  Cmd (`KeyModifiers.Meta`) is `Unsupported`, so Cmd+key never triggers a hotkey. Mac users may expect Cmd where Windows uses Ctrl.
+- **HotKeys on macOS: Cmd counts as Ctrl (TheGobOne's answer).** As in WPF, only exactly Shift, Ctrl or Alt (Option) count, but `GetCurrent` first passes the
+  modifiers through `Platform.CmdAsCtrl`, so on macOS Cmd+key (without Ctrl) triggers a CTRL hotkey; Ctrl+key still works. Elsewhere the Windows key
+  (`KeyModifiers.Meta`) is still `Unsupported`. HotKeys.txt is unchanged (still `CTRL`). The browser build doesn't know it's on a Mac, so there Cmd stays unsupported.
 - **HotKeys.txt and HotKeys_BlankSampleTemplate.txt** are written to `Platform.Files.User` (the exe folder on Windows, as before).
 - **`Timeline` is one class too** (CS0542). The module's values are statics of `partial class Timeline` (split around `TimelineID`/`TimelineItem`
   to keep the file order), and `TimelineID`/`TimelineItem` are at namespace level. WPF's `Timeline.Timeline(...)` → `new Timeline(...)`,
@@ -415,7 +416,8 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
 - **ShowRunCustom "show the file".** The info/error window opens the file manager with ShowRunCustom.txt selected via `Platform.RevealInFileManager` (Windows: same
   `Explorer.exe /Select,` call; macOS: Finder `open -R`; Linux: opens the folder, since there's no standard way to select a file). RUN of an executable goes through
   `Platform.StartProcessHidden` (same `ProcessStartInfo`); RUN of a URL through `Platform.OpenWithShell`, which logs a failure instead of showing the error window.
-  On macOS a `.app` bundle is a folder, so `RUN "/Applications/X.app"` reports "does not exist", as a folder would in WPF. **Needs Gob:** should RUN accept `.app` bundles on macOS?
+  On macOS a `.app` bundle is a folder, so RUN checks `Platform.IsMacAppBundle` first and launches it with `open "<app>" --args <args>` (`Platform.StartMacApp`,
+  TheGobOne's answer); any other folder still reports "does not exist", as in WPF.
 - **Dungeon C# shapes.** `Dungeon.DoorState` (an F# union with no data) is a C# enum with the same case names and numbers; its members are in
   `DoorStateExtensions` (HotKeys' `SingleKeyboardModifierExtensions` pattern): `s.AsInt()` is unchanged, `Dungeon.DoorState.FromInt(x)` →
   `DoorStateExtensions.FromInt(x)`, `Dungeon.DoorState.FromString(s)` → `DoorStateExtensions.FromString(s)`. `DoorInterop`, `ZeldaFont` and `GrabHelper`
@@ -596,7 +598,7 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
   window, so the port calls `Activate()` then `Focus()`. Check on Windows and macOS that moving/resizing a popout hands the keyboard back to the tracker (hotkeys keep working)
   without side effects (e.g. the main window jumping in front of a popout being dragged).
 - **Uncollected Items Ctrl+wheel** is a tunnelling `PointerWheelChanged` handler reading `e.KeyModifiers == Control` and stepping once per `Graphics.wheelNotch`. On macOS,
-  Ctrl+scroll is often the system zoom gesture; **Needs Gob:** should Cmd also work there?
+  Ctrl+scroll is often the system zoom gesture, so Cmd+wheel works too (`Platform.CmdAsCtrl`, TheGobOne's answer).
 - **Shop Prices window.** The price `ComboBox` uses Avalonia's Fluent look (WPF: Windows' dropdown); its black background/orange text are set as in WPF, but the dropdown
   list's colours come from the theme. Compare. The saved size is `Bounds` (client) for WPF's `ActualWidth/Height`.
 - **OverworldItemGridUI C# shapes.** `ShowLocatorDescriptor` (an F# union) is an abstract record with cases `DungeonNumber(Value)`, `DungeonIndex(Value)`, `Sword1()`,
@@ -758,8 +760,8 @@ Not checked yet (needs a person at the Mac, and ideally Windows next to it). Run
 - **WPFUI: mouse position (test at runtime).** WPF calls `Input.Mouse.GetPosition` (after a briefly-highlighted location, for the copied-marker cursor, `RoutingInfo`'s
   route redraw under the mouse, and the arrow-key cursor nudges). Avalonia has no global mouse position, so `makeAll` keeps the last pointer position seen over
   `cm.RootCanvas` (a tunnelling, handled-too `PointerMoved`), as Layout does, and translates it. Shift/Ctrl on tile clicks come from the click's `KeyModifiers` (WPF:
-  `Keyboard.IsKeyDown`). Ctrl+Z (undo last tile mark) is a tunnelling `KeyDown` class handler on `Window` checking `KeyModifiers == Control` (macOS: Ctrl, not Cmd; Needs Gob,
-  as for HotKeys).
+  `Keyboard.IsKeyDown`). Ctrl+Z (undo last tile mark) is a tunnelling `KeyDown` class handler on `Window` checking `KeyModifiers == Control` (macOS: Cmd+Z works too, via
+  `Platform.CmdAsCtrl`, as for HotKeys).
 - **WPFUI input translations.** Tile `MouseDown` → `PointerPressed` with `PointerUpdateKind` (left / right / XButton1 / middle); tile and other wheel handlers through
   `Graphics.wheelNotch`; `PreviewMouseMove`/`PreviewMouseRightButtonDown` (copy cursor) and `PreviewMouseDown` (max hearts) → tunnelling handlers; the hint entry's
   `PreviewKeyDown` → tunnelling `KeyDown`; `MouseRightButtonUp` (hint buttons) → `PointerReleased` with `InitialPressMouseButton == Right` re-raising `Button.ClickEvent`;
