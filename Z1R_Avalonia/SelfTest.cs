@@ -112,7 +112,11 @@ public static class SelfTest
     private static readonly string[] questButtons = { "1st Quest", "2nd Quest", "Mixed - 1Q", "Mixed - 2Q", "Randomized Quest", "More Options..." };
 
     private static IList<Window> allWindows() =>
+#if BROWSER
+        new List<Window>();   // (the browser build has no desktop lifetime or real windows; `Window` there is BrowserWindow)
+#else
         (Application.Current.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Windows?.ToList() ?? new List<Window>();
+#endif
 
     private static async Task run(Window win)
     {

@@ -42,6 +42,7 @@ public static class SingleKeyboardModifierExtensions
     // KeyModifiers.Meta (the Windows key / Cmd on macOS) plays the part of WPF's ModifierKeys.Windows.)
     public static SingleKeyboardModifier GetCurrent(KeyModifiers modifiers)
     {
+        modifiers = Platform.CmdAsCtrl(modifiers);   // (port: on macOS Cmd counts as Ctrl)
         if (modifiers == KeyModifiers.Shift)
             return SingleKeyboardModifier.Shift;
         else if (modifiers == KeyModifiers.Control)
