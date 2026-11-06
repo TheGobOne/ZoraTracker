@@ -181,6 +181,7 @@ public static class DungeonSaveAndLoad
     public class JustVersion
     {
         public string Version { get; set; } = "";
+        public int SaveFormatVersion { get; set; } = 0;   // (absent in older saves: 0)
     }
 
     public class AllData

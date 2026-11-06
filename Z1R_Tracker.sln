@@ -1,16 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.11.12306.390 stable
+VisualStudioVersion = 18.11.12306.390
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Z1R_Tracker", "Z1R_Tracker\Z1R_Tracker.fsproj", "{6B605496-EA45-4694-90F5-A3953D338BEC}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Z1R_WPF", "Z1R_WPF\Z1R_WPF.fsproj", "{3064F941-92AA-4ADF-A149-C97C920AEFFD}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Z1R_Tracker_NETCoreApp31", "Z1R_Tracker_NETCoreApp31\Z1R_Tracker_NETCoreApp31.fsproj", "{B31A886D-BA85-490E-9152-5BDC793A2327}"
-	ProjectSection(ProjectDependencies) = postProject
-		{6B605496-EA45-4694-90F5-A3953D338BEC} = {6B605496-EA45-4694-90F5-A3953D338BEC}
-	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Z1R_Sync", "Z1R_Sync\Z1R_Sync.csproj", "{29A0F848-0E20-424B-8AE0-715AB2719E45}"
 EndProject
@@ -47,10 +42,6 @@ Global
 		{3064F941-92AA-4ADF-A149-C97C920AEFFD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3064F941-92AA-4ADF-A149-C97C920AEFFD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3064F941-92AA-4ADF-A149-C97C920AEFFD}.Release|Any CPU.Build.0 = Release|Any CPU
-		{B31A886D-BA85-490E-9152-5BDC793A2327}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B31A886D-BA85-490E-9152-5BDC793A2327}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B31A886D-BA85-490E-9152-5BDC793A2327}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B31A886D-BA85-490E-9152-5BDC793A2327}.Release|Any CPU.Build.0 = Release|Any CPU
 		{29A0F848-0E20-424B-8AE0-715AB2719E45}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{29A0F848-0E20-424B-8AE0-715AB2719E45}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{29A0F848-0E20-424B-8AE0-715AB2719E45}.Release|Any CPU.ActiveCfg = Release|Any CPU

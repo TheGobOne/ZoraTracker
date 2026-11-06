@@ -425,6 +425,19 @@ let ApplyLoadedOptions(ow:Overworld) =
 let FourthSwordWasOn(items:Items) =
     if isNull items.Level2StairBox then true else (items.Level2StairBoxEnabled || items.Level9FloorBoxEnabled)
 
+/// The save file's own format number, separate from the app version: bump it only when the meaning of saved ids or fields changes (new fields alone do not need a bump).
+/// 0 = absent: ZTracker 1.x and ZORATracker saves written before this field existed; they use the same ids.
+let SaveFormatVersion = 1
+/// What to warn about before loading a save (None = load without asking): compares the save's format number, not the app version, so an ordinary upgrade does not warn
+let LoadWarning(savedAppVersion:string, savedFormatVersion:int) : string option =
+    let v = if isNull savedAppVersion then "" else savedAppVersion
+    if savedFormatVersion > SaveFormatVersion then
+        Some (sprintf "This save was made by a newer ZORATracker (version '%s').\nSome of it may not load" v)
+    elif savedFormatVersion >= 1 then None
+    elif v.StartsWith("2.") then None   // an older ZORATracker save: same ids, the newer fields just keep the start screen's choice
+    elif v.StartsWith("1.2") || v.StartsWith("1.3") then Some (sprintf "This save was made by ZTracker version '%s'.\nLoading it might not work" v)
+    else Some (sprintf "This save was made by version '%s'.\nLoading it will probably fail" v)
+
 let mutable pendingManualSaveName = ""   // set by the Save button's name popup just before a manual save; used once, then cleared (blank = date-time name)
 /// The lines of a save file for the current state (SaveAll writes them to a file; the selftest reads them back without touching the Saves folder)
 let BuildSaveLines(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:string[], drawingLayerJsonLines:string[],
@@ -433,6 +446,7 @@ let BuildSaveLines(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLi
     let lines = [|
         yield sprintf """{"""
         yield sprintf """    "Version": "%s",""" OverworldData.VersionString
+        yield sprintf """    "SaveFormatVersion": %d,""" SaveFormatVersion
         yield sprintf """    "TimeInSeconds": %d,""" totalSeconds
         yield! SaveOverworld("    ")
         yield! SaveItems("    ")

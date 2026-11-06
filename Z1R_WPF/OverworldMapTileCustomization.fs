@@ -954,66 +954,7 @@ let DoLeftClick(cm:CustomComboBoxes.CanvasManager,msp:MapStateProxy,i,j,pos:Poin
     elif msp.IsDungeon then
         goToDungeon(msp.State)
         return false, false
-    elif msp.IsThreeItemShop then
-        popupIsActive <- true
-        let item1 = msp.State - TrackerModel.MapSquareChoiceDomainHelper.ARROW  // 0-based
-        let item2_1b = TrackerModel.getShopItem2_1based(i,j)
-        let item3_1b = TrackerModel.getShopItem3_1based(i,j)
-        let item2 = item2_1b - 1  // 0-based, -1=none
-        let item3 = item3_1b - 1  // 0-based, -1=none
-        let ST = CustomComboBoxes.borderThickness
-        // If item2 not set, pick item2; else pick item3
-        let choosingItem3 = item2 >= 0
-        let currentChoice = if choosingItem3 then item3 else item2
-        let promptText = if choosingItem3 then "Choose 3rd shop item" else "Choose 2nd shop item"
-        let tileImage() =
-            if choosingItem3 then
-                makeTwoItemShopBmp(item1, item2)
-            else
-                Graphics.theFullTileBmpTable.[msp.State].[0]
-        let tileCanvas = new Canvas(Width=OMTW, Height=11.*3.)
-        canvasAdd(tileCanvas, Graphics.BMPtoImage(tileImage()), 0., 0.)
-        let originalStateIndex = max 0 currentChoice
-        let gridxPosition =
-            if pos.X < OMTW*2. then
-                -ST
-            elif pos.X > OMTW*13. then
-                OMTW - float(8*(5*3+2*int ST)+int ST)
-            else
-                (OMTW - float(8*(5*3+2*int ST)+int ST))/2.
-        let gridElementsSelectablesAndIDs : (FrameworkElement*bool*int)[] = Array.init 8 (fun n ->
-            let i = n + TrackerModel.MapSquareChoiceDomainHelper.ARROW
-            upcast Graphics.BMPtoImage(MapStateProxy(i).DefaultInteriorBmp()), true, n
-            )
-        let edTB1 = new TextBox(IsHitTestVisible=false, BorderThickness=Thickness(0.), FontSize=16., Margin=Thickness(2.),
-                                    VerticalContentAlignment=VerticalAlignment.Center, HorizontalContentAlignment=HorizontalAlignment.Center,
-                                    Text=promptText,
-                                    Foreground=Brushes.Orange, Background=Brushes.Black)
-        let edBorder = new Border(BorderThickness=Thickness(3.), BorderBrush=Brushes.Gray, Background=Brushes.Black, Child=edTB1)
-        let extraDecorations = [(upcast edBorder : FrameworkElement), gridxPosition, -33.]
-        let! g = CustomComboBoxes.DoModalGridSelect(cm, pos.X, pos.Y, tileCanvas,
-                        gridElementsSelectablesAndIDs, originalStateIndex, 0, (8, 1, 5*3, 9*3), float(5*3)/2., float(9*3)/2., gridxPosition, 11.*3.+ST,
-                        (fun (currentState) ->
-                            tileCanvas.Children.Clear()
-                            let preview =
-                                if choosingItem3 then makeThreeItemShopBmp(item1, item2, currentState)
-                                else makeTwoItemShopBmp(item1, currentState)
-                            canvasAdd(tileCanvas, Graphics.BMPtoImage(preview), 0., 0.)
-                            ),
-                        (fun (_ea, currentState) -> CustomComboBoxes.DismissPopupWithResult(currentState)),
-                        extraDecorations, CustomComboBoxes.ModalGridSelectBrushes.Defaults(), CustomComboBoxes.WarpToCenter, None, "SecondShopItem", None)
-        let r =
-            match g with
-            | Some(currentState) ->
-                if choosingItem3 then
-                    TrackerModel.setShopItems(i, j, item2_1b, currentState+1)
-                else
-                    TrackerModel.setShopItems(i, j, currentState+1, 0)
-                TrackerModel.mapLastChangedTime.SetNow()
-                true, (currentChoice = -1 && currentState >= 0)
-            | None -> false, false
-        popupIsActive <- false
-        return r
+    // (three-item shops never reach here: the tile's click handler opens the marker-icon menu for them first)
     elif TrackerModel.LegacyMode && msp.State = TrackerModel.MapSquareChoiceDomainHelper.SWORD3 && not TrackerModel.ProgressiveItems then
         // Legacy Mode: left click on the magical sword cave toggles its sword collected, in step with the item box
         let box = TrackerModel.sword3Box

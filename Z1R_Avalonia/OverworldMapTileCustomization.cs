@@ -1309,74 +1309,7 @@ public static class OverworldMapTileCustomization
             goToDungeon(msp.State);
             return (false, false);
         }
-        else if (msp.IsThreeItemShop)
-        {
-            CustomComboBoxes.GlobalFlag.popupIsActive = true;
-            var item1 = msp.State - TrackerModel.MapSquareChoiceDomainHelper.ARROW;  // 0-based
-            var item2_1b = TrackerModel.getShopItem2_1based(i, j);
-            var item3_1b = TrackerModel.getShopItem3_1based(i, j);
-            var item2 = item2_1b - 1;  // 0-based, -1=none
-            var item3 = item3_1b - 1;  // 0-based, -1=none
-            var ST = CustomComboBoxes.borderThickness;
-            // If item2 not set, pick item2; else pick item3
-            var choosingItem3 = item2 >= 0;
-            var currentChoice = choosingItem3 ? item3 : item2;
-            var promptText = choosingItem3 ? "Choose 3rd shop item" : "Choose 2nd shop item";
-            System.Drawing.Bitmap tileImage()
-            {
-                if (choosingItem3)
-                    return makeTwoItemShopBmp(item1, item2);
-                else
-                    return Graphics.theFullTileBmpTable[msp.State][0];
-            }
-            var tileCanvas = new Canvas { Width = OMTW, Height = 11.0 * 3.0 };
-            canvasAdd(tileCanvas, Graphics.BMPtoImage(tileImage()), 0.0, 0.0);
-            var originalStateIndex = Math.Max(0, currentChoice);
-            double gridxPosition;
-            if (pos.X < OMTW * 2.0)
-                gridxPosition = -ST;
-            else if (pos.X > OMTW * 13.0)
-                gridxPosition = OMTW - (double)(8 * (5 * 3 + 2 * (int)ST) + (int)ST);
-            else
-                gridxPosition = (OMTW - (double)(8 * (5 * 3 + 2 * (int)ST) + (int)ST)) / 2.0;
-            var gridElementsSelectablesAndIDs = Enumerable.Range(0, 8).Select(n =>
-            {
-                var st = n + TrackerModel.MapSquareChoiceDomainHelper.ARROW;   // (F#: `i`, shadowing the tile's i)
-                return ((Control)Graphics.BMPtoImage(new MapStateProxy(st).DefaultInteriorBmp()), true, n);
-            }).ToArray();
-            var edTB1 = new TextBox { IsHitTestVisible = false, BorderThickness = new Thickness(0.0), FontSize = 16.0, Margin = new Thickness(2.0),
-                                        VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center,
-                                        Text = promptText,
-                                        Foreground = Brushes.Orange, Background = Brushes.Black };
-            var edBorder = new Border { BorderThickness = new Thickness(3.0), BorderBrush = Brushes.Gray, Background = Brushes.Black, Child = edTB1 };
-            var extraDecorations = new List<(Control, double, double)> { (edBorder, gridxPosition, -33.0) };
-            var g = await CustomComboBoxes.DoModalGridSelect<int, int>(cm, pos.X, pos.Y, tileCanvas,
-                            gridElementsSelectablesAndIDs, originalStateIndex, 0, (8, 1, 5 * 3, 9 * 3), (double)(5 * 3) / 2.0, (double)(9 * 3) / 2.0, gridxPosition, 11.0 * 3.0 + ST,
-                            (currentState) =>
-                            {
-                                tileCanvas.Children.Clear();
-                                var preview =
-                                    choosingItem3 ? makeThreeItemShopBmp(item1, item2, currentState)
-                                    : makeTwoItemShopBmp(item1, currentState);
-                                canvasAdd(tileCanvas, Graphics.BMPtoImage(preview), 0.0, 0.0);
-                            },
-                            (_ea, currentState) => new CustomComboBoxes.PopupClickBehavior<int>.DismissPopupWithResult(currentState),
-                            extraDecorations, CustomComboBoxes.ModalGridSelectBrushes.Defaults(), new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter(), null, "SecondShopItem", null);
-            (bool, bool) r;
-            if (g.hasResult)
-            {
-                var currentState = g.result;
-                if (choosingItem3)
-                    TrackerModel.setShopItems(i, j, item2_1b, currentState + 1);
-                else
-                    TrackerModel.setShopItems(i, j, currentState + 1, 0);
-                TrackerModel.mapLastChangedTime.SetNow();
-                r = (true, (currentChoice == -1 && currentState >= 0));
-            }
-            else r = (false, false);
-            CustomComboBoxes.GlobalFlag.popupIsActive = false;
-            return r;
-        }
+        // (three-item shops never reach here: the tile's click handler opens the marker-icon menu for them first)
         else if (TrackerModel.LegacyMode && msp.State == TrackerModel.MapSquareChoiceDomainHelper.SWORD3 && !TrackerModel.ProgressiveItems)
         {
             // Legacy Mode: left click on the magical sword cave toggles its sword collected, in step with the item box

@@ -1615,15 +1615,10 @@ type MyWindow() as this =
                         try
                             let json = System.IO.File.ReadAllText(pickedFile)
                             let ver = System.Text.Json.JsonSerializer.Deserialize<DungeonSaveAndLoad.JustVersion>(json, new System.Text.Json.JsonSerializerOptions(AllowTrailingCommas=true))
-                            if ver.Version <> OverworldData.VersionString then
-                                let msg = 
-                                    let prefix = 
-                                        if ver.Version.StartsWith("1.2") || ver.Version.StartsWith("1.3") then
-                                            "Loading this file might not work"
-                                        else
-                                            "Loading this file will probably fail"
-                                    sprintf "You are running ZORATracker version '%s' but the\nsave file was created using version '%s'.\n%s, but ZORATracker will attempt to load it anyway." 
-                                                    OverworldData.VersionString ver.Version prefix
+                            match SaveAndLoad.LoadWarning(ver.Version, ver.SaveFormatVersion) with
+                            | None -> ()
+                            | Some warning ->
+                                let msg = sprintf "%s, but ZORATracker will attempt to load it anyway." warning
                                 popupIsActive <- true
                                 let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, msg, ["Attempt Load"])
                                 popupIsActive <- false

@@ -2130,13 +2130,10 @@ public static class Program
                             {
                                 var json = File.ReadAllText(pickedFile);
                                 var ver = System.Text.Json.JsonSerializer.Deserialize<DungeonSaveAndLoad.JustVersion>(json, new System.Text.Json.JsonSerializerOptions { AllowTrailingCommas = true });
-                                if (ver.Version != OverworldData.VersionString)
+                                var warning = SaveAndLoad.LoadWarning(ver.Version, ver.SaveFormatVersion);
+                                if (warning != null)
                                 {
-                                    var prefix =
-                                        (ver.Version.StartsWith("1.2") || ver.Version.StartsWith("1.3"))
-                                            ? "Loading this file might not work"
-                                            : "Loading this file will probably fail";
-                                    var msg = $"You are running ZORATracker version '{OverworldData.VersionString}' but the\nsave file was created using version '{ver.Version}'.\n{prefix}, but ZORATracker will attempt to load it anyway.";
+                                    var msg = $"{warning.Value}, but ZORATracker will attempt to load it anyway.";
                                     popupIsActive = true;
                                     var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, msg, new[] { "Attempt Load" });
                                     popupIsActive = false;

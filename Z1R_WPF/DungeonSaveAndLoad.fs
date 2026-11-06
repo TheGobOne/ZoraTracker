@@ -129,6 +129,7 @@ open SaveAndLoad
 
 type JustVersion() =
     member val Version = "" with get,set
+    member val SaveFormatVersion = 0 with get,set   // (absent in older saves: 0)
 
 type AllData() =
     member val Version = "" with get,set
