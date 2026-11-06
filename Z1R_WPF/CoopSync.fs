@@ -555,11 +555,12 @@ let mutable debounceOverworldSend: System.Threading.CancellationTokenSource opti
 let overworldDebouncer = Debouncer.Debouncer(200)
 
 let sendOverworldUpdateDebounced (myConsoleId: string) =
+    // (the snapshot is taken here, on the UI thread that owns the tracker state; only the sending is debounced onto the thread pool)
+    let snapshot = try Choice1Of2 (JsonConvert.SerializeObject(createSerializableOverworldModel())) with ex -> Choice2Of2 ex
     overworldDebouncer.Trigger(fun() ->
         async {
             try
-                let model = createSerializableOverworldModel()
-                let jsonPayload = JsonConvert.SerializeObject(model)
+                let jsonPayload = match snapshot with Choice1Of2 j -> j | Choice2Of2 ex -> raise ex
                 if jsonPayload <> lastSentOverworldJson then
                     lastSentOverworldJson <- jsonPayload
                     TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending Overworld update: %s" jsonPayload)

@@ -503,8 +503,11 @@ let private writeImpl(filename) =
 
     let json = JsonSerializer.Serialize<ReadWrite>(data, new JsonSerializerOptions(WriteIndented=true))
     if json <> cachedSettingJson then
+        // write a temp file, then swap it in, so a crash or power loss mid-write can never leave a half-written settings file
+        let tmp = filename + ".tmp"
+        System.IO.File.WriteAllText(tmp, json)
+        if System.IO.File.Exists(filename) then System.IO.File.Replace(tmp, filename, null) else System.IO.File.Move(tmp, filename)
         cachedSettingJson <- json
-        System.IO.File.WriteAllText(filename, cachedSettingJson)
 
 let private write(filename) =
     try
@@ -671,15 +674,18 @@ let private read(filename) =
             printfn "That file does exist on disk, but could not be read.  Here is the error detail:"
             printfn "%s" (e.ToString())
             printfn ""
-            printfn "If you were intentionally hand-editing the .json settings file, you may have made a mistake that must be corrected."
+            printfn "If you were intentionally hand-editing the .json settings file, you may have made a mistake."
             printfn ""
-            printfn "The application will shut down now. If you want to discard the broken settings file and start %s fresh with some default settings, then simply delete the file:" OverworldData.ProgramNameString
-            printfn ""
-            printfn "%s" filename
-            printfn ""
-            printfn "from disk before starting the application again."
-            printfn ""
-            raise <| IntentionalApplicationShutdown "Intentional application shutdown: failed to read settings file data."
+            // (a settings file cut short by a crash or power loss used to stop the app from starting at all: keep the broken file as .bad and start with defaults instead)
+            let backup = filename + ".bad"
+            try
+                System.IO.File.Copy(filename, backup, true)
+                printfn "The broken settings file was saved as '%s' and %s will start with default settings." backup OverworldData.ProgramNameString
+                printfn ""
+                writeImpl(filename)
+            with e2 ->
+                printfn "Could not set the broken settings file aside: %s" (e2.ToString())
+                raise <| IntentionalApplicationShutdown "Intentional application shutdown: failed to read settings file data."
         else
             printfn "Perhaps this is your first time using '%s' on this machine?" OverworldData.ProgramNameString
             printfn "A default settings file will be created for you..."

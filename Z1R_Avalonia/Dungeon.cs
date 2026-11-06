@@ -686,9 +686,15 @@ public static class Dungeon
         var dungeon = TrackerModel.GetDungeon(dungeonIndex);
         HDNCP = (dungeon, wh);
         Graphics.WarpMouseCursorTo(new Point(tileX + gx + (double)gcw / 2.0 + 18.0, tileY + gy + (double)grh / 2.0 + 15.0));   // the +(18,15) makes mouse still inside the box but not overlapping the '?', easier to see
-        await CustomComboBoxes.DoModalGridSelect<char, object>(cm, tileX, tileY, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
-                        44.0, 34.0, gx, gy, redrawTile, onClick, extraDecorations, brushes, warp, wh, "HDNNumberChooser", null);
-        HDNCP = null;
+        try
+        {
+            await CustomComboBoxes.DoModalGridSelect<char, object>(cm, tileX, tileY, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
+                            44.0, 34.0, gx, gy, redrawTile, onClick, extraDecorations, brushes, warp, wh, "HDNNumberChooser", null);
+        }
+        finally
+        {
+            HDNCP = null;
+        }
     }
     // (F#: a top-level `do` block, run here in file order; see PLAN.md "Language: C#". Like WPF's, it needs the CanvasManager to exist already.)
     private static bool init1()

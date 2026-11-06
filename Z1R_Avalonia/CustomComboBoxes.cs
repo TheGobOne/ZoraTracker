@@ -66,6 +66,7 @@ public static class CustomComboBoxes
     public static class GlobalFlag
     {
         public static bool popupIsActive = false;
+        public static DateTime popupOpenStamp = DateTime.MinValue;   // set when a grid menu starts opening: the stuck-flag self-heal leaves the flag alone for a moment after
         // a popup that failed part-way: write the exception to the crash log (so a report of a dead overworld comes with a stack trace) and unlock the UI
         public static void logPopupFailure(string where, System.Exception e)
         {
@@ -230,12 +231,15 @@ public static class CustomComboBoxes
             // (WPF PreviewMouseDown: a tunnelling handler)
             rootCanvas.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, _) =>
             {
-                if (popupCanvasStack.Count > 0 && !GlobalFlag.popupIsActive)
+                var opening = (DateTime.Now - GlobalFlag.popupOpenStamp).TotalMilliseconds < 1500.0;   // a menu is still being set up: not stuck
+                var orphanLayers = rootCanvas.Children.Count - 1 != popupCanvasStack.Count;         // a layer in the window that is not on the stack (or the reverse)
+                if ((popupCanvasStack.Count > 0 && !GlobalFlag.popupIsActive) || (orphanLayers && !opening))
                 {
-                    logPopupNote($"{popupCanvasStack.Count} leftover popup layer(s) with no popup active; removed on click");
+                    logPopupNote($"{popupCanvasStack.Count} leftover popup layer(s) (window has {rootCanvas.Children.Count - 1}) with no popup active; removed on click");
                     clearAllPopups();
+                    GlobalFlag.popupIsActive = false;
                 }
-                else if (popupCanvasStack.Count == 0 && GlobalFlag.popupIsActive)
+                else if (popupCanvasStack.Count == 0 && GlobalFlag.popupIsActive && !opening)
                 {
                     // the tracker thinks a popup is open but there is no popup layer: clear the stuck flag so clicks work again
                     logPopupNote("popup flag was stuck on with no popup layer; cleared on click");
@@ -262,6 +266,9 @@ public static class CustomComboBoxes
             }
             opacityStack.Clear();
             if (sunglasses.Parent != null) ((Canvas)sunglasses.Parent).Children.Remove(sunglasses);
+            // also any layer that is in the window but not on the stack (a popup that failed part-way)
+            foreach (var orphan in rootCanvas.Children.Where(ch => !object.ReferenceEquals(ch, appMainCanvas)).ToList())
+                rootCanvas.Children.Remove(orphan);
         }
         public double Width => width;
         public double Height => rootCanvas.Height;
@@ -288,7 +295,7 @@ public static class CustomComboBoxes
             var popupCanvas = new Canvas { Width = appMainCanvas.Width, Height = appMainCanvas.Height, Background = Brushes.Transparent, IsHitTestVisible = true, Opacity = 1.0 };
             rootCanvas.Children.Add(popupCanvas);
             popupCanvasStack.Push(popupCanvas);
-            AfterCreatePopupCanvas?.Invoke(popupCanvas);
+            try { AfterCreatePopupCanvas?.Invoke(popupCanvas); } catch (Exception e) { logPopupNote("a popup-created listener failed: " + e.Message); }   // (a failing listener must not leave this layer behind)
             // return the popup canvas
             return popupCanvas;
         }
@@ -296,7 +303,7 @@ public static class CustomComboBoxes
         {
             // remove the popup canvas
             var pc = popupCanvasStack.Pop();
-            BeforeDismissPopupCanvas?.Invoke(pc);
+            try { BeforeDismissPopupCanvas?.Invoke(pc); } catch (Exception e) { logPopupNote("a popup-dismissed listener failed: " + e.Message); }   // (the layer must come off even if a listener fails)
             rootCanvas.Children.Remove(pc);
             opacityStack.Pop();
             // remove the sunglasses from the prior child
@@ -682,6 +689,7 @@ public static class CustomComboBoxes
                     )
     {
         var (gnc, gnr, gcw, grh) = gridShape;
+        GlobalFlag.popupOpenStamp = DateTime.Now;
         var wh = who ?? new ManualResetEvent(false);
         var hasResult = false;
         TResult result = default(TResult);
@@ -821,7 +829,7 @@ public static class CustomComboBoxes
                 var g2 = over > 0.0 ? g - Math.Ceiling(over) : g;
                 return tilePos + g2 < 0.0 ? -tilePos : g2;
             }
-            (gx, gy) = (shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH, appH));
+            (gx, gy) = (shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH + (uniqueName == "MonsterDetail" || uniqueName == "DungeonRoom" ? 80.0 : 0.0), appH));   // (those two menus have their tip box under the grid: leave room for it)
         }
         canvasAdd(popupCanvas, gridBorder, gx, gy);
         // a moved menu stays at the same spot on screen (its position is saved absolutely, not relative to the tile you clicked)
@@ -1501,12 +1509,19 @@ public static class CustomComboBoxes
             default: throw new Exception("bad activationDelta");
         }
         // activate the modal
-        if (opaOpt is double opa)
-            await DoModalOpa(cm, wh, tileX, tileY, popupCanvas, opa);
-        else
-            await DoModal(cm, wh, tileX, tileY, popupCanvas);
-        selfCleanup();
-        allDoneSoNoLongerNeedToMouseLeaveSnapback = true;
+        try
+        {
+            if (opaOpt is double opa)
+                await DoModalOpa(cm, wh, tileX, tileY, popupCanvas, opa);
+            else
+                await DoModal(cm, wh, tileX, tileY, popupCanvas);
+        }
+        finally
+        {
+            // (always: the cached dashes and the caller's elements must be taken out of this popup)
+            selfCleanup();
+            allDoneSoNoLongerNeedToMouseLeaveSnapback = true;
+        }
         return (hasResult, result);
     }
 

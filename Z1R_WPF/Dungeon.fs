@@ -599,9 +599,11 @@ let HiddenDungeonNumberChooserPopup(cm:CustomComboBoxes.CanvasManager, tileX, ti
     let dungeon = TrackerModel.GetDungeon(dungeonIndex)
     HDNCP <- Some(dungeon, wh)
     Graphics.WarpMouseCursorTo(Point(tileX+gx+float gcw/2.+18., tileY+gy+float grh/2.+15.))   // the +(18,15) makes mouse still inside the box but not overlapping the '?', easier to see
-    do! Async.Ignore <| CustomComboBoxes.DoModalGridSelect(cm, tileX, tileY, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
-                    44., 34., gx, gy, redrawTile, onClick, extraDecorations, brushes, warp, Some(wh), "HDNNumberChooser", None)
-    HDNCP <- None
+    try
+        do! Async.Ignore <| CustomComboBoxes.DoModalGridSelect(cm, tileX, tileY, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
+                        44., 34., gx, gy, redrawTile, onClick, extraDecorations, brushes, warp, Some(wh), "HDNNumberChooser", None)
+    finally
+        HDNCP <- None
     }
 do
     // Add() permanently adds an event listener.  We want to only call Add() once, but only listen while the popup is active

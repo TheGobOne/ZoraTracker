@@ -841,9 +841,15 @@ public static class OverworldItemGridUI
             whole.Children.Add(extrasPanel);
             mouseClickInterceptor.PointerPressed += (_, _) => wh.Set();  // if they click outside the two interior panels that swallow clicks, dismiss it
             watchForPopups = true;
-            await CustomComboBoxes.DoModal(cm, wh, 20.0, 155.0, whole);
-            watchForPopups = false;
-            whole.Children.Clear(); // to reparent extrasPanel again next popup
+            try
+            {
+                await CustomComboBoxes.DoModal(cm, wh, 20.0, 155.0, whole);
+            }
+            finally
+            {
+                watchForPopups = false;
+                whole.Children.Clear(); // to reparent extrasPanel again next popup
+            }
         }
         extrasImage.PointerPressed += (_, _) =>
         {

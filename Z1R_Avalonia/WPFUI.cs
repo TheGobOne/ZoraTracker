@@ -2727,7 +2727,12 @@ public static class WPFUI
                         popupIsActive = false;
                         if (reopenMenu) activatePopup(0);
                     }
-                    CustomComboBoxes.StartImmediate(CustomComboBoxes.GlobalFlag.Guard(go(), $"overworld tile menu, {(char)('A' + j)}{i + 1}"));
+                    async Task goCleaningUp()
+                    {
+                        try { await go(); }
+                        catch { tileCanvas.Children.Clear(); throw; }   // (the shared tileImage must be free to show again; Guard logs the failure)
+                    }
+                    CustomComboBoxes.StartImmediate(CustomComboBoxes.GlobalFlag.Guard(goCleaningUp(), $"overworld tile menu, {(char)('A' + j)}{i + 1}"));
                 }
                 // copy / paste item markers (mouse button 4; while markers are carried, a plain left click on an open tile also pastes); false if there was nothing to copy or paste here
                 bool copyOrPasteMarkers()
@@ -5509,6 +5514,8 @@ public static class WPFUI
                 throw new Exception("bad load data at data.Overworld.Map");
             Timeline.isCurrentlyLoadingASave = true;
             TrackerModel.currentlyIgnoringForceUpdatesDuringALoad = true;
+            try
+            {
             var anySetProblems = false;
             for (int j = 0; j <= 7; j++)
             {
@@ -5668,6 +5675,14 @@ public static class WPFUI
             TrackerModel.recomputePlayerStateSummary();
             TrackerModel.recomputeMapStateSummary();
             TrackerModel.recomputeWhatIsNeeded();
+            }
+            catch
+            {
+                // (a load that fails part-way must not leave the model ignoring updates and the timeline frozen for the rest of the session)
+                TrackerModel.currentlyIgnoringForceUpdatesDuringALoad = false;
+                Timeline.isCurrentlyLoadingASave = false;
+                throw;
+            }
             // done
             TrackerModel.currentlyIgnoringForceUpdatesDuringALoad = false;
             TrackerModel.forceUpdate();
@@ -5744,6 +5759,7 @@ public static class WPFUI
             var timer2 = new DispatcherTimer();   // (F#: a second `timer` shadowing the first)
             timer2.Interval = TimeSpan.FromSeconds(10.0);   // (checks every 10 seconds; it saves once the Auto-save interval option has passed)
             var lastAutoSave = DateTime.Now;
+            var autoSaveFailureShown = false;
             timer2.Tick += (_, _) =>
             {
                 if ((DateTime.Now - lastAutoSave).TotalMinutes >= (double)TrackerModelOptions.AutoSaveMinutes - 0.01)
@@ -5775,8 +5791,14 @@ public static class WPFUI
                         }
                         CustomComboBoxes.StartImmediate(go());
                     }
-                    catch (Exception)
-                    { }
+                    catch (Exception e)
+                    {
+                        if (!autoSaveFailureShown)   // (say so once: otherwise a Saves folder that cannot be written fails silently for the whole game)
+                        {
+                            autoSaveFailureShown = true;
+                            Graphics.ErrorBeepWithReminderLogText($"Auto-save failed ({e.Message}). Use the Save button, and check the Saves folder is writable.");
+                        }
+                    }
                 }
             };
             timer2.Start();

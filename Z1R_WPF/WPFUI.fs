@@ -1926,7 +1926,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     popupIsActive <- false
                     CustomComboBoxes.GlobalFlag.dbg(sprintf "popup done col=%d row=%d reopen=%b" (i+1) j reopenMenu.Value)
                     if reopenMenu.Value then activatePopup(0)
-                    } |> (fun a -> async { try do! a with e -> logPopupFailure(sprintf "overworld tile menu, %c%d" (char (int 'A' + j)) (i+1), e) }) |> Async.StartImmediate
+                    } |> (fun a -> let failTile(e:exn) = (tileCanvas.Children.Clear(); logPopupFailure(sprintf "overworld tile menu, %c%d" (char (int 'A' + j)) (i+1), e)) in async { try do! a with e -> failTile(e) }) |> Async.StartImmediate   // (tileCanvas is cleared so the shared tileImage can be shown again)
             // (a failure while building or running the tile menu must never leave the overworld locked)
             and activatePopup(activationDelta) =
                 CustomComboBoxes.GlobalFlag.dbg(sprintf "activatePopup col=%d row=%d" (i+1) j)
@@ -3983,134 +3983,140 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             failwith "bad load data at data.Overworld.Map"
         Timeline.isCurrentlyLoadingASave <- true
         TrackerModel.currentlyIgnoringForceUpdatesDuringALoad <- true
-        let mutable anySetProblems = false
-        for j = 0 to 7 do
-            for i = 0 to 15 do
-                let cur    = a.[j*16*3 + i*3]
-                let ed     = a.[j*16*3 + i*3 + 1]
-                let circle = a.[j*16*3 + i*3 + 2]
-                if not(TrackerModel.overworldMapMarks.[i,j].AttemptToSet(cur)) then
-                    anySetProblems <- true
-                let k = if TrackerModel.MapSquareChoiceDomainHelper.IsItem(cur) then TrackerModel.MapSquareChoiceDomainHelper.SHOP else cur
-                if k <> -1 then
-                    TrackerModel.setOverworldMapExtraData(i,j,k,ed)
-                TrackerModel.overworldMapCircles.[i,j] <- circle
-                owUpdateFunctions.[i,j] 0 null  // redraw the tile
-                owCircleRedraws.[i,j]()
-        do! showProgress(sprintf "finished loading overworld")
-        // Items
-        if not(data.Items.WhiteSwordBox.TryApply(TrackerModel.sword2Box)) then anySetProblems <- true
-        if not(data.Items.LadderBox.TryApply(TrackerModel.ladderBox)) then anySetProblems <- true
-        if not(data.Items.ArmosBox.TryApply(TrackerModel.armosBox)) then anySetProblems <- true
-        // the items found in the magical sword / letter / wood sword caves (older saves do not have these)
-        if data.Items.MagicalSwordBox <> null then
-            if not(data.Items.MagicalSwordBox.TryApply(TrackerModel.sword3Box)) then anySetProblems <- true
-        if data.Items.LetterBox <> null then
-            if not(data.Items.LetterBox.TryApply(TrackerModel.letterBox)) then anySetProblems <- true
-        if data.Items.WoodSwordBox <> null then
-            if not(data.Items.WoodSwordBox.TryApply(TrackerModel.sword1Box)) then anySetProblems <- true
-        TrackerModel.hintShopColors.Clear()
-        if not(System.String.IsNullOrEmpty(data.Items.HintShopColors)) then
-            for t in data.Items.HintShopColors.Split([|';'|], System.StringSplitOptions.RemoveEmptyEntries) do
-                let p = t.Split(',')
-                if p.Length = 3 then
-                    TrackerModel.hintShopColors.[(int p.[0], int p.[1])] <- int p.[2]
-        TrackerModel.shuffledWoodSwordTiles.Clear()
-        if not(System.String.IsNullOrEmpty(data.Items.ShuffledWoodSwordTiles)) then
-            for t in data.Items.ShuffledWoodSwordTiles.Split([|';'|], System.StringSplitOptions.RemoveEmptyEntries) do
-                let p = t.Split(',')
-                if p.Length = 2 then
-                    TrackerModel.shuffledWoodSwordTiles.Add((int p.[0], int p.[1])) |> ignore
-        OptionsMenu.requestRedrawOverworldEvent.Trigger()   // redraw the tiles now that the cave items are back
-        if not (isNull data.Items.CustomLevelName) then   // (an empty name in the save means none was in use: it must not be replaced by the start screen's remembered name; older saves have no name at all: null)
-            TrackerModel.CustomLevelName <- data.Items.CustomLevelName
-            DungeonUI.customLevelNameChanged.Trigger()   // the custom LEVEL name that was in use when this was saved
-        if data.Items.Level2StairBox <> null then   // (older saves do not have the optional level 2 staircase slot)
-            if not(data.Items.Level2StairBox.TryApply(TrackerModel.level2StairBox)) then anySetProblems <- true
-            TrackerModel.SetLevel2StairBoxEnabled(data.Items.Level2StairBoxEnabled)
-            TrackerModel.SetLevel9FloorBoxEnabled(data.Items.Level9FloorBoxEnabled)   // (older saves: false)
-        TrackerModelOptions.FourthSwordEnabled <- SaveAndLoad.FourthSwordWasOn(data.Items)   // (older saves predate the 4th Sword option: nothing is restricted)
-        for i = 0 to 8 do
-            let ds = data.Items.Dungeons.[i]
-            let dd = TrackerModel.GetDungeon(i)
-            if not(ds.TryApply(dd)) then anySetProblems <- true
-        do! showProgress(sprintf "finished loading items")
-        // PlayerProgressAndTakeAnyHearts
-        data.PlayerProgressAndTakeAnyHearts.Apply()
-        // StartingItemsAndExtras
-        data.StartingItemsAndExtras.Apply()
-        // Blockers
-        TrackerModel.DungeonBlockersContainer.StartIgnoreChangesDuringLoad()
-        for i = 0 to 7 do
-            for j = 0 to TrackerModel.DungeonBlockersContainer.MAX_BLOCKERS_PER_DUNGEON-1 do
-                TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(i,j,TrackerModel.DungeonBlocker.FromHotKeyName(data.Blockers.[i].[j].Kind))
-                for k = 0 to TrackerModel.DungeonBlockerAppliesTo.MAX-1 do
-                    TrackerModel.DungeonBlockersContainer.SetDungeonBlockerAppliesTo(i,j,k,data.Blockers.[i].[j].AppliesTo.[k])
-            do! showProgress(sprintf "finished loading blockers %d of 8" (i+1))
-        TrackerModel.DungeonBlockersContainer.FinishIgnoreChangesDuringLoad()
-        if anySetProblems then
-            () // TODO
-        // Hints
-        for i = 0 to 10 do
-            TrackerModel.SetLevelHint(i, TrackerModel.HintZone.FromIndex(data.Hints.LocationHints.[i]))
-        TrackerModel.NoFeatOfStrengthHintWasGiven <- data.Hints.NoFeatOfStrengthHint
-        TrackerModel.SailNotHintWasGiven <- data.Hints.SailNotHint
-        TrackerModel.SailToHintWasGiven <- data.Hints.SailToHint
-        TrackerModel.PlayMelodyHintWasGiven <- data.Hints.PlayMelodyHint
-        TrackerModel.StepOverWaterHintWasGiven <- data.Hints.StepOverWaterHint
-        TrackerModel.FireArrowsHintWasGiven <- data.Hints.FireArrowsHint
-        hideFeatsOfStrength TrackerModel.NoFeatOfStrengthHintWasGiven
-        hideRaftSpots TrackerModel.SailNotHintWasGiven
-        Views.hintDashedItemsChanged.Trigger()
-        // Notes
-        notesTextBox.Text <- data.Notes
-        // CRDI
-        currentRecorderDestinationIndex <- data.CurrentRecorderDestinationIndex
-        TrackerModel.recorderToNewDungeons <- data.RecorderToNewDungeons
-        TrackerModel.recorderToUnbeatenDungeons <- data.RecorderToUnbeatenDungeons
-        if data.IsBoomstickSeed then
-            toggleBookShieldCheckBox.IsChecked <- System.Nullable.op_Implicit true
-        if data.IsAtlasSeed then
-            bookIsAtlasCheckBox.IsChecked <- System.Nullable.op_Implicit true
-        if data.IsWSMSReplacedByBUSeed then
-            TrackerModel.ToggleWSMSReplacedByBU()
-        updateCurrentRecorderDestinationNumeral()
-        // Dungeon Maps
-        do! importDungeonModels(showProgress, data.DungeonMaps)
-        DungeonUI.theDungeonTabControl.SelectedIndex <- 0   // if they selected the summary tab, it only updates after an actual change, so poke tab 0 first, so the change occurs
-        DungeonUI.theDungeonTabControl.SelectedIndex <- data.DungeonTabSelected
-        // UserCustom
-        if data.UserCustomChecklist <> null && data.UserCustomChecklist.Items <> null then
-            SaveAndLoad.theUserCustomChecklist <- data.UserCustomChecklist
-            // note that line below must happen before we populate Timeline further below, as it updates TrackerModel.TimelineItemModel.All to include UserCustom stuff
-            do! UserCustomLayer.InitializeUserCustom(cm, timelineItems, invokeExtras)
-        // Drawing Layer
-        DrawingLayer.LoadDrawingLayer(data.DrawingLayerIcons, drawingCanvas)
-        // Graphics.alternativeOverworldMapFilename & Graphics.shouldInitiallyHideOverworldMap were loaded much earlier
-        // Seed & Flags
-        if data.Seed <> null && data.Seed <> "" then
-            SaveAndLoad.lastKnownSeed <- data.Seed
-            SaveAndLoad.seedAndFlagsUpdated.Trigger()
-        if data.Flags <> null && data.Flags <> "" then
-            SaveAndLoad.lastKnownFlags <- data.Flags
-            SaveAndLoad.seedAndFlagsUpdated.Trigger()
-        // Timeline
-        if data.OverworldSpotsRemainingOverTime <> null then
-            for i = 0 to (data.OverworldSpotsRemainingOverTime.Length/2)-1 do
-                TrackerModel.timelineDataOverworldSpotsRemain.Add(data.OverworldSpotsRemainingOverTime.[i*2], data.OverworldSpotsRemainingOverTime.[i*2+1])
-        if data.Timeline <> null then
-            for td in data.Timeline do
-                if td.Seconds <= data.TimeInSeconds then
-                    match TrackerModel.TimelineItemModel.All.TryGetValue(td.Ident) with
-                    | true, v -> v.StampTotalSeconds(td.Seconds, TrackerModel.PlayerHas.FromInt(td.Has))
-                    | _ -> ()
-        drawTimeline(data.TimeInSeconds / 60)
-        // Timer
-        TrackerModel.theStartTime.SetAgo(TimeSpan.FromSeconds(float data.TimeInSeconds))
-        // recompute everything, update UI
-        TrackerModel.recomputePlayerStateSummary()
-        TrackerModel.recomputeMapStateSummary()
-        TrackerModel.recomputeWhatIsNeeded() |> ignore
+        try
+            let mutable anySetProblems = false
+            for j = 0 to 7 do
+                for i = 0 to 15 do
+                    let cur    = a.[j*16*3 + i*3]
+                    let ed     = a.[j*16*3 + i*3 + 1]
+                    let circle = a.[j*16*3 + i*3 + 2]
+                    if not(TrackerModel.overworldMapMarks.[i,j].AttemptToSet(cur)) then
+                        anySetProblems <- true
+                    let k = if TrackerModel.MapSquareChoiceDomainHelper.IsItem(cur) then TrackerModel.MapSquareChoiceDomainHelper.SHOP else cur
+                    if k <> -1 then
+                        TrackerModel.setOverworldMapExtraData(i,j,k,ed)
+                    TrackerModel.overworldMapCircles.[i,j] <- circle
+                    owUpdateFunctions.[i,j] 0 null  // redraw the tile
+                    owCircleRedraws.[i,j]()
+            do! showProgress(sprintf "finished loading overworld")
+            // Items
+            if not(data.Items.WhiteSwordBox.TryApply(TrackerModel.sword2Box)) then anySetProblems <- true
+            if not(data.Items.LadderBox.TryApply(TrackerModel.ladderBox)) then anySetProblems <- true
+            if not(data.Items.ArmosBox.TryApply(TrackerModel.armosBox)) then anySetProblems <- true
+            // the items found in the magical sword / letter / wood sword caves (older saves do not have these)
+            if data.Items.MagicalSwordBox <> null then
+                if not(data.Items.MagicalSwordBox.TryApply(TrackerModel.sword3Box)) then anySetProblems <- true
+            if data.Items.LetterBox <> null then
+                if not(data.Items.LetterBox.TryApply(TrackerModel.letterBox)) then anySetProblems <- true
+            if data.Items.WoodSwordBox <> null then
+                if not(data.Items.WoodSwordBox.TryApply(TrackerModel.sword1Box)) then anySetProblems <- true
+            TrackerModel.hintShopColors.Clear()
+            if not(System.String.IsNullOrEmpty(data.Items.HintShopColors)) then
+                for t in data.Items.HintShopColors.Split([|';'|], System.StringSplitOptions.RemoveEmptyEntries) do
+                    let p = t.Split(',')
+                    if p.Length = 3 then
+                        TrackerModel.hintShopColors.[(int p.[0], int p.[1])] <- int p.[2]
+            TrackerModel.shuffledWoodSwordTiles.Clear()
+            if not(System.String.IsNullOrEmpty(data.Items.ShuffledWoodSwordTiles)) then
+                for t in data.Items.ShuffledWoodSwordTiles.Split([|';'|], System.StringSplitOptions.RemoveEmptyEntries) do
+                    let p = t.Split(',')
+                    if p.Length = 2 then
+                        TrackerModel.shuffledWoodSwordTiles.Add((int p.[0], int p.[1])) |> ignore
+            OptionsMenu.requestRedrawOverworldEvent.Trigger()   // redraw the tiles now that the cave items are back
+            if not (isNull data.Items.CustomLevelName) then   // (an empty name in the save means none was in use: it must not be replaced by the start screen's remembered name; older saves have no name at all: null)
+                TrackerModel.CustomLevelName <- data.Items.CustomLevelName
+                DungeonUI.customLevelNameChanged.Trigger()   // the custom LEVEL name that was in use when this was saved
+            if data.Items.Level2StairBox <> null then   // (older saves do not have the optional level 2 staircase slot)
+                if not(data.Items.Level2StairBox.TryApply(TrackerModel.level2StairBox)) then anySetProblems <- true
+                TrackerModel.SetLevel2StairBoxEnabled(data.Items.Level2StairBoxEnabled)
+                TrackerModel.SetLevel9FloorBoxEnabled(data.Items.Level9FloorBoxEnabled)   // (older saves: false)
+            TrackerModelOptions.FourthSwordEnabled <- SaveAndLoad.FourthSwordWasOn(data.Items)   // (older saves predate the 4th Sword option: nothing is restricted)
+            for i = 0 to 8 do
+                let ds = data.Items.Dungeons.[i]
+                let dd = TrackerModel.GetDungeon(i)
+                if not(ds.TryApply(dd)) then anySetProblems <- true
+            do! showProgress(sprintf "finished loading items")
+            // PlayerProgressAndTakeAnyHearts
+            data.PlayerProgressAndTakeAnyHearts.Apply()
+            // StartingItemsAndExtras
+            data.StartingItemsAndExtras.Apply()
+            // Blockers
+            TrackerModel.DungeonBlockersContainer.StartIgnoreChangesDuringLoad()
+            for i = 0 to 7 do
+                for j = 0 to TrackerModel.DungeonBlockersContainer.MAX_BLOCKERS_PER_DUNGEON-1 do
+                    TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(i,j,TrackerModel.DungeonBlocker.FromHotKeyName(data.Blockers.[i].[j].Kind))
+                    for k = 0 to TrackerModel.DungeonBlockerAppliesTo.MAX-1 do
+                        TrackerModel.DungeonBlockersContainer.SetDungeonBlockerAppliesTo(i,j,k,data.Blockers.[i].[j].AppliesTo.[k])
+                do! showProgress(sprintf "finished loading blockers %d of 8" (i+1))
+            TrackerModel.DungeonBlockersContainer.FinishIgnoreChangesDuringLoad()
+            if anySetProblems then
+                () // TODO
+            // Hints
+            for i = 0 to 10 do
+                TrackerModel.SetLevelHint(i, TrackerModel.HintZone.FromIndex(data.Hints.LocationHints.[i]))
+            TrackerModel.NoFeatOfStrengthHintWasGiven <- data.Hints.NoFeatOfStrengthHint
+            TrackerModel.SailNotHintWasGiven <- data.Hints.SailNotHint
+            TrackerModel.SailToHintWasGiven <- data.Hints.SailToHint
+            TrackerModel.PlayMelodyHintWasGiven <- data.Hints.PlayMelodyHint
+            TrackerModel.StepOverWaterHintWasGiven <- data.Hints.StepOverWaterHint
+            TrackerModel.FireArrowsHintWasGiven <- data.Hints.FireArrowsHint
+            hideFeatsOfStrength TrackerModel.NoFeatOfStrengthHintWasGiven
+            hideRaftSpots TrackerModel.SailNotHintWasGiven
+            Views.hintDashedItemsChanged.Trigger()
+            // Notes
+            notesTextBox.Text <- data.Notes
+            // CRDI
+            currentRecorderDestinationIndex <- data.CurrentRecorderDestinationIndex
+            TrackerModel.recorderToNewDungeons <- data.RecorderToNewDungeons
+            TrackerModel.recorderToUnbeatenDungeons <- data.RecorderToUnbeatenDungeons
+            if data.IsBoomstickSeed then
+                toggleBookShieldCheckBox.IsChecked <- System.Nullable.op_Implicit true
+            if data.IsAtlasSeed then
+                bookIsAtlasCheckBox.IsChecked <- System.Nullable.op_Implicit true
+            if data.IsWSMSReplacedByBUSeed then
+                TrackerModel.ToggleWSMSReplacedByBU()
+            updateCurrentRecorderDestinationNumeral()
+            // Dungeon Maps
+            do! importDungeonModels(showProgress, data.DungeonMaps)
+            DungeonUI.theDungeonTabControl.SelectedIndex <- 0   // if they selected the summary tab, it only updates after an actual change, so poke tab 0 first, so the change occurs
+            DungeonUI.theDungeonTabControl.SelectedIndex <- data.DungeonTabSelected
+            // UserCustom
+            if data.UserCustomChecklist <> null && data.UserCustomChecklist.Items <> null then
+                SaveAndLoad.theUserCustomChecklist <- data.UserCustomChecklist
+                // note that line below must happen before we populate Timeline further below, as it updates TrackerModel.TimelineItemModel.All to include UserCustom stuff
+                do! UserCustomLayer.InitializeUserCustom(cm, timelineItems, invokeExtras)
+            // Drawing Layer
+            DrawingLayer.LoadDrawingLayer(data.DrawingLayerIcons, drawingCanvas)
+            // Graphics.alternativeOverworldMapFilename & Graphics.shouldInitiallyHideOverworldMap were loaded much earlier
+            // Seed & Flags
+            if data.Seed <> null && data.Seed <> "" then
+                SaveAndLoad.lastKnownSeed <- data.Seed
+                SaveAndLoad.seedAndFlagsUpdated.Trigger()
+            if data.Flags <> null && data.Flags <> "" then
+                SaveAndLoad.lastKnownFlags <- data.Flags
+                SaveAndLoad.seedAndFlagsUpdated.Trigger()
+            // Timeline
+            if data.OverworldSpotsRemainingOverTime <> null then
+                for i = 0 to (data.OverworldSpotsRemainingOverTime.Length/2)-1 do
+                    TrackerModel.timelineDataOverworldSpotsRemain.Add(data.OverworldSpotsRemainingOverTime.[i*2], data.OverworldSpotsRemainingOverTime.[i*2+1])
+            if data.Timeline <> null then
+                for td in data.Timeline do
+                    if td.Seconds <= data.TimeInSeconds then
+                        match TrackerModel.TimelineItemModel.All.TryGetValue(td.Ident) with
+                        | true, v -> v.StampTotalSeconds(td.Seconds, TrackerModel.PlayerHas.FromInt(td.Has))
+                        | _ -> ()
+            drawTimeline(data.TimeInSeconds / 60)
+            // Timer
+            TrackerModel.theStartTime.SetAgo(TimeSpan.FromSeconds(float data.TimeInSeconds))
+            // recompute everything, update UI
+            TrackerModel.recomputePlayerStateSummary()
+            TrackerModel.recomputeMapStateSummary()
+            TrackerModel.recomputeWhatIsNeeded() |> ignore
+        with e ->
+            // (a load that fails part-way must not leave the model ignoring updates and the timeline frozen for the rest of the session)
+            TrackerModel.currentlyIgnoringForceUpdatesDuringALoad <- false
+            Timeline.isCurrentlyLoadingASave <- false
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e).Throw()
         // done
         TrackerModel.currentlyIgnoringForceUpdatesDuringALoad <- false
         TrackerModel.forceUpdate()
@@ -4157,6 +4163,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
         let timer = new System.Windows.Threading.DispatcherTimer()
         timer.Interval <- TimeSpan.FromSeconds(10.0)   // (checks every 10 seconds; it saves once the Auto-save interval option has passed)
         let lastAutoSave = ref DateTime.Now
+        let autoSaveFailureShown = ref false
         timer.Tick.Add(fun _ -> 
           if (DateTime.Now - lastAutoSave.Value).TotalMinutes >= float TrackerModelOptions.AutoSaveMinutes - 0.01 then
             lastAutoSave.Value <- DateTime.Now
@@ -4177,7 +4184,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     diskIcon.Opacity <- 0.0
                 } |> Async.StartImmediate
             with e ->
-                ()
+                if not autoSaveFailureShown.Value then   // (say so once: otherwise a Saves folder that cannot be written fails silently for the whole game)
+                    autoSaveFailureShown.Value <- true
+                    Graphics.ErrorBeepWithReminderLogText(sprintf "Auto-save failed (%s). Use the Save button, and check the Saves folder is writable." e.Message)
         )
         timer.Start()
 

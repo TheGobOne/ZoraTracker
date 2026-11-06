@@ -46,10 +46,12 @@ type Dungeon() =
         if this.Triforce <> d.PlayerHasTriforce() then
             d.ToggleTriforce()
         d.Color <- this.Color
-        d.LabelChar <- this.LabelChar.[0]
+        d.LabelChar <- (if System.String.IsNullOrEmpty(this.LabelChar) then '?' else this.LabelChar.[0])
         d.PlayerHasMapOfThisDungeon <- this.PlayerHasMap
         let extraOk = if this.ExtraBox <> null then this.ExtraBox.TryApply(d.ExtraFloorBox) else true
-        let boxesOk = (this.Boxes, d.Boxes) ||> Array.map2 (fun bs bd -> bs.TryApply(bd)) |> Array.fold (fun a b -> a && b) true
+        let boxesOk =
+            if isNull this.Boxes || this.Boxes.Length <> d.Boxes.Length then false   // (a save with a different number of boxes: nothing is applied rather than throwing mid-load)
+            else (this.Boxes, d.Boxes) ||> Array.map2 (fun bs bd -> bs.TryApply(bd)) |> Array.fold (fun a b -> a && b) true
         boxesOk && extraOk
 
 [<AllowNullLiteral>]
@@ -451,8 +453,8 @@ let BuildSaveLines(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLi
         yield sprintf """    ],"""
         if theUserCustomChecklist <> null then
             yield sprintf """    "UserCustomChecklist": {"""
-            yield sprintf """        "Name": "%s",""" theUserCustomChecklist.Name
-            yield sprintf """        "BackgroundImageFilename": "%s",""" theUserCustomChecklist.BackgroundImageFilename
+            yield sprintf """        "Name": %s,""" (System.Text.Json.JsonSerializer.Serialize<string>(if isNull theUserCustomChecklist.Name then "" else theUserCustomChecklist.Name))
+            yield sprintf """        "BackgroundImageFilename": %s,""" (System.Text.Json.JsonSerializer.Serialize<string>(if isNull theUserCustomChecklist.BackgroundImageFilename then "" else theUserCustomChecklist.BackgroundImageFilename))
             yield sprintf """        "Items": ["""
             for i=0 to theUserCustomChecklist.Items.Length-1 do
                 yield sprintf """            %s%s""" (System.Text.Json.JsonSerializer.Serialize<UserCustomCheckbox>(theUserCustomChecklist.Items.[i])) 
@@ -508,7 +510,10 @@ let SaveAll(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLines:str
         | AutoSave -> AutoSaveFilename
     //let filename = "J:\\-impossiblesdkgfjhsdg;kdahfskjgfdhsgfh;lahjds;ljfdhs;ljfhldashfldashlfadshgflhjdgflajdgfjkl"  // test errors
     EnsureSavesDirectory()
-    System.IO.File.WriteAllLines(filename, lines)
+    // (write a temp file and swap it in, so a crash mid-write cannot cut the only autosave short)
+    let tmp = filename + ".tmp"
+    System.IO.File.WriteAllLines(tmp, lines)
+    if System.IO.File.Exists(filename) then System.IO.File.Replace(tmp, filename, null) else System.IO.File.Move(tmp, filename)
     match saveType with
     | AutoSave -> System.IO.File.SetCreationTime(filename, System.DateTime.Now)
     | _ -> ()

@@ -649,9 +649,11 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
         whole.Children.Add(extrasPanel) |> ignore
         mouseClickInterceptor.MouseDown.Add(fun _ -> wh.Set() |> ignore)  // if they click outside the two interior panels that swallow clicks, dismiss it
         watchForPopups := true
-        do! CustomComboBoxes.DoModal(cm, wh, 20., 155., whole)
-        watchForPopups := false
-        whole.Children.Clear() // to reparent extrasPanel again next popup
+        try
+            do! CustomComboBoxes.DoModal(cm, wh, 20., 155., whole)
+        finally
+            watchForPopups := false
+            whole.Children.Clear() // to reparent extrasPanel again next popup
         } 
     extrasImage.MouseDown.Add(fun _ -> 
             async {

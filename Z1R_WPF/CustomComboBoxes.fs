@@ -12,6 +12,7 @@ open HotKeys.MyKey
 
 module GlobalFlag =
     let mutable popupIsActive = false
+    let mutable popupOpenStamp = System.DateTime.MinValue   // set when a grid menu starts opening: the stuck-flag self-heal leaves the flag alone for a moment after (the cursor warp pumps messages before the layer exists)
     // a popup that failed part-way: write the exception to the crash log (so a report of a dead overworld comes with a stack trace) and unlock the UI
     // TEMPORARY diagnostics: only writes when a file named debug_clicks.flag exists next to the exe
     let dbg(msg:string) =
@@ -150,15 +151,21 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
             if opacityStack.Count > 0 then opacityStack.Pop() |> ignore
         opacityStack.Clear()
         if not (isNull sunglasses.Parent) then (sunglasses.Parent :?> Canvas).Children.Remove(sunglasses)
+        // also any layer that is in the window but not on the stack (a popup that failed part-way)
+        for orphan in [ for ch in rootCanvas.Children do if not (obj.ReferenceEquals(ch, appMainCanvas)) then yield ch ] do
+            rootCanvas.Children.Remove(orphan)
     do
         // a click when no popup is supposed to be open but a popup layer is still there: remove the leftover layer so the tracker is usable again
         rootCanvas.PreviewMouseDown.Add(fun ea ->
             dbg(sprintf "root %A flag=%b layers=%d src=%s" ea.ChangedButton popupIsActive popupCanvasStack.Count (if isNull ea.OriginalSource then "null" else ea.OriginalSource.GetType().Name))
-            if popupCanvasStack.Count > 0 && not popupIsActive then
-                logPopupNote(sprintf "%d leftover popup layer(s) with no popup active; removed on click" popupCanvasStack.Count)
+            let opening = (System.DateTime.Now - popupOpenStamp).TotalMilliseconds < 1500.   // a menu is still being set up: not stuck
+            let orphanLayers = rootCanvas.Children.Count - 1 <> popupCanvasStack.Count      // a layer in the window that is not on the stack (or the reverse)
+            if (popupCanvasStack.Count > 0 && not popupIsActive) || (orphanLayers && not opening) then
+                logPopupNote(sprintf "%d leftover popup layer(s) (window has %d) with no popup active; removed on click" popupCanvasStack.Count (rootCanvas.Children.Count - 1))
                 clearAllPopups()
+                popupIsActive <- false
             // the opposite case: the tracker thinks a popup is open but there is no popup layer, so every overworld click would be ignored; clear the stuck flag
-            elif popupCanvasStack.Count = 0 && popupIsActive then
+            elif popupCanvasStack.Count = 0 && popupIsActive && not opening then
                 logPopupNote("popup flag was stuck on with no popup layer; cleared on click")
                 popupIsActive <- false)
     member _this.Width = width
@@ -183,13 +190,13 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
         let popupCanvas = new Canvas(Width=appMainCanvas.Width, Height=appMainCanvas.Height, Background=Brushes.Transparent, IsHitTestVisible=true, Opacity=1.)
         rootCanvas.Children.Add(popupCanvas) |> ignore
         popupCanvasStack.Push(popupCanvas)
-        afterCreatePopupCanvas.Trigger(popupCanvas)
+        (try afterCreatePopupCanvas.Trigger(popupCanvas) with e -> logPopupNote("a popup-created listener failed: " + e.Message))   // (a failing listener must not leave this layer behind with no handlers)
         // return the popup canvas
         popupCanvas
     member _this.DismissPopup() =
         // remove the popup canvas
         let pc = popupCanvasStack.Pop()
-        beforeDismissPopupCanvas.Trigger(pc)
+        (try beforeDismissPopupCanvas.Trigger(pc) with e -> logPopupNote("a popup-dismissed listener failed: " + e.Message))   // (the layer must come off even if a listener fails)
         rootCanvas.Children.Remove(pc)
         opacityStack.Pop() |> ignore
         // remove the sunglasses from the prior child
@@ -471,6 +478,7 @@ let DoModalGridSelect<'State,'Result>
                 uniqueName:string,      // for PrettyDashes caching
                 opaOpt:float option     // blackSunglassesOpacity
                 ) = async {
+    popupOpenStamp <- System.DateTime.Now
     let wh = match who with Some(x) -> x | _ -> new System.Threading.ManualResetEvent(false)
     let mutable result = None
     let popupCanvas = new Canvas()  // we will draw outside the canvas
@@ -573,7 +581,7 @@ let DoModalGridSelect<'State,'Result>
                 let over = tilePos + g + size - limit
                 let g2 = if over > 0. then g - System.Math.Ceiling(over) else g
                 if tilePos + g2 < 0. then -tilePos else g2
-            shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH, appH)
+            shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH + (if uniqueName = "MonsterDetail" || uniqueName = "DungeonRoom" then 80. else 0.), appH)   // (those two menus have their tip box under the grid: leave room for it)
         else gx, gy
     canvasAdd(popupCanvas, gridBorder, gx, gy)
     dbg(sprintf "GRID %s tile=(%.0f,%.0f) gx,gy=(%.0f,%.0f) gridPix=(%.0f,%.0f) app=(%.0f,%.0f) total=%d defaultCount=%d origIdx=%d jump=%b" uniqueName tileX tileY gx gy gridPixW gridPixH appW appH total gridElementsSelectablesAndIDs.Length origIdx jumpMode.Value)
@@ -1077,11 +1085,14 @@ let DoModalGridSelect<'State,'Result>
                         k (if obj.ReferenceEquals(cv, popupCanvas) then " <-- THIS POPUP" else "") cv.Width cv.Height cv.Opacity cv.IsHitTestVisible cv.Visibility cv.Children.Count (String.concat ", " kids)
                         (if cm.PopupCanvasStack.Contains(cv) then " (in stack)" else ""))
             | other -> dbg(sprintf "  [%d] %s" k (other.GetType().Name)))) |> ignore
-    match opaOpt with
-    | Some opa -> do! DoModalOpa(cm, wh, tileX, tileY, popupCanvas, opa)
-    | _ -> do! DoModal(cm, wh, tileX, tileY, popupCanvas)
-    selfCleanup()
-    allDoneSoNoLongerNeedToMouseLeaveSnapback <- true
+    try
+        match opaOpt with
+        | Some opa -> do! DoModalOpa(cm, wh, tileX, tileY, popupCanvas, opa)
+        | _ -> do! DoModal(cm, wh, tileX, tileY, popupCanvas)
+    finally
+        // (always: the cached dashes and the caller's elements must be taken out of this popup, or the next open of this menu throws 'already the child of another element')
+        selfCleanup()
+        allDoneSoNoLongerNeedToMouseLeaveSnapback <- true
     return result
     }
 
