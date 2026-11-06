@@ -142,7 +142,11 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
         rootCanvas.PreviewMouseDown.Add(fun _ ->
             if popupCanvasStack.Count > 0 && not popupIsActive then
                 logPopupNote(sprintf "%d leftover popup layer(s) with no popup active; removed on click" popupCanvasStack.Count)
-                clearAllPopups())
+                clearAllPopups()
+            // the opposite case: the tracker thinks a popup is open but there is no popup layer, so every overworld click would be ignored; clear the stuck flag
+            elif popupCanvasStack.Count = 0 && popupIsActive then
+                logPopupNote("popup flag was stuck on with no popup layer; cleared on click")
+                popupIsActive <- false)
     member _this.Width = width
     member _this.Height = rootCanvas.Height
     member _this.SetHeight(h) = 

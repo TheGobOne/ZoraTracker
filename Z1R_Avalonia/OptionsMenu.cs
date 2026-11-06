@@ -424,6 +424,21 @@ public static class OptionsMenu
                 {
                     var continued = false;
                     Action undoDemo = () => { };
+                    (Action next, Action back, Action skip) keyActions = (() => { }, () => { }, () => { });
+                    // while the tour is up, the keyboard drives the tour and nothing reaches the controls behind it (Enter used to press whatever button had focus)
+                    var keyWindow = TopLevel.GetTopLevel(cm.AppMainCanvas);
+                    EventHandler<Avalonia.Input.KeyEventArgs> keyHandler = (_, ea) =>
+                    {
+                        switch (ea.Key)
+                        {
+                            case Avalonia.Input.Key.Enter:
+                            case Avalonia.Input.Key.Right: keyActions.next(); break;
+                            case Avalonia.Input.Key.Left: keyActions.back(); break;
+                            case Avalonia.Input.Key.Escape: keyActions.skip(); break;
+                        }
+                        ea.Handled = true;
+                    };
+                    keyWindow?.AddHandler(Avalonia.Input.InputElement.KeyDownEvent, keyHandler, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
                     try
                     {
                         var wh = new ManualResetEvent(false);
@@ -444,6 +459,25 @@ public static class OptionsMenu
                             var hole = new Rect(hx, hy, Math.Min(W - hx, r.Width + 2.0 * pad), Math.Min(H - hy, r.Height + 2.0 * pad));
                             var geo = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(0.0, 0.0, W, H)), new RectangleGeometry(hole));
                             overlay.Children.Add(new Path { Data = geo, Fill = Brushes.Black, Opacity = 0.75, IsHitTestVisible = false });
+                            void addPicture(string file, double iw, double ih, (double x, double y, double w, double h)[] boxes)
+                            {
+                                // a real screenshot of a menu, scaled to fit the highlighted area, with the parts the stop talks about outlined
+                                var s = Math.Min(r.Width / iw, r.Height / ih);
+                                var (ox, oy) = (r.X + (r.Width - iw * s) / 2.0, r.Y + (r.Height - ih * s) / 2.0);
+                                var pic = Graphics.BMPtoImage(Graphics.loadBMP(file));
+                                pic.Width = iw * s; pic.Height = ih * s; pic.Stretch = Stretch.Fill;
+                                RenderOptions.SetBitmapInterpolationMode(pic, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                                Canvas.SetLeft(pic, ox); Canvas.SetTop(pic, oy);
+                                overlay.Children.Add(pic);
+                                foreach (var (x, y, w, h) in boxes)
+                                {
+                                    var box = new Rectangle { Width = w * s, Height = h * s, Stroke = Brushes.Orange, StrokeThickness = 3.0, RadiusX = 3.0, RadiusY = 3.0, IsHitTestVisible = false };
+                                    Canvas.SetLeft(box, ox + x * s); Canvas.SetTop(box, oy + y * s);
+                                    overlay.Children.Add(box);
+                                }
+                            }
+                            if (title == "Placing shops") addPicture("tile-menu-tour.png", 500.0, 370.0, new[] { (44.0, 120.0, 302.0, 46.0), (74.0, 242.0, 42.0, 46.0) });
+                            if (title == "Moving and resizing menus") addPicture("menu-move-tour.png", 580.0, 420.0, new[] { (72.0, 50.0, 308.0, 16.0), (526.0, 64.0, 28.0, 178.0), (36.0, 290.0, 36.0, 38.0), (272.0, 20.0, 112.0, 26.0) });
                             var frame = new Rectangle { Width = hole.Width, Height = hole.Height, Stroke = Brushes.Orange, StrokeThickness = 3.0, RadiusX = 4.0, RadiusY = 4.0, IsHitTestVisible = false };
                             Canvas.SetLeft(frame, hole.X);
                             Canvas.SetTop(frame, hole.Y);
@@ -457,9 +491,9 @@ public static class OptionsMenu
                             var backBtn = mkButton(" Back ");
                             var nextBtn = mkButton(idx == found.Length - 1 ? (continueLabel != "" ? continueLabel : " Done ") : " Next ");
                             backBtn.IsEnabled = idx > 0;
-                            skipBtn.Click += (_, _) => wh.Set();
-                            backBtn.Click += (_, _) => { idx = idx - 1; show(); };
-                            nextBtn.Click += (_, _) =>
+                            void doSkip() => wh.Set();
+                            void doBack() { if (idx > 0) { idx = idx - 1; show(); } }
+                            void doNext()
                             {
                                 if (idx >= found.Length - 1)
                                 {
@@ -471,7 +505,11 @@ public static class OptionsMenu
                                     idx = idx + 1;
                                     show();
                                 }
-                            };
+                            }
+                            keyActions = (doNext, doBack, doSkip);
+                            skipBtn.Click += (_, _) => doSkip();
+                            backBtn.Click += (_, _) => doBack();
+                            nextBtn.Click += (_, _) => doNext();
                             DockPanel.SetDock(counter, Dock.Left);
                             DockPanel.SetDock(nextBtn, Dock.Right);
                             DockPanel.SetDock(backBtn, Dock.Right);
@@ -503,6 +541,7 @@ public static class OptionsMenu
                     }
                     finally
                     {
+                        keyWindow?.RemoveHandler(Avalonia.Input.InputElement.KeyDownEvent, keyHandler);
                         undoDemo();
                         CustomComboBoxes.GlobalFlag.popupIsActive = false;
                     }
@@ -592,6 +631,8 @@ public static class OptionsMenu
             "The dungeon level numbers and triforce pieces along the top. Mark each dungeon as you finish it."),
         (new[] { "@0.0,0.063,0.358,0.154" }, "Dungeon item boxes",
             "One row of boxes for each dungeon, holding what you found there. Click a box to set its item; a green border means collected."),
+        (new[] { "@0.2,0.2,0.8,0.62" }, "Moving and resizing menus",
+            "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered."),
         (new[] { "@0.0,0.0,0.358,0.154" }, "Triforce in the basement",
             "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it."),
         (new[] { "@0.363,0.03,0.572,0.156" }, "Items and hearts",
@@ -603,9 +644,11 @@ public static class OptionsMenu
         (new[] { "TIMER", "Save" }, "Timer and file",
             "Pause/Reset timer controls the run clock. Options opens the settings (and this tour). Save writes a save file you can load later."),
         (new[] { "@0.0,0.154,1.0,0.43" }, "Overworld map",
-            "Click a tile to mark what is there: caves, shops, dungeon entrances and more. Right click for more choices, and fill in the details as you explore."),
+            "Left click a tile to mark it done (nothing there): OW Spots Left goes down by one. Right click a tile (or left click it again) to open the marker menu: caves, shops, dungeon entrances and more. Fill in the details as you explore."),
         (new[] { "Any Road", "Lost Hills" }, "Marker legend",
             "The special spots you can place on the map: Any Road (warp), completed dungeons, the recorder destination, your Start Spot. Enter your Dead Woods/Lost Hills hints."),
+        (new[] { "@0.2,0.2,0.8,0.62" }, "Placing shops",
+            "Right click a map tile to open this menu. The SHOP button at the bottom picks a potion shop or shop 1 to 4, and puts its name at the top of the tile. The outlined row holds the other spots to place: secrets, door repair, money making game, armos, take any and the hint shop."),
         (new[] { "@0.0,0.467,0.726,0.495" }, "Item Progress",
             "A quick view of the items and upgrades you have collected so far."),
         (new[] { "@0.0,0.496,0.586,0.517" }, "Dungeon tabs",

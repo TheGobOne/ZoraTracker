@@ -220,6 +220,12 @@ public static class CustomComboBoxes
                     logPopupNote($"{popupCanvasStack.Count} leftover popup layer(s) with no popup active; removed on click");
                     clearAllPopups();
                 }
+                else if (popupCanvasStack.Count == 0 && GlobalFlag.popupIsActive)
+                {
+                    // the tracker thinks a popup is open but there is no popup layer: clear the stuck flag so clicks work again
+                    logPopupNote("popup flag was stuck on with no popup layer; cleared on click");
+                    GlobalFlag.popupIsActive = false;
+                }
             }), RoutingStrategies.Tunnel);
         }
         // a one-line note in the crash log whenever the popup layers get out of step (so a report of a stuck gray screen says when it began)

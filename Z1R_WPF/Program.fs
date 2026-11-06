@@ -1927,9 +1927,7 @@ type MyWindow() as this =
                         setTri3 lhcb z.RandomizeLostHills "Randomize Lost Hills"
                 result.Text <- (if lines.Count = 0 then "Nothing to change." else System.String.Join("\n", lines))
                 result.Visibility <- Visibility.Visible
-            applyBtn.Click.Add(fun _ ->
-                doApply()
-                if z1rBox.Text.Trim() <> "" || zoraBox.Text.Trim() <> "" then wh.Set() |> ignore)
+            applyBtn.Click.Add(fun _ -> doApply())
             // pasting into either box applies straight away
             for box in [ z1rBox; zoraBox ] do
                 DataObject.AddPastingHandler(box, new DataObjectPastingEventHandler(fun _ _ ->

@@ -320,6 +320,18 @@ let runGuidedTourCore(cm:CustomComboBoxes.CanvasManager, steps:(string list * st
             async {
                 let continued = ref false
                 let undoDemo : (unit -> unit) ref = ref ignore
+                let keyActions : ((unit -> unit) * (unit -> unit) * (unit -> unit)) ref = ref (ignore, ignore, ignore)
+                // while the tour is up, the keyboard drives the tour and nothing reaches the controls behind it (Enter used to press whatever button had focus)
+                let keyHandler = System.Windows.Input.KeyEventHandler(fun _ ea ->
+                    let (doNext, doBack, doSkip) = keyActions.Value
+                    (match ea.Key with
+                     | System.Windows.Input.Key.Enter | System.Windows.Input.Key.Right -> doNext ()
+                     | System.Windows.Input.Key.Left -> doBack ()
+                     | System.Windows.Input.Key.Escape -> doSkip ()
+                     | _ -> ())
+                    ea.Handled <- true)
+                let keyWindow = Window.GetWindow(cm.AppMainCanvas)
+                if not (isNull keyWindow) then keyWindow.PreviewKeyDown.AddHandler(keyHandler)
                 try
                     let wh = new System.Threading.ManualResetEvent(false)
                     let W, H = cm.AppMainCanvas.Width, cm.AppMainCanvas.Height
@@ -338,6 +350,36 @@ let runGuidedTourCore(cm:CustomComboBoxes.CanvasManager, steps:(string list * st
                         let hole = Rect(hx, hy, min (W - hx) (r.Width + 2.*pad), min (H - hy) (r.Height + 2.*pad))
                         let geo = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(Rect(0., 0., W, H)), new RectangleGeometry(hole))
                         overlay.Children.Add(new System.Windows.Shapes.Path(Data=geo, Fill=Brushes.Black, Opacity=0.75, IsHitTestVisible=false)) |> ignore
+                        if title = "Placing shops" then
+                            // a real screenshot of the overworld tile menu, with the shop spots (the row of secrets / money / shop-like spots) and the SHOP button outlined
+                            let iw, ih = 500., 370.
+                            let s = min (r.Width / iw) (r.Height / ih)
+                            let ox, oy = r.X + (r.Width - iw * s) / 2., r.Y + (r.Height - ih * s) / 2.
+                            let pic = new System.Windows.Controls.Image(Source=(Graphics.BMPtoImage(Graphics.loadBMP("tile-menu-tour.png"))).Source, Width=iw * s, Height=ih * s, Stretch=Stretch.Fill)
+                            RenderOptions.SetBitmapScalingMode(pic, BitmapScalingMode.NearestNeighbor)
+                            Canvas.SetLeft(pic, ox)
+                            Canvas.SetTop(pic, oy)
+                            overlay.Children.Add(pic) |> ignore
+                            for (x, y, w, h) in [ (44., 120., 302., 46.); (74., 242., 42., 46.) ] do
+                                let box = new System.Windows.Shapes.Rectangle(Width=w * s, Height=h * s, Stroke=Brushes.Orange, StrokeThickness=3., RadiusX=3., RadiusY=3., IsHitTestVisible=false)
+                                Canvas.SetLeft(box, ox + x * s)
+                                Canvas.SetTop(box, oy + y * s)
+                                overlay.Children.Add(box) |> ignore
+                        if title = "Moving and resizing menus" then
+                            // a real screenshot of an unlocked tile menu, with the move bar, the LOCKED/UNLOCKED strip and the resize grip outlined
+                            let iw, ih = 580., 420.
+                            let s = min (r.Width / iw) (r.Height / ih)
+                            let ox, oy = r.X + (r.Width - iw * s) / 2., r.Y + (r.Height - ih * s) / 2.
+                            let pic = new System.Windows.Controls.Image(Source=(Graphics.BMPtoImage(Graphics.loadBMP("menu-move-tour.png"))).Source, Width=iw * s, Height=ih * s, Stretch=Stretch.Fill)
+                            RenderOptions.SetBitmapScalingMode(pic, BitmapScalingMode.NearestNeighbor)
+                            Canvas.SetLeft(pic, ox)
+                            Canvas.SetTop(pic, oy)
+                            overlay.Children.Add(pic) |> ignore
+                            for (x, y, w, h) in [ (72., 50., 308., 16.); (526., 64., 28., 178.); (36., 290., 36., 38.); (272., 20., 112., 26.) ] do
+                                let box = new System.Windows.Shapes.Rectangle(Width=w * s, Height=h * s, Stroke=Brushes.Orange, StrokeThickness=3., RadiusX=3., RadiusY=3., IsHitTestVisible=false)
+                                Canvas.SetLeft(box, ox + x * s)
+                                Canvas.SetTop(box, oy + y * s)
+                                overlay.Children.Add(box) |> ignore
                         let frame = new System.Windows.Shapes.Rectangle(Width=hole.Width, Height=hole.Height, Stroke=Brushes.Orange, StrokeThickness=3., RadiusX=4., RadiusY=4., IsHitTestVisible=false)
                         Canvas.SetLeft(frame, hole.X)
                         Canvas.SetTop(frame, hole.Y)
@@ -351,15 +393,19 @@ let runGuidedTourCore(cm:CustomComboBoxes.CanvasManager, steps:(string list * st
                         let backBtn = mkButton " Back "
                         let nextBtn = mkButton (if idx.Value = found.Length - 1 then (if continueLabel <> "" then continueLabel else " Done ") else " Next ")
                         backBtn.IsEnabled <- idx.Value > 0
-                        skipBtn.Click.Add(fun _ -> wh.Set() |> ignore)
-                        backBtn.Click.Add(fun _ -> idx.Value <- idx.Value - 1; show ())
-                        nextBtn.Click.Add(fun _ ->
+                        let doSkip () = wh.Set() |> ignore
+                        let doBack () = if idx.Value > 0 then (idx.Value <- idx.Value - 1; show ())
+                        let doNext () =
                             if idx.Value >= found.Length - 1 then
                                 if continueLabel <> "" then continued.Value <- true
                                 wh.Set() |> ignore
                             else
                                 idx.Value <- idx.Value + 1
-                                show ())
+                                show ()
+                        keyActions.Value <- (doNext, doBack, doSkip)
+                        skipBtn.Click.Add(fun _ -> doSkip ())
+                        backBtn.Click.Add(fun _ -> doBack ())
+                        nextBtn.Click.Add(fun _ -> doNext ())
                         DockPanel.SetDock(counter, Dock.Left)
                         DockPanel.SetDock(nextBtn, Dock.Right)
                         DockPanel.SetDock(backBtn, Dock.Right)
@@ -388,6 +434,7 @@ let runGuidedTourCore(cm:CustomComboBoxes.CanvasManager, steps:(string list * st
                     show ()
                     do! CustomComboBoxes.DoModalOpa(cm, wh, 0., 0., overlay, 0.0)
                 finally
+                    if not (isNull keyWindow) then keyWindow.PreviewKeyDown.RemoveHandler(keyHandler)
                     undoDemo.Value ()
                     CustomComboBoxes.GlobalFlag.popupIsActive <- false
                 if continued.Value then onContinue ()
@@ -454,6 +501,8 @@ let mainScreenTourSteps : (string list * string * string) list =
         "The dungeon level numbers and triforce pieces along the top. Mark each dungeon as you finish it."
       ["@0.0,0.063,0.358,0.154"], "Dungeon item boxes",
         "One row of boxes for each dungeon, holding what you found there. Click a box to set its item; a green border means collected."
+      ["@0.2,0.2,0.8,0.62"], "Moving and resizing menus",
+        "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered."
       ["@0.0,0.0,0.358,0.154"], "Triforce in the basement",
         "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it."
       ["@0.363,0.03,0.572,0.156"], "Items and hearts",
@@ -465,9 +514,11 @@ let mainScreenTourSteps : (string list * string * string) list =
       ["TIMER"; "Save"], "Timer and file",
         "Pause/Reset timer controls the run clock. Options opens the settings (and this tour). Save writes a save file you can load later."
       ["@0.0,0.154,1.0,0.43"], "Overworld map",
-        "Click a tile to mark what is there: caves, shops, dungeon entrances and more. Right click for more choices, and fill in the details as you explore."
+        "Left click a tile to mark it done (nothing there): OW Spots Left goes down by one. Right click a tile (or left click it again) to open the marker menu: caves, shops, dungeon entrances and more. Fill in the details as you explore."
       ["Any Road"; "Lost Hills"], "Marker legend",
         "The special spots you can place on the map: Any Road (warp), completed dungeons, the recorder destination, your Start Spot. Enter your Dead Woods/Lost Hills hints."
+      ["@0.2,0.2,0.8,0.62"], "Placing shops",
+        "Right click a map tile to open this menu. The SHOP button at the bottom picks a potion shop or shop 1 to 4, and puts its name at the top of the tile. The outlined row holds the other spots to place: secrets, door repair, money making game, armos, take any and the hint shop."
       ["@0.0,0.467,0.726,0.495"], "Item Progress",
         "A quick view of the items and upgrades you have collected so far."
       ["@0.0,0.496,0.586,0.517"], "Dungeon tabs",

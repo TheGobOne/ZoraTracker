@@ -2320,12 +2320,12 @@ public static class DungeonUI
                                                 var di = level - 1;
                                                 TrackerModel.DungeonBlocker get(int k) => TrackerModel.DungeonBlockersContainer.GetDungeonBlocker(di, k);
                                                 var n = TrackerModel.DungeonBlockersContainer.MAX_BLOCKERS_PER_DUNGEON;
-                                                var hasLadder = Enumerable.Range(0, n).Any(k => get(k).Equals(TrackerModel.DungeonBlocker.LADDER));
+                                                var hasLadder = Enumerable.Range(0, n).Any(k => get(k).Equals(TrackerModel.DungeonBlocker.LADDER) || get(k).Equals(TrackerModel.DungeonBlocker.MAYBE_LADDER));
                                                 if (!hasLadder)
                                                 {
                                                     int? make_slot()
                                                     {
-                                                        if (get(0).Equals(TrackerModel.DungeonBlocker.NOTHING) || get(0).Equals(TrackerModel.DungeonBlocker.MAYBE_LADDER)) return 0;
+                                                        if (get(0).Equals(TrackerModel.DungeonBlocker.NOTHING)) return 0;
                                                         else
                                                         {
                                                             foreach (var k in Enumerable.Range(1, n - 1))
@@ -2334,7 +2334,7 @@ public static class DungeonUI
                                                         }
                                                     }
                                                     var slot = make_slot();
-                                                    if (slot is int k2) TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, k2, TrackerModel.DungeonBlocker.LADDER);
+                                                    if (slot is int k2) TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, k2, TrackerModel.DungeonBlocker.MAYBE_LADDER);
                                                 }
                                                 break;
                                             }

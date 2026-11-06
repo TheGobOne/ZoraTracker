@@ -2511,7 +2511,6 @@ public static class Program
                 applyBtn.Click += (_, _) =>
                 {
                     doApply();
-                    if ((z1rBox.Text ?? "").Trim() != "" || (zoraBox.Text ?? "").Trim() != "") wh.Set();
                 };
                 // pasting into either box applies straight away
                 // (WPF: DataObject.AddPastingHandler, then doApply at Background priority once the text is in; Avalonia: PastingFromClipboard)

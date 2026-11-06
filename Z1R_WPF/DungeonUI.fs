@@ -1755,13 +1755,13 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                     let di = level - 1
                                     let get(k) = TrackerModel.DungeonBlockersContainer.GetDungeonBlocker(di, k)
                                     let n = TrackerModel.DungeonBlockersContainer.MAX_BLOCKERS_PER_DUNGEON
-                                    let hasLadder = [0..n-1] |> List.exists (fun k -> get k = TrackerModel.DungeonBlocker.LADDER)
+                                    let hasLadder = [0..n-1] |> List.exists (fun k -> get k = TrackerModel.DungeonBlocker.LADDER || get k = TrackerModel.DungeonBlocker.MAYBE_LADDER)
                                     if not hasLadder then
                                         let slot =
-                                            if get 0 = TrackerModel.DungeonBlocker.NOTHING || get 0 = TrackerModel.DungeonBlocker.MAYBE_LADDER then Some 0
+                                            if get 0 = TrackerModel.DungeonBlocker.NOTHING then Some 0
                                             else [1..n-1] |> List.tryFind (fun k -> get k = TrackerModel.DungeonBlocker.NOTHING)
                                         match slot with
-                                        | Some k -> TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, k, TrackerModel.DungeonBlocker.LADDER)
+                                        | Some k -> TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, k, TrackerModel.DungeonBlocker.MAYBE_LADDER)
                                         | None -> ()
                                 | _ -> ()
 

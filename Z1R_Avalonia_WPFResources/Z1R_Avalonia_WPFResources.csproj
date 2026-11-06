@@ -41,6 +41,8 @@
     <EmbeddedResource Include="..\Z1R_WPF\icons\first-quest-item-reference.png" LogicalName="first-quest-item-reference.png" Link="icons\first-quest-item-reference.png" />
     <EmbeddedResource Include="..\Z1R_WPF\icons\second-quest-item-reference.png" LogicalName="second-quest-item-reference.png" Link="icons\second-quest-item-reference.png" />
     <EmbeddedResource Include="..\Z1R_WPF\icons\eyeball.png" LogicalName="eyeball.png" Link="icons\eyeball.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\tile-menu-tour.png" LogicalName="tile-menu-tour.png" Link="icons\tile-menu-tour.png" />
+    <EmbeddedResource Include="..\Z1R_WPF\icons\menu-move-tour.png" LogicalName="menu-move-tour.png" Link="icons\menu-move-tour.png" />
     <EmbeddedResource Include="..\Z1R_WPF\icons\ws-ms-bu.png" LogicalName="ws-ms-bu.png" Link="icons\ws-ms-bu.png" />
     <EmbeddedResource Include="..\Z1R_WPF\icons\mirror-overworld.png" LogicalName="mirror-overworld.png" Link="icons\mirror-overworld.png" />
     <EmbeddedResource Include="..\Z1R_WPF\icons\open_cave20x20.png" LogicalName="open_cave20x20.png" Link="icons\open_cave20x20.png" />
