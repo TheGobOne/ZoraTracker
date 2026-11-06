@@ -362,7 +362,7 @@ public static class Popouts
         // (WPF: PreviewMouseWheel, so a tunnelling handler; Keyboard.Modifiers → the event's KeyModifiers; whole notches only, see Graphics.wheelNotch)
         border.AddHandler(InputElement.PointerWheelChangedEvent, new EventHandler<PointerWheelEventArgs>((sender, e) =>
         {
-            if (e.KeyModifiers == KeyModifiers.Control)
+            if (Platform.CmdAsCtrl(e.KeyModifiers) == KeyModifiers.Control)   // (port: on macOS Cmd counts as Ctrl)
             {
                 e.Handled = true;
                 var notch = Graphics.wheelNotch(sender, e);

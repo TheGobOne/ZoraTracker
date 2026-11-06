@@ -1559,7 +1559,7 @@ public static class WPFUI
         // (WPF: EventManager.RegisterClassHandler(typeof<Window>, Keyboard.PreviewKeyDownEvent, ...))
         InputElement.KeyDownEvent.AddClassHandler<Window>((_, ea) =>
         {
-            if (ea.Key == Key.Z && ea.KeyModifiers == KeyModifiers.Control
+            if (ea.Key == Key.Z && Platform.CmdAsCtrl(ea.KeyModifiers) == KeyModifiers.Control   // (port: on macOS Cmd counts as Ctrl)
                     && !popupIsActive && !(ea.Source is TextBox))
             {
                 if (lastTileChange is (int, int, int) ltc)

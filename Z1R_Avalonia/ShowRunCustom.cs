@@ -314,7 +314,12 @@ public static class ShowRunCustom
                     case Line.RUN(var comm, var args):
                     {
                         var commPath = resolvePath(comm);
-                        if (!System.IO.File.Exists(commPath))
+                        if (Platform.IsMacAppBundle(commPath))
+                        {
+                            Platform.StartMacApp(commPath, args);   // (port: on macOS RUN accepts a .app bundle, launched with `open`)
+                            didAnything = true;
+                        }
+                        else if (!System.IO.File.Exists(commPath))
                         {
                             if ((comm.ToLowerInvariant().StartsWith("http://") || comm.ToLowerInvariant().StartsWith("https://")) && Uri.IsWellFormedUriString(comm, UriKind.Absolute))
                             {
