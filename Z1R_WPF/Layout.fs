@@ -103,7 +103,7 @@ let mutable iconSpot : UIElement = null
 let mutable iconShowRun : UIElement = null
 let mutable iconFQSQ : UIElement = null
 let panelHeading(text:string) =
-    new TextBlock(Text=text, FontSize=8., FontWeight=FontWeights.SemiBold, Foreground=new SolidColorBrush(Color.FromRgb(143uy,143uy,143uy)), TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
+    new TextBlock(Text=text, FontSize=9., FontWeight=FontWeights.SemiBold, Foreground=new SolidColorBrush(Color.FromRgb(143uy,143uy,143uy)), TextAlignment=TextAlignment.Center, IsHitTestVisible=false)
 let panelHeadings = [ panelHeading("TRACK"), PANEL_X0, 0., PANEL_LW; panelHeading("TOOLS"), PANEL_X0, 32., PANEL_LW; panelHeading("TIMER"), PANEL_X1, 0., PANEL_RW; panelHeading("OVERWORLD OPTIONS"), PANEL_X0, 118., PANEL_LW; panelHeading("FILE"), PANEL_X1, 86., PANEL_RW ]
 let panelDivider = new System.Windows.Shapes.Rectangle(Width=1., Height=148., Fill=new SolidColorBrush(Color.FromRgb(38uy,38uy,38uy)), IsHitTestVisible=false)
 let addPanelDecor(add:UIElement -> unit) =
@@ -823,11 +823,13 @@ let makeMouseMagnifierWindow(cm:CustomComboBoxes.CanvasManager) =
         } |> Async.StartImmediate
         loaded <- true
         )
-    cm.RootCanvas.MouseMove.Add(fun ea ->   // we need RootCanvas to see mouse moving in popups
+    let onMove = System.Windows.Input.MouseEventHandler(fun _ ea ->   // we need RootCanvas to see mouse moving in popups
         let mousePos = ea.GetPosition(cm.AppMainCanvas)
         Canvas.SetLeft(wholeView, round(SCALE * ((c.ActualWidth  / 2.) - mousePos.X)))
         Canvas.SetTop( wholeView, round(SCALE * ((c.ActualHeight / 2.) - mousePos.Y)))
         )
+    cm.RootCanvas.MouseMove.AddHandler(onMove)
+    mmWindow.Closed.Add(fun _ -> cm.RootCanvas.MouseMove.RemoveHandler(onMove))   // (each time the option is toggled a new window is made: the old one must stop listening)
     mmWindow
 
 let setupMouseMagnifier(cm, refocusMainWindow) =

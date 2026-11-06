@@ -189,7 +189,7 @@ public static class Layout
     public static Control iconShowRun = null;
     public static Control iconFQSQ = null;
     public static TextBlock panelHeading(string text) =>
-        new TextBlock { Text = text, FontSize = 8.0, FontWeight = FontWeight.SemiBold, Foreground = new SolidColorBrush(Color.FromRgb(143, 143, 143)), TextAlignment = TextAlignment.Center, IsHitTestVisible = false };
+        new TextBlock { Text = text, FontSize = 9.0, FontWeight = FontWeight.SemiBold, Foreground = new SolidColorBrush(Color.FromRgb(143, 143, 143)), TextAlignment = TextAlignment.Center, IsHitTestVisible = false };
     public static readonly List<(TextBlock, double, double, double)> panelHeadings = new List<(TextBlock, double, double, double)> {
         (panelHeading("TRACK"), PANEL_X0, 0.0, PANEL_LW), (panelHeading("TOOLS"), PANEL_X0, 32.0, PANEL_LW), (panelHeading("TIMER"), PANEL_X1, 0.0, PANEL_RW), (panelHeading("OVERWORLD OPTIONS"), PANEL_X0, 118.0, PANEL_LW), (panelHeading("FILE"), PANEL_X1, 86.0, PANEL_RW) };
     public static readonly Rectangle panelDivider = new Rectangle { Width = 1.0, Height = 148.0, Fill = new SolidColorBrush(Color.FromRgb(38, 38, 38)), IsHitTestVisible = false };
@@ -1171,12 +1171,14 @@ public static class Layout
             CustomComboBoxes.StartImmediate(go());
             loaded = true;
         };
-        cm.RootCanvas.PointerMoved += (_, ea) =>   // we need RootCanvas to see mouse moving in popups   // (WPF: MouseMove)
+        EventHandler<Avalonia.Input.PointerEventArgs> onMove = (_, ea) =>   // we need RootCanvas to see mouse moving in popups   // (WPF: MouseMove)
         {
             var mousePos = ea.GetPosition(cm.AppMainCanvas);
             Canvas.SetLeft(wholeView, round(SCALE * ((c.Bounds.Width / 2.0) - mousePos.X)));
             Canvas.SetTop(wholeView, round(SCALE * ((c.Bounds.Height / 2.0) - mousePos.Y)));
         };
+        cm.RootCanvas.PointerMoved += onMove;
+        mmWindow.Closed += (_, _) => cm.RootCanvas.PointerMoved -= onMove;   // (each time the option is toggled a new window is made: the old one must stop listening)
         return mmWindow;
     }
 
