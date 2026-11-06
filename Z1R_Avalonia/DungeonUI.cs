@@ -291,6 +291,9 @@ public static class DungeonUI
             activate(0, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpTo(returnPos));
         }
         var boxes = dungeon.Boxes;
+        // level 2's optional extra staircase slot is activated as one more box, after the regular ones
+        var hasL2Stair = dungeonIndex == 1 && !TrackerModel.IsHiddenDungeonNumbers.Invoke(null) && TrackerModel.level2StairBoxEnabled && boxViewsAndActivations.Length > boxes.Length;
+        TrackerModel.Box boxAt(int i) => i < boxes.Length ? boxes[i] : TrackerModel.level2StairBox;
         List<int> make_validBoxIndices()
         {
             if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
@@ -303,7 +306,11 @@ public static class DungeonUI
                     return Enumerable.Range(0, boxes.Length).ToList();
             }
             else
-                return Enumerable.Range(0, boxes.Length).ToList();
+            {
+                var l = Enumerable.Range(0, boxes.Length).ToList();
+                if (hasL2Stair) l.Add(boxes.Length);
+                return l;
+            }
         }
         var validBoxIndices = make_validBoxIndices();
         switch (hk)
@@ -314,7 +321,7 @@ public static class DungeonUI
                     var idxs = Enumerable.Reverse(validBoxIndices).ToList();
                     var r = -1;
                     foreach (var i in idxs)
-                        if (r == -1 && boxes[i].CurrentlyHasBasementStair && boxes[i].CellCurrent() == -1)
+                        if (r == -1 && boxAt(i).CurrentlyHasBasementStair && boxAt(i).CellCurrent() == -1)
                             r = i;
                     if (r == -1)
                         r = idxs[0];
@@ -357,7 +364,7 @@ public static class DungeonUI
                     var idxs = validBoxIndices;
                     var r = -1;
                     foreach (var i in idxs)
-                        if (r == -1 && !(boxes[i].CurrentlyHasBasementStair) && boxes[i].CellCurrent() == -1)
+                        if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && boxAt(i).CellCurrent() == -1)
                             r = i;
                     if (r == -1)
                         r = idxs[0];
@@ -367,27 +374,53 @@ public static class DungeonUI
                 }
             case HotKeys.DungeonRoomHotKey.OfFloorDropDetail { Value: FloorDropDetail.Heart }:
                 {
+                    const string noHeartsMsg = "There are no Heart Containers remaining in the item pool; cannot mark another";
+                    // the dungeon's extra floor box (where the floor drop goes once the triforce sits in an item slot)
+                    var extra = dungeon.ExtraFloorBox;
+                    bool extraIsUsable() => dungeonIndex < 8 && (extra.CellCurrent() == -1 || (extra.CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && extra.PlayerHas().Equals(TrackerModel.PlayerHas.NO)));
+                    void markExtra()
+                    {
+                        if (extra.CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER)
+                            extra.SetPlayerHas(TrackerModel.PlayerHas.YES);
+                        else if (!extra.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.YES))
+                            Graphics.ErrorBeepWithReminderLogText(noHeartsMsg);
+                    }
                     // if there is a playerHas=NO floor heart, then YES it...
                     var r = -1;
                     foreach (var i in validBoxIndices)
-                        if (r == -1 && !(boxes[i].CurrentlyHasBasementStair) && boxes[i].CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && boxes[i].PlayerHas().Equals(TrackerModel.PlayerHas.NO))
+                        if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && boxAt(i).CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && boxAt(i).PlayerHas().Equals(TrackerModel.PlayerHas.NO))
                             r = i;
                     if (r != -1)
-                        boxes[r].SetPlayerHas(TrackerModel.PlayerHas.YES);
+                        boxAt(r).SetPlayerHas(TrackerModel.PlayerHas.YES);
+                    else if (dungeon.TriforceIsInItemSlot && extraIsUsable())
+                        // the triforce is in an item slot, so the floor drop is the extra floor box
+                        markExtra();
                     else
                     {
                         // otherwise, if there is an empty non-basement box, fill it with a heart
                         r = -1;
                         foreach (var i in validBoxIndices)
-                            if (r == -1 && !(boxes[i].CurrentlyHasBasementStair) && boxes[i].CellCurrent() == -1)
+                            if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && boxAt(i).CellCurrent() == -1)
                                 r = i;
                         if (r != -1)
                         {
-                            if (!(boxes[r].AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.YES)))
-                                Graphics.ErrorBeepWithReminderLogText("There are no Heart Containers remaining in the item pool; cannot mark another");
+                            if (!(boxAt(r).AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.YES)))
+                                Graphics.ErrorBeepWithReminderLogText(noHeartsMsg);
                         }
                         else
-                            Graphics.ErrorBeepWithReminderLogText("There were no floor-drop item boxes remaining in this dungeon, to mark a floor-heart pickup");
+                        {
+                            // no free floor box: a floor heart then means the triforce piece must be in an (empty) stair slot, so infer that and put the heart in the extra floor box
+                            var emptyStair = validBoxIndices.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && boxAt(i).CellCurrent() == -1);
+                            if (emptyStair >= 0 && extraIsUsable())
+                            {
+                                if (boxAt(validBoxIndices[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
+                                    markExtra();
+                                else
+                                    Graphics.ErrorBeepWithReminderLogText("Could not infer the triforce location; cannot mark a floor heart");
+                            }
+                            else
+                                Graphics.ErrorBeepWithReminderLogText("There were no floor-drop item boxes remaining in this dungeon, to mark a floor-heart pickup");
+                        }
                     }
                     break;
                 }
@@ -517,7 +550,7 @@ public static class DungeonUI
             }
             return r.ToArray();
         }
-        var boxViewsAndActivations = make_boxViewsAndActivations();
+        var regularBoxViewsAndActivations = make_boxViewsAndActivations();
         // mirror the main tracker: when a Triforce Piece is placed in a dungeon item slot, the numbered triforce moves into that slot and the header becomes an extra floor item box
         if (dungeonIndex < 8)
         {
@@ -543,19 +576,23 @@ public static class DungeonUI
             dungeonView.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, ea) =>
             {
                 var slotK = slotCells.FindIndex(sc => object.ReferenceEquals(dungeonView.Parent, sc));
-                if (slotK >= 0 && ea.GetCurrentPoint(dungeonView).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed && slotK < boxViewsAndActivations.Length)
+                if (slotK >= 0 && ea.GetCurrentPoint(dungeonView).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed && slotK < regularBoxViewsAndActivations.Length)
                 {
                     ea.Handled = true;
-                    if (!CustomComboBoxes.GlobalFlag.popupIsActive) boxViewsAndActivations[slotK].Item2(0, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());
+                    if (!CustomComboBoxes.GlobalFlag.popupIsActive) regularBoxViewsAndActivations[slotK].Item2(0, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());
                 }
             }), RoutingStrategies.Tunnel);
         }
         // the optional extra staircase item slot of level 2, as on the main tracker
+        // (its activation is appended after the regular boxes, so the box hotkeys can target it)
+        var boxViewsAndActivations = regularBoxViewsAndActivations;
         if (level == 2 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) && TrackerModel.level2StairBoxEnabled)
         {
             var c = new Canvas { Width = 30.0, Height = 30.0 };
-            canvasAdd(c, Views.MakeBoxItem(cm, TrackerModel.level2StairBox).Item1, 0.0, 0.0);
+            var (l2view, l2activate) = Views.MakeBoxItem(cm, TrackerModel.level2StairBox);
+            canvasAdd(c, l2view, 0.0, 0.0);
             sp.Children.Add(c);
+            boxViewsAndActivations = regularBoxViewsAndActivations.Append((l2view, l2activate)).ToArray();
         }
         // the optional level 9 floor item check (4th Sword start option), as on the main tracker
         if (level == 9 && TrackerModel.level9FloorBoxEnabled)
