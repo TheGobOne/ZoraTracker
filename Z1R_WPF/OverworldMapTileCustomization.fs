@@ -1540,9 +1540,13 @@ let MakeMappedHotKeysDisplay() =
         let tb = DungeonRoomState.mkTxt("You have no HotKeys mapped.\nYou can edit HotKeys.txt to add\nsome, to use the next time you\nrestart the app.")
         tb.FontSize <- 16.
         all.Children.Add(tb) |> ignore
-        let fileToSelect = HotKeys.HotKeyFilename
-        let args = sprintf "/Select, \"%s\"" fileToSelect
-        let psi = new System.Diagnostics.ProcessStartInfo("Explorer.exe", args)
-        System.Diagnostics.Process.Start(psi) |> ignore
+        // (a button, rather than opening the folder on its own)
+        let openBtn = Graphics.makeButton("Open HotKeys.txt folder", Some(16.), Some(Brushes.Orange))
+        openBtn.VerticalAlignment <- VerticalAlignment.Top
+        openBtn.Margin <- Thickness(8.)
+        openBtn.Click.Add(fun _ ->
+            let args = sprintf "/Select, \"%s\"" HotKeys.HotKeyFilename
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("Explorer.exe", args)) |> ignore)
+        all.Children.Add(openBtn) |> ignore
     total=0, new Border(BorderBrush=Brushes.Gray, BorderThickness=Thickness(0.), Background=Brushes.Black, Child=all)   // (only shown in the hotkeys popout: no grey border there)
 

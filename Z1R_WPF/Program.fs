@@ -1191,7 +1191,7 @@ type MyWindow() as this =
 
         checkboxSP.Children.Add(new DockPanel(Width=10.)) |> ignore
 
-        let hdcb = new CheckBox(Content=new TextBox(Text="Hide Dungeon Numbers",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
+        let hdcb = new CheckBox(Content=new TextBox(Text="Hide Dungeon Numbers",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
         Graphics.scaleUpCheckBoxBox(hdcb, 1.66)
         hdcb.IsChecked <- System.Nullable.op_Implicit false
         hdcb.Checked.Add(fun _ -> turnHideDungeonNumbersOn())
@@ -1247,7 +1247,7 @@ type MyWindow() as this =
 
         // custom level name (replaces 'LEVEL-n' at the top of each dungeon map)
         let clnTextBox = new TextBox(MaxLength=7, CharacterCasing=CharacterCasing.Upper, IsEnabled=false, Margin=Thickness(6.,2.,2.,2.), VerticalAlignment=VerticalAlignment.Center)
-        let clncb = new CheckBox(Content=new TextBox(Text="Custom LEVEL Name",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false), Margin=Thickness(2.))
+        let clncb = new CheckBox(Content=new TextBox(Text="Custom LEVEL Name",IsReadOnly=true,BorderThickness=Thickness(0.),IsHitTestVisible=false, Margin=Thickness(2.)))
         Graphics.scaleUpCheckBoxBox(clncb, 1.66)
         let clnTip = "Only works with ZORA seeds. In a non-ZORA seed, the custom name\nwould replace 'LEVEL-n' and could be confusing, so leave this off."
         clncb.ToolTip <- clnTip
@@ -1688,7 +1688,7 @@ type MyWindow() as this =
             else
                 startButton.Margin <- spacing
             if n=0 then
-                let otherButton = Graphics.makeButton("More Options...", None, None)
+                let otherButton = Graphics.makeButton("Other ROM / map...", None, None)
                 Layout.styleStartupButton(otherButton)
                 otherButton.Margin <- Thickness(0.)
                 otherButton.Click.Add(fun _ -> 
@@ -1727,6 +1727,11 @@ type MyWindow() as this =
                         button.Margin <- Thickness(0., 10., 0., 0.)
                         dialog1.Children.Add(button) |> ignore
                         button.Click.Add(fun _ -> if choice.IsNone then choice <- Some(n); wh.Set() |> ignore)
+                    let cancelButton = Graphics.makeButton("Cancel", None, None)
+                    Layout.styleStartupButton(cancelButton)
+                    cancelButton.Margin <- Thickness(0., 10., 0., 0.)
+                    cancelButton.Click.Add(fun _ -> wh.Set() |> ignore)   // (no choice: back to the start screen)
+                    dialog1.Children.Add(cancelButton) |> ignore
                     async {
                         let dialogBorder = new Border(Child=dialog1, BorderThickness=Thickness(3.), BorderBrush=Brushes.Orange, Background=Brushes.Black, Padding=Thickness(5.))
                         dialogBorder.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
@@ -1840,14 +1845,14 @@ type MyWindow() as this =
             addDarkTheme(dialog.Resources)
             let mkInfo(t:string) = new TextBox(Text=t, IsReadOnly=true, BorderThickness=Thickness(0.), Foreground=Brushes.Orange, TextWrapping=TextWrapping.Wrap, Width=600., Margin=Thickness(0.,0.,0.,8.))
             let mkInput() = new TextBox(Width=600., FontSize=16., Foreground=Brushes.Orange, Background=Brushes.Black, BorderBrush=Brushes.Orange, CaretBrush=Brushes.Orange, Margin=Thickness(0.,0.,0.,10.))
-            let intro = mkInfo "Paste the flag strings from the ZORA site and the tracker ticks the matching startup options right away. Leave a box empty to leave those settings alone."
+            let intro = mkInfo "Paste the flag strings from the ZORA site and the tracker ticks the matching startup options when you paste, or when you click Apply. Leave a box empty to leave those settings alone."
             let z1rBox, zoraBox = mkInput(), mkInput()
             let result = mkInfo ""
             result.Visibility <- Visibility.Collapsed
             let inputs = new StackPanel(Orientation=Orientation.Vertical)
             inputs.Children.Add(mkInfo "Z1R flags") |> ignore
             inputs.Children.Add(z1rBox) |> ignore
-            inputs.Children.Add(mkInfo "ZORA flags (like 13.abc)") |> ignore
+            inputs.Children.Add(mkInfo "ZORA flags (like 18.abc)") |> ignore
             inputs.Children.Add(zoraBox) |> ignore
             dialog.Children.Add(intro) |> ignore
             dialog.Children.Add(inputs) |> ignore
@@ -1930,11 +1935,13 @@ type MyWindow() as this =
                         setTri3 lhcb z.RandomizeLostHills "Randomize Lost Hills"
                 result.Text <- (if lines.Count = 0 then "Nothing to change." else System.String.Join("\n", lines))
                 result.Visibility <- Visibility.Visible
-            applyBtn.Click.Add(fun _ -> doApply())
+                not (lines |> Seq.exists (fun l -> l.StartsWith("Z1R flags:") || l.StartsWith("ZORA flags:")))   // true = no decode error
+            // (Apply applies and closes, unless a flag string was bad: then the box stays open so the error can be read. Pasting only applies, so the second string can still be pasted)
+            applyBtn.Click.Add(fun _ -> if doApply() then wh.Set() |> ignore)
             // pasting into either box applies straight away
             for box in [ z1rBox; zoraBox ] do
                 DataObject.AddPastingHandler(box, new DataObjectPastingEventHandler(fun _ _ ->
-                    box.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new System.Action(doApply)) |> ignore))
+                    box.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new System.Action(fun () -> doApply() |> ignore)) |> ignore))
             async {
                 let dialogBorder = new Border(Child=dialog, BorderThickness=Thickness(3.), BorderBrush=Brushes.Orange, Background=Brushes.Black, Padding=Thickness(8.))
                 dialogBorder.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))

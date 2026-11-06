@@ -476,7 +476,7 @@ public static class OptionsMenu
                                     overlay.Children.Add(box);
                                 }
                             }
-                            if (title == "Placing shops") addPicture("tile-menu-tour.png", 500.0, 370.0, new[] { (44.0, 120.0, 302.0, 46.0), (74.0, 242.0, 42.0, 46.0) });
+                            if (title == "Placing shops") addPicture("tile-menu-tour.png", 500.0, 370.0, new[] { (17.0, 100.0, 322.0, 48.0), (49.0, 234.0, 42.0, 46.0) });
                             if (title == "Moving and resizing menus") addPicture("menu-move-tour.png", 580.0, 420.0, new[] { (72.0, 50.0, 308.0, 16.0), (526.0, 64.0, 28.0, 178.0), (36.0, 290.0, 36.0, 38.0), (272.0, 20.0, 112.0, 26.0) });
                             var frame = new Rectangle { Width = hole.Width, Height = hole.Height, Stroke = Brushes.Orange, StrokeThickness = 3.0, RadiusX = 4.0, RadiusY = 4.0, IsHitTestVisible = false };
                             Canvas.SetLeft(frame, hole.X);
@@ -491,6 +491,7 @@ public static class OptionsMenu
                             var backBtn = mkButton(" Back ");
                             var nextBtn = mkButton(idx == found.Length - 1 ? (continueLabel != "" ? continueLabel : " Done ") : " Next ");
                             backBtn.IsEnabled = idx > 0;
+                            if (idx == found.Length - 1 && continueLabel == "") skipBtn.IsVisible = false;   // (the last stop: Done already closes it, so no second Close)
                             void doSkip() => wh.Set();
                             void doBack() { if (idx > 0) { idx = idx - 1; show(); } }
                             void doNext()
@@ -635,10 +636,10 @@ public static class OptionsMenu
             "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered."),
         (new[] { "@0.0,0.0,0.358,0.154" }, "Triforce in the basement",
             "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it."),
-        (new[] { "@0.363,0.03,0.572,0.156" }, "Items and hearts",
+        (new[] { "@0.363,0.03,0.67,0.175" }, "Items and hearts",
             "The items you have found, your hearts, and Max Hearts. Click to mark what you own."),
         (new[] { "@0.572,0.004,0.684,0.13" }, "Counters",
-            "Progress counters: how many overworld spots are left to check, plus counts of items and open spots."),
+            "Overworld spots left to check, and how many spots still need each item (hover an icon, such as Burn, to see them outlined on the map), plus the open spots."),
         (new[] { "Popout Windows", "Overworld + Extras" }, "Tools",
             "Popout Windows opens extra windows, Hint Decoder helps with hints, Hotkeys lists the keyboard shortcuts, Log shows the reminders that have played, Draw/Custom Icons lets you draw on the map, and Overworld + Extras sets the quest and block options."),
         (new[] { "TIMER", "Save" }, "Timer and file",
@@ -652,7 +653,7 @@ public static class OptionsMenu
         (new[] { "@0.0,0.467,0.726,0.495" }, "Item Progress",
             "A quick view of the items and upgrades you have collected so far."),
         (new[] { "@0.0,0.496,0.586,0.517" }, "Dungeon tabs",
-            "Tabs for dungeons 1 to 9, and S for the summary. Click one to open that dungeon's map. 1Q and 2Q switch between the first and second quest layouts."),
+            "Tabs for dungeons 1 to 9, and S for the summary. Click one to open that dungeon's map. 1Q and 2Q overlay the vanilla first or second quest outline on the dungeon map (click again to hide it)."),
         (new[] { "@0.0,0.517,0.586,0.867" }, "Dungeon boards",
             "A small map of each dungeon. Hover to preview a dungeon's tab, and click to switch to it."),
         (new[] { "@0.591,0.496,1.0,0.607" }, "Blockers",
@@ -660,21 +661,21 @@ public static class OptionsMenu
         (new[] { "Notes", "Aa" }, "Notes",
             "Free text notes for the run. The Aa button changes the text size."),
         (new[] { "@0.0,0.873,1.0,1.0" }, "Timeline",
-            "The Overworld and Collection Timeline: when you found each item and how the overworld filled in over the run, with the seed and flags along the top.") };
+            "The Overworld and Collection Timeline: when you found each item and how the overworld filled in over the run, with the seed and flags along the top (when Display Seed + Flags is on).") };
 
     // the start screen tour: (labels that mark the section, title, description)
     public static readonly List<(string[] labels, string title, string body)> startScreenTourSteps = new List<(string[], string, string)> {
-        (new[] { "1st Quest", "More Options..." }, "Start a new run",
+        (new[] { "1st Quest", "Other ROM / map..." }, "Start a new run",
             "Click the overworld your seed uses to begin a new run. The checkboxes below are set before you start."),
-        (new[] { "Item Shuffle", "Full" }, "Item Shuffle",
-            "Set this to match how the seed shuffled the heart containers: Off, Intra or Full."),
-        (new[] { "Legacy Mode", "Mark Bomb Droppers" }, "Startup options",
-            "Check the ones your seed uses. Legacy Mode limits shops to the original game's items, Hide Dungeon Numbers hides the level numbers, Mirrored Overworld flips the map, and Mark Bomb Droppers lets you mark bomb-dropper spots."),
-        (new[] { "ZORA Extras", "Progressive Items" }, "ZORA Extras",
+        (new[] { "Item Shuffle", "Off", "Full" }, "Item Shuffle",
+            "Set this to match the seed's Item Shuffle: Off (dungeon items stay in dungeons), Intra (items anywhere, hearts within dungeons) or Full (items and hearts)."),
+        (new[] { "Legacy Mode", "Hide Dungeon Numbers", "Mark Bomb Droppers", "Custom LEVEL Name" }, "Startup options",
+            "Check the ones your seed uses. Legacy Mode is for non-ZORA seeds: it turns off and locks the ZORA Extras and limits shops to the original game's items, Hide Dungeon Numbers hides the level numbers, Mirrored Overworld flips the map, Mark Bomb Droppers lets you mark bomb-dropper spots, and Custom LEVEL Name replaces \"LEVEL\" in the dungeon headers with a name of your choice."),
+        (new[] { "ZORA Extras", "Extra Power Bracelet Blocks", "Progressive Items" }, "ZORA Extras",
             "Extra randomizer options that only some seeds use, such as 4th Sword, Boots Replace Boomerangs and Progressive Items. Check the ones your seed uses."),
         (new[] { "Paste Flags" }, "Paste Flags",
-            "Copy the Z1R and ZORA flag strings from the ZORA site, paste them in and click Apply. The matching options are checked for you, and any that the flags left to chance show a ? (Random)."),
-        (new[] { "Recently loaded saves:" }, "Recent saves",
+            "Copy the Z1R and ZORA flag strings from the ZORA site, paste them in, then click Apply to set the options and close the box (pasting alone sets them too). The matching options are checked for you, and Boots and the four block and hint options show a ? (Random) when the flags left them to chance."),
+        (new[] { "@0.021,0.744,0.979,0.844" }, "Recent saves",
             "Your three most recently loaded save files, newest first. Click one to resume that run."),
         (new[] { "Load Save" }, "Load a save",
             "Resume an earlier run from any save file on your computer."),
@@ -684,14 +685,14 @@ public static class OptionsMenu
             "How the dungeon screens behave and look: hint icons, BOARD instead of LEVEL, basement info, door inference and more."),
         (new[] { "Reminders", "Change Voice" }, "Reminders",
             "Volume, which voice and visual reminders you get (dungeon feedback, sword hearts, coast item, a check of Overworld + Extras when an option is Random, and more), how often they repeat, and which voice speaks them."),
-        (new[] { "Auto-save", "Auto-save Interval" }, "Auto-save",
+        (new[] { "@0.31,0.905,0.67,0.99" }, "Auto-save",
             "How often the tracker saves your run by itself, in minutes."),
         (new[] { "Other", "Race Mode" }, "Other options",
             "General settings: animations, remembering your startup choices, update checks, Display Seed + Flags, listening for speech, the broadcast window, the timer and Race Mode."),
         (new[] { "Co-Op Client Settings", "Show Crash Log..." }, "Co-Op and crash log",
             "Co-Op Client and Host settings are for tracking together with a partner. Show Crash Log opens the log file to send along when reporting a problem."),
         (new[] { "Guided Tour", "v2." }, "Tour, options and version",
-            "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows what is new in this release, and glows when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen.") };
+            "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows the version, with Check for updates, Open folder and Go to website, and glows green when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen.") };
 
     // the titles of the start screen tour stops that would be left out because none of their labels is on screen (a stop with no anchor is skipped silently); used by the self-test
     public static List<string> startScreenTourMissingStops(Visual root) =>
@@ -710,6 +711,7 @@ public static class OptionsMenu
     }
 
     // the Guided Tour button: in the in-app Options popup (includePopupExplainer) it runs the main window tour, on the start screen it runs the start screen tour
+    private static readonly System.Collections.Generic.List<Action> allTourButtonStops = new();
     public static Button makeGuidedTourButton(CustomComboBoxes.CanvasManager cm, bool includePopupExplainer)
     {
         var tourButton = Graphics.makeButton(" Guided Tour ", null, null);
@@ -731,15 +733,15 @@ public static class OptionsMenu
             pulse.Start();
             tourButton.Effect = glow;
         }
+        allTourButtonStops.Add(() => { pulse?.Stop(); tourButton.Effect = null; });   // (the pulse stops on every Guided Tour button, start screen and Options panel, at the first click)
         tourButton.Click += (_, _) =>
         {
             if (!TrackerModelOptions.GuidedTourSeen)
             {
                 TrackerModelOptions.GuidedTourSeen = true;
                 TrackerModelOptions.writeSettings();
-                pulse?.Stop();
-                tourButton.Effect = null;
             }
+            foreach (var stop in allTourButtonStops) stop();
         };
         if (includePopupExplainer)
             tourButton.Click += (_, _) =>
@@ -1449,7 +1451,7 @@ public static class OptionsMenu
         options3sp.Children.Add(cb3);
 
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Include Overworld Magnifier", IsReadOnly = true }, Margin = new Thickness(20.0, 0.0, 0.0, 0.0) };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Include Overworld Magnifier", IsReadOnly = true }, Margin = new Thickness(14.0, 0.0, 0.0, 0.0) };
         cb3.IsChecked = TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value;
         Graphics.onChecked(cb3, () => { TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value = true; triggerBroadcastWindowOptionChanged(); });
         Graphics.onUnchecked(cb3, () => { TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value = false; triggerBroadcastWindowOptionChanged(); });

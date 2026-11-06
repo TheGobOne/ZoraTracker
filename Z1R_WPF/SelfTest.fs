@@ -78,7 +78,7 @@ let private popupRoot() : DependencyObject option =
 // buttons the test must not press (they open file dialogs, other programs, web pages, or windows that need a person)
 let private avoid = [ "save"; "load"; "hotkey"; "popout"; "site"; "discord"; "exit"; "restart"; "update"; "quit"; "download"; "import"; "export"; "guided tour"; "v2."; "-b1"; "log" ]
 let private isAvoided (text:string) = let t = text.ToLowerInvariant() in avoid |> List.exists (fun a -> t.Contains(a))
-let private questButtons = [ "1st Quest"; "2nd Quest"; "Mixed - 1Q"; "Mixed - 2Q"; "Randomized Quest"; "More Options..." ]
+let private questButtons = [ "1st Quest"; "2nd Quest"; "Mixed - 1Q"; "Mixed - 2Q"; "Randomized Quest"; "Other ROM / map..." ]
 
 let private run (win:Window) = async {
     let ctxt = System.Threading.SynchronizationContext.Current

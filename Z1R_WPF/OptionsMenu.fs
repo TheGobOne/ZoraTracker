@@ -360,7 +360,7 @@ let runGuidedTourCore(cm:CustomComboBoxes.CanvasManager, steps:(string list * st
                             Canvas.SetLeft(pic, ox)
                             Canvas.SetTop(pic, oy)
                             overlay.Children.Add(pic) |> ignore
-                            for (x, y, w, h) in [ (44., 120., 302., 46.); (74., 242., 42., 46.) ] do
+                            for (x, y, w, h) in [ (17., 100., 322., 48.); (49., 234., 42., 46.) ] do
                                 let box = new System.Windows.Shapes.Rectangle(Width=w * s, Height=h * s, Stroke=Brushes.Orange, StrokeThickness=3., RadiusX=3., RadiusY=3., IsHitTestVisible=false)
                                 Canvas.SetLeft(box, ox + x * s)
                                 Canvas.SetTop(box, oy + y * s)
@@ -393,6 +393,7 @@ let runGuidedTourCore(cm:CustomComboBoxes.CanvasManager, steps:(string list * st
                         let backBtn = mkButton " Back "
                         let nextBtn = mkButton (if idx.Value = found.Length - 1 then (if continueLabel <> "" then continueLabel else " Done ") else " Next ")
                         backBtn.IsEnabled <- idx.Value > 0
+                        if idx.Value = found.Length - 1 && continueLabel = "" then skipBtn.Visibility <- Visibility.Collapsed   // (the last stop: Done already closes it, so no second Close)
                         let doSkip () = wh.Set() |> ignore
                         let doBack () = if idx.Value > 0 then (idx.Value <- idx.Value - 1; show ())
                         let doNext () =
@@ -505,10 +506,10 @@ let mainScreenTourSteps : (string list * string * string) list =
         "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered."
       ["@0.0,0.0,0.358,0.154"], "Triforce in the basement",
         "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it."
-      ["@0.363,0.03,0.572,0.156"], "Items and hearts",
+      ["@0.363,0.03,0.67,0.175"], "Items and hearts",
         "The items you have found, your hearts, and Max Hearts. Click to mark what you own."
       ["@0.572,0.004,0.684,0.13"], "Counters",
-        "Progress counters: how many overworld spots are left to check, plus counts of items and open spots."
+        "Overworld spots left to check, and how many spots still need each item (hover an icon, such as Burn, to see them outlined on the map), plus the open spots."
       ["Popout Windows"; "Overworld + Extras"], "Tools",
         "Popout Windows opens extra windows, Hint Decoder helps with hints, Hotkeys lists the keyboard shortcuts, Log shows the reminders that have played, Draw/Custom Icons lets you draw on the map, and Overworld + Extras sets the quest and block options."
       ["TIMER"; "Save"], "Timer and file",
@@ -522,7 +523,7 @@ let mainScreenTourSteps : (string list * string * string) list =
       ["@0.0,0.467,0.726,0.495"], "Item Progress",
         "A quick view of the items and upgrades you have collected so far."
       ["@0.0,0.496,0.586,0.517"], "Dungeon tabs",
-        "Tabs for dungeons 1 to 9, and S for the summary. Click one to open that dungeon's map. 1Q and 2Q switch between the first and second quest layouts."
+        "Tabs for dungeons 1 to 9, and S for the summary. Click one to open that dungeon's map. 1Q and 2Q overlay the vanilla first or second quest outline on the dungeon map (click again to hide it)."
       ["@0.0,0.517,0.586,0.867"], "Dungeon boards",
         "A small map of each dungeon. Hover to preview a dungeon's tab, and click to switch to it."
       ["@0.591,0.496,1.0,0.607"], "Blockers",
@@ -530,21 +531,21 @@ let mainScreenTourSteps : (string list * string * string) list =
       ["Notes"; "Aa"], "Notes",
         "Free text notes for the run. The Aa button changes the text size."
       ["@0.0,0.873,1.0,1.0"], "Timeline",
-        "The Overworld and Collection Timeline: when you found each item and how the overworld filled in over the run, with the seed and flags along the top." ]
+        "The Overworld and Collection Timeline: when you found each item and how the overworld filled in over the run, with the seed and flags along the top (when Display Seed + Flags is on)." ]
 
 // the start screen tour: (labels that mark the section, title, description)
 let startScreenTourSteps : (string list * string * string) list =
-    [ ["1st Quest"; "More Options..."], "Start a new run",
+    [ ["1st Quest"; "Other ROM / map..."], "Start a new run",
         "Click the overworld your seed uses to begin a new run. The checkboxes below are set before you start."
-      ["Item Shuffle"; "Full"], "Item Shuffle",
-        "Set this to match how the seed shuffled the heart containers: Off, Intra or Full."
-      ["Legacy Mode"; "Mark Bomb Droppers"], "Startup options",
-        "Check the ones your seed uses. Legacy Mode limits shops to the original game's items, Hide Dungeon Numbers hides the level numbers, Mirrored Overworld flips the map, and Mark Bomb Droppers lets you mark bomb-dropper spots."
-      ["ZORA Extras"; "Progressive Items"], "ZORA Extras",
+      ["Item Shuffle"; "Off"; "Full"], "Item Shuffle",
+        "Set this to match the seed's Item Shuffle: Off (dungeon items stay in dungeons), Intra (items anywhere, hearts within dungeons) or Full (items and hearts)."
+      ["Legacy Mode"; "Hide Dungeon Numbers"; "Mark Bomb Droppers"; "Custom LEVEL Name"], "Startup options",
+        "Check the ones your seed uses. Legacy Mode is for non-ZORA seeds: it turns off and locks the ZORA Extras and limits shops to the original game's items. Hide Dungeon Numbers hides the level numbers, Mirrored Overworld flips the map, Mark Bomb Droppers lets you mark bomb-dropper spots, and Custom LEVEL Name replaces \"LEVEL\" in the dungeon headers with a name of your choice."
+      ["ZORA Extras"; "Extra Power Bracelet Blocks"; "Progressive Items"], "ZORA Extras",
         "Extra randomizer options that only some seeds use, such as 4th Sword, Boots Replace Boomerangs and Progressive Items. Check the ones your seed uses."
       ["Paste Flags"], "Paste Flags",
-        "Copy the Z1R and ZORA flag strings from the ZORA site, paste them in and click Apply. The matching options are checked for you, and any that the flags left to chance show a ? (Random)."
-      ["Recently loaded saves:"], "Recent saves",
+        "Copy the Z1R and ZORA flag strings from the ZORA site, paste them in, then click Apply to set the options and close the box (pasting alone sets them too). The matching options are checked for you, and Boots and the four block and hint options show a ? (Random) when the flags left them to chance."
+      ["@0.021,0.744,0.979,0.844"], "Recent saves",
         "Your three most recently loaded save files, newest first. Click one to resume that run."
       ["Load Save"], "Load a save",
         "Resume an earlier run from any save file on your computer."
@@ -554,14 +555,14 @@ let startScreenTourSteps : (string list * string * string) list =
         "How the dungeon screens behave and look: hint icons, BOARD instead of LEVEL, basement info, door inference and more."
       ["Reminders"; "Change Voice"], "Reminders",
         "Volume, which voice and visual reminders you get (dungeon feedback, sword hearts, coast item, a check of Overworld + Extras when an option is Random, and more), how often they repeat, and which voice speaks them."
-      ["Auto-save"; "Auto-save Interval"], "Auto-save",
+      ["@0.31,0.905,0.67,0.99"], "Auto-save",
         "How often the tracker saves your run by itself, in minutes."
       ["Other"; "Race Mode"], "Other options",
         "General settings: animations, remembering your startup choices, update checks, Display Seed + Flags, listening for speech, the broadcast window, the timer and Race Mode."
       ["Co-Op Client Settings"; "Show Crash Log..."], "Co-Op and crash log",
         "Co-Op Client and Host settings are for tracking together with a partner. Show Crash Log opens the log file to send along when reporting a problem."
       ["Guided Tour"; "v2."], "Tour, options and version",
-        "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows what is new in this release, and glows when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen." ]
+        "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows the version, with Check for updates, Open folder and Go to website, and glows green when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen." ]
 
 // the titles of the start screen tour stops that would be left out because none of their labels is on screen (a stop with no anchor is skipped silently); used by the self-test
 let startScreenTourMissingStops(root:DependencyObject) : string list =
@@ -576,6 +577,7 @@ do
             showStartOptionsHook (List.contains title panelSteps))
 
 // the Guided Tour button: in the in-app Options popup (includePopupExplainer) it runs the main window tour, on the start screen it runs the start screen tour
+let private allTourButtons = ResizeArray<Button>()   // every Guided Tour button made (start screen and Options panel): the pulse stops on all of them at the first click
 let makeGuidedTourButton(cm:CustomComboBoxes.CanvasManager, includePopupExplainer:bool) : Button =
     let tourButton = Graphics.makeButton(" Guided Tour ",None,None)
     tourButton.HorizontalAlignment <- HorizontalAlignment.Left
@@ -586,11 +588,12 @@ let makeGuidedTourButton(cm:CustomComboBoxes.CanvasManager, includePopupExplaine
         let pulse = new Animation.DoubleAnimation(6., 30., new Duration(System.TimeSpan.FromSeconds(0.8)), AutoReverse=true, RepeatBehavior=Animation.RepeatBehavior.Forever)
         glow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.BlurRadiusProperty, pulse)
         tourButton.Effect <- glow
+    allTourButtons.Add(tourButton)
     tourButton.Click.Add(fun _ ->
         if not TrackerModelOptions.GuidedTourSeen then
             TrackerModelOptions.GuidedTourSeen <- true
             TrackerModelOptions.writeSettings()
-            tourButton.Effect <- null)
+        for b in allTourButtons do b.Effect <- null)
     if includePopupExplainer then
         tourButton.Click.Add(fun _ ->   // (closes this menu first, then the main window tour starts)
             optionsTourRequested <- true
@@ -1206,7 +1209,7 @@ let makeOptionsCanvas(cm:CustomComboBoxes.CanvasManager, includePopupExplainer, 
     options3sp.Children.Add(cb) |> ignore
 
 
-    let cb = new CheckBox(Content=new TextBox(Text="Include Overworld Magnifier",IsReadOnly=true), Margin=Thickness(20.,0.,0.,0.))
+    let cb = new CheckBox(Content=new TextBox(Text="Include Overworld Magnifier",IsReadOnly=true), Margin=Thickness(14.,0.,0.,0.))
     cb.IsChecked <- System.Nullable.op_Implicit TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value
     cb.Checked.Add(fun _ -> TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value <- true; broadcastWindowOptionChanged.Trigger())
     cb.Unchecked.Add(fun _ -> TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value <- false; broadcastWindowOptionChanged.Trigger())

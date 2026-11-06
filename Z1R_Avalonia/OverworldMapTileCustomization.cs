@@ -2063,9 +2063,12 @@ public static class OverworldMapTileCustomization
             var tb = DungeonRoomState.mkTxt("You have no HotKeys mapped.\nYou can edit HotKeys.txt to add\nsome, to use the next time you\nrestart the app.");
             tb.FontSize = 16.0;
             all.Children.Add(tb);
-            var fileToSelect = HotKeys.HotKeyFilename;
-            // (WPF: Process.Start(ProcessStartInfo("Explorer.exe", "/Select, \"file\"")); the same call on Windows, Finder/the folder elsewhere)
-            Platform.RevealInFileManager(fileToSelect);
+            // (a button, rather than opening the folder on its own)
+            var openBtn = Graphics.makeButton("Open HotKeys.txt folder", 16.0, Brushes.Orange);
+            openBtn.VerticalAlignment = VerticalAlignment.Top;
+            openBtn.Margin = new Thickness(8.0);
+            openBtn.Click += (_, _) => Platform.RevealInFileManager(HotKeys.HotKeyFilename);
+            all.Children.Add(openBtn);
         }
         return (total == 0, new Border { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0.0), Background = Brushes.Black, Child = all });   // (only shown in the hotkeys popout: no grey border there)
     }

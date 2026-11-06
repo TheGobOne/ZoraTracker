@@ -264,7 +264,7 @@ public static class Graphics
                 bd.BorderBrush = b.IsPointerOver ? hoverOrange : b.BorderBrush;
                 bd.BorderThickness = b.BorderThickness;
                 bd.Padding = b.Padding;
-                bd.Opacity = b.IsEffectivelyEnabled ? 1.0 : 0.45;
+                bd.Opacity = b.IsEffectivelyEnabled ? 1.0 : 0.75;
                 cp.HorizontalAlignment = b.HorizontalContentAlignment;
                 cp.VerticalAlignment = b.VerticalContentAlignment;
             }

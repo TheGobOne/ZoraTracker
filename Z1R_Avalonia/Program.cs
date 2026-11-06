@@ -1618,7 +1618,7 @@ public static class Program
 
             checkboxSP.Children.Add(new DockPanel { Width = 10.0 });
 
-            var hdcb = new CheckBox { Content = new TextBox { Text = "Hide Dungeon Numbers", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0) };
+            var hdcb = new CheckBox { Content = new TextBox { Text = "Hide Dungeon Numbers", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false, Margin = new Thickness(2.0) } };
             Graphics.scaleUpCheckBoxBox(hdcb, 1.66);
             hdcb.IsChecked = false;
             Graphics.onChecked(hdcb, () => turnHideDungeonNumbersOn());
@@ -1691,7 +1691,7 @@ public static class Program
             var clnTextBox = new TextBox { MaxLength = 7, IsEnabled = false, Margin = new Thickness(6.0, 2.0, 2.0, 2.0), VerticalAlignment = VerticalAlignment.Center };
             // (WPF: CharacterCasing = Upper. Avalonia's TextBox has no CharacterCasing, so typed text is upper-cased as it arrives, as DungeonUI does)
             clnTextBox.AddHandler(InputElement.TextInputEvent, new EventHandler<TextInputEventArgs>((_, tea) => { if (tea.Text != null) tea.Text = tea.Text.ToUpper(); }), RoutingStrategies.Tunnel);
-            var clncb = new CheckBox { Content = new TextBox { Text = "Custom LEVEL Name", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0) };
+            var clncb = new CheckBox { Content = new TextBox { Text = "Custom LEVEL Name", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false, Margin = new Thickness(2.0) } };
             Graphics.scaleUpCheckBoxBox(clncb, 1.66);
             var clnTip = "Only works with ZORA seeds. In a non-ZORA seed, the custom name\nwould replace 'LEVEL-n' and could be confusing, so leave this off.";
             ToolTip.SetTip(clncb, clnTip);
@@ -2222,7 +2222,7 @@ public static class Program
                     startButton.Margin = spacing;
                 if (n == 0)
                 {
-                    var otherButton = Graphics.makeButton("More Options...", null, null);
+                    var otherButton = Graphics.makeButton("Other ROM / map...", null, null);
                     Layout.styleStartupButton(otherButton);
                     otherButton.Margin = new Thickness(0.0);
                     otherButton.Click += (_, _) =>
@@ -2264,6 +2264,11 @@ public static class Program
                             dialog1.Children.Add(button);
                             button.Click += (_, _) => { if (choice == null) choice = nn; wh.Set(); };
                         }
+                        var cancelButton = Graphics.makeButton("Cancel", null, null);
+                        Layout.styleStartupButton(cancelButton);
+                        cancelButton.Margin = new Thickness(0.0, 10.0, 0.0, 0.0);
+                        cancelButton.Click += (_, _) => wh.Set();   // (no choice: back to the start screen)
+                        dialog1.Children.Add(cancelButton);
                         async Task go()
                         {
                             var dialogBorder = new Border { Child = dialog1, BorderThickness = new Thickness(3.0), BorderBrush = Brushes.Orange, Background = Brushes.Black, Padding = new Thickness(5.0) };
@@ -2396,14 +2401,14 @@ public static class Program
                 addDarkTheme(dialog);
                 TextBox mkInfo(string t) => new TextBox { Text = t, IsReadOnly = true, BorderThickness = new Thickness(0.0), Foreground = Brushes.Orange, TextWrapping = TextWrapping.Wrap, Width = 600.0, Margin = new Thickness(0.0, 0.0, 0.0, 8.0) };
                 TextBox mkInput() => new TextBox { Width = 600.0, FontSize = 16.0, Foreground = Brushes.Orange, Background = Brushes.Black, BorderBrush = Brushes.Orange, CaretBrush = Brushes.Orange, Margin = new Thickness(0.0, 0.0, 0.0, 10.0) };
-                var intro = mkInfo("Paste the flag strings from the ZORA site and the tracker ticks the matching startup options right away. Leave a box empty to leave those settings alone.");
+                var intro = mkInfo("Paste the flag strings from the ZORA site and the tracker ticks the matching startup options when you paste, or when you click Apply. Leave a box empty to leave those settings alone.");
                 var (z1rBox, zoraBox) = (mkInput(), mkInput());
                 var result = mkInfo("");
                 result.IsVisible = false;
                 var inputs = new StackPanel { Orientation = Orientation.Vertical };
                 inputs.Children.Add(mkInfo("Z1R flags"));
                 inputs.Children.Add(z1rBox);
-                inputs.Children.Add(mkInfo("ZORA flags (like 13.abc)"));
+                inputs.Children.Add(mkInfo("ZORA flags (like 18.abc)"));
                 inputs.Children.Add(zoraBox);
                 dialog.Children.Add(intro);
                 dialog.Children.Add(inputs);
@@ -2423,7 +2428,7 @@ public static class Program
                 dialog.Children.Add(buttons);
                 closeBtn.Click += (_, _) => wh.Set();
                 // applying sets the checkboxes and lists what was done under the boxes (the dialog stays open, so the second string can still be pasted)
-                void doApply()
+                bool doApply()   // true = no flag decode error
                 {
                     var lines = new List<string>();
                     void setChk(CheckBox cb, bool b) => cb.IsChecked = b;
@@ -2510,15 +2515,14 @@ public static class Program
                     }
                     result.Text = lines.Count == 0 ? "Nothing to change." : string.Join("\n", lines);
                     result.IsVisible = true;
+                    return !lines.Any(l => l.StartsWith("Z1R flags:") || l.StartsWith("ZORA flags:"));
                 }
-                applyBtn.Click += (_, _) =>
-                {
-                    doApply();
-                };
+                // (Apply applies and closes, unless a flag string was bad: then the box stays open so the error can be read. Pasting only applies, so the second string can still be pasted)
+                applyBtn.Click += (_, _) => { if (doApply()) wh.Set(); };
                 // pasting into either box applies straight away
                 // (WPF: DataObject.AddPastingHandler, then doApply at Background priority once the text is in; Avalonia: PastingFromClipboard)
                 foreach (var box in new[] { z1rBox, zoraBox })
-                    box.PastingFromClipboard += (_, _) => Dispatcher.UIThread.Post(doApply, DispatcherPriority.Background);
+                    box.PastingFromClipboard += (_, _) => Dispatcher.UIThread.Post(() => doApply(), DispatcherPriority.Background);
                 async Task show()
                 {
                     var dialogBorder = new Border { Child = dialog, BorderThickness = new Thickness(3.0), BorderBrush = Brushes.Orange, Background = Brushes.Black, Padding = new Thickness(8.0) };

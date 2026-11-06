@@ -1758,8 +1758,8 @@ let makeDungeonTabs(cm:CustomComboBoxes.CanvasManager, layoutF, posYF, selectDun
                                     let hasLadder = [0..n-1] |> List.exists (fun k -> get k = TrackerModel.DungeonBlocker.LADDER || get k = TrackerModel.DungeonBlocker.MAYBE_LADDER)
                                     if not hasLadder then
                                         let slot =
-                                            if get 0 = TrackerModel.DungeonBlocker.NOTHING then Some 0
-                                            else [1..n-1] |> List.tryFind (fun k -> get k = TrackerModel.DungeonBlocker.NOTHING)
+                                            if n > 2 && get 2 = TrackerModel.DungeonBlocker.NOTHING then Some 2   // the third blocker box
+                                            else [0..n-1] |> List.tryFind (fun k -> get k = TrackerModel.DungeonBlocker.NOTHING)
                                         match slot with
                                         | Some k -> TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, k, TrackerModel.DungeonBlocker.MAYBE_LADDER)
                                         | None -> ()

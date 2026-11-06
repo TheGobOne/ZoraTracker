@@ -2325,10 +2325,10 @@ public static class DungeonUI
                                                 {
                                                     int? make_slot()
                                                     {
-                                                        if (get(0).Equals(TrackerModel.DungeonBlocker.NOTHING)) return 0;
+                                                        if (n > 2 && get(2).Equals(TrackerModel.DungeonBlocker.NOTHING)) return 2;   // the third blocker box
                                                         else
                                                         {
-                                                            foreach (var k in Enumerable.Range(1, n - 1))
+                                                            foreach (var k in Enumerable.Range(0, n))
                                                                 if (get(k).Equals(TrackerModel.DungeonBlocker.NOTHING)) return k;
                                                             return null;
                                                         }
