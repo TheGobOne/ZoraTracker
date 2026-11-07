@@ -4116,6 +4116,15 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             // (a load that fails part-way must not leave the model ignoring updates and the timeline frozen for the rest of the session)
             TrackerModel.currentlyIgnoringForceUpdatesDuringALoad <- false
             Timeline.isCurrentlyLoadingASave <- false
+            // (whatever part of the save was applied stays applied, so bring the summaries and the display up to date with it)
+            let refreshAfterFailedLoad() =
+                try
+                    TrackerModel.recomputePlayerStateSummary()
+                    TrackerModel.recomputeMapStateSummary()
+                    TrackerModel.recomputeWhatIsNeeded() |> ignore
+                    TrackerModel.forceUpdate()
+                with _ -> ()
+            refreshAfterFailedLoad()
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e).Throw()
         // done
         TrackerModel.currentlyIgnoringForceUpdatesDuringALoad <- false
@@ -4183,6 +4192,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     do! Async.SwitchToContext ctxt
                     diskIcon.Opacity <- 0.0
                 } |> Async.StartImmediate
+                autoSaveFailureShown.Value <- false   // (it worked: a later failure is worth saying again)
             with e ->
                 if not autoSaveFailureShown.Value then   // (say so once: otherwise a Saves folder that cannot be written fails silently for the whole game)
                     autoSaveFailureShown.Value <- true

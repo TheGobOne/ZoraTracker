@@ -5681,6 +5681,15 @@ public static class WPFUI
                 // (a load that fails part-way must not leave the model ignoring updates and the timeline frozen for the rest of the session)
                 TrackerModel.currentlyIgnoringForceUpdatesDuringALoad = false;
                 Timeline.isCurrentlyLoadingASave = false;
+                // (whatever part of the save was applied stays applied, so bring the summaries and the display up to date with it)
+                try
+                {
+                    TrackerModel.recomputePlayerStateSummary();
+                    TrackerModel.recomputeMapStateSummary();
+                    TrackerModel.recomputeWhatIsNeeded();
+                    TrackerModel.forceUpdate();
+                }
+                catch { }
                 throw;
             }
             // done
@@ -5790,6 +5799,7 @@ public static class WPFUI
                             diskIcon.Opacity = 0.0;
                         }
                         CustomComboBoxes.StartImmediate(go());
+                        autoSaveFailureShown = false;   // (it worked: a later failure is worth saying again)
                     }
                     catch (Exception e)
                     {

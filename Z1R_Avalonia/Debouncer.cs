@@ -15,7 +15,7 @@ public class Debouncer
 
     public void Trigger(Action action)
     {
-        currentCts?.Cancel(); currentCts?.Dispose();   // (disposed so the timers behind cancelled waits are released)
+        currentCts?.Cancel();
         var newCts = new CancellationTokenSource();
         currentCts = newCts;
 

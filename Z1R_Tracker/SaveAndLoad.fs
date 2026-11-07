@@ -43,15 +43,15 @@ type Dungeon() =
     member val Boxes : Box[] = null with get,set
     member val ExtraBox : Box = null with get,set
     member this.TryApply(d : TrackerModel.Dungeon) =
+      if isNull this.Boxes || this.Boxes.Length <> d.Boxes.Length then false   // (a save with a different number of boxes: nothing is applied, rather than throwing mid-load)
+      else
         if this.Triforce <> d.PlayerHasTriforce() then
             d.ToggleTriforce()
         d.Color <- this.Color
         d.LabelChar <- (if System.String.IsNullOrEmpty(this.LabelChar) then '?' else this.LabelChar.[0])
         d.PlayerHasMapOfThisDungeon <- this.PlayerHasMap
         let extraOk = if this.ExtraBox <> null then this.ExtraBox.TryApply(d.ExtraFloorBox) else true
-        let boxesOk =
-            if isNull this.Boxes || this.Boxes.Length <> d.Boxes.Length then false   // (a save with a different number of boxes: nothing is applied rather than throwing mid-load)
-            else (this.Boxes, d.Boxes) ||> Array.map2 (fun bs bd -> bs.TryApply(bd)) |> Array.fold (fun a b -> a && b) true
+        let boxesOk = (this.Boxes, d.Boxes) ||> Array.map2 (fun bs bd -> bs.TryApply(bd)) |> Array.fold (fun a b -> a && b) true
         boxesOk && extraOk
 
 [<AllowNullLiteral>]

@@ -66,6 +66,9 @@ public static class CustomComboBoxes
     public static class GlobalFlag
     {
         public static bool popupIsActive = false;
+        // menus that draw a tip box under their grid (pixels of extra height to keep on screen); the one place to list them
+        private static readonly Dictionary<string, double> menusWithTipBelow = new Dictionary<string, double> { ["MonsterDetail"] = 80.0, ["DungeonRoom"] = 80.0 };
+        public static double extraBottomSpace(string uniqueName) => menusWithTipBelow.TryGetValue(uniqueName, out var v) ? v : 0.0;
         public static DateTime popupOpenStamp = DateTime.MinValue;   // set when a grid menu starts opening: the stuck-flag self-heal leaves the flag alone for a moment after
         // a popup that failed part-way: write the exception to the crash log (so a report of a dead overworld comes with a stack trace) and unlock the UI
         public static void logPopupFailure(string where, System.Exception e)
@@ -257,6 +260,8 @@ public static class CustomComboBoxes
         // removes every popup layer and the dimming layer (only used to recover from a layer that was left behind)
         private void clearAllPopups()
         {
+            // let every suspended modal finish (its own cleanup then runs), rather than leave it waiting on a layer that is gone
+            foreach (var w in modalDismissStack.ToArray()) { try { w.Set(); } catch { } }
             while (popupCanvasStack.Count > 0)
             {
                 var pc = popupCanvasStack.Pop();
@@ -829,7 +834,7 @@ public static class CustomComboBoxes
                 var g2 = over > 0.0 ? g - Math.Ceiling(over) : g;
                 return tilePos + g2 < 0.0 ? -tilePos : g2;
             }
-            (gx, gy) = (shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH + (uniqueName == "MonsterDetail" || uniqueName == "DungeonRoom" ? 80.0 : 0.0), appH));   // (those two menus have their tip box under the grid: leave room for it)
+            (gx, gy) = (shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH + GlobalFlag.extraBottomSpace(uniqueName), appH));
         }
         canvasAdd(popupCanvas, gridBorder, gx, gy);
         // a moved menu stays at the same spot on screen (its position is saved absolutely, not relative to the tile you clicked)

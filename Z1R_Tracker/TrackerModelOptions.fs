@@ -677,9 +677,9 @@ let private read(filename) =
             printfn "If you were intentionally hand-editing the .json settings file, you may have made a mistake."
             printfn ""
             // (a settings file cut short by a crash or power loss used to stop the app from starting at all: keep the broken file as .bad and start with defaults instead)
-            let backup = filename + ".bad"
+            let backup = filename + ".bad-" + System.DateTime.Now.ToString("yyyyMMdd-HHmmss")   // (a new name each time, so an earlier backup is never overwritten)
             try
-                System.IO.File.Copy(filename, backup, true)
+                System.IO.File.Copy(filename, backup, false)
                 printfn "The broken settings file was saved as '%s' and %s will start with default settings." backup OverworldData.ProgramNameString
                 printfn ""
                 writeImpl(filename)

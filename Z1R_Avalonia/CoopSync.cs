@@ -748,17 +748,14 @@ public static class CoopSync
 
     public static void sendOverworldUpdateDebounced(string myConsoleId)
     {
-        // (the snapshot is taken here, on the UI thread that owns the tracker state; only the sending is debounced onto the thread pool)
-        string snapshot = null; Exception snapshotError = null;
-        try { snapshot = JsonConvert.SerializeObject(createSerializableOverworldModel()); } catch (Exception e) { snapshotError = e; }
         overworldDebouncer.Trigger(() =>
         {
             Task.Run(() =>   // (F#: Async.Start)
             {
                 try
                 {
-                    if (snapshotError != null) throw snapshotError;
-                    var jsonPayload = snapshot;
+                    // (once per burst of changes, after the debounce: the snapshot is read on the UI thread that owns the tracker state)
+                    var jsonPayload = Dispatcher.UIThread.Invoke(() => JsonConvert.SerializeObject(createSerializableOverworldModel()));
                     if (jsonPayload != lastSentOverworldJson)
                     {
                         lastSentOverworldJson = jsonPayload;

@@ -4,7 +4,7 @@ type Debouncer(delayMs: int) =
     let mutable currentCts : System.Threading.CancellationTokenSource option = None
 
     member this.Trigger(action: unit -> unit) =
-        currentCts |> Option.iter (fun cts -> cts.Cancel(); cts.Dispose())   // (disposed so the timers behind each cancelled wait are released)
+        currentCts |> Option.iter (fun cts -> cts.Cancel())
         let newCts = new System.Threading.CancellationTokenSource()
         currentCts <- Some newCts
 

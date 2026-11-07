@@ -12,6 +12,11 @@ open HotKeys.MyKey
 
 module GlobalFlag =
     let mutable popupIsActive = false
+    // the wait handle of every open modal popup, top first (Escape sets the top one; the leftover-layer cleanup sets all of them so no popup stays suspended forever)
+    let modalWaitHandles = System.Collections.Generic.Stack<System.Threading.ManualResetEvent>()
+    // menus that draw a tip box under their grid (pixels of extra height to keep on screen); the one place to list them
+    let private menusWithTipBelow = dict [ "MonsterDetail", 80.; "DungeonRoom", 80. ]
+    let extraBottomSpace(uniqueName:string) = match menusWithTipBelow.TryGetValue(uniqueName) with | true, v -> v | _ -> 0.
     let mutable popupOpenStamp = System.DateTime.MinValue   // set when a grid menu starts opening: the stuck-flag self-heal leaves the flag alone for a moment after (the cursor warp pumps messages before the layer exists)
     // a popup that failed part-way: write the exception to the crash log (so a report of a dead overworld comes with a stack trace) and unlock the UI
     // TEMPORARY diagnostics: only writes when a file named debug_clicks.flag exists next to the exe
@@ -144,6 +149,8 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
         with _ -> ()
     // removes every popup layer and the dimming layer (only used to recover from a layer that was left behind)
     let clearAllPopups() =
+        // let every suspended modal finish (its own cleanup then runs), rather than leave it waiting on a layer that is gone
+        for w in modalWaitHandles.ToArray() do (try w.Set() |> ignore with _ -> ())
         while popupCanvasStack.Count > 0 do
             let pc = popupCanvasStack.Pop()
             (try beforeDismissPopupCanvas.Trigger(pc) with _ -> ())
@@ -232,7 +239,7 @@ type CanvasManager(rootCanvas:Canvas, appMainCanvas:Canvas) as this =
     static member TheOnlyCanvasManager with get() = theOnlyCanvasManager.Value
 
 // Escape closes the topmost modal popup (the same as clicking outside it)
-let private modalDismissStack = System.Collections.Generic.Stack<System.Threading.ManualResetEvent>()
+let private modalDismissStack = GlobalFlag.modalWaitHandles
 let private escapeHandlerRegistered = ref false
 let private ensureEscapeHandler() =
     if not escapeHandlerRegistered.Value then
@@ -581,7 +588,7 @@ let DoModalGridSelect<'State,'Result>
                 let over = tilePos + g + size - limit
                 let g2 = if over > 0. then g - System.Math.Ceiling(over) else g
                 if tilePos + g2 < 0. then -tilePos else g2
-            shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH + (if uniqueName = "MonsterDetail" || uniqueName = "DungeonRoom" then 80. else 0.), appH)   // (those two menus have their tip box under the grid: leave room for it)
+            shiftIntoRange(tileX, gx, gridPixW, appW), shiftIntoRange(tileY, gy, gridPixH + GlobalFlag.extraBottomSpace(uniqueName), appH)
         else gx, gy
     canvasAdd(popupCanvas, gridBorder, gx, gy)
     dbg(sprintf "GRID %s tile=(%.0f,%.0f) gx,gy=(%.0f,%.0f) gridPix=(%.0f,%.0f) app=(%.0f,%.0f) total=%d defaultCount=%d origIdx=%d jump=%b" uniqueName tileX tileY gx gy gridPixW gridPixH appW appH total gridElementsSelectablesAndIDs.Length origIdx jumpMode.Value)
