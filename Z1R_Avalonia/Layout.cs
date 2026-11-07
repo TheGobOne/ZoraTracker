@@ -132,9 +132,10 @@ public static class Layout
                 cp.Content = b.Content;
                 cp.ContentTemplate = b.ContentTemplate;
                 bd.Background = b.IsPointerOver ? templateHoverFill : templateFill;
-                bd.BorderBrush = b.IsPointerOver ? templateHoverBorder : templateBorder;
+                bd.BorderBrush = Graphics.hasKeyboardFocus(b) ? Graphics.keyboardFocusBorder : b.IsPointerOver ? templateHoverBorder : templateBorder;
             }
             refresh();
+            Graphics.trackKeyboardFocus(b, refresh);
             b.PropertyChanged += (_, ea) =>
             {
                 var p = ea.Property;

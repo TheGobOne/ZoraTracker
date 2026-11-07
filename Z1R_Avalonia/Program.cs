@@ -1611,7 +1611,7 @@ public static class Program
             Graphics.scaleUpCheckBoxBox(lmcb, 1.66);
             lmcb.IsChecked = false;
             var lmArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = lmcb, VerticalAlignment = VerticalAlignment.Top });
-            lmArea.PointerEntered += (_, _) => hoverExplain(lmArea, "For non-ZORA seeds");
+            lmArea.PointerEntered += (_, _) => hoverExplain(lmArea, "For non-ZORA seeds: turns off and locks the ZORA Extras and limits shops to the original game's items");
             lmArea.PointerExited += (_, _) => explainHide();
             checkboxSP.Children.Add(new DockPanel { Width = 10.0 });
             checkboxSP.Children.Add(lmArea);

@@ -248,6 +248,19 @@ public static class Graphics
         currentPresenters.AddOrUpdate(owner, cp);
     }
     public static bool isCurrentPresenter(ContentControl owner, ContentPresenter cp) => currentPresenters.TryGetValue(owner, out var c) && c == cp;
+    // (WPF: an IsKeyboardFocused trigger turns the border white. Avalonia has no such property, so the focus is tracked here: only focus that arrived by Tab or the arrow keys counts, as in WPF)
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, object> keyboardFocused = new System.Runtime.CompilerServices.ConditionalWeakTable<Control, object>();
+    public static bool hasKeyboardFocus(Control c) => keyboardFocused.TryGetValue(c, out _);
+    public static void trackKeyboardFocus(Control c, Action refresh)
+    {
+        c.GotFocus += (_, e) =>
+        {
+            if (e.NavigationMethod == NavigationMethod.Tab || e.NavigationMethod == NavigationMethod.Directional) keyboardFocused.AddOrUpdate(c, new object());
+            refresh();
+        };
+        c.LostFocus += (_, _) => { keyboardFocused.Remove(c); refresh(); };
+    }
+    public static readonly SolidColorBrush keyboardFocusBorder = new SolidColorBrush(Colors.White);
     public static readonly FuncControlTemplate<Button> roundedButtonTemplate =
         new FuncControlTemplate<Button>((b, _scope) =>
         {
@@ -261,7 +274,7 @@ public static class Graphics
                 cp.Content = b.Content;
                 cp.ContentTemplate = b.ContentTemplate;
                 bd.Background = b.IsPressed ? pressedFill : b.Background;
-                bd.BorderBrush = b.IsPointerOver ? hoverOrange : b.BorderBrush;
+                bd.BorderBrush = hasKeyboardFocus(b) ? keyboardFocusBorder : b.IsPointerOver ? hoverOrange : b.BorderBrush;
                 bd.BorderThickness = b.BorderThickness;
                 bd.Padding = b.Padding;
                 bd.Opacity = b.IsEffectivelyEnabled ? 1.0 : 0.75;
@@ -269,6 +282,7 @@ public static class Graphics
                 cp.VerticalAlignment = b.VerticalContentAlignment;
             }
             refresh();
+            trackKeyboardFocus(b, refresh);
             b.PropertyChanged += (_, ea) =>
             {
                 var p = ea.Property;
@@ -323,9 +337,11 @@ public static class Graphics
                         break;
                 }
                 if (cb.IsPointerOver) box.BorderBrush = orange;
+                if (hasKeyboardFocus(cb)) box.BorderBrush = keyboardFocusBorder;
                 grid.Opacity = cb.IsEffectivelyEnabled ? 1.0 : 0.5;
             }
             refresh();
+            trackKeyboardFocus(cb, refresh);
             cb.PropertyChanged += (_, ea) =>
             {
                 var p = ea.Property;
@@ -380,6 +396,14 @@ public static class Graphics
             cs.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
             cs.Setters.Add(new Setter(Layoutable.MinWidthProperty, 0.0));
             app.Styles.Add(cs);
+            // button and checkbox labels are read-only, non-clickable TextBoxes: they must not be extra Tab stops (focus landed on them with nothing visible)
+            InputElement.GotFocusEvent.AddClassHandler<TextBox>((tb, e) =>
+            {
+                if (!tb.IsReadOnly || tb.IsHitTestVisible) return;
+                // skip past it in the direction the user was tabbing
+                var dir = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? NavigationDirection.Previous : NavigationDirection.Next;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => KeyboardNavigationHandler.GetNext(tb, dir)?.Focus());
+            });
             // (the Fluent theme recolors a checkbox's text when it's checked, hovered or pressed; WPF's template doesn't)
             foreach (var pseudo in new[] { ":checked", ":unchecked", ":indeterminate", ":pointerover", ":pressed" })
             {

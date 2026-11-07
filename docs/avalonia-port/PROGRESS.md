@@ -1,6 +1,14 @@
 # Avalonia port — progress
 
-Caught up to WPF commit: `4efdf82` (b18 hotfix, 2026-11-01)
+Caught up to WPF commit: `22e16bc` (2026-11-06, the last commit that changed `Z1R_WPF` or `Z1R_Tracker`; checked file by file against `4efdf82`
+on 2026-11-07, which found and ported six gaps: the focus ring and Tab skip over label boxes, the "Hide Lock And Hints" and tour text, the
+non-ZORA hover text, the `beta-18-hotfix` tag compare, and the Heart Shuffle selftest)
+
+**WPF is frozen to bug fixes (2026-11-07).** New features go in `Z1R_Avalonia`; a WPF bug fix is mirrored in both trees.
+
+Save compatibility: `tests/golden-save.ps1` loads every save in a folder (default: the WPF build's `Saves`) with the Avalonia build's `--load`/`--dump` and
+compares the re-save with the file. On 2026-11-07 all 13 real WPF saves (2026-10-18 to 2026-11-06) pass: the only differences are fields a newer format adds.
+Not tested yet: an Avalonia-written save loaded by WPF (WPF has no `--dump`).
 
 Parity: **not reached.** The goal is complete feature parity with the WPF tracker (see
 [PLAN.md](./PLAN.md#goal-complete-feature-parity)). A file marked `stubbed` or `skipped` is still

@@ -1721,6 +1721,7 @@ public static class CustomComboBoxes
         var t = tag.Trim().TrimStart('v', 'V');
         var dash = t.IndexOf('-');
         var (main, pre) = dash == -1 ? (t, "") : (t.Substring(0, dash), t.Substring(dash + 1));
+        pre = System.Text.RegularExpressions.Regex.Replace(pre, @"^([A-Za-z]+)-(\d)", "$1$2");   // 'beta-18-hotfix' compares like 'beta18-hotfix'
         var nums = main.Split('.').Select(p => int.TryParse(p, out var v) ? v : 0).ToList();
         nums.AddRange(Enumerable.Repeat(0, Math.Max(0, 4 - nums.Count)));
         (int, string, int, string) preKey;
@@ -1944,7 +1945,7 @@ public static class CustomComboBoxes
     public static Button makeVersionButtonWithBehavior(CanvasManager cm)
     {
         // shows the current release (e.g. "v2.2-b3" for 2.2.0-beta3), so it only needs updating via CurrentReleaseLabel
-        var shortLabel = CurrentReleaseLabel.Replace(".0-", "-").Replace("-beta", "-b");
+        var shortLabel = CurrentReleaseLabel.Replace(".0-", "-").Replace("-beta-", "-b").Replace("-beta", "-b");
         var vb = Graphics.makeButton($"v{shortLabel}", 12.0, Brushes.Orange);
         // a green glow plus tooltip when a newer release is available on GitHub
         void showUpdateGlow((string, string) n)

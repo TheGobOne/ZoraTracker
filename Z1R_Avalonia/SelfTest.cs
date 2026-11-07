@@ -249,6 +249,24 @@ public static class SelfTest
             await pause(1500);
             await settle("tracker start");
             log($"tracker started ({failures} failures so far)");
+            // a save remembers the Heart Shuffle mode (Off / Intra / Full), so a reload does not follow the start screen
+            guard("heart shuffle save round trip", () =>
+            {
+                var saved = TrackerModel.HeartShuffleMode;
+                try
+                {
+                    foreach (var m in new[] { 0, 1, 2 })
+                    {
+                        TrackerModel.HeartShuffleMode = m;
+                        var json = "{ " + string.Join("\n", SaveAndLoad.SaveOverworld("")) + " }";
+                        var d = DungeonSaveAndLoad.LoadAll(json);
+                        if (d.Overworld.HeartShuffleMode != m) fail($"Heart Shuffle mode {m} saved and loaded back as {d.Overworld.HeartShuffleMode}");
+                    }
+                    var old = DungeonSaveAndLoad.LoadAll("{ \"Overworld\": { \"Quest\": 2 } }");
+                    if (old.Overworld.HeartShuffleMode != -1) fail("a save without a Heart Shuffle mode should load as -1");
+                }
+                finally { TrackerModel.HeartShuffleMode = saved; }
+            });
             // a save keeps every ZORA option, not just On / Off: Boots and the four Extra / Randomize options each come back Off / On / ? (Random), as do Progressive Items,
             // the 4th Sword, Mirrored Overworld, the custom LEVEL name, the Dead Woods / Lost Hills hint letters, dungeon 9's items and the notes. Nothing is clicked or written to the Saves folder.
             guard("ZORA options save round trip", () =>
