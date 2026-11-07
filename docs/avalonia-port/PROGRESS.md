@@ -13,6 +13,10 @@ Not tested yet: an Avalonia-written save loaded by WPF (WPF has no `--dump`).
 Behaviour: `tests/action-parity.ps1` starts a 1st Quest tracker in each build, performs the same ~25 scripted mouse clicks (hearts, item boxes, Zones, dungeon tabs, right-clicks,
 an overworld tile's icon menu with one icon picked, Log) and clicks Save, then compares the two save files field by field. On 2026-11-07: 0 differences. A click that opens a menu
 must be followed by a click that dismisses it, or the next click is swallowed (Escape does not close the tile menu). Not covered: dungeon room editing, hotkeys, drag, popout windows.
+It then loads the port's save in the WPF build and re-saves it: 0 differences on 2026-11-07 (a save written by the port survives WPF loading it).
+
+Co-op wire: `tests/coop-door-wire.ps1` serializes a DoorChange for all 5 door states in both builds (WPF by reflection, the port through a small console project) and has each
+side read the other's lines: identical JSON, both read it, 2026-11-07. Still untested: a live co-op session between a WPF and an Avalonia tracker (needs a host; both builds ship Z1R_SignalRHost.exe).
 
 Look: `tests/side-by-side.ps1 [-Save <save>]` starts both builds from clean copies and writes `start_both.png` / `tracker_both.png` (WPF left, port right) plus a red-pixel
 diff to a temp folder (about 8% of the start screen and 3% of the tracker screen differ on 2026-11-07, almost all of it text anti-aliasing and glyph spacing: judge from the

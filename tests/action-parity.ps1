@@ -113,7 +113,7 @@ foreach ($a in $apps) {
     Write-Host ("{0}: {1} ({2} bytes)" -f $a.Tag, $new[-1].Name, $new[-1].Length)
 }
 if ($files.Count -lt 2) { Write-Host "cannot compare"; exit 1 }
-$ignore = @('Timeline', 'OverworldSpotsRemainingOverTime', 'Blockers')
+$ignore = @('Timeline', 'OverworldSpotsRemainingOverTime', 'Blockers', 'TimeInSeconds')   # (the timer: the two runs take slightly different times)
 function Compare-Json($a, $b, $path, $diffs) {
     if ($null -eq $a -and $null -eq $b) { return }
     if ($a -is [Newtonsoft.Json.Linq.JObject] -and $b -is [Newtonsoft.Json.Linq.JObject]) {
@@ -141,5 +141,34 @@ $extra = @($diffs | Where-Object { $_ -like "*only in*" })
 Write-Host ("{0} difference(s), {1} field(s) present in only one save" -f $real.Count, $extra.Count)
 $real | Select-Object -First 25 | ForEach-Object { Write-Host "    $_" }
 $extra | Select-Object -First 10 | ForEach-Object { Write-Host "    (one-sided) $_" }
+# Round trip: the port's save is loaded by the WPF build (listed as its only recent load, its slot clicked), WPF saves it again, and that save is compared with the port's
+# (what the port wrote must survive WPF loading it: switching back to WPF must not lose anything)
+$rtDir = Join-Path $Out "run_wpf_roundtrip"
+Copy-Item $apps[0].Src $rtDir -Recurse
+foreach ($f in "Z1R_Tracker_settings.json", "Z1R_Tracker_recent_loads.txt", "Z1R_Tracker_crash_log.txt") { $old = Join-Path $rtDir $f; if (Test-Path $old) { Remove-Item $old -Force } }
+Set-Content (Join-Path $rtDir "Z1R_Tracker_recent_loads.txt") $files["port"]
+$rtBefore = @(Get-ChildItem (Join-Path $rtDir "Saves") -Filter *.json | ForEach-Object { $_.FullName })
+$p = Start-Process (Join-Path $rtDir "Z1R_WPF.exe") -WorkingDirectory $rtDir -PassThru
+$h = [IntPtr]::Zero
+for ($i = 0; $i -lt 60 -and $h -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 500; $h = [W]::FindMain([uint32]$p.Id) }
+Start-Sleep -Seconds $Settle
+$r = New-Object W+RECT; [void][W]::GetWindowRect($h, [ref]$r)
+[void][W]::MoveWindow($h, 0, 0, $r.R - $r.L, $r.B - $r.T, $true); [W]::KeepOnTop($h); [void][W]::SetForegroundWindow($h); Start-Sleep -Milliseconds 800
+[W]::Click(150, 825, $false); Start-Sleep -Seconds ($Settle + 8)   # (the first recent-save slot)
+[W]::Click(716, 154, $false); Start-Sleep -Seconds 1; [W]::Key(13); Start-Sleep -Seconds 4   # Save, default name
+try { $p.Kill() } catch {}
+$rt = @(Get-ChildItem (Join-Path $rtDir "Saves") -Filter *.json | Where-Object { $rtBefore -notcontains $_.FullName } | Sort-Object LastWriteTime)
+$rtFail = $true
+if ($rt.Count -eq 0) { Write-Host "ROUND TRIP FAIL: WPF wrote no save after loading the port's" }
+else {
+    $rj = [Newtonsoft.Json.Linq.JObject]::Parse((Get-Content $rt[-1].FullName -Raw))
+    $rd = New-Object System.Collections.ArrayList
+    Compare-Json $pj $rj "" $rd
+    $rreal = @($rd | Where-Object { $_ -notlike "*only in*" })
+    Write-Host ("round trip (port save -> WPF load -> WPF save): {0} difference(s), {1} one-sided field(s)" -f $rreal.Count, @($rd | Where-Object { $_ -like "*only in*" }).Count)
+    $rreal | Select-Object -First 25 | ForEach-Object { Write-Host "    $_" }
+    $rd | Where-Object { $_ -like "*only in*" } | Select-Object -First 10 | ForEach-Object { Write-Host "    (one-sided) $_" }
+    $rtFail = ($rreal.Count -gt 0)
+}
 Write-Host "output: $Out"
-exit $(if ($real.Count -eq 0) { 0 } else { 1 })
+exit $(if ($real.Count -eq 0 -and -not $rtFail) { 0 } else { 1 })
