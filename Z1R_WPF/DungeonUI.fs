@@ -313,7 +313,13 @@ let unmarkRemarkBehavior(cm:CustomComboBoxes.CanvasManager, (_i,_j,hk), boxViews
                     Graphics.ErrorBeepWithReminderLogText(noHeartsMsg)
             else
                 // no free floor box: a floor heart then means the triforce piece must be in an (empty) stair slot, so infer that and put the heart in the extra floor box
-                let emptyStair = validBoxIndices |> List.tryFind (fun i -> (boxAt i).CurrentlyHasBasementStair && (boxAt i).CellCurrent() = -1)
+                // (under Intra Heart Shuffle an uncollected heart in a stair slot is only the tracker's guess for "the one heart of this dungeon", and a floor heart disproves it)
+                let emptyStair =
+                    validBoxIndices |> List.tryFind (fun i ->
+                        let b = boxAt i
+                        b.CurrentlyHasBasementStair
+                        && (b.CellCurrent() = -1
+                            || (TrackerModel.HeartShuffleMode = 1 && b.CellCurrent() = TrackerModel.ITEMS.HEARTCONTAINER && b.PlayerHas() = TrackerModel.PlayerHas.NO)))
                 match emptyStair with
                 | Some(s) when extraIsUsable() ->
                     if (boxAt s).AttemptToSet(TrackerModel.ITEMS.TRIFORCE,TrackerModel.PlayerHas.NO) then

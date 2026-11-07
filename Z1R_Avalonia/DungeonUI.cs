@@ -417,7 +417,14 @@ public static class DungeonUI
                         else
                         {
                             // no free floor box: a floor heart then means the triforce piece must be in an (empty) stair slot, so infer that and put the heart in the extra floor box
-                            var emptyStair = validBoxIndices.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && boxAt(i).CellCurrent() == -1);
+                            // (under Intra Heart Shuffle an uncollected heart in a stair slot is only the tracker's guess for "the one heart of this dungeon", and a floor heart disproves it)
+                            var emptyStair = validBoxIndices.FindIndex(i =>
+                            {
+                                var b = boxAt(i);
+                                return b.CurrentlyHasBasementStair
+                                    && (b.CellCurrent() == -1
+                                        || (TrackerModel.HeartShuffleMode == 1 && b.CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO)));
+                            });
                             if (emptyStair >= 0 && extraIsUsable())
                             {
                                 if (boxAt(validBoxIndices[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
