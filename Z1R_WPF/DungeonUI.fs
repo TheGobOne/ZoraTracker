@@ -220,7 +220,9 @@ let unmarkRemarkBehavior(cm:CustomComboBoxes.CanvasManager, (_i,_j,hk), boxViews
         activate(0, CustomComboBoxes.GridClickDismissalWarpReturn.WarpTo returnPos)
     let boxes = dungeon.Boxes
     // level 2's optional extra staircase slot is activated as one more box, after the regular ones
-    let hasL2Stair = dungeonIndex = 1 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled && boxViewsAndActivations.Length > boxes.Length
+    // (for dungeons 1-8 the extra floor box's activation is the very last entry)
+    let extraIdx = if dungeonIndex < 8 then boxViewsAndActivations.Length-1 else -1
+    let hasL2Stair = dungeonIndex = 1 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled && boxViewsAndActivations.Length > boxes.Length + (if extraIdx >= 0 then 1 else 0)
     let boxAt i : TrackerModel.Box = if i < boxes.Length then boxes.[i] else TrackerModel.level2StairBox
     let validBoxIndices =
         if TrackerModel.IsHiddenDungeonNumbers() then
@@ -274,7 +276,10 @@ let unmarkRemarkBehavior(cm:CustomComboBoxes.CanvasManager, (_i,_j,hk), boxViews
             if r = -1 && not((boxAt i).CurrentlyHasBasementStair) && (boxAt i).CellCurrent() = -1 then
                 r <- i
         if r = -1 then
-            r <- idxs.Head
+            if dungeon.TriforceIsInItemSlot && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() = -1 then
+                r <- extraIdx   // the triforce is in an item slot, so the floor drop goes in the extra floor box rather than replacing a regular box
+            else
+                r <- idxs.Head
         // r is now the index of the box we want
         activateBox(r)
     | Some(Choice3Of4(FloorDropDetail.Heart)) ->
@@ -406,8 +411,9 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
                 yield view,activate
         |]
     // mirror the main tracker: when a Triforce Piece is placed in a dungeon item slot, the numbered triforce moves into that slot and the header becomes an extra floor item box
+    let extraFloorViewAndActivate = if dungeonIndex < 8 then Some(Views.MakeBoxItem(cm, d.ExtraFloorBox)) else None
     if dungeonIndex < 8 then
-        let extraFloorView = fst (Views.MakeBoxItem(cm, d.ExtraFloorBox))
+        let extraFloorView = fst extraFloorViewAndActivate.Value
         let refreshTriforceHeaderOrSlot() =
             headerCell.Children.Clear()
             for sc in slotCells do sc.Children.Remove(dungeonView)
@@ -430,7 +436,7 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
             | _ -> ())
     // the optional extra staircase item slot of level 2, as on the main tracker
     // (its activation is appended after the regular boxes, so the box hotkeys can target it)
-    let boxViewsAndActivations =
+    let withL2 =
         if level = 2 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled then
             let c = new Canvas(Width=30., Height=30.)
             let view,activate = Views.MakeBoxItem(cm, TrackerModel.level2StairBox)
@@ -439,6 +445,11 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
             Array.append regularBoxViewsAndActivations [| view,activate |]
         else
             regularBoxViewsAndActivations
+    // the extra floor box (the header, while the triforce sits in an item slot) is activated last, so the box hotkeys can target it
+    let boxViewsAndActivations =
+        match extraFloorViewAndActivate with
+        | Some(v,a) -> Array.append withL2 [| v,a |]
+        | None -> withL2
     // the optional level 9 floor item check (4th Sword start option), as on the main tracker
     if level = 9 && TrackerModel.level9FloorBoxEnabled then
         let c = new Canvas(Width=30., Height=30.)

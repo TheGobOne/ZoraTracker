@@ -292,7 +292,9 @@ public static class DungeonUI
         }
         var boxes = dungeon.Boxes;
         // level 2's optional extra staircase slot is activated as one more box, after the regular ones
-        var hasL2Stair = dungeonIndex == 1 && !TrackerModel.IsHiddenDungeonNumbers.Invoke(null) && TrackerModel.level2StairBoxEnabled && boxViewsAndActivations.Length > boxes.Length;
+        // (for dungeons 1-8 the extra floor box's activation is the very last entry)
+        var extraIdx = dungeonIndex < 8 ? boxViewsAndActivations.Length - 1 : -1;
+        var hasL2Stair = dungeonIndex == 1 && !TrackerModel.IsHiddenDungeonNumbers.Invoke(null) && TrackerModel.level2StairBoxEnabled && boxViewsAndActivations.Length > boxes.Length + (extraIdx >= 0 ? 1 : 0);
         TrackerModel.Box boxAt(int i) => i < boxes.Length ? boxes[i] : TrackerModel.level2StairBox;
         List<int> make_validBoxIndices()
         {
@@ -367,7 +369,12 @@ public static class DungeonUI
                         if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && boxAt(i).CellCurrent() == -1)
                             r = i;
                     if (r == -1)
-                        r = idxs[0];
+                    {
+                        if (dungeon.TriforceIsInItemSlot && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() == -1)
+                            r = extraIdx;   // the triforce is in an item slot, so the floor drop goes in the extra floor box rather than replacing a regular box
+                        else
+                            r = idxs[0];
+                    }
                     // r is now the index of the box we want
                     activateBox(r);
                     break;
@@ -552,9 +559,10 @@ public static class DungeonUI
         }
         var regularBoxViewsAndActivations = make_boxViewsAndActivations();
         // mirror the main tracker: when a Triforce Piece is placed in a dungeon item slot, the numbered triforce moves into that slot and the header becomes an extra floor item box
+        (Canvas, Action<int, CustomComboBoxes.GridClickDismissalWarpReturn>)? extraFloorViewAndActivate = dungeonIndex < 8 ? Views.MakeBoxItem(cm, d.ExtraFloorBox) : null;
         if (dungeonIndex < 8)
         {
-            var extraFloorView = Views.MakeBoxItem(cm, d.ExtraFloorBox).Item1;
+            var extraFloorView = extraFloorViewAndActivate.Value.Item1;
             void refreshTriforceHeaderOrSlot()
             {
                 headerCell.Children.Clear();
@@ -594,6 +602,9 @@ public static class DungeonUI
             sp.Children.Add(c);
             boxViewsAndActivations = regularBoxViewsAndActivations.Append((l2view, l2activate)).ToArray();
         }
+        // the extra floor box (the header, while the triforce sits in an item slot) is activated last, so the box hotkeys can target it
+        if (extraFloorViewAndActivate.HasValue)
+            boxViewsAndActivations = boxViewsAndActivations.Append(extraFloorViewAndActivate.Value).ToArray();
         // the optional level 9 floor item check (4th Sword start option), as on the main tracker
         if (level == 9 && TrackerModel.level9FloorBoxEnabled)
         {
