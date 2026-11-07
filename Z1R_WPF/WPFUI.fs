@@ -719,6 +719,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     // sword) only counts the other items once they are collected, so a placed but uncollected item does not give the heart away.
     if TrackerModel.HeartShuffleMode = 1 && not(TrackerModel.IsHiddenDungeonNumbers()) then
         let autoHearts = System.Collections.Generic.HashSet<TrackerModel.Box>(HashIdentity.Reference)
+        let autoExtraHearts = System.Collections.Generic.HashSet<int>()   // dungeons whose extra floor box holds a heart this code put there
         let busy = ref false
         let isHeart(b:TrackerModel.Box) = b.CellCurrent() = TrackerModel.ITEMS.HEARTCONTAINER
         let slotsOf(i:int) =
@@ -732,10 +733,21 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                     let needCollected = slots.Length >= 3
                     let filled(b:TrackerModel.Box) = b.CellCurrent() <> -1 && not(isHeart b) && (not needCollected || b.PlayerHas() = TrackerModel.PlayerHas.YES || b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE)   // (a triforce placed in a slot counts even before it is collected)
                     let othersFilled(b:TrackerModel.Box) = slots |> Array.forall (fun o -> obj.ReferenceEquals(o, b) || filled o)
+                    // the extra floor box (shown while the triforce sits in an item slot) may hold a heart this code moved there: take it back if that no longer holds
+                    let extra = TrackerModel.GetDungeon(i).ExtraFloorBox
+                    if autoExtraHearts.Contains i then
+                        if not(isHeart extra && extra.PlayerHas() = TrackerModel.PlayerHas.NO) then
+                            autoExtraHearts.Remove i |> ignore   // (the player changed it)
+                        elif not(TrackerModel.GetDungeon(i).TriforceIsInItemSlot) then
+                            autoExtraHearts.Remove i |> ignore
+                            extra.Set(-1, TrackerModel.PlayerHas.NO)   // (the triforce left the item slot)
                     for b in slots do
                         if autoHearts.Contains b then
                             if not(isHeart b && b.PlayerHas() = TrackerModel.PlayerHas.NO) then
                                 autoHearts.Remove b |> ignore   // (the player changed it)
+                                // the guessed heart sat where a triforce piece has now been placed, so the dungeon's heart is on the floor: the extra floor box
+                                if b.CellCurrent() = TrackerModel.ITEMS.TRIFORCE && i < 8 && extra.CellCurrent() = -1 then
+                                    if extra.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO) then autoExtraHearts.Add i |> ignore
                             elif not(othersFilled b) then
                                 autoHearts.Remove b |> ignore
                                 b.Set(-1, TrackerModel.PlayerHas.NO)   // (the item that implied this heart was removed)

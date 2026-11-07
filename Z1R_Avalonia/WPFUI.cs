@@ -1079,6 +1079,7 @@ public static class WPFUI
         if (TrackerModel.HeartShuffleMode == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)))
         {
             var autoHearts = new HashSet<TrackerModel.Box>(ReferenceEqualityComparer.Instance);
+            var autoExtraHearts = new HashSet<int>();   // dungeons whose extra floor box holds a heart this code put there
             var busy = false;
             bool isHeart(TrackerModel.Box b) => b.CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER;
             TrackerModel.Box[] slotsOf(int i)
@@ -1098,12 +1099,29 @@ public static class WPFUI
                         var needCollected = slots.Length >= 3;
                         bool filled(TrackerModel.Box b) => b.CellCurrent() != -1 && !(isHeart(b)) && (!needCollected || b.PlayerHas().Equals(TrackerModel.PlayerHas.YES) || b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);   // (a triforce placed in a slot counts even before it is collected)
                         bool othersFilled(TrackerModel.Box b) => slots.All(o => ReferenceEquals(o, b) || filled(o));
+                        // the extra floor box (shown while the triforce sits in an item slot) may hold a heart this code moved there: take it back if that no longer holds
+                        var extra = TrackerModel.GetDungeon(i).ExtraFloorBox;
+                        if (autoExtraHearts.Contains(i))
+                        {
+                            if (!(isHeart(extra) && extra.PlayerHas().Equals(TrackerModel.PlayerHas.NO)))
+                                autoExtraHearts.Remove(i);   // (the player changed it)
+                            else if (!TrackerModel.GetDungeon(i).TriforceIsInItemSlot)
+                            {
+                                autoExtraHearts.Remove(i);
+                                extra.Set(-1, TrackerModel.PlayerHas.NO);   // (the triforce left the item slot)
+                            }
+                        }
                         foreach (var b in slots)
                         {
                             if (autoHearts.Contains(b))
                             {
                                 if (!(isHeart(b) && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO)))
+                                {
                                     autoHearts.Remove(b);   // (the player changed it)
+                                    // the guessed heart sat where a triforce piece has now been placed, so the dungeon's heart is on the floor: the extra floor box
+                                    if (b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE && i < 8 && extra.CellCurrent() == -1)
+                                        if (extra.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO)) autoExtraHearts.Add(i);
+                                }
                                 else if (!(othersFilled(b)))
                                 {
                                     autoHearts.Remove(b);
