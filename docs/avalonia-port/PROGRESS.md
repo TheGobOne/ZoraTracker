@@ -10,6 +10,10 @@ Save compatibility: `tests/golden-save.ps1` loads every save in a folder (defaul
 compares the re-save with the file. On 2026-11-07 all 13 real WPF saves (2026-10-18 to 2026-11-06) pass: the only differences are fields a newer format adds.
 Not tested yet: an Avalonia-written save loaded by WPF (WPF has no `--dump`).
 
+Behaviour: `tests/action-parity.ps1` starts a 1st Quest tracker in each build, performs the same ~25 scripted mouse clicks (hearts, item boxes, Zones, dungeon tabs, right-clicks,
+an overworld tile's icon menu with one icon picked, Log) and clicks Save, then compares the two save files field by field. On 2026-11-07: 0 differences. A click that opens a menu
+must be followed by a click that dismisses it, or the next click is swallowed (Escape does not close the tile menu). Not covered: dungeon room editing, hotkeys, drag, popout windows.
+
 Look: `tests/side-by-side.ps1 [-Save <save>]` starts both builds from clean copies and writes `start_both.png` / `tracker_both.png` (WPF left, port right) plus a red-pixel
 diff to a temp folder (about 8% of the start screen and 3% of the tracker screen differ on 2026-11-07, almost all of it text anti-aliasing and glyph spacing: judge from the
 PNGs, not the %). The first run found and fixed: the disabled Custom LEVEL Name box was invisible (WPF keeps its dark fill), typed text in it was not upper-cased, start-screen
