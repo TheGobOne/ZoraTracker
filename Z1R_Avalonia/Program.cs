@@ -1627,7 +1627,7 @@ public static class Program
             hdnArea.PointerEntered += (_, _) => hoverExplain(hdnArea, "This checkbox corresponds to the randomizer setting:\n\nDungeons (tab)\n - Hide Dungeon Numbers (checkbox)");
             hdnArea.PointerExited += (_, _) => explainHide();
             // '4th Sword' option, directly under Hide Dungeon Numbers: checked = the 4th sword is the max sword level and the level 2 staircase box is enabled
-            var fscb = new CheckBox { Content = new TextBox { Text = "4th Sword", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0) };
+            var fscb = new CheckBox { Content = new TextBox { Text = "4th Sword", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0, 0.0, 2.0, 0.0) };
             Graphics.scaleUpCheckBoxBox(fscb, 1.66);
             fscb.IsChecked = false;
             var fsArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = fscb, VerticalAlignment = VerticalAlignment.Top });
@@ -1713,6 +1713,8 @@ public static class Program
             clnTextBox.VerticalContentAlignment = VerticalAlignment.Center;
             clnTextBox.FontSize = 18.0;
             Graphics.styleRoundedTextBox(clnTextBox);
+            // (WPF: CharacterCasing.Upper; Avalonia 11 has no such property, so typed or pasted text is upper-cased here)
+            clnTextBox.TextChanged += (_, _) => { var t = clnTextBox.Text; if (t != null && t != t.ToUpperInvariant()) { var c = clnTextBox.CaretIndex; clnTextBox.Text = t.ToUpperInvariant(); clnTextBox.CaretIndex = c; } };
             // 'ZORA Extras' section below the main startup options: 4th Sword and the custom level name
             var extrasHeaderText = new TextBox { Text = "ZORA Extras", IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), FontWeight = FontWeight.Bold, FontSize = 16.0, VerticalAlignment = VerticalAlignment.Center };
             // checkbox beside the header: checks / unchecks every ZORA Extras option below it at once (it shows a partial state when only some are checked)
@@ -1726,7 +1728,7 @@ public static class Program
             var extrasSP = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = WIDTH, Margin = new Thickness(0.0, 4.0, 0.0, 0.0) };
             extrasSP.Children.Add(fsArea);
             // 'Boots Replace Boomerangs' (what it does is still to be worked out; for now it just records the choice)
-            var brcb = new CheckBox { Content = new TextBox { Text = "Boots Replace Boomerangs", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0) };
+            var brcb = new CheckBox { Content = new TextBox { Text = "Boots Replace Boomerangs", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0, 0.0, 2.0, 0.0) };
             Graphics.scaleUpCheckBoxBox(brcb, 1.66);
             brcb.IsChecked = false;
             brcb.IsThreeState = true;   // Off, On, or Random (a dash): the flags can leave boots to chance
@@ -1738,7 +1740,7 @@ public static class Program
             // 'Extra PB Blocks' / 'Extra Raft Blocks': more overworld tiles that count as blocked by the power bracelet / raft
             CheckBox makeExtraBlocksCheckBox(string label, string explain)
             {
-                var cb = new CheckBox { Content = new TextBox { Text = label, IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0) };
+                var cb = new CheckBox { Content = new TextBox { Text = label, IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0, 0.0, 2.0, 0.0) };
                 Graphics.scaleUpCheckBoxBox(cb, 1.66);
                 cb.IsChecked = false;
                 var area = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = cb, VerticalAlignment = VerticalAlignment.Top });

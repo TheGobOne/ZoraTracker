@@ -10,6 +10,11 @@ Save compatibility: `tests/golden-save.ps1` loads every save in a folder (defaul
 compares the re-save with the file. On 2026-11-07 all 13 real WPF saves (2026-10-18 to 2026-11-06) pass: the only differences are fields a newer format adds.
 Not tested yet: an Avalonia-written save loaded by WPF (WPF has no `--dump`).
 
+Look: `tests/side-by-side.ps1 [-Save <save>]` starts both builds from clean copies and writes `start_both.png` / `tracker_both.png` (WPF left, port right) plus a red-pixel
+diff to a temp folder (about 8% of the start screen and 3% of the tracker screen differ on 2026-11-07, almost all of it text anti-aliasing and glyph spacing: judge from the
+PNGs, not the %). The first run found and fixed: the disabled Custom LEVEL Name box was invisible (WPF keeps its dark fill), typed text in it was not upper-cased, start-screen
+checkbox rows were 1-2px off, and the dungeon tabs were 2px too wide each. Still different: glyph spacing in the big dungeon-summary numbers and the overworld number markers.
+
 Parity: **not reached.** The goal is complete feature parity with the WPF tracker (see
 [PLAN.md](./PLAN.md#goal-complete-feature-parity)). A file marked `stubbed` or `skipped` is still
 a parity gap until its stub is replaced or the gap is approved under "Agreed platform deviations".

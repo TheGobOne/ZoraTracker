@@ -177,6 +177,8 @@ public static class Graphics
         cb.TemplateApplied += (_, ea) => apply(ea.NameScope);
         // the WPF transform also scales the gap between the box and the text
         cb.Padding = new Thickness(cb.Padding.Left * scale, cb.Padding.Top, cb.Padding.Right, cb.Padding.Bottom);
+        // (and the row: WPF's scaled-up checkbox rows come out 2px taller than the box-only scaling here; found by tests/side-by-side.ps1)
+        cb.Margin = new Thickness(cb.Margin.Left, cb.Margin.Top + 1.0, cb.Margin.Right, cb.Margin.Bottom + 1.0);
     }
 
     // WPF's CheckBox `Checked` / `Unchecked` events (raised when IsChecked becomes true / false, also when set from code). Avalonia 11 still has
@@ -357,6 +359,8 @@ public static class Graphics
     {
         var (fill, border) = (new SolidColorBrush(Color.Parse("#171717")), new SolidColorBrush(Color.Parse("#3A3A3A")));
         foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" }) t.Resources[k] = fill;
+        t.Resources["TextControlBackgroundDisabled"] = fill;   // (WPF's template has no disabled look: a disabled box keeps the dark fill and gray border, e.g. Custom LEVEL Name before its checkbox is ticked)
+        t.Resources["TextControlBorderBrushDisabled"] = border;
         t.Resources["TextControlBorderBrush"] = border;
         t.Resources["TextControlBorderBrushPointerOver"] = hoverOrange;
         t.Resources["TextControlBorderBrushFocused"] = hoverOrange;
@@ -465,7 +469,7 @@ public static class Graphics
                 bool hover = ti.IsPointerOver;
                 bd.Background = hover ? wpfTabHoverFill : ti.Background;
                 bd.BorderBrush = hover ? wpfTabHoverBorder : wpfTabBorder;
-                bd.Margin = new Thickness(0);
+                bd.Margin = new Thickness(0, 0, -2, 0);   // (WPF's tabs sit 2px closer than border + padding add up to: a 28px dungeon header makes a 40px tab; found by tests/side-by-side.ps1)
                 ti.ZIndex = 0;
             }
             bd.Opacity = ti.IsEffectivelyEnabled ? 1.0 : 0.56;
