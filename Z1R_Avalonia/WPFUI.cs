@@ -5806,6 +5806,7 @@ public static class WPFUI
                         if (!autoSaveFailureShown)   // (say so once: otherwise a Saves folder that cannot be written fails silently for the whole game)
                         {
                             autoSaveFailureShown = true;
+                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_crash_log.txt"), $"\n\nAUTOSAVE NOTE -- {DateTime.Now:yyyy-MM-dd-HH:mm:ss} -- auto-save failed: {e}\n"); } catch { }   // (also kept in the crash log, so a bug report shows it)
                             Graphics.ErrorBeepWithReminderLogText($"Auto-save failed ({e.Message}). Use the Save button, and check the Saves folder is writable.");
                         }
                     }

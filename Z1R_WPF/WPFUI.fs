@@ -4196,6 +4196,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             with e ->
                 if not autoSaveFailureShown.Value then   // (say so once: otherwise a Saves folder that cannot be written fails silently for the whole game)
                     autoSaveFailureShown.Value <- true
+                    (try System.IO.File.AppendAllText(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_crash_log.txt"), sprintf "\n\nAUTOSAVE NOTE -- %s -- auto-save failed: %s\n" (DateTime.Now.ToString("yyyy-MM-dd-HH:mm:ss")) (e.ToString())) with _ -> ())   // (also kept in the crash log, so a bug report shows it)
                     Graphics.ErrorBeepWithReminderLogText(sprintf "Auto-save failed (%s). Use the Save button, and check the Saves folder is writable." e.Message)
         )
         timer.Start()
