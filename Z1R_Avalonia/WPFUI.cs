@@ -4479,6 +4479,8 @@ public static class WPFUI
         notesTextBox = new TextBox { Width = appMainCanvas.Width - BLOCKERS_AND_NOTES_OFFSET, Height = dungeonTabs.Height - blockerGrid.Height,
                                 FontSize = TrackerModelOptions.NotesFontSize, Foreground = Brushes.LimeGreen, Background = Brushes.Black, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };   // long lines wrap instead of running off the box
         ScrollViewer.SetVerticalScrollBarVisibility(notesTextBox, ScrollBarVisibility.Auto);
+        // (the Fluent theme turns a focused or hovered TextBox light gray; WPF's stays black)
+        foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" }) notesTextBox.Resources[k] = Brushes.Black;
         var notesFilename = Platform.Files.User("Notes.txt");   // (WPF: the exe folder; the same folder on Windows)
         if (!(System.IO.File.Exists(notesFilename)))
             notesTextBox.Text = "Notes\n";

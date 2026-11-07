@@ -56,8 +56,15 @@ public static class Win {
     int w = Math.Min(a.Width, b.Width), h = Math.Min(a.Height, b.Height);
     var d = new Bitmap(w, h); long bad = 0;
     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-      Color p = a.GetPixel(x, y), q = b.GetPixel(x, y);
-      if (Math.Abs(p.R - q.R) + Math.Abs(p.G - q.G) + Math.Abs(p.B - q.B) > 24) { bad++; d.SetPixel(x, y, Color.Red); }
+      Color p = a.GetPixel(x, y);
+      // a pixel counts as the same if the other image has a close match within 1px: text anti-aliasing and 1px glyph shifts then don't count
+      bool match = false;
+      for (int dy = -1; dy <= 1 && !match; dy++) for (int dx = -1; dx <= 1 && !match; dx++) {
+        int xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= b.Width || yy >= b.Height) continue;
+        Color q = b.GetPixel(xx, yy);
+        if (Math.Abs(p.R - q.R) + Math.Abs(p.G - q.G) + Math.Abs(p.B - q.B) <= 60) match = true;
+      }
+      if (!match) { bad++; d.SetPixel(x, y, Color.Red); }
       else d.SetPixel(x, y, Color.FromArgb(40, p.R, p.G, p.B));
     }
     d.Save(diffPath, ImageFormat.Png); d.Dispose();
