@@ -5675,6 +5675,7 @@ public static class WPFUI
             TrackerModel.recomputePlayerStateSummary();
             TrackerModel.recomputeMapStateSummary();
             TrackerModel.recomputeWhatIsNeeded();
+            LoadDump.setProblems = anySetProblems;
             }
             catch
             {
@@ -5689,6 +5690,10 @@ public static class WPFUI
             doUIUpdateEvent.Trigger();
             Timeline.isCurrentlyLoadingASave = false;
             TrackerModel.TimelineItemModel.TriggerTimelineChanged();  // redraw timeline once (redraws are ignored while loading)
+            if (LoadDump.isActive)   // --load/--dump: write what the tracker now holds, and exit
+                LoadDump.Finish(SaveAndLoad.BuildSaveLines(notesTextBox.Text, DungeonUI.theDungeonTabControl.SelectedIndex, exportDungeonModelsJsonLines(), DungeonSaveAndLoad.SaveDrawingLayer(),
+                                        Graphics.alternativeOverworldMapFilename, Graphics.shouldInitiallyHideOverworldMap, currentRecorderDestinationIndex,
+                                        toggleBookShieldCheckBox.IsChecked.Value, bookIsAtlasCheckBox.IsChecked.Value));
         }
 
         // animation
