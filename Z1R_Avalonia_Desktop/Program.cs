@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using Avalonia;
+using Avalonia.Headless;
 
 namespace Z1R_Avalonia_Desktop
 {
@@ -24,7 +25,12 @@ namespace Z1R_Avalonia_Desktop
                 Thread.Sleep(1500);
                 return 0;
             }
-            return Z1R_Avalonia.Program.main(args, () => AppBuilder.Configure<Z1R_Avalonia.ZoraTrackerApp>().UsePlatformDetect());
+            // --dump (see docs/load-dump.md) runs on Avalonia's headless platform: no window server, so a tool that starts it many times takes no focus
+            var headless = Array.Exists(args, x => x.StartsWith("--dump="));
+            return Z1R_Avalonia.Program.main(args, () => {
+                var builder = AppBuilder.Configure<Z1R_Avalonia.ZoraTrackerApp>();
+                return headless ? builder.UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = true }) : builder.UsePlatformDetect();
+            });
         }
     }
 }

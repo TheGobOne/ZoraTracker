@@ -2131,7 +2131,9 @@ public static class Program
                                 var json = File.ReadAllText(pickedFile);
                                 var ver = System.Text.Json.JsonSerializer.Deserialize<DungeonSaveAndLoad.JustVersion>(json, new System.Text.Json.JsonSerializerOptions { AllowTrailingCommas = true });
                                 var warning = SaveAndLoad.LoadWarning(ver.Version, ver.SaveFormatVersion);
-                                if (warning != null)
+                                if (warning != null && LoadDump.isActive)
+                                    LoadDump.SetWarning(warning.Value);   // (--load/--dump: no box, the dump says what it would have shown)
+                                else if (warning != null)
                                 {
                                     var msg = $"{warning.Value}, but ZORATracker will attempt to load it anyway.";
                                     popupIsActive = true;
@@ -2146,7 +2148,12 @@ public static class Program
                             {
                                 errorMsg = $"Loading the save file\n{pickedFile}\nfailed with error:\n{e.Message}";
                             }
-                            if (errorMsg != null)
+                            if (errorMsg != null && LoadDump.isActive)
+                            {
+                                LoadDump.Fail(errorMsg);
+                                abortStartup = true;
+                            }
+                            else if (errorMsg != null)
                             {
                                 var msg = errorMsg;
                                 popupIsActive = true;
@@ -2192,6 +2199,8 @@ public static class Program
                 }
                 CustomComboBoxes.StartImmediate(go());
             }
+            if (LoadDump.isActive)   // --load/--dump: load the file as the recent-saves buttons do, once the start screen is up
+                Dispatcher.UIThread.Post(() => { pendingLoadPath = LoadDump.loadPath; startButtonBehavior(999); }, DispatcherPriority.Background);
             OptionsMenu.startBlankRunHook = () => startButtonBehavior(0);   // (the start screen tour's Continue starts a 1st Quest Overworld run)
             var quests = new (int, string)[] {
                 (0, "1st Quest"),
@@ -3004,6 +3013,7 @@ public class ZoraTrackerApp : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d)
         {
+            if (LoadDump.isActive) LoadDump.arm();
             if (SelfTest.isSelfTest) SelfTest.arm();   // (WPF arms it before app.Run; here Avalonia's dispatcher only exists once the app is running)
             Program.theDummyWindow = new Program.DummyWindow(d);
             d.Exit += (_, _) => Program.stopLocalSignalRHost();
