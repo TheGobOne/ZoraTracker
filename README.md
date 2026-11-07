@@ -27,8 +27,8 @@ Needs Windows 10 (version 1903 or later) or Windows 11. The tracker uses .NET Fr
 
 1. [Download the latest zip](https://github.com/TheGobOne/ZoraTracker/releases/latest) and unzip it somewhere you want to keep. Settings, hotkeys and saves live beside the program.
 2. Run `Z1R_WPF.exe`. If Windows warns about an unknown app, choose **More info**, then **Run anyway**.
-3. On the start screen, click **Paste Flags**, paste your Z1R and ZORA flag strings, and click **Apply**.
-4. Click the overworld your seed uses (1st Quest, 2nd Quest, Mixed or Randomized). The tracker starts.
+3. On the start screen, click **Paste Flags**, paste the Z1R and ZORA flag strings from the ZORA site, and click **Apply**.
+4. Click the overworld your seed uses (1st Quest, 2nd Quest, Mixed - 1Q, Mixed - 2Q or Randomized Quest). The tracker starts.
 
 Stuck? Click **Guided Tour** on the start screen. The app also checks for new releases and tells you when one is available.
 
@@ -42,7 +42,7 @@ Stuck? Click **Guided Tour** on the start screen. The app also checks for new re
 |---|---|
 | **Items and hearts** | Mark what you own, with live counts of overworld spots left. |
 | **Overworld map** | Caves, shops, dungeon entrances and hints, with routing lines when you hover a tile. |
-| **Every dungeon** | Room by room: types, contents, doors, OFF rooms. A summary tab shows all nine at once. |
+| **Every dungeon** | Room by room: types, contents, doors, OFF rooms. A summary tab shows every dungeon at once. |
 | **Hints and blockers** | A Hint Decoder, Dead Woods and Lost Hills boxes, and per-dungeon blockers. |
 | **Your run** | A timeline of what you found and when, free-text notes, and a run timer. |
 | **Reminders** | Voice and visual nudges for things worth checking, configurable in Options. |
