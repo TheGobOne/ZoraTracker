@@ -942,6 +942,7 @@ Differences TheGobOne has explicitly approved. Anything not listed here is a par
 - **Shop-highlight stroke:** keep the port's clean behaviour (don't copy WPF's stuck 4px stroke).
 - **Message-box / selection icons:** undecided; to be judged by eye.
 - **Release zips:** the port is now the only thing being worked on; its zips stay separate (`CrossPlatform` in the name) for now.
+- **Platform stubs (7):** parked. Not yet working on macOS or Linux: speech, speech recognition, console show/hide (n/a off Windows), `ZTracker.lnk`, in-app update install, co-op host launch, mouse sonar. Windows-first release; revisit when a Mac or Linux machine is available.
 - **Settings folder:** yes. `TrackerModelOptions.settingsDirectory` (shared model; null = the program's own folder, so WPF is unchanged) is set by the port to `Platform.UserDataDir()`
   before settings are read (the app folder on Windows, a per-user folder on macOS/Linux). To send upstream with the other proposed PRs.
 - **Windows console:** no console window; show a message on a crash. Done: see "No console window" above.
