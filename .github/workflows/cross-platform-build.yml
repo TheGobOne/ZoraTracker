@@ -1,0 +1,76 @@
+name: Cross-platform build
+
+# Builds the Avalonia port for macOS and Linux on GitHub's own machines.
+# - Manual run (Actions tab > Run workflow): builds both and keeps the zips as downloadable run artifacts. Nothing is published.
+# - Publishing a release: builds both and attaches the zips to that release.
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build the Mac app (Apple silicon and Intel)
+        shell: bash
+        run: |
+          chmod +x Z1R_Avalonia_Desktop/macOS/make-app.sh
+          Z1R_Avalonia_Desktop/macOS/make-app.sh arm64 x64
+      - name: Zip each app (ditto keeps the app bundle intact)
+        shell: bash
+        run: |
+          version=$(sed -n 's/.*AssemblyInformationalVersion("\([^"]*\)").*/\1/p' GlobalAssemblyInfo.fs)
+          mkdir -p dist
+          for arch in arm64 x64; do
+            ditto -c -k --keepParent "Z1R_Avalonia_Desktop/bin/macOS/$arch/ZORA Tracker.app" "dist/ZoraTracker-CrossPlatform-v${version}-macOS-${arch}.zip"
+          done
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.zip
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish for Linux x64 (also publishes the co-op host)
+        run: dotnet publish Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.csproj -c Release -r linux-x64 --self-contained -o publish/linux-x64 -v q -nologo
+      - name: Zip the Linux build
+        shell: bash
+        run: |
+          version=$(sed -n 's/.*AssemblyInformationalVersion("\([^"]*\)").*/\1/p' GlobalAssemblyInfo.fs)
+          mkdir -p dist
+          chmod +x publish/linux-x64/ZoraTracker.CrossPlatform publish/linux-x64/Z1R_SignalRHost || true
+          (cd publish/linux-x64 && zip -qr "../../dist/ZoraTracker-CrossPlatform-v${version}-linux-x64.zip" .)
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.zip
+
+  attach:
+    if: github.event_name == 'release'
+    needs: [macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - name: Attach the zips to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.zip --clobber --repo "${{ github.repository }}"
