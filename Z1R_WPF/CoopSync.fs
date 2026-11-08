@@ -286,7 +286,7 @@ let sendPlayerProgressUpdate (myConsoleId: string) =
                 lastSentPlayerProgressJson <- jsonPayload
                 TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending PlayerProgress update: %s" jsonPayload)
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop()) then
-                    SyncManager.EnqueueSync("PlayerProgress", jsonPayload, myConsoleId)
+                    SyncManager.EnqueueSync("PlayerProgress", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                 else
                     TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Coop sync is disabled, not sending PlayerProgress update")
         with ex ->
@@ -339,7 +339,7 @@ let sendStartingItemsAndExtrasUpdate (myConsoleId: string) =
                 lastSentStartingItemsJson <- jsonPayload
                 TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending StartingItemsAndExtras update: %s" jsonPayload)
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop()) then
-                    SyncManager.EnqueueSync("StartingItems", jsonPayload, myConsoleId)
+                    SyncManager.EnqueueSync("StartingItems", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                 else
                     TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Coop sync is disabled, not sending StartingItemsAndExtras update")
         with ex ->
@@ -382,7 +382,7 @@ let sendBlockersUpdate (myConsoleId: string) =
             if shouldSend "Blockers" jsonPayload then
                 TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending Blockers update: %s" jsonPayload)
                 if TrackerModelOptions.CoopSyncOptions.GetEnableCoop() then
-                    SyncManager.EnqueueSync("Blockers", jsonPayload, myConsoleId)
+                    SyncManager.EnqueueSync("Blockers", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending Blockers update")
             else
@@ -439,7 +439,7 @@ let sendItemsUpdate (myConsoleId: string) =
             if shouldSend "Items" jsonPayload then
                 TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending Items update (excluding Triforce): %s" jsonPayload)
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop()) then
-                    SyncManager.EnqueueSync("Items", jsonPayload, myConsoleId)
+                    SyncManager.EnqueueSync("Items", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                 else
                     TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Coop sync is disabled, not sending Items update")
             else
@@ -565,7 +565,7 @@ let sendOverworldUpdateDebounced (myConsoleId: string) =
                     lastSentOverworldJson <- jsonPayload
                     TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending Overworld update: %s" jsonPayload)
                     if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop()) then
-                        SyncManager.EnqueueSync("Overworld", jsonPayload, myConsoleId)
+                        SyncManager.EnqueueSync("Overworld", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                     else
                         TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Coop sync is disabled, not sending Overworld update")
             with ex ->
@@ -614,7 +614,7 @@ let subscribeToOverworldTileChanges (myConsoleId: string) =
                             let jsonPayload = JsonConvert.SerializeObject(update)
                             if shouldSend "OverworldTile" jsonPayload then
                                 TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending OverworldTile (%d,%d): %s" x y jsonPayload)
-                                SyncManager.EnqueueSync("OverworldTile", jsonPayload, myConsoleId)
+                                SyncManager.EnqueueSync("OverworldTile", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                     with ex ->
                         TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Failed to send OverworldTile (%d,%d): %s" x y ex.Message)
                 } |> Async.Start
@@ -673,7 +673,7 @@ let sendDungeonTriforceUpdate (myConsoleId: string) =
             if shouldSend "DungeonTriforce" json then
                 TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending DungeonTriforce update: %s" json)
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop()) then
-                    SyncManager.EnqueueSync("DungeonTriforce", json, myConsoleId)
+                    SyncManager.EnqueueSync("DungeonTriforce", json, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                 else
                     TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Coop sync is disabled, not sending DungeonTriforce update")
             else
@@ -754,7 +754,7 @@ let sendDungeonMapsUpdate (myConsoleId: string) =
                     TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] DungeonMaps update: %s" jsonPayload)
 
                     if TrackerModelOptions.CoopSyncOptions.GetEnableCoop() then
-                        SyncManager.EnqueueSync("DungeonMaps", jsonPayload, myConsoleId)
+                        SyncManager.EnqueueSync("DungeonMaps", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                     else
                         TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending DungeonMaps update")
                 else
@@ -784,8 +784,8 @@ let lastHiddenDungeonColorLabelPayloads : string[] = Array.create 9 ""
 let hiddenDungeonColorLabelDebouncers = Array.init 9 (fun _ -> Debouncer.Debouncer(200))
 
 let subscribeToHiddenDungeonColorLabelChanges (myConsoleId: string) =
-    if TrackerModel.IsHiddenDungeonNumbers()
-    && TrackerModelOptions.CoopSyncOptions.GetEnableCoop() then
+    // (co-op can be turned on after startup, so it is checked when sending, not when subscribing)
+    if TrackerModel.IsHiddenDungeonNumbers() then
         for i = 0 to 8 do
             let dungeon = TrackerModel.GetDungeon(i)
             dungeon.HiddenDungeonColorOrLabelChanged.Add(fun (color, labelChar) ->
@@ -802,12 +802,12 @@ let subscribeToHiddenDungeonColorLabelChanges (myConsoleId: string) =
 
                         let jsonPayload = JsonConvert.SerializeObject(payload)
 
-                        if shouldSend "HiddenDungeonColorLabel" jsonPayload then
+                        if TrackerModelOptions.CoopSyncOptions.GetEnableCoop() && shouldSend "HiddenDungeonColorLabel" jsonPayload then
                             hiddenDungeonColorLabelDebouncers.[i].Trigger(fun () ->
                                 async {
                                     if jsonPayload <> lastHiddenDungeonColorLabelPayloads.[i] then
                                         lastHiddenDungeonColorLabelPayloads.[i] <- jsonPayload
-                                        SyncManager.EnqueueSync("HiddenDungeonColorLabel", jsonPayload, myConsoleId)
+                                        SyncManager.EnqueueSync("HiddenDungeonColorLabel", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                                 } |> Async.Start
                             )
                     with ex ->
@@ -841,7 +841,7 @@ let sendDoorChangeUpdate (info: DungeonUI.DoorChangeInfo) (myConsoleId: string) 
 
                 if doorSyncReady then
                     if coopEnabled then
-                        SyncManager.EnqueueSync("DoorChange", jsonPayload, myConsoleId)
+                        SyncManager.EnqueueSync("DoorChange", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                     else
                         TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending DoorChange update")
                 else
@@ -882,7 +882,7 @@ let sendRoomChangeUpdate (level: int) (x: int) (y: int) (room: Z1R_Tracker.Model
                 if TrackerModelOptions.CoopSyncOptions.GetEnableCoop() && shouldSend "RoomChange" json && not (DungeonPopups.suppressRoomSyncTemporarily) then
                     TrackerModelOptions.DebugConfig.Log(sprintf "[Sync] Sending RoomChange: %s" json)
                     recordSend(key)
-                    SyncManager.EnqueueSync("RoomChange", json, myConsoleId)
+                    SyncManager.EnqueueSync("RoomChange", json, TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] RoomChange not sent — coop disabled or not needed")
             else

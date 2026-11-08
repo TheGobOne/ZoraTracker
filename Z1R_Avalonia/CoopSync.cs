@@ -408,7 +408,7 @@ public static class CoopSync
                 lastSentPlayerProgressJson = jsonPayload;
                 TrackerModelOptions.DebugConfig.Log($"[Sync] Sending PlayerProgress update: {jsonPayload}");
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
-                    SyncManager.EnqueueSync("PlayerProgress", jsonPayload, myConsoleId);
+                    SyncManager.EnqueueSync("PlayerProgress", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending PlayerProgress update");
             }
@@ -476,7 +476,7 @@ public static class CoopSync
                 lastSentStartingItemsJson = jsonPayload;
                 TrackerModelOptions.DebugConfig.Log($"[Sync] Sending StartingItemsAndExtras update: {jsonPayload}");
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
-                    SyncManager.EnqueueSync("StartingItems", jsonPayload, myConsoleId);
+                    SyncManager.EnqueueSync("StartingItems", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending StartingItemsAndExtras update");
             }
@@ -533,7 +533,7 @@ public static class CoopSync
             {
                 TrackerModelOptions.DebugConfig.Log($"[Sync] Sending Blockers update: {jsonPayload}");
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
-                    SyncManager.EnqueueSync("Blockers", jsonPayload, myConsoleId);
+                    SyncManager.EnqueueSync("Blockers", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending Blockers update");
             }
@@ -606,7 +606,7 @@ public static class CoopSync
             {
                 TrackerModelOptions.DebugConfig.Log($"[Sync] Sending Items update (excluding Triforce): {jsonPayload}");
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
-                    SyncManager.EnqueueSync("Items", jsonPayload, myConsoleId);
+                    SyncManager.EnqueueSync("Items", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending Items update");
             }
@@ -761,7 +761,7 @@ public static class CoopSync
                         lastSentOverworldJson = jsonPayload;
                         TrackerModelOptions.DebugConfig.Log($"[Sync] Sending Overworld update: {jsonPayload}");
                         if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
-                            SyncManager.EnqueueSync("Overworld", jsonPayload, myConsoleId);
+                            SyncManager.EnqueueSync("Overworld", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                         else
                             TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending Overworld update");
                     }
@@ -830,7 +830,7 @@ public static class CoopSync
                                 if (shouldSend("OverworldTile", jsonPayload))
                                 {
                                     TrackerModelOptions.DebugConfig.Log($"[Sync] Sending OverworldTile ({x},{y}): {jsonPayload}");
-                                    SyncManager.EnqueueSync("OverworldTile", jsonPayload, myConsoleId);
+                                    SyncManager.EnqueueSync("OverworldTile", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                                 }
                             }
                         }
@@ -899,7 +899,7 @@ public static class CoopSync
             {
                 TrackerModelOptions.DebugConfig.Log($"[Sync] Sending DungeonTriforce update: {json}");
                 if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
-                    SyncManager.EnqueueSync("DungeonTriforce", json, myConsoleId);
+                    SyncManager.EnqueueSync("DungeonTriforce", json, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending DungeonTriforce update");
             }
@@ -1007,7 +1007,7 @@ public static class CoopSync
                         TrackerModelOptions.DebugConfig.Log($"[Sync] DungeonMaps update: {jsonPayload}");
 
                         if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
-                            SyncManager.EnqueueSync("DungeonMaps", jsonPayload, myConsoleId);
+                            SyncManager.EnqueueSync("DungeonMaps", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                         else
                             TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending DungeonMaps update");
                     }
@@ -1049,8 +1049,8 @@ public static class CoopSync
 
     public static void subscribeToHiddenDungeonColorLabelChanges(string myConsoleId)
     {
-        if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null)
-            && TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
+        // (co-op can be turned on after startup, so it is checked when sending, not when subscribing)
+        if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
         {
             for (int i0 = 0; i0 <= 8; i0++)
             {
@@ -1075,7 +1075,7 @@ public static class CoopSync
 
                         var jsonPayload = JsonConvert.SerializeObject(payload);
 
-                        if (shouldSend("HiddenDungeonColorLabel", jsonPayload))
+                        if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop() && shouldSend("HiddenDungeonColorLabel", jsonPayload))
                         {
                             hiddenDungeonColorLabelDebouncers[i].Trigger(() =>
                             {
@@ -1084,7 +1084,7 @@ public static class CoopSync
                                     if (jsonPayload != lastHiddenDungeonColorLabelPayloads[i])
                                     {
                                         lastHiddenDungeonColorLabelPayloads[i] = jsonPayload;
-                                        SyncManager.EnqueueSync("HiddenDungeonColorLabel", jsonPayload, myConsoleId);
+                                        SyncManager.EnqueueSync("HiddenDungeonColorLabel", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                                     }
                                 });
                             });
@@ -1129,7 +1129,7 @@ public static class CoopSync
                 if (doorSyncReady)
                 {
                     if (coopEnabled)
-                        SyncManager.EnqueueSync("DoorChange", jsonPayload, myConsoleId);
+                        SyncManager.EnqueueSync("DoorChange", jsonPayload, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                     else
                         TrackerModelOptions.DebugConfig.Log("[Sync] Coop sync is disabled, not sending DoorChange update");
                 }
@@ -1180,7 +1180,7 @@ public static class CoopSync
                 {
                     TrackerModelOptions.DebugConfig.Log($"[Sync] Sending RoomChange: {json}");
                     recordSend(key);
-                    SyncManager.EnqueueSync("RoomChange", json, myConsoleId);
+                    SyncManager.EnqueueSync("RoomChange", json, TrackerModelOptions.CoopSyncOptions.MyConsoleId);
                 }
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] RoomChange not sent — coop disabled or not needed");
