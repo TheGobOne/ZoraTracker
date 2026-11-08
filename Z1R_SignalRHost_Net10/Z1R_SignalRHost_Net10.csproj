@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The co-op host for macOS and Linux (the Windows tracker still ships Z1R_SignalRHost, netcoreapp3.1 win-x86, unchanged).
+       Same source files as ..\Z1R_SignalRHost, built for net10 so it can be published self-contained for any OS:
+         dotnet publish Z1R_SignalRHost_Net10 -c Release -r osx-arm64 (self-contained, single file)
+       Z1R_Avalonia_Desktop runs that for you when it is published for macOS or Linux. The output is named Z1R_SignalRHost (no .exe off Windows). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Z1R_SignalRHost</AssemblyName>
+    <RootNamespace>Z1RSignalRHost</RootNamespace>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Z1R_SignalRHost\**\*.cs" Exclude="..\Z1R_SignalRHost\obj\**;..\Z1R_SignalRHost\bin\**" />
+  </ItemGroup>
+
+</Project>

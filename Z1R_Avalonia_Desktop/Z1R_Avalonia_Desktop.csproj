@@ -21,4 +21,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Z1R_Avalonia\Z1R_Avalonia.csproj" />
   </ItemGroup>
+  <!-- Co-op hosting on macOS and Linux: publishing for one of those systems also publishes the co-op host (Z1R_SignalRHost, no .exe) next to the app.
+       Windows is unchanged (the Windows host comes from the WPF build). -->
+  <Target Name="PublishCoopHostOffWindows" AfterTargets="Publish"
+          Condition="'$(RuntimeIdentifier)' != '' And !$(RuntimeIdentifier.StartsWith('win'))">
+    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)..\Z1R_SignalRHost_Net10\Z1R_SignalRHost_Net10.csproj&quot; -c $(Configuration) -r $(RuntimeIdentifier) --self-contained -p:PublishSingleFile=true -o &quot;$(PublishDir)&quot; -v q -nologo" />
+  </Target>
 </Project>

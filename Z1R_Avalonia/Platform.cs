@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
@@ -260,8 +261,17 @@ public static class Platform
     {
         if (!isWindows)
         {
-            stub("starting a child process tied to the app's lifetime (co-op host; Windows uses a Job Object)");
+#if BROWSER
+            stub("starting a child process (co-op host; a web page can't start programs)");
             return null;
+#else
+            // No Job Object here. The host is killed when the app exits normally (Program's ProcessExit hook calls Dungeon.stopLocalSignalRHost);
+            // one orphaned by a crash is killed by name the next time the tracker starts (Program.killAnyZombieHosts).
+            try { File.SetUnixFileMode(fileName, File.GetUnixFileMode(fileName) | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute); }
+            catch (Exception) { }   // (a zip can drop the executable bit; if this fails too, Process.Start below reports it)
+            var unixPsi = new ProcessStartInfo { FileName = fileName, Arguments = arguments, UseShellExecute = false, CreateNoWindow = true };
+            return Process.Start(unixPsi);
+#endif
         }
         // Defer job creation to first actual use; calling at module-load time (do) can trigger
         // SetInformationJobObject error 24 on first launch due to static-initializer ordering.
@@ -427,7 +437,29 @@ public static class Platform
             try { WinShellLink.Create(lnkPath, targetPath, workingDirectory, iconPath, description); }
             catch (Exception e) { Console.WriteLine($"couldn't write the shortcut {lnkPath}: {e.Message}"); }
         }
-        else stub("app shortcut (WPF: ZTracker.lnk next to the exe; macOS: the .app in Applications, Linux: a .desktop file)");
+        else if (isMacOS)
+        {
+            // the .app bundle (Z1R_Avalonia_Desktop/macOS/make-app.sh) is already what you launch, from Applications or the Dock: nothing to write
+        }
+        else if (isBrowser)
+            stub("app shortcut (a web page has none)");
+        else
+        {
+            // Linux: a .desktop launcher next to the exe (ZTracker.lnk becomes ZTracker.desktop); most file managers can launch it, and it can be copied to the menu
+            try
+            {
+                var desktopPath = Path.ChangeExtension(lnkPath, ".desktop");
+                string quote(string s) => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+                var text = "[Desktop Entry]\nType=Application\nName=ZORA Tracker\nComment=" + description + "\nExec=" + quote(targetPath) + "\nPath=" + workingDirectory
+                         + "\nIcon=" + iconPath + "\nTerminal=false\nCategories=Game;\n";
+                if (!File.Exists(desktopPath) || File.ReadAllText(desktopPath) != text)
+                    File.WriteAllText(desktopPath, text);
+#if !BROWSER
+                File.SetUnixFileMode(desktopPath, File.GetUnixFileMode(desktopPath) | UnixFileMode.UserExecute);
+#endif
+            }
+            catch (Exception e) { Console.WriteLine($"couldn't write the shortcut {lnkPath}: {e.Message}"); }
+        }
     }
 
     [SupportedOSPlatform("windows")]
@@ -766,13 +798,94 @@ public static class Platform
     /// <summary>One installed voice, as WPF's System.Speech `InstalledVoice` (`v.VoiceInfo.Name`, `v.Enabled`).</summary>
     public sealed record InstalledVoice(string Name, bool Enabled);
 
+#if !BROWSER
+    // Speech off Windows runs a command-line speech program, one process per spoken text, and waits for it, as WPF's Speak does.
+    // macOS: `say` (always installed). Linux: espeak-ng or espeak if installed, else speech-dispatcher's spd-say.
+    // Only English voices are listed (the Options "Change Voice" list would otherwise run to hundreds). The text goes in on stdin, so it can't be mistaken for an option.
+    // Volume: espeak and spd-say have a volume option; `say` has none, so on macOS the Options volume only mutes (0) or unmutes, and the system volume sets the loudness.
+    private static class UnixSpeech
+    {
+        private static string tool;   // "say", "espeak-ng", "espeak", "spd-say", or "" when none is installed
+        private static string Tool()
+        {
+            if (tool != null) return tool;
+            var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(':', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var t in isMacOS ? new[] { "say" } : new[] { "espeak-ng", "espeak", "spd-say" })
+                if (dirs.Any(d => File.Exists(Path.Combine(d, t)))) return tool = t;
+            return tool = "";
+        }
+        private static Process Start(string file, IEnumerable<string> args, bool input, bool output)
+        {
+            var psi = new ProcessStartInfo { FileName = file, UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = input, RedirectStandardOutput = output };
+            foreach (var a in args) psi.ArgumentList.Add(a);
+            return Process.Start(psi);
+        }
+        private static List<string> voices;
+        public static List<string> Voices()
+        {
+            if (voices != null) return voices;
+            var r = new List<string>();
+            try
+            {
+                var t = Tool();
+                if (t == "say")
+                {
+                    using var p = Start("say", new[] { "-v", "?" }, false, true);
+                    var outp = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(3000);
+                    // "Name     en_US    # sample text"   (names can have spaces and brackets)
+                    foreach (var line in outp.Split('\n'))
+                    {
+                        var m = System.Text.RegularExpressions.Regex.Match(line, @"^(.+?)\s{2,}(\S+)\s+#");
+                        if (m.Success && m.Groups[2].Value.StartsWith("en", StringComparison.OrdinalIgnoreCase)) r.Add(m.Groups[1].Value.Trim());
+                    }
+                }
+                else if (t == "espeak-ng" || t == "espeak")
+                {
+                    using var p = Start(t, new[] { "--voices=en" }, false, true);
+                    var outp = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(3000);
+                    // "Pty Language Age/Gender VoiceName File Other"   (first line is the header)
+                    foreach (var line in outp.Split('\n').Skip(1))
+                    {
+                        var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 4) r.Add(parts[3]);
+                    }
+                }
+            }
+            catch (Exception) { }   // (no such program, or it failed: no voices, as before)
+            return voices = r.Distinct().ToList();
+        }
+        /// <summary>Speaks and waits. False when no speech program is installed or it couldn't start.</summary>
+        public static bool Speak(string text, string voice, int volume)
+        {
+            try
+            {
+                var t = Tool();
+                if (t == "") return false;
+                var args = new List<string>();
+                if (t == "say") { args.Add("-f"); args.Add("-"); if (voice != "") { args.Add("-v"); args.Add(voice); } }
+                else if (t == "spd-say") { args.Add("-w"); args.Add("-e"); args.Add("-i"); args.Add((volume * 2 - 100).ToString()); }
+                else { args.Add("--stdin"); args.Add("-a"); args.Add(volume.ToString()); if (voice != "") { args.Add("-v"); args.Add(voice); } }
+                using var p = Start(t, args, true, false);
+                p.StandardInput.Write(text);
+                p.StandardInput.Close();
+                p.WaitForExit();
+                return true;
+            }
+            catch (Exception) { return false; }
+        }
+    }
+#endif
+
     /// <summary>The text-to-speech voice (WPF: a System.Speech.Synthesis.SpeechSynthesizer), with the members the tracker uses.
-    /// Windows: System.Speech (the System.Speech NuGet package), so it behaves as in WPF. macOS/Linux: a stub (risk 6) that keeps
-    /// Volume, lists no voices, logs once and prints each spoken text instead of speaking it.</summary>
+    /// Windows: System.Speech (the System.Speech NuGet package), so it behaves as in WPF. macOS/Linux: a speech command (see UnixSpeech);
+    /// if none is installed it keeps Volume, lists no voices, logs once and prints each spoken text instead of speaking it.</summary>
     public sealed class SpeechSynthesizer
     {
         private readonly object impl;   // a System.Speech.Synthesis.SpeechSynthesizer on Windows, else null
-        private int stubVolume = 100;   // (System.Speech's default; only the stub uses this)
+        private int stubVolume = 100;   // (System.Speech's default; only the non-Windows voice uses this)
+        private string unixVoice = "";   // the chosen voice off Windows ("" = the system's default)
         public SpeechSynthesizer()
         {
             if (OperatingSystem.IsWindows())
@@ -790,23 +903,25 @@ public static class Platform
             get
             {
                 if (OperatingSystem.IsWindows()) return WinSpeech.GetVoiceName(impl);
-                stub("speech synthesis voices (macOS: AVSpeechSynthesizer, Linux: speech-dispatcher)");
-                return "";
+                return unixVoice;
             }
         }
         /// <summary>WPF: `voice.GetInstalledVoices()`. The stub returns no voices.</summary>
         public List<InstalledVoice> GetInstalledVoices()
         {
             if (OperatingSystem.IsWindows()) return WinSpeech.GetInstalledVoices(impl);
-            stub("speech synthesis voices (macOS: AVSpeechSynthesizer, Linux: speech-dispatcher)");
+#if BROWSER
             return new List<InstalledVoice>();
+#else
+            return UnixSpeech.Voices().Select(n => new InstalledVoice(n, true)).ToList();
+#endif
         }
         /// <summary>WPF: `voice.SelectVoice(name)`. On Windows it throws if there's no such enabled voice, as System.Speech does (callers catch it).
         /// The stub does nothing.</summary>
         public void SelectVoice(string name)
         {
             if (OperatingSystem.IsWindows()) WinSpeech.SelectVoice(impl, name);
-            else stub("speech synthesis voices (macOS: AVSpeechSynthesizer, Linux: speech-dispatcher)");
+            else unixVoice = name ?? "";
         }
         /// <summary>Speaks the text and returns when it's done (WPF: `voice.Speak(text)`, synchronous). The stub prints the text.</summary>
         public void Speak(string text)
@@ -814,8 +929,17 @@ public static class Platform
             if (OperatingSystem.IsWindows()) WinSpeech.Speak(impl, text);
             else
             {
-                stub("speech synthesis (macOS: AVSpeechSynthesizer, Linux: speech-dispatcher)");
+#if BROWSER
+                stub("speech synthesis (a web page can't run a speech program)");
                 Console.WriteLine($"[speech] {text}");
+#else
+                if (stubVolume <= 0) return;   // muted
+                if (!UnixSpeech.Speak(text, unixVoice, stubVolume))
+                {
+                    stub("speech synthesis (macOS: the 'say' command; Linux: install espeak-ng, espeak or speech-dispatcher)");
+                    Console.WriteLine($"[speech] {text}");
+                }
+#endif
             }
         }
     }

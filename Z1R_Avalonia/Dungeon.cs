@@ -163,7 +163,8 @@ public static class Dungeon
     {
         try
         {
-            var exePath = Platform.Files.App("Z1R_SignalRHost.exe");
+            // (WPF: always .exe. Off Windows the host is published without the extension; see Z1R_SignalRHost_Net10)
+            var exePath = Platform.Files.App(OperatingSystem.IsWindows() ? "Z1R_SignalRHost.exe" : "Z1R_SignalRHost");
             if (System.IO.File.Exists(exePath))
             {
                 // (job creation, the ProcessStartInfo (no shell execute, no window) and adding the process to the job: Platform.StartChildProcessTiedToApp)
