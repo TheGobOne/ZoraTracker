@@ -525,8 +525,8 @@ public static class PieMenus
         void addButton(string text, string keyOpt, string value)
         {
             var label = keyOpt is string k ? $"{text}   [{k}]" : text;
-            var b = new Button { Height = 34.0, MinWidth = 280.0, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
-            b.Content = new TextBox { Text = label, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
+            var b = new Button { Template = Graphics.roundedButtonTemplate, Height = 34.0, MinWidth = 280.0, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush };
+            b.Content = new TextBox { Text = label, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MinHeight = 0.0, Padding = new Thickness(2.0, 0.0, 2.0, 0.0), BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
             b.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             b.VerticalContentAlignment = VerticalAlignment.Stretch;
             if (crossed.Contains(value))
@@ -586,7 +586,7 @@ public static class PieMenus
         var grid = new UniformGrid { Columns = cols, Background = Brushes.Black, Margin = new Thickness(4.0) };
         foreach (var (ident, content) in items)
         {
-            var b = new Button { MinWidth = 36.0, MinHeight = 40.0, Margin = new Thickness(2.0), Padding = new Thickness(4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange, Content = content };
+            var b = new Button { Template = Graphics.roundedButtonTemplate, MinWidth = 36.0, MinHeight = 40.0, Margin = new Thickness(2.0), Padding = new Thickness(4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush, Content = content };
             var disabledTip = itemPickerDisabledTip(ident);
             if (disabledTip == null)
                 b.Click += (_, _) => { result = ident; wh.Set(); };
@@ -760,7 +760,7 @@ public static class PieMenus
                 Grid.SetRow(tb, 1);
                 g.Children.Add(tb);
             }
-            var b = new Button { MinHeight = 56.0, MinWidth = 32.0, Margin = new Thickness(2.0), Padding = new Thickness(4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
+            var b = new Button { Template = Graphics.roundedButtonTemplate, MinHeight = 56.0, MinWidth = 32.0, Margin = new Thickness(2.0), Padding = new Thickness(4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush };
             b.Content = g;
             b.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             b.VerticalContentAlignment = VerticalAlignment.Stretch;
@@ -1004,8 +1004,8 @@ public static class PieMenus
         void addButton(string text, int hotkeyIndex)
         {
             var label = hkp.AsPrettyHotKeyOpt(hotkeyIndex) is string k ? $"{text}   [{k}]" : text;
-            var b = new Button { Height = 34.0, MinWidth = 280.0, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
-            b.Content = new TextBox { Text = label, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
+            var b = new Button { Template = Graphics.roundedButtonTemplate, Height = 34.0, MinWidth = 280.0, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush };
+            b.Content = new TextBox { Text = label, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MinHeight = 0.0, Padding = new Thickness(2.0, 0.0, 2.0, 0.0), BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
             b.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             b.VerticalContentAlignment = VerticalAlignment.Stretch;
             b.Click += (_, _) => { result = text; wh.Set(); };
@@ -1079,8 +1079,8 @@ public static class PieMenus
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
         foreach (var text in buttonTexts)
         {
-            var b = new Button { Height = 34.0, MinWidth = 120.0, Margin = new Thickness(6.0, 0.0, 6.0, 0.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
-            b.Content = new TextBox { Text = text, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
+            var b = new Button { Template = Graphics.roundedButtonTemplate, Height = 34.0, MinWidth = 120.0, Margin = new Thickness(6.0, 0.0, 6.0, 0.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush };
+            b.Content = new TextBox { Text = text, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MinHeight = 0.0, Padding = new Thickness(2.0, 0.0, 2.0, 0.0), BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
             b.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             b.VerticalContentAlignment = VerticalAlignment.Stretch;
             var t = text;
@@ -1125,8 +1125,8 @@ public static class PieMenus
         {
             var shown = label == "Sword Icon" ? "Sword in Shop" : label;
             var displayLabel = hkp.AsPrettyHotKeyOpt(indexOf(label)) is string k ? $"{shown}   [{k}]" : shown;
-            var b = new Button { Height = 34.0, MinWidth = 280.0, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
-            b.Content = new TextBox { Text = displayLabel, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
+            var b = new Button { Template = Graphics.roundedButtonTemplate, Height = 34.0, MinWidth = 280.0, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush };
+            b.Content = new TextBox { Text = displayLabel, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MinHeight = 0.0, Padding = new Thickness(2.0, 0.0, 2.0, 0.0), BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
             b.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             b.VerticalContentAlignment = VerticalAlignment.Stretch;
             if (crossed.Contains(label))
@@ -1178,8 +1178,8 @@ public static class PieMenus
             col.Children.Add(new TextBlock { Text = message, Foreground = Brushes.Orange, FontSize = 20.0, TextWrapping = TextWrapping.Wrap, MaxWidth = 480.0, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, 0.0, 0.0, 8.0) });
         foreach (var label in labels)
         {
-            var b = new Button { Height = 34.0, MinWidth = 280.0, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
-            b.Content = new TextBox { Text = label, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(0.0), FontSize = 18.0, Foreground = Brushes.Orange, Background = Graphics.almostBlack };
+            var b = new Button { Template = Graphics.roundedButtonTemplate, Height = 34.0, MinWidth = 280.0, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, 4.0, 0.0, 4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush };
+            b.Content = new TextBlock { Text = label, IsHitTestVisible = false, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 18.0, Foreground = Brushes.Orange };
             b.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             b.VerticalContentAlignment = VerticalAlignment.Stretch;
             b.Click += (_, _) => { result = label; wh.Set(); };
@@ -1214,7 +1214,7 @@ public static class PieMenus
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
         foreach (var (key, content) in items)
         {
-            var b = new Button { MinWidth = 80.0, MinHeight = 60.0, Margin = new Thickness(6.0), Padding = new Thickness(8.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Brushes.Orange, Content = content };
+            var b = new Button { Template = Graphics.roundedButtonTemplate, MinWidth = 80.0, MinHeight = 60.0, Margin = new Thickness(6.0), Padding = new Thickness(8.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush, Content = content };
             b.Click += (_, _) => { result = key; wh.Set(); };
             row.Children.Add(b);
         }
