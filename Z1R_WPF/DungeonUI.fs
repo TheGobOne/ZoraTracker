@@ -219,6 +219,11 @@ let unmarkRemarkBehavior(cm:CustomComboBoxes.CanvasManager, (_i,_j,hk), boxViews
         Graphics.WarpMouseCursorTo(pos)
         activate(0, CustomComboBoxes.GridClickDismissalWarpReturn.WarpTo returnPos)
     let boxes = dungeon.Boxes
+    // level 2's optional extra staircase slot is activated as one more box, after the regular ones
+    // (for dungeons 1-8 the extra floor box's activation is the very last entry)
+    let extraIdx = if dungeonIndex < 8 then boxViewsAndActivations.Length-1 else -1
+    let hasL2Stair = dungeonIndex = 1 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled && boxViewsAndActivations.Length > boxes.Length + (if extraIdx >= 0 then 1 else 0)
+    let boxAt i : TrackerModel.Box = if i < boxes.Length then boxes.[i] else TrackerModel.level2StairBox
     let validBoxIndices =
         if TrackerModel.IsHiddenDungeonNumbers() then
             let lc = dungeon.LabelChar
@@ -228,14 +233,14 @@ let unmarkRemarkBehavior(cm:CustomComboBoxes.CanvasManager, (_i,_j,hk), boxViews
             else
                 [0..boxes.Length-1]
         else
-            [0..boxes.Length-1]
+            [0..boxes.Length-1] @ (if hasL2Stair then [boxes.Length] else [])
     match hk with
-    | Some(Choice1Of4(RoomType.ItemBasement)) -> 
+    | Some(Choice1Of4(RoomType.ItemBasement)) ->
         // find the bottommost empty basement, if it exists, otherwise just choose bottommost non-ghostbustered box
         let idxs = validBoxIndices |> List.rev
         let mutable r = -1
         for i in idxs do
-            if r = -1 && boxes.[i].CurrentlyHasBasementStair && boxes.[i].CellCurrent() = -1 then
+            if r = -1 && (boxAt i).CurrentlyHasBasementStair && (boxAt i).CellCurrent() = -1 then
                 r <- i
         if r = -1 then
             r <- idxs.Head
@@ -268,31 +273,61 @@ let unmarkRemarkBehavior(cm:CustomComboBoxes.CanvasManager, (_i,_j,hk), boxViews
         let idxs = validBoxIndices
         let mutable r = -1
         for i in idxs do
-            if r = -1 && not(boxes.[i].CurrentlyHasBasementStair) && boxes.[i].CellCurrent() = -1 then
+            if r = -1 && not((boxAt i).CurrentlyHasBasementStair) && (boxAt i).CellCurrent() = -1 then
                 r <- i
         if r = -1 then
-            r <- idxs.Head
+            if dungeon.TriforceIsInItemSlot && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() = -1 then
+                r <- extraIdx   // the triforce is in an item slot, so the floor drop goes in the extra floor box rather than replacing a regular box
+            else
+                r <- idxs.Head
         // r is now the index of the box we want
         activateBox(r)
     | Some(Choice3Of4(FloorDropDetail.Heart)) ->
+        let noHeartsMsg = "There are no Heart Containers remaining in the item pool; cannot mark another"
+        // the dungeon's extra floor box (where the floor drop goes once the triforce sits in an item slot)
+        let extra = dungeon.ExtraFloorBox
+        let extraIsUsable() = dungeonIndex < 8 && (extra.CellCurrent() = -1 || (extra.CellCurrent() = TrackerModel.ITEMS.HEARTCONTAINER && extra.PlayerHas() = TrackerModel.PlayerHas.NO))
+        let markExtra() =
+            if extra.CellCurrent() = TrackerModel.ITEMS.HEARTCONTAINER then
+                extra.SetPlayerHas(TrackerModel.PlayerHas.YES)
+            elif not(extra.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER,TrackerModel.PlayerHas.YES)) then
+                Graphics.ErrorBeepWithReminderLogText(noHeartsMsg)
         // if there is a playerHas=NO floor heart, then YES it...
         let mutable r = -1
         for i in validBoxIndices do
-            if r = -1 && not(boxes.[i].CurrentlyHasBasementStair) && boxes.[i].CellCurrent() = TrackerModel.ITEMS.HEARTCONTAINER && boxes.[i].PlayerHas() = TrackerModel.PlayerHas.NO then
+            if r = -1 && not((boxAt i).CurrentlyHasBasementStair) && (boxAt i).CellCurrent() = TrackerModel.ITEMS.HEARTCONTAINER && (boxAt i).PlayerHas() = TrackerModel.PlayerHas.NO then
                 r <- i
         if r <> -1 then
-            boxes.[r].SetPlayerHas(TrackerModel.PlayerHas.YES)
+            (boxAt r).SetPlayerHas(TrackerModel.PlayerHas.YES)
+        elif dungeon.TriforceIsInItemSlot && extraIsUsable() then
+            // the triforce is in an item slot, so the floor drop is the extra floor box
+            markExtra()
         else
             // otherwise, if there is an empty non-basement box, fill it with a heart
             r <- -1
             for i in validBoxIndices do
-                if r = -1 && not(boxes.[i].CurrentlyHasBasementStair) && boxes.[i].CellCurrent() = -1 then
+                if r = -1 && not((boxAt i).CurrentlyHasBasementStair) && (boxAt i).CellCurrent() = -1 then
                     r <- i
             if r <> -1 then
-                if not(boxes.[r].AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER,TrackerModel.PlayerHas.YES)) then
-                    Graphics.ErrorBeepWithReminderLogText("There are no Heart Containers remaining in the item pool; cannot mark another")
+                if not((boxAt r).AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER,TrackerModel.PlayerHas.YES)) then
+                    Graphics.ErrorBeepWithReminderLogText(noHeartsMsg)
             else
-                Graphics.ErrorBeepWithReminderLogText("There were no floor-drop item boxes remaining in this dungeon, to mark a floor-heart pickup")
+                // no free floor box: a floor heart then means the triforce piece must be in an (empty) stair slot, so infer that and put the heart in the extra floor box
+                // (under Intra Heart Shuffle an uncollected heart in a stair slot is only the tracker's guess for "the one heart of this dungeon", and a floor heart disproves it)
+                let emptyStair =
+                    validBoxIndices |> List.tryFind (fun i ->
+                        let b = boxAt i
+                        b.CurrentlyHasBasementStair
+                        && (b.CellCurrent() = -1
+                            || (TrackerModel.HeartShuffleMode = 1 && b.CellCurrent() = TrackerModel.ITEMS.HEARTCONTAINER && b.PlayerHas() = TrackerModel.PlayerHas.NO)))
+                match emptyStair with
+                | Some(s) when extraIsUsable() ->
+                    if (boxAt s).AttemptToSet(TrackerModel.ITEMS.TRIFORCE,TrackerModel.PlayerHas.NO) then
+                        markExtra()
+                    else
+                        Graphics.ErrorBeepWithReminderLogText("Could not infer the triforce location; cannot mark a floor heart")
+                | _ ->
+                    Graphics.ErrorBeepWithReminderLogText("There were no floor-drop item boxes remaining in this dungeon, to mark a floor-heart pickup")
     | Some(Choice3Of4(FloorDropDetail.Map)) ->
         // toggle has-map checkbox
         dungeon.PlayerHasMapOfThisDungeon <- not dungeon.PlayerHasMapOfThisDungeon
@@ -367,7 +402,7 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
     // item boxes
     let d = TrackerModel.GetDungeon(dungeonIndex)
     let slotCells = ResizeArray<Canvas>()
-    let boxViewsAndActivations =
+    let regularBoxViewsAndActivations =
         [|
             for box in d.Boxes do
                 let c = new Canvas(Width=30., Height=30.)
@@ -382,8 +417,9 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
                 yield view,activate
         |]
     // mirror the main tracker: when a Triforce Piece is placed in a dungeon item slot, the numbered triforce moves into that slot and the header becomes an extra floor item box
+    let extraFloorViewAndActivate = if dungeonIndex < 8 then Some(Views.MakeBoxItem(cm, d.ExtraFloorBox)) else None
     if dungeonIndex < 8 then
-        let extraFloorView = fst (Views.MakeBoxItem(cm, d.ExtraFloorBox))
+        let extraFloorView = fst extraFloorViewAndActivate.Value
         let refreshTriforceHeaderOrSlot() =
             headerCell.Children.Clear()
             for sc in slotCells do sc.Children.Remove(dungeonView)
@@ -400,15 +436,26 @@ let MakeLocalTrackerPanel(cm:CustomComboBoxes.CanvasManager, pos:Point, sunglass
         dungeonView.PreviewMouseDown.Add(fun ea ->
             let slotK = slotCells |> Seq.tryFindIndex (fun sc -> obj.ReferenceEquals(dungeonView.Parent, sc))
             match slotK with
-            | Some(k) when ea.ChangedButton = System.Windows.Input.MouseButton.Right && k < boxViewsAndActivations.Length ->
+            | Some(k) when ea.ChangedButton = System.Windows.Input.MouseButton.Right && k < regularBoxViewsAndActivations.Length ->
                 ea.Handled <- true
-                if not popupIsActive then (snd boxViewsAndActivations.[k])(0, CustomComboBoxes.WarpToCenter)
+                if not popupIsActive then (snd regularBoxViewsAndActivations.[k])(0, CustomComboBoxes.WarpToCenter)
             | _ -> ())
     // the optional extra staircase item slot of level 2, as on the main tracker
-    if level = 2 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled then
-        let c = new Canvas(Width=30., Height=30.)
-        canvasAdd(c, fst (Views.MakeBoxItem(cm, TrackerModel.level2StairBox)), 0., 0.)
-        sp.Children.Add(c) |> ignore
+    // (its activation is appended after the regular boxes, so the box hotkeys can target it)
+    let withL2 =
+        if level = 2 && not(TrackerModel.IsHiddenDungeonNumbers()) && TrackerModel.level2StairBoxEnabled then
+            let c = new Canvas(Width=30., Height=30.)
+            let view,activate = Views.MakeBoxItem(cm, TrackerModel.level2StairBox)
+            canvasAdd(c, view, 0., 0.)
+            sp.Children.Add(c) |> ignore
+            Array.append regularBoxViewsAndActivations [| view,activate |]
+        else
+            regularBoxViewsAndActivations
+    // the extra floor box (the header, while the triforce sits in an item slot) is activated last, so the box hotkeys can target it
+    let boxViewsAndActivations =
+        match extraFloorViewAndActivate with
+        | Some(v,a) -> Array.append withL2 [| v,a |]
+        | None -> withL2
     // the optional level 9 floor item check (4th Sword start option), as on the main tracker
     if level = 9 && TrackerModel.level9FloorBoxEnabled then
         let c = new Canvas(Width=30., Height=30.)
