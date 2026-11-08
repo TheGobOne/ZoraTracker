@@ -923,7 +923,7 @@ Differences TheGobOne has explicitly approved. Anything not listed here is a par
 - **Close-but-not-identical fonts** where the Windows fonts can't be used (risk 5).
 - **Our own "show mouse location" ring** in place of the Windows one (risk 8).
 - **Message box icons** drawn as look-alikes of the Windows ones.
-- **No console window on Windows** (`WinExe`); crash details go to the crash log only.
+- **No console window on Windows** (`WinExe`); a crash shows a small "ZORATracker has crashed" window (what happened, where the crash log is, the auto-save restore hint) and is logged.
 
 ## Answers to the "Needs Gob" notes (TheGobOne, 2026-11-02)
 
@@ -936,6 +936,15 @@ Differences TheGobOne has explicitly approved. Anything not listed here is a par
 - **Co-op host executable off Windows:** deferred to phase 4.
 - **Co-op door format:** keep the converter; needs a real WPF-to-Avalonia co-op test.
 - **`sendDungeonMapsUpdate` early return:** keep WPF's behaviour for parity; any fix goes in WPF first.
+
+## Answers from Ryan (2026-11-07)
+
+- **Shop-highlight stroke:** keep the port's clean behaviour (don't copy WPF's stuck 4px stroke).
+- **Message-box / selection icons:** undecided; to be judged by eye.
+- **Release zips:** the port is now the only thing being worked on; its zips stay separate (`CrossPlatform` in the name) for now.
+- **Settings folder:** yes. `TrackerModelOptions.settingsDirectory` (shared model; null = the program's own folder, so WPF is unchanged) is set by the port to `Platform.UserDataDir()`
+  before settings are read (the app folder on Windows, a per-user folder on macOS/Linux). To send upstream with the other proposed PRs.
+- **Windows console:** no console window; show a message on a crash. Done: see "No console window" above.
 
 ## Proposed upstream PRs to TheGobOne
 

@@ -700,14 +700,21 @@ let private read(filename) =
                 printfn ""
 
 let mutable private settingsFile = null
-    
+
+/// The folder that holds Z1R_Tracker_settings.json. Null (the default, and what the WPF tracker uses) means the program's own folder.
+/// A host that cannot write there (a macOS .app bundle, a Linux install under /opt) sets it once at startup, before readSettings.
+let mutable settingsDirectory : string = null
+let private settingsFilePath() =
+    let dir = if System.String.IsNullOrEmpty(settingsDirectory) then System.AppDomain.CurrentDomain.BaseDirectory else settingsDirectory
+    System.IO.Path.Combine(dir, "Z1R_Tracker_settings.json")
+
 let readSettings() =
     if settingsFile = null then
-        settingsFile <- System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_settings.json")
+        settingsFile <- settingsFilePath()
     read(settingsFile)
 let writeSettings() =
     if settingsFile = null then
-        settingsFile <- System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_settings.json")
+        settingsFile <- settingsFilePath()
     write(settingsFile)
 
 

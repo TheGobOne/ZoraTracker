@@ -338,6 +338,7 @@ public static class Program
         private bool loggedAnyCrash = false;
         private bool promptedCrashRecovery = false;
         private bool gotThruStartup = false;
+        private string crashSummary = null;   // (port: the exception's type and message, for the crash window)
         private readonly string crashLogFilename = Platform.Files.User("Z1R_Tracker_crash_log.txt");
         private readonly string dateTimeFormat = "yyyy-MM-dd-HH:mm:ss";
         // (WPF's ActualWidth/ActualHeight: the outer size, frame included. Avalonia's Bounds are the client area.)
@@ -347,6 +348,44 @@ public static class Program
         {
             HEIGHT = HEIGHT_SANS_CHROME + CHROME_HEIGHT;
             WIDTH = WIDTH_SANS_CHROME + CHROME_WIDTH;
+            // (port: the Windows build has no console, and macOS/Linux never did: say what happened in a small window instead. `afterClose` runs when it is closed;
+            // `block` holds the calling thread until then (a crash on a background thread ends the process as soon as its handler returns).)
+            void showCrashDialog(Action afterClose, bool block)
+            {
+                var done = new ManualResetEvent(false);
+                waitForConsole.Reset();
+                Dispatcher.UIThread.Post(() =>
+                {
+                    try
+                    {
+                        var lines = new List<string> { "ZORATracker hit an unexpected problem and has to close." };
+                        if (!string.IsNullOrEmpty(crashSummary)) lines.Add(crashSummary);
+                        lines.Add($"Details were saved to:\n{crashLogFilename}");
+                        if (gotThruStartup) lines.Add("If it crashed while you were playing, you might be able to restore the most recent auto-save by starting ZORATracker again right now.");
+                        lines.Add("Please send the crash log along when you report this.");
+                        var text = new TextBlock { Text = string.Join("\n\n", lines), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Orange, MaxWidth = 520.0 };
+                        var ok = new Button { Content = "OK", Width = 90.0, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, 14.0, 0.0, 0.0) };
+                        var sp = new StackPanel { Margin = new Thickness(16.0) };
+                        sp.Children.Add(text);
+                        sp.Children.Add(ok);
+                        var w = new Window { Title = "ZORATracker has crashed", Width = 560.0, SizeToContent = SizeToContent.Height, CanResize = false, Background = Brushes.Black, WindowStartupLocation = WindowStartupLocation.CenterScreen, Content = sp };
+                        ok.Click += (_, _) => w.Close();
+                        w.Closed += (_, _) =>
+                        {
+                            try { afterClose?.Invoke(); } catch (Exception) { }
+                            waitForConsole.Set();
+                            done.Set();
+                        };
+                        w.Show();
+                    }
+                    catch (Exception)
+                    {
+                        waitForConsole.Set();
+                        done.Set();
+                    }
+                });
+                if (block) done.WaitOne(TimeSpan.FromMinutes(10));
+            }
             void showCrashOnConsole()
             {
                 waitForConsole.Reset();
@@ -433,10 +472,22 @@ public static class Program
                     Debugger.Break();
                 var ex = e.Exception;
                 logCrashInfo("An unhandled exception from UI thread:");
+                crashSummary = ex is HotKeys.UserError ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
                 handle(ex);
                 e.Handled = true;
                 finishCrashInfo();
-                showCrashOnConsole();
+                if (SelfTest.isSelfTest || LoadDump.isActive)
+                {
+                    // (headless runs: nobody is there to read a window; the crash log has it)
+                }
+                else if (Platform.GetConsoleWindow() == IntPtr.Zero)
+                {
+                    // the app keeps running until the window is closed: closing the hidden owner window ends it
+                    showCrashDialog(() => { if (theDummyWindow != null) theDummyWindow.Close(); }, false);
+                    return;
+                }
+                else
+                    showCrashOnConsole();
                 if (theDummyWindow != null)
                     theDummyWindow.Close();
             };
@@ -448,6 +499,7 @@ public static class Program
                 {
                     case Exception ex:
                         logCrashInfo("An unhandled exception from background thread:");
+                        crashSummary = $"{ex.GetType().Name}: {ex.Message}";
                         handle(ex);
                         finishCrashInfo();
                         break;
@@ -456,11 +508,16 @@ public static class Program
                         finishCrashInfo();
                         break;
                 }
-                showCrashOnConsole();
+                if (SelfTest.isSelfTest || LoadDump.isActive) { }
+                else if (Platform.GetConsoleWindow() == IntPtr.Zero)
+                    showCrashDialog(null, true);   // (blocks: the process ends when this handler returns)
+                else
+                    showCrashOnConsole();
             };
 
             HotKeys.PopulateHotKeyTables();
             var settingsWereSuccessfullyRead = false;
+            TrackerModelOptions.settingsDirectory = Platform.UserDataDir();   // (the program's own folder on Windows, as WPF; a writable per-user folder on macOS/Linux)
             TrackerModelOptions.readSettings();
             settingsWereSuccessfullyRead = true;
             Z1R_SharedInterop.TrackerOptionsBridge.Initialize(
