@@ -176,8 +176,8 @@ public static class Graphics
                 ltc.LayoutTransform = new ScaleTransform(scale, scale);
         }
         cb.TemplateApplied += (_, ea) => apply(ea.NameScope);
-        // the WPF transform also scales the gap between the box and the text
-        cb.Padding = new Thickness(cb.Padding.Left * scale, cb.Padding.Top, cb.Padding.Right, cb.Padding.Bottom);
+        // the WPF transform also scales the gap between the box and the text (WPF reads the style's 4px padding here; Avalonia's default is 0 until the style is applied, which left the label hugging the box)
+        cb.Padding = new Thickness((cb.Padding.Left > 0.0 ? cb.Padding.Left : 4.0) * scale, cb.Padding.Top, cb.Padding.Right, cb.Padding.Bottom);
         // (and the row: WPF's scaled-up checkbox rows come out 2px taller than the box-only scaling here; found by tests/side-by-side.ps1)
         cb.Margin = new Thickness(cb.Margin.Left, cb.Margin.Top + 1.0, cb.Margin.Right, cb.Margin.Bottom + 1.0);
     }
@@ -425,6 +425,13 @@ public static class Graphics
         style.Setters.Add(new Setter(Control.FocusAdornerProperty, null));
         style.Setters.Add(new Setter(Visual.RenderTransformProperty, null));   // the Fluent theme shrinks pressed buttons slightly; WPF doesn't
     }
+    // a ready-made Button style with the rounded look, for a dialog's own Styles (dialogs whose buttons would otherwise get no fill and no border)
+    public static Style roundedButtonStyle()
+    {
+        var st = new Style(x => x.OfType<Button>());
+        addRoundedButtonSetters(st);
+        return st;
+    }
     // app-wide defaults: every Button and CheckBox gets the rounded look unless a window / panel provides its own style
     // (Avalonia: plus "WPF metrics" for the theme's controls, whose default sizes are much bigger than WPF's; see PROGRESS.md)
     public static void installAppWideStyles()
@@ -437,7 +444,7 @@ public static class Graphics
             app.Styles.Add(bs);
             var cs = new Style(x => x.OfType<CheckBox>());
             cs.Setters.Add(new Setter(TemplatedControl.TemplateProperty, roundedCheckBoxTemplate));
-            cs.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(4.0, 0.0, 0.0, 0.0)));
+            cs.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(6.0, 0.0, 0.0, 0.0)));
             cs.Setters.Add(new Setter(TemplatedControl.ForegroundProperty, Brushes.Orange));
             cs.Setters.Add(new Setter(Control.FocusAdornerProperty, null));
             cs.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
@@ -464,10 +471,41 @@ public static class Graphics
             ts.Setters.Add(new Setter(Layoutable.MinWidthProperty, 0.0));
             ts.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(2.0, 0.0, 2.0, 0.0)));
             // WPF's selection colors, not the system accent (selected text came out black on red); the theme reads this resource for it, so set that too
+            // WPF's default TextBox border is a light gray (#ABADB3) that goes light blue on hover and focus; the Fluent Light theme's is nearly invisible, which dropped the white cell lines
+            // around every label in the Hint Decoder. Same hover and focus colors as WPF's default template.
+            app.Resources["TextControlBorderBrush"] = new SolidColorBrush(Color.Parse("#ABADB3"));
+            app.Resources["TextControlBorderBrushPointerOver"] = new SolidColorBrush(Color.Parse("#7EB4EA"));
+            app.Resources["TextControlBorderBrushFocused"] = new SolidColorBrush(Color.Parse("#569DE5"));
             app.Resources["TextControlSelectionHighlightColor"] = new SolidColorBrush(Color.Parse("#3399FF"));
             ts.Setters.Add(new Setter(TextBox.SelectionBrushProperty, new SolidColorBrush(Color.Parse("#3399FF"))));
             ts.Setters.Add(new Setter(TextBox.SelectionForegroundBrushProperty, Brushes.White));
             app.Styles.Add(ts);
+            // The Fluent TextBox template swaps in its own fill (white in the Light theme) and a system-accent border when the box is hovered or focused,
+            // so a box with a dark Background (WPF: Background=Black is all it takes) turned white with orange text the moment it was clicked. Any TextBox whose
+            // effective Background is dark keeps that fill in every state and gets WPF's orange hover/focus border. (Boxes that set these resources themselves, e.g. styleRoundedTextBox, are left alone.)
+            TemplatedControl.TemplateAppliedEvent.AddClassHandler<TextBox>((tb, _) =>
+            {
+                // (read-only boxes are the labels; a Transparent or dark one must not turn light gray when the mouse passes over it, e.g. "Auto-save Interval" in Options)
+                if (tb.Background is not ISolidColorBrush bg) return;
+                var c = bg.Color;
+                if ((c.A != 0 && (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) > 80.0) || tb.Resources.ContainsKey("TextControlBackgroundFocused")) return;
+                foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled" }) tb.Resources[k] = bg;
+                if (tb.IsReadOnly)
+                {
+                    // a label keeps its own text color and border too (Fluent's hover state made the text dark and added a border)
+                    var fg = tb.Foreground;
+                    foreach (var k in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused", "TextControlForegroundDisabled" }) tb.Resources[k] = fg;
+                    // (border: the same brush in every state, i.e. the theme's idle one, so a label that has a border keeps it and one that has none gains none)
+                    // (a Transparent label, e.g. "Auto-save Interval" in Options, shows no border in WPF)
+                    IBrush idleBorder = c.A == 0 ? Brushes.Transparent : tb.TryFindResource("TextControlBorderBrush", tb.ActualThemeVariant, out var nb) && nb is IBrush b0 ? b0 : null;
+                    if (idleBorder != null)
+                        foreach (var k in new[] { "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused", "TextControlBorderBrushDisabled" }) tb.Resources[k] = idleBorder;
+                    return;
+                }
+                tb.Resources["TextControlBorderBrushPointerOver"] = hoverOrange;
+                tb.Resources["TextControlBorderBrushFocused"] = hoverOrange;
+                tb.Resources["TextControlBorderThemeThicknessFocused"] = tb.BorderThickness;
+            });
             // WPF look for sliders (see wpfSliderTemplate)
             var sls = new Style(x => x.OfType<Slider>());
             sls.Setters.Add(new Setter(TemplatedControl.TemplateProperty, wpfSliderTemplate));

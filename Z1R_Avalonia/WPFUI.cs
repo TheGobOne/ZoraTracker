@@ -1778,7 +1778,8 @@ public static class WPFUI
                 // we need a dummy image to make the canvas absorb the mouse interactions, so just re-draw the map at almost 0 opacity
                 canvasAdd(c, owMapDummyImages[i, j], 0.0, 0.0);
                 // highlight mouse, do mouse-sensitive stuff
-                var rect = new Rectangle { Width = OMTW - 4.0, Height = (double)(11 * 3) - 4.0, Stroke = Brushes.White };
+                // (StrokeThickness 1 spelled out: WPF's default is 1, Avalonia's is 0, which made this hover outline invisible in the port)
+                var rect = new Rectangle { Width = OMTW - 4.0, Height = (double)(11 * 3) - 4.0, Stroke = Brushes.White, StrokeThickness = 1.0 };
                 c.PointerEntered += (_, ea) =>
                 {
                     canvasAdd(c, rect, 2.0, 2.0);
@@ -3910,6 +3911,8 @@ public static class WPFUI
                         nameSp.Children.Add(nameTB);
                         nameSp.Children.Add(nameButtons);
                         var nameBorder = new Border { Child = nameSp, Background = Brushes.Black, BorderThickness = new Thickness(4.0), BorderBrush = Brushes.Gray };
+                        // (the Save / Cancel buttons were invisible (no fill, no border, black text) with only the app-wide style; give the dialog the rounded dark button look the message boxes use)
+                        nameBorder.Styles.Add(Graphics.roundedButtonStyle());
                         nameBorder.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                         var npx = Math.Max(0.0, ((cm.AppMainCanvas.Width - nameBorder.DesiredSize.Width) / 2.0));
                         var npy = Math.Max(0.0, ((cm.AppMainCanvas.Height - nameBorder.DesiredSize.Height) / 2.0));

@@ -136,8 +136,21 @@ public static class HotKeys
     // (WPF: Input.Mouse.DirectlyOver, the element under the mouse anywhere in the app. Avalonia keeps that per TopLevel
     // (IInputRoot.PointerOverElement), and a popup is a TopLevel of its own, so this also remembers the TopLevel the pointer last moved in.)
     private static TopLevel lastPointerTopLevel = null;
+    private static Point lastPointerPos = new Point();   // where the pointer last was in lastPointerTopLevel
     private static IInputElement mouseDirectlyOver(Window w)
     {
+        // (WPF re-evaluates Mouse.DirectlyOver whenever the layout changes; Avalonia's PointerOverElement is only refreshed lazily, so right after a popup opens
+        // under a still mouse it can still be the tile underneath. A fast second hotkey (P P for the potion shop) then went to the tile, which ignores keys while a
+        // popup is up, and was lost. While a popup is up, hit-test at the pointer's last position instead.)
+        if (CustomComboBoxes.GlobalFlag.popupIsActive && lastPointerTopLevel != null)
+        {
+            try
+            {
+                var fresh = lastPointerTopLevel.InputHitTest(lastPointerPos);
+                if (fresh != null) return fresh;
+            }
+            catch { }
+        }
 #if BROWSER
         // (browser build: the window is a control in the page, and the page is the input root)
         var root = TopLevel.GetTopLevel(w);
@@ -154,7 +167,7 @@ public static class HotKeys
     public static void InitializeWindow(Window w, TextBox notesTextBox)
     {
         w.Focusable = true;
-        InputElement.PointerMovedEvent.AddClassHandler<TopLevel>((tl, _) => lastPointerTopLevel = tl, RoutingStrategies.Tunnel, true);
+        InputElement.PointerMovedEvent.AddClassHandler<TopLevel>((tl, pe) => { lastPointerTopLevel = tl; lastPointerPos = pe.GetPosition(tl); }, RoutingStrategies.Tunnel, true);
         // (WPF PreviewKeyDown: a tunnelling handler)
         w.AddHandler(InputElement.KeyDownEvent, new EventHandler<KeyEventArgs>((_, ea) =>
         {
@@ -184,6 +197,16 @@ public static class HotKeys
                             ea.Handled = true;
                             var ea2 = new MyKeyRoutedEventArgs(skm, ea.Key);
                             x.RaiseEvent(ea2);
+                            // a key nobody took while a popup is opening (the popup is not in place yet): try once more a moment later, on whatever is under the pointer then
+                            if (!ea2.Handled && CustomComboBoxes.GlobalFlag.popupIsActive)
+                            {
+                                var key = ea.Key;
+                                Avalonia.Threading.DispatcherTimer.RunOnce(() =>
+                                {
+                                    if (suspendHotKeys || !CustomComboBoxes.GlobalFlag.popupIsActive) return;   // (popup already gone: the key was meant for it, not for the tile)
+                                    if (mouseDirectlyOver(w) is Interactive y) y.RaiseEvent(new MyKeyRoutedEventArgs(skm, key));
+                                }, TimeSpan.FromMilliseconds(60));
+                            }
                         }
                         break;
                 }
