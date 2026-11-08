@@ -1739,7 +1739,7 @@ public static class CustomComboBoxes
     // version buttons that are currently glowing (start screen and main screen each have one); cleared once the user opens the patch notes
     public static readonly List<Action> versionGlowClearers = new List<Action>();
     // ---- update check (GitHub releases) ----
-    public static readonly string CurrentReleaseLabel = "2.2.0-beta-21-hotfix1";   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
+    public static readonly string CurrentReleaseLabel = "2.2.0-beta-21-hotfix2";   // bump for each release; it must match the tag you publish on GitHub (without the leading 'v')
     // (F#: returns (int list, (int * string * int * string)) and the callers compare those with F#'s structural `>`; compareTagKeys below
     // does the same comparison: the number list element by element (a shorter list that is a prefix sorts first), then the tuple field
     // by field, with strings compared ordinally as F# does)
