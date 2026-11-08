@@ -330,7 +330,12 @@ let DoModalDocked(cm:CanvasManager, wh:System.Threading.ManualResetEvent, dock, 
 
 /////////////////////////////////////////
 
-let DoModalMessageBoxCore(cm:CanvasManager, icon:System.Drawing.Icon, mainText, buttonTexts:seq<string>, x, y) = async { // returns buttonText if a button was pressed, or null if dismissed
+// set by a caller just before opening a message box: that button is shown in the top right corner of the box instead of in the bottom row (the box clears it)
+let mutable messageBoxTopRightButton : string = null
+let DoModalMessageBoxCore(cm:CanvasManager, icon:System.Drawing.Icon, mainText, buttonTexts0:seq<string>, x, y) = async { // returns buttonText if a button was pressed, or null if dismissed
+    let topRightText = messageBoxTopRightButton
+    messageBoxTopRightButton <- null
+    let buttonTexts = if isNull topRightText then buttonTexts0 else (buttonTexts0 |> Seq.filter (fun t -> t <> topRightText) |> Seq.toList :> seq<string>)
     let grid = new Grid()
     grid.RowDefinitions.Add(new RowDefinition(Height=GridLength(1.0, GridUnitType.Star)))
     grid.RowDefinitions.Add(new RowDefinition(Height=GridLength.Auto))
@@ -369,6 +374,13 @@ let DoModalMessageBoxCore(cm:CanvasManager, icon:System.Drawing.Icon, mainText, 
         b.Click.Add(fun _ -> result <- bt; wh.Set() |> ignore)
     grid.Children.Add(buttonDock) |> ignore
     Grid.SetRow(buttonDock, 1)
+    if not (isNull topRightText) then
+        let tb = new Button(MinWidth=60., Height=26., Margin=Thickness(0.,8.,8.,0.), HorizontalAlignment=HorizontalAlignment.Right, VerticalAlignment=VerticalAlignment.Top, HorizontalContentAlignment=HorizontalAlignment.Stretch, VerticalContentAlignment=VerticalAlignment.Stretch)
+        tb.Content <- new TextBox(Text=topRightText, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center, BorderThickness=Thickness(0.), FontSize=16.,
+                                    Background=Graphics.almostBlack, Margin=Thickness(0.))
+        tb.Click.Add(fun _ -> result <- topRightText; wh.Set() |> ignore)
+        Grid.SetRowSpan(tb, 2)
+        grid.Children.Add(tb) |> ignore
 
     let b = new Border(Child=grid, Background=Brushes.Black, BorderThickness=Thickness(5.), BorderBrush=Brushes.Gray, MaxWidth=cm.AppMainCanvas.Width-x-10.)
     let style = new Style(typeof<TextBox>)
@@ -1399,6 +1411,121 @@ let downloadAndStageUpdate(zipUrl:string, onProgress:int -> unit) : string optio
         None
     with e -> Some e.Message
 
+// ---- switching to the cross-platform version ----
+// the newest release (pre-releases included) that carries a Windows cross-platform zip: (tag, zip url), or None. The port's zips have CrossPlatform in the name;
+// the macOS and Linux ones also say osx / macos / linux / darwin, and are skipped here.
+let fetchCrossPlatformZip() : (string*string) option =
+    try
+        System.Net.ServicePointManager.SecurityProtocol <- System.Net.ServicePointManager.SecurityProtocol ||| System.Net.SecurityProtocolType.Tls12
+        use wc = new System.Net.WebClient()
+        wc.Headers.Add("User-Agent", "ZoraTracker-update-check")
+        let json = wc.DownloadString("https://api.github.com/repos/TheGobOne/ZoraTracker/releases?per_page=10")
+        use doc = System.Text.Json.JsonDocument.Parse(json)
+        let mutable found : (string*string) option = None
+        for r in doc.RootElement.EnumerateArray() do
+            let ok, d = r.TryGetProperty("draft")
+            if found.IsNone && not (ok && d.GetBoolean()) then
+                let tag = r.GetProperty("tag_name").GetString()
+                for a in r.GetProperty("assets").EnumerateArray() do
+                    let name = a.GetProperty("name").GetString()
+                    let url = a.GetProperty("browser_download_url").GetString()
+                    let has (s:string) = name.IndexOf(s, System.StringComparison.OrdinalIgnoreCase) >= 0
+                    if found.IsNone && not (isNull name) && name.EndsWith(".zip", System.StringComparison.OrdinalIgnoreCase) && has "CrossPlatform"
+                       && not (has "osx" || has "macos" || has "linux" || has "darwin")
+                       && not (isNull url) && url.StartsWith("https://github.com/TheGobOne/ZoraTracker/releases/download/") then
+                        found <- Some(tag, url)
+        found
+    with _ -> None
+// downloads the cross-platform zip, then hands over to a PowerShell script that waits for this app to exit, unpacks the zip into a NEW folder next to this one
+// (this install is left as it is), copies the hotkeys, settings and custom images over, and starts the cross-platform tracker. Returns an error message on failure,
+// or None once the script is running (the caller then closes the app).
+// (appDir is this app's folder; a parameter so the switch can be simulated on a copy, with a file:/// zip url)
+let downloadAndStageConversion(appDir0:string, zipUrl:string, onProgress:int -> unit) : string option =
+    try
+        let appDir = appDir0.TrimEnd('\\')
+        let parent = System.IO.Path.GetDirectoryName(appDir)
+        let target =
+            Seq.initInfinite (fun i -> System.IO.Path.Combine(parent, (if i = 0 then "ZoraTracker-CrossPlatform" else sprintf "ZoraTracker-CrossPlatform-%d" (i+1))))
+            |> Seq.find (fun p -> not (System.IO.Directory.Exists p))
+        System.IO.Directory.CreateDirectory(target) |> ignore   // (fails right here, with a message, if this folder's parent is not writable)
+        let work = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ZoraTrackerConvert")
+        if System.IO.Directory.Exists(work) then System.IO.Directory.Delete(work, true)
+        System.IO.Directory.CreateDirectory(work) |> ignore
+        let zipPath = System.IO.Path.Combine(work, "crossplatform.zip")
+        System.Net.ServicePointManager.SecurityProtocol <- System.Net.ServicePointManager.SecurityProtocol ||| System.Net.SecurityProtocolType.Tls12
+        use wc = new System.Net.WebClient()
+        wc.Headers.Add("User-Agent", "ZoraTracker-update-check")
+        wc.DownloadProgressChanged.Add(fun ea -> onProgress ea.ProgressPercentage)
+        wc.DownloadFileTaskAsync(new System.Uri(zipUrl), zipPath).Wait()
+        let q(p:string) = "'" + p.Replace("'", "''") + "'"
+        let stage = System.IO.Path.Combine(work, "stage")
+        let log = System.IO.Path.Combine(work, "convert-log.txt")
+        let script =
+            String.concat "\r\n" [
+                "$ErrorActionPreference = 'Stop'"
+                "try {"
+                sprintf "  Wait-Process -Id %d -ErrorAction SilentlyContinue" (System.Diagnostics.Process.GetCurrentProcess().Id)
+                "  Start-Sleep -Seconds 1"
+                sprintf "  $app = %s" (q appDir)
+                sprintf "  $target = %s" (q target)
+                sprintf "  if (Test-Path -LiteralPath %s) { Remove-Item -LiteralPath %s -Recurse -Force }" (q stage) (q stage)
+                sprintf "  Expand-Archive -LiteralPath %s -DestinationPath %s -Force" (q zipPath) (q stage)
+                sprintf "  $src = %s" (q stage)
+                "  $d = @(Get-ChildItem -LiteralPath $src)"
+                "  if ($d.Count -eq 1 -and $d[0].PSIsContainer) { $src = $d[0].FullName }"
+                "  robocopy $src $target /E /R:5 /W:1 | Out-Null"
+                "  if ($LASTEXITCODE -ge 8) { throw ('robocopy exit code ' + $LASTEXITCODE) }"
+                // the user's own files: hotkeys, settings, recent loads, notes, custom images (the cross-platform tracker reads the same files)
+                "  foreach ($f in 'HotKeys.txt','Z1R_Tracker_settings.json','Z1R_Tracker_recent_loads.txt','ShowRunCustom.txt','Notes.txt') { $p = Join-Path $app $f; if (Test-Path -LiteralPath $p) { Copy-Item -LiteralPath $p -Destination $target -Force } }"
+                "  foreach ($dn in 'ShowRunCustomImages','ExtraIcons','Saves') { $p = Join-Path $app $dn; if (Test-Path -LiteralPath $p) { robocopy $p (Join-Path $target $dn) /E /R:5 /W:1 | Out-Null } }"
+                "  $exe = Join-Path $target 'ZoraTracker.CrossPlatform.exe'"
+                "  if (-not (Test-Path -LiteralPath $exe)) { throw 'ZoraTracker.CrossPlatform.exe was not found in the downloaded zip' }"
+                // a desktop shortcut to the cross-platform exe (a failure here does not stop the switch)
+                "  try {"
+                "    $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ZORATracker - Cross Platform.lnk'"
+                "    $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)"
+                "    $sc.TargetPath = $exe"
+                "    $sc.WorkingDirectory = $target"
+                "    $sc.IconLocation = $exe + ',0'"
+                "    $sc.Save()"
+                "  } catch { }"
+                "  Start-Process -FilePath $exe -WorkingDirectory $target"
+                "} catch {"
+                sprintf "  $_ | Out-File -LiteralPath %s" (q log)
+                "  Add-Type -AssemblyName PresentationFramework"
+                sprintf "  [System.Windows.MessageBox]::Show('Switching to the cross-platform version failed: ' + $_.Exception.Message + ' This install was not changed. The downloaded zip is at ' + %s, 'ZORA Tracker', 'OK', 'Warning') | Out-Null" (q zipPath)
+                "}"
+            ]
+        let scriptPath = System.IO.Path.Combine(work, "convert.ps1")
+        System.IO.File.WriteAllText(scriptPath, script)
+        let psi = new System.Diagnostics.ProcessStartInfo("powershell.exe", sprintf "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"" scriptPath)
+        psi.UseShellExecute <- false
+        psi.CreateNoWindow <- true
+        System.Diagnostics.Process.Start(psi) |> ignore
+        None
+    with e -> Some e.Message
+// a small progress popup for a download; returns (report percent, close the popup)
+let showDownloadProgress(cm:CanvasManager, title:string) : (int -> unit) * (unit -> unit) =
+    let progressWh = new System.Threading.ManualResetEvent(false)
+    let bar = new System.Windows.Controls.ProgressBar(Width=320., Height=22., Minimum=0., Maximum=100., Value=0., Foreground=Brushes.Orange, Background=Brushes.Black, BorderBrush=Brushes.Orange)
+    let label = new TextBlock(Text=title + "  0%", Foreground=Brushes.Orange, FontSize=18., Margin=Thickness(0.,0.,0.,8.))
+    let panel = new StackPanel(Orientation=Orientation.Vertical, Margin=Thickness(14.))
+    panel.Children.Add(label) |> ignore
+    panel.Children.Add(bar) |> ignore
+    let progressBorder = new Border(Child=panel, BorderBrush=Brushes.Orange, BorderThickness=Thickness(3.), Background=Brushes.Black)
+    progressBorder.Measure(Size(System.Double.PositiveInfinity, System.Double.PositiveInfinity))
+    let pcx = max 0. ((cm.AppMainCanvas.Width - progressBorder.DesiredSize.Width) / 2.)
+    let pcy = max 0. ((cm.AppMainCanvas.Height - progressBorder.DesiredSize.Height) / 2.)
+    progressBorder.SizeChanged.Add(fun _ ->
+        Canvas.SetLeft(progressBorder, max 0. ((cm.AppMainCanvas.Width - progressBorder.ActualWidth) / 2.))
+        Canvas.SetTop(progressBorder, max 0. ((cm.AppMainCanvas.Height - progressBorder.ActualHeight) / 2.)))
+    DoModal(cm, progressWh, pcx, pcy, progressBorder) |> Async.StartImmediate
+    let onProgress(pct:int) =
+        Application.Current.Dispatcher.BeginInvoke(new System.Action(fun () ->
+            bar.Value <- float pct
+            label.Text <- sprintf "%s  %d%%" title pct)) |> ignore
+    onProgress, (fun () -> progressWh.Set() |> ignore)
+
 let makeVersionButtonWithBehavior(cm:CanvasManager) =
     // shows the current release (e.g. "v2.2-b3" for 2.2.0-beta3), so it only needs updating via CurrentReleaseLabel
     let shortLabel = CurrentReleaseLabel.Replace(".0-","-").Replace("-beta-","-b").Replace("-beta","-b")
@@ -1423,8 +1550,9 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
             async {
                 let body, buttons = 
                     match updateAvailable with
-                    | Some(tag,_) -> sprintf "%s\n*** A newer version is available: %s (you have v%s) ***\n" OverworldData.AboutBody tag CurrentReleaseLabel, ["Install update"; "Open folder"; "Go to website"; "Ok"]
-                    | None -> OverworldData.AboutBody, ["Check for updates"; "Open folder"; "Go to website"; "Ok"]
+                    | Some(tag,_) -> sprintf "%s\n*** A newer version is available: %s (you have v%s) ***\n" OverworldData.AboutBody tag CurrentReleaseLabel, ["Install update"; "Switch to cross-platform"; "Open folder"; "Go to website"; "Ok"]
+                    | None -> OverworldData.AboutBody, ["Check for updates"; "Switch to cross-platform"; "Open folder"; "Go to website"; "Ok"]
+                messageBoxTopRightButton <- "Ok"   // (the Ok button goes in the top right corner, so the four buttons along the bottom fit)
                 let! r = DoModalMessageBox(cm, null, body, buttons)
                 popupIsActive <- false
                 if r = "Go to website" then
@@ -1472,6 +1600,27 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
                                 System.Diagnostics.Process.Start(if not (isNull url) && url.StartsWith(OverworldData.Website) then url else OverworldData.Website) |> ignore
                         popupIsActive <- false
                     | None -> ()
+                elif r = "Switch to cross-platform" then
+                    popupIsActive <- true
+                    let! ok = DoModalMessageBoxCore(cm, System.Drawing.SystemIcons.Question,
+                                                    "Switch to the cross-platform version?\n\nThis downloads the cross-platform version into a NEW folder next to this one,\nand copies your hotkeys, settings and custom images into it.\nIt also puts a \"ZORATracker - Cross Platform\" shortcut on your desktop.\nThis copy of ZORA Tracker is NOT changed or removed, so you can come back to it.\n\nThe tracker will close and the cross-platform version will open.\nAny game in progress is discarded (save it first).",
+                                                    ["Switch"; "Cancel"], 100., 300.)
+                    if ok = "Switch" then
+                        let onProgress, closeProgress = showDownloadProgress(cm, "Downloading cross-platform version...")
+                        let ctx = System.Threading.SynchronizationContext.Current
+                        do! Async.SwitchToThreadPool()
+                        let result =
+                            match fetchCrossPlatformZip() with
+                            | Some(_, zipUrl) -> downloadAndStageConversion(System.AppDomain.CurrentDomain.BaseDirectory, zipUrl, onProgress)
+                            | None -> Some "no cross-platform download was found on GitHub yet"
+                        do! Async.SwitchToContext ctx
+                        closeProgress()
+                        match result with
+                        | None -> Application.Current.MainWindow.Close()   // (the script waits for this to exit, then unpacks, copies your files and starts the cross-platform tracker)
+                        | Some err ->
+                            let! _ = DoModalMessageBox(cm, System.Drawing.SystemIcons.Warning, sprintf "Could not switch to the cross-platform version:\n%s\n\nThe releases page will be opened instead." err, ["Ok"])
+                            System.Diagnostics.Process.Start(OverworldData.Website) |> ignore
+                    popupIsActive <- false
                 elif r = "Check for updates" then
                     checkForUpdatesAsync (fun latest newer ->
                         let msg, _icon = 
