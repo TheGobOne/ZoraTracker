@@ -276,9 +276,12 @@ type Timeline(iconSize, numRows, lineWidth, minutesPerTick, sevenTexts:string[],
             let dupOfCaveBox = swordBoxHoldsSword && (match ti.TID with | MagicalSword | StartingMagicalSword -> true | _ -> false)
             if ti.IsDone && not dupOfCaveBox && (swordRank ti.TID = 0 || (match topSwordItem with | Some t -> obj.ReferenceEquals(t, ti) | None -> false)) then
                 let tick = float ti.FinishedTotalSeconds/(60.*float minutesPerTick) |> int
-                if not(buckets.ContainsKey(tick)) then
-                    buckets.Add(tick, ResizeArray())
-                buckets.[tick].Add(ti.Bmp, ti.FinishedTotalSeconds, ti.Has, ti.TID)
+                // (an item box can be stamped done while it has no icon, e.g. its item was cleared; draw nothing for it instead of crashing)
+                let bmp = ti.Bmp
+                if bmp <> null then
+                    if not(buckets.ContainsKey(tick)) then
+                        buckets.Add(tick, ResizeArray())
+                    buckets.[tick].Add(bmp, ti.FinishedTotalSeconds, ti.Has, ti.TID)
         for tick = 0 to numTicks do
             if buckets.ContainsKey(tick) then
                 let rowBmps = ResizeArray()

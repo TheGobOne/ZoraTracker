@@ -475,9 +475,13 @@ namespace Z1R_Avalonia
                 if (ti.IsDone && !dupOfCaveBox && (swordRank(ti.TID) == 0 || (topSwordItem != null ? object.ReferenceEquals(topSwordItem, ti) : false)))
                 {
                     var tick = (int)((double)ti.FinishedTotalSeconds/(60.0*(double)minutesPerTick));
+                    // (an item box can be stamped done while it has no icon, e.g. its item was cleared; draw nothing for it instead of crashing)
+                    var bmp = ti.Bmp;
+                    if (bmp == null)
+                        continue;
                     if (!(buckets.ContainsKey(tick)))
                         buckets.Add(tick, new List<(System.Drawing.Bitmap, int, TrackerModel.PlayerHas, TimelineID)>());
-                    buckets[tick].Add((ti.Bmp, ti.FinishedTotalSeconds, ti.Has, ti.TID));
+                    buckets[tick].Add((bmp, ti.FinishedTotalSeconds, ti.Has, ti.TID));
                 }
             }
             for (int tick = 0; tick <= numTicks; tick++)
