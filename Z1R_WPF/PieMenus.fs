@@ -370,6 +370,8 @@ let takeThisOtherPanel() =
 
 let mutable cheapKeysChangedHook : unit -> unit = fun () -> ()   // set by the main UI: redraws the overworld tiles when a shop's 'cheap keys' box changes
 let mutable shopKeyIndexHook : int -> int = fun _ -> -1   // set by the main UI: index of the key in the items shown for numbered shop n, or -1 if that shop has no key
+let mutable shopItemIdentsHook : int -> int list = fun _ -> []   // set by the main UI: the item idents behind the icons of numbered shop n (index 0 = the P shop), in order
+let mutable removeShopItemAtHook : int * int -> (System.Drawing.Bitmap*bool) list[] = fun _ -> Array.create 5 []   // set by the main UI: remove the item at that position from shop n; returns every shop's items afterwards
 let mutable legacyDisabledChoices : string list = []   // set with crossedOutChoices: the crossed-out choices that are off because of Legacy Mode (they get a 'Disabled In Legacy Mode' tooltip; the box clears it)
 let mutable crossedOutChoices : string list = []   // set by the caller just before opening a cave choice box: these choices are shown crossed out and can't be picked (the box clears it)
 // a giant red X over a panel, to show it is crossed out (disabled)
@@ -635,6 +637,24 @@ let ShopFlyoutAsync(cm:CustomComboBoxes.CanvasManager, counts:int[], _current:in
             // the items placed in this shop (collected ones are dimmed), a row under the count
             let items = new StackPanel(Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, Margin=Thickness(0.,2.,0.,2.), MinHeight=27., MinWidth=(if n = 0 && TrackerModel.LegacyMode then 0. else 72.))
             fillItems(n, items, shopItems.[n])
+            // middle click an item icon to remove that item from the shop (by position: heart containers repeat, so toggling would add another)
+            // (the P shop's panel is blue potion, its item, red potion: the item is the middle icon)
+            items.PreviewMouseDown.Add(fun ea ->
+                if ea.ChangedButton = Input.MouseButton.Middle then
+                    ea.Handled <- true
+                    let childIdx =
+                        items.Children |> Seq.cast<FrameworkElement> |> Seq.tryFindIndex (fun ch ->
+                            let p = ea.GetPosition(ch)
+                            p.X >= 0. && p.Y >= 0. && p.X < ch.ActualWidth && p.Y < ch.ActualHeight)
+                        |> Option.defaultValue -1
+                    let itemIdx = if n = 0 then childIdx - 1 else childIdx
+                    let idents = shopItemIdentsHook n
+                    if childIdx >= 0 && itemIdx >= 0 && itemIdx < idents.Length && not (TrackerModel.LegacyMode && n = 0) then
+                        let after = removeShopItemAtHook(n, itemIdx)
+                        for m = 0 to 4 do latestItems.[m] <- after.[m]
+                        for (m, panel) in itemPanels do fillItems(m, panel, latestItems.[m])
+                        refreshCheapBoxes()
+                )
             itemPanels.Add((n, items))
             Grid.SetRow(items, 1)
             sp.Children.Add(items) |> ignore

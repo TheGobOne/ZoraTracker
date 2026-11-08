@@ -485,6 +485,33 @@ let setShopLabel(i:int, j:int, label:int) =
 let clearAllTileIcons(i:int, j:int) =
     setShopLabel(i, j, 0)
     setDecorIcons(i, j, -1)
+// the tiles of shop 'label' that hold items (the first one is the shop's source of truth: tiles of the same shop are synced)
+let private shopTilesWithItems(label:int) =
+    [ for x in 0..15 do
+        for y in 0..7 do
+            if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = label && not (TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[x,y]).IsEmpty) then yield (x,y) ]
+// the item idents behind the icons shopItemBitmapsGlobal(n) gives, in the same order (middle clicking an icon in the shop window removes that item)
+let shopItemIdentsGlobal(n:int) : int list =
+    let label = if n = 0 then 5 else n
+    let packed = (match shopTilesWithItems label with | (sx,sy) :: _ -> TrackerModel.owSwordIcons.[sx,sy] | [] -> TrackerModel.shopStash.[label])
+    let idents = [ for (ident, _) in TrackerModel.decorEntriesOf(packed) do if decorSourceBmp ident <> null then yield ident ]
+    if n = 0 then List.truncate 1 idents else idents
+// removes the idx-th item (as shopItemBitmapsGlobal(n) lists them) from shop n (middle click in the shop window)
+// (by position, not by toggling the item: heart containers repeat, so adding one again adds another instead of removing it)
+let removeShopItemAtGlobal(n:int, idx:int) =
+    let label = if n = 0 then 5 else n
+    let src = shopTilesWithItems label
+    let packed = (match src with | (sx,sy) :: _ -> TrackerModel.owSwordIcons.[sx,sy] | [] -> TrackerModel.shopStash.[label])
+    let es = TrackerModel.decorEntriesOf(packed) |> List.ofSeq
+    let shown = [ for k in 0 .. es.Length-1 do if decorSourceBmp (fst es.[k]) <> null then yield k ]
+    if idx >= 0 && idx < shown.Length then
+        let es2 = es |> List.indexed |> List.filter (fun (k,_) -> k <> shown.[idx]) |> List.map snd
+        match src with
+        | (x,y) :: _ ->
+            setDecorIcons(x, y, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack es2, label))
+            redrawOwTileHook(x, y)
+        | [] -> TrackerModel.shopStash.[label] <- TrackerModel.decorEntriesPack es2
+        decorStateChanged()
 // placing a secret / door repair / money making game on a tile replaces whatever shop (label + item icons) was there
 let tileTypeReplacesShop(state:int) = state >= TrackerModel.MapSquareChoiceDomainHelper.UNKNOWN_SECRET && state <= TrackerModel.MapSquareChoiceDomainHelper.MONEY_MAKING_GAME
 let owRemainingScreensTextBox =new TextBox(Width=116., Height=18., FontSize=12., Margin=Thickness(0.,-5.,0.,0.), Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, TextAlignment=TextAlignment.Center,
@@ -706,6 +733,8 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
     DrawingLayer.applyCustomMenuIcons()
     OverworldMapTileCustomization.shopItemBitmapsHook <- shopItemBitmapsGlobal
     PieMenus.shopKeyIndexHook <- shopKeyIndexGlobal
+    PieMenus.shopItemIdentsHook <- shopItemIdentsGlobal
+    PieMenus.removeShopItemAtHook <- (fun (n, idx) -> removeShopItemAtGlobal(n, idx); Array.init 5 shopItemBitmapsGlobal)
     PieMenus.cheapKeysChangedHook <- (fun () ->
         for x = 0 to 15 do
             for y = 0 to 7 do
@@ -1806,7 +1835,9 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                     (Array.init 5 (fun n -> TrackerModel.shopLabelCount (if n = 0 then 5 else n))), (Array.init 5 shopItemBitmaps)
                                 let addItemToShop(shop:int, ident0:int) =
                                     // Progressive Items: any sword put in a shop is just the progressive sword
-                                    let ident = if TrackerModel.ProgressiveItems && (ident0 = TrackerModel.ITEMS.WOODSWORD || ident0 = TrackerModel.ITEMS.WHITESWORD || ident0 = TrackerModel.ITEMS.MAGICALSWORD || ident0 = TrackerModel.ITEMS.WHITESWORD4) then TrackerModel.ITEMS.PROGRESSIVESWORD else ident0
+                                    // (except a sword already in the shop: then this is a remove (the add toggles it off), and it must stay that sword)
+                                    let alreadyInShop = shopItemIdentsGlobal(shop) |> List.contains ident0
+                                    let ident = if not alreadyInShop && TrackerModel.ProgressiveItems && (ident0 = TrackerModel.ITEMS.WOODSWORD || ident0 = TrackerModel.ITEMS.WHITESWORD || ident0 = TrackerModel.ITEMS.MAGICALSWORD || ident0 = TrackerModel.ITEMS.WHITESWORD4) then TrackerModel.ITEMS.PROGRESSIVESWORD else ident0
                                     let lbl = if shop = 0 then 5 else shop
                                     let curLabel = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[i,j])
                                     let targetHasTile = [ for x in 0..15 do for y in 0..7 do if TrackerModel.shopLabelOf(TrackerModel.owSwordIcons.[x,y]) = lbl then yield 1 ] |> List.isEmpty |> not
