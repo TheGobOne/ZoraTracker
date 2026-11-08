@@ -1691,7 +1691,13 @@ public static class OverworldMapTileCustomization
                                 var potionRight = potionCell.TranslatePoint(new Point(potionCell.Bounds.Width, 0.0), g).Value.X;
                                 var iconLeftWanted = aboveIconLeft - cellLeft;
                                 eq.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                                var eqLeft = ((potionRight + aboveIconLeft) / 2.0 - eq.DesiredSize.Width / 2.0) - cellLeft;
+                                // (WPF: `centre - DesiredSize.Width / 2`, where DesiredSize includes the margin this very handler sets, so each pass moves the margin to
+                                // c - (w + margin) / 2 and, after a few passes, it settles at (2c - w) / 3. With the pixel rounding here it never settled (the margin flipped
+                                // between two values forever, a layout pass every time). The settled value is used directly, taking the margin out of the width:
+                                // the same place WPF ends up, with no feedback.)
+                                var eqCentre = (potionRight + aboveIconLeft) / 2.0 - cellLeft;
+                                var eqWidth = eq.DesiredSize.Width - eq.Margin.Left - eq.Margin.Right;
+                                var eqLeft = (2.0 * eqCentre - eqWidth) / 3.0;
                                 if (Math.Abs(iconBox.Margin.Left - iconLeftWanted) > 0.5) iconBox.Margin = new Thickness(iconLeftWanted, 0.0, 0.0, 0.0);
                                 if (Math.Abs(eq.Margin.Left - eqLeft) > 0.5) eq.Margin = new Thickness(eqLeft, 0.0, 0.0, 0.0);
                             }

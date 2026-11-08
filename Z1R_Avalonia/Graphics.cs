@@ -57,6 +57,7 @@ public static class Graphics
         // returns false if this platform can't warp the cursor
         public static bool SetCursor(double x, double y)
         {
+            if (SelfTest.isSelfTest || LoadDump.isActive) return false;   // (a test run must not move the user's real mouse cursor)
             var transformedPoint = new Point(x * appScale(), y * appScale());
             var pos = theWindow.PointToScreen(transformedPoint);
             return Platform.WarpCursor(pos.X, pos.Y, theWindow.DesktopScaling);

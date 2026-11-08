@@ -443,9 +443,20 @@ public static class WPFUI
     public static bool copiedMarkerBomb = false;   // the copied tile was a bomb shop (the paste makes a bomb shop too)
     public static Action<int, int> redrawOwTileHook = (_i, _j) => { };   // set once the map exists: redraws one overworld tile
     // toggling a marker icon on a tile; a P shop (shop label 5) holds just one item, so picking a different one replaces it
+    // Legacy Mode: a shop holds only what the shop window allows (the P shop none at all); adding anything else to a shop tile, by hotkey or from the tile menu, is refused
+    // (taking an item out is always allowed). decorToggleRefusedByLegacy says why the tile came back unchanged, for the beep.
+    public static bool decorToggleRefusedByLegacy = false;
+    public const string legacyShopRefusal = "Legacy Mode: a shop can only hold a wood arrow, blue candle, blue ring, regular key, bombs, meat, book or shield";
     public static int decorToggleForTile(int before, int ident)
     {
         var cur = TrackerModel.decorIconsOf(before);
+        decorToggleRefusedByLegacy = false;
+        var shopLbl = TrackerModel.shopLabelOf(before);
+        if (TrackerModel.LegacyMode && shopLbl > 0 && !(cur.Contains(ident)) && (shopLbl == 5 || !(PieMenus.legacyShopAllows(ident))))
+        {
+            decorToggleRefusedByLegacy = true;
+            return before;
+        }
         if (TrackerModel.shopLabelOf(before) == 5 && !cur.IsEmpty && !(cur.Contains(ident)))
             return TrackerModel.decorIconsToggle(TrackerModel.withShopLabel(-1, 5), ident);
         else return TrackerModel.decorIconsToggle(before, ident);
@@ -2551,7 +2562,9 @@ public static class WPFUI
                                 (int[], List<(System.Drawing.Bitmap, bool)>[]) addItemToShop(int shop, int ident0)
                                 {
                                     // Progressive Items: any sword put in a shop is just the progressive sword
-                                    var ident = TrackerModel.ProgressiveItems && (ident0 == TrackerModel.ITEMS.WOODSWORD || ident0 == TrackerModel.ITEMS.WHITESWORD || ident0 == TrackerModel.ITEMS.MAGICALSWORD || ident0 == TrackerModel.ITEMS.WHITESWORD4) ? TrackerModel.ITEMS.PROGRESSIVESWORD : ident0;
+                                    // (except a sword already in the shop: then this is a remove (the add toggles it off), and it must stay that sword)
+                                    var alreadyInShop = shopItemIdentsGlobal(shop).Contains(ident0);
+                                    var ident = !alreadyInShop && TrackerModel.ProgressiveItems && (ident0 == TrackerModel.ITEMS.WOODSWORD || ident0 == TrackerModel.ITEMS.WHITESWORD || ident0 == TrackerModel.ITEMS.MAGICALSWORD || ident0 == TrackerModel.ITEMS.WHITESWORD4) ? TrackerModel.ITEMS.PROGRESSIVESWORD : ident0;
                                     var lbl = shop == 0 ? 5 : shop;
                                     var curLabel = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]);
                                     var targetHasTile = false;
@@ -2733,7 +2746,7 @@ public static class WPFUI
                                 var before = TrackerModel.owSwordIcons[i, j];
                                 setDecorIcons(i, j, decorToggleForTile(before, ident));
                                 if (TrackerModel.owSwordIcons[i, j] == before)
-                                    Graphics.ErrorBeepWithReminderLogText($"A tile can show at most {TrackerModel.MaxDecorIcons} marker icons; ctrl+left click one of its icons to remove it first");
+                                    Graphics.ErrorBeepWithReminderLogText(decorToggleRefusedByLegacy ? legacyShopRefusal : $"A tile can show at most {TrackerModel.MaxDecorIcons} marker icons; ctrl+left click one of its icons to remove it first");
                                 // an unmarked tile that gets a marker icon counts as finished (Don't Care), icons stay visible
                                 if (!(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[i, j]).IsEmpty) && !(owInstance.AlwaysEmpty(i, j)) && TrackerModel.overworldMapMarks[i, j].Current() == -1)
                                     await SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1);
@@ -3223,7 +3236,7 @@ public static class WPFUI
                                     var before = TrackerModel.owSwordIcons[i, j];
                                     setDecorIcons(i, j, decorToggleForTile(before, ident2));
                                     if (TrackerModel.owSwordIcons[i, j] == before)
-                                        Graphics.ErrorBeepWithReminderLogText($"A tile can show at most {TrackerModel.MaxDecorIcons} marker icons; ctrl+left click one of its icons to remove it first");
+                                        Graphics.ErrorBeepWithReminderLogText(decorToggleRefusedByLegacy ? legacyShopRefusal : $"A tile can show at most {TrackerModel.MaxDecorIcons} marker icons; ctrl+left click one of its icons to remove it first");
                                     if (!(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[i, j]).IsEmpty) && !(owInstance.AlwaysEmpty(i, j)) && TrackerModel.overworldMapMarks[i, j].Current() == -1)
                                         await SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1);
                                     popupIsActive = false;

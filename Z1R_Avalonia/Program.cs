@@ -106,6 +106,8 @@ public static class Program
 #if DEBUG
             // in debug mode, do not register hotkeys, as I need e.g. F10 to work to use the debugger!
 #else
+            // (--selftest / --dump runs must not take F5 / F10 away from the user system-wide)
+            if (SelfTest.isSelfTest || LoadDump.isActive) return;
             if (!(Winterop.RegisterHotKey(this, Winterop.HOTKEY_ID, MOD_NONE, (uint)VK_F10)))
             {
                 // handle error
@@ -2991,6 +2993,10 @@ public static class Program
     public static int main(string[] _argv, Func<AppBuilder> configure)
     {
         Console.WriteLine("Starting ZORATracker...");
+        // format numbers the same on every machine, as WPF's F# sprintf does: C# interpolation uses the user's culture, and e.g. sv-SE writes -120 as "−120"
+        // (U+2212), which the saved window positions' -?\d+ parser then rejects, so windows on a monitor left of / above the primary one forget their place
+        System.Globalization.CultureInfo.DefaultThreadCurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+        System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
         try { Winterop.ShowWindow(Winterop.GetConsoleWindow(), Winterop.SW_HIDE); } catch (Exception) { }   // hide the console right away (a crash still re-shows it)
         var cwd = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
         var thisExe = Path.Combine(cwd, Path.GetFileName(Platform.ExecutablePath()));   // (port: Graphics.ExeName, without touching Graphics: its statics make Avalonia bitmaps, and Avalonia isn't running yet)
@@ -2998,6 +3004,7 @@ public static class Program
         using var mutex = new Mutex(false, thisExeName);
         void killAnyZombieHosts()
         {
+            if (SelfTest.isSelfTest || LoadDump.isActive) return;   // (a test run must not kill the host of someone's real co-op session)
             var procs = Process.GetProcessesByName("Z1R_SignalRHost");
             foreach (var p in procs)
             {

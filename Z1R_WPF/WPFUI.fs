@@ -286,9 +286,18 @@ let mutable copiedMarkerSource = (-1, -1)
 let mutable copiedMarkerBomb = false   // the copied tile was a bomb shop (the paste makes a bomb shop too)
 let mutable redrawOwTileHook = fun (_i:int, _j:int) -> ()   // set once the map exists: redraws one overworld tile
 // toggling a marker icon on a tile; a P shop (shop label 5) holds just one item, so picking a different one replaces it
+// Legacy Mode: a shop holds only what the shop window allows (the P shop none at all); adding anything else to a shop tile, by hotkey or from the tile menu, is refused
+// (taking an item out is always allowed). decorToggleRefusedByLegacy says why the tile came back unchanged, for the beep.
+let mutable decorToggleRefusedByLegacy = false
+let legacyShopRefusal = "Legacy Mode: a shop can only hold a wood arrow, blue candle, blue ring, regular key, bombs, meat, book or shield"
 let decorToggleForTile(before:int, ident:int) : int =
     let cur = TrackerModel.decorIconsOf before
-    if TrackerModel.shopLabelOf before = 5 && not cur.IsEmpty && not (cur |> List.contains ident) then
+    decorToggleRefusedByLegacy <- false
+    let shopLbl = TrackerModel.shopLabelOf before
+    if TrackerModel.LegacyMode && shopLbl > 0 && not (cur |> List.contains ident) && (shopLbl = 5 || not (PieMenus.legacyShopAllows ident)) then
+        decorToggleRefusedByLegacy <- true
+        before
+    elif TrackerModel.shopLabelOf before = 5 && not cur.IsEmpty && not (cur |> List.contains ident) then
         TrackerModel.decorIconsToggle(TrackerModel.withShopLabel(-1, 5), ident)
     else TrackerModel.decorIconsToggle(before, ident)
 let mutable syncingShops = false
@@ -1921,7 +1930,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                             let before = TrackerModel.owSwordIcons.[i,j]
                             setDecorIcons(i, j, decorToggleForTile(before, ident))
                             if TrackerModel.owSwordIcons.[i,j] = before then
-                                Graphics.ErrorBeepWithReminderLogText(sprintf "A tile can show at most %d marker icons; ctrl+left click one of its icons to remove it first" TrackerModel.MaxDecorIcons)
+                                Graphics.ErrorBeepWithReminderLogText(if decorToggleRefusedByLegacy then legacyShopRefusal else sprintf "A tile can show at most %d marker icons; ctrl+left click one of its icons to remove it first" TrackerModel.MaxDecorIcons)
                             // an unmarked tile that gets a marker icon counts as finished (Don't Care), icons stay visible
                             if not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty) && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.overworldMapMarks.[i,j].Current() = -1 then
                                 do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1)
@@ -2282,7 +2291,7 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                 let before = TrackerModel.owSwordIcons.[i,j]
                                 setDecorIcons(i, j, decorToggleForTile(before, ident))
                                 if TrackerModel.owSwordIcons.[i,j] = before then
-                                    Graphics.ErrorBeepWithReminderLogText(sprintf "A tile can show at most %d marker icons; ctrl+left click one of its icons to remove it first" TrackerModel.MaxDecorIcons)
+                                    Graphics.ErrorBeepWithReminderLogText(if decorToggleRefusedByLegacy then legacyShopRefusal else sprintf "A tile can show at most %d marker icons; ctrl+left click one of its icons to remove it first" TrackerModel.MaxDecorIcons)
                                 if not(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons.[i,j]).IsEmpty) && not(owInstance.AlwaysEmpty(i,j)) && TrackerModel.overworldMapMarks.[i,j].Current() = -1 then
                                     do! SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1)
                                 popupIsActive <- false
