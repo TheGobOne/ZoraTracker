@@ -1591,8 +1591,9 @@ public static class UIComponents
                     var labelChar = TrackerModel.IsHiddenDungeonNumbers.Invoke(null) ? "ABCDEFGH"[dungeonIndex] : "12345678"[dungeonIndex];
                     var sp = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Black };
                     levelTabSelected.Fired += level => { if (level == dungeonIndex + 1) sp.Background = blockerHighlightBrush; else sp.Background = Brushes.Black; };
-                    var tb = new TextBox { Foreground = Brushes.Orange, Background = Brushes.Black, FontSize = 12.0, Text = labelChar.ToString(), Width = 10.0, Height = 14.0, IsHitTestVisible = false,
-                                            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, BorderThickness = new Thickness(0.0),
+                    // (a TextBlock, not a TextBox: a TextBox this narrow lays its digit out past its right edge and clips it)
+                    var tb = new TextBlock { Foreground = Brushes.Orange, Background = Brushes.Black, FontSize = 12.0, Text = labelChar.ToString(), Width = 10.0, Height = 14.0, IsHitTestVisible = false,
+                                            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
                                             TextAlignment = TextAlignment.Center, Margin = new Thickness(2.0, 0.0, 0.0, 0.0) };
                     void updateLabelColor() => tb.Foreground = TrackerModel.GetDungeon(dungeonIndex).HasBeenLocated() ? Brushes.White : Brushes.Orange;
                     onEvent(TrackerModel.GetDungeon(dungeonIndex).HasBeenLocatedChanged, _ => updateLabelColor());
