@@ -235,12 +235,16 @@ let spotSummaryContent(doUIUpdateEvent:Event<unit>) =
         summary.BorderThickness <- Thickness(0.)   // no grey border in the popout window
         dp.Children.Add(summary) |> ignore
     redraw()
-    TrackerModel.mapStateSummaryComputedEvent.Publish.Add(fun _ -> 
-//        printfn "redraw spot summary"
-        redraw()
-        )
-    // also redraw as items get collected (the summary dims potions/letter/swords once collected)
-    doUIUpdateEvent.Publish.Add(fun _ -> redraw())
+    // subscribed only while the popout is on screen: these are shared events that outlive the window, so a handler left behind would keep redrawing a closed window and pin it in memory
+    let summaryHandler = Handler<unit>(fun _ _ -> redraw())
+    let itemsHandler = Handler<unit>(fun _ _ -> redraw())   // also redraw as items get collected (the summary dims potions/letter/swords once collected)
+    dp.Loaded.Add(fun _ ->
+        TrackerModel.mapStateSummaryComputedEvent.Publish.AddHandler(summaryHandler)
+        doUIUpdateEvent.Publish.AddHandler(itemsHandler)
+        redraw())
+    dp.Unloaded.Add(fun _ ->
+        TrackerModel.mapStateSummaryComputedEvent.Publish.RemoveHandler(summaryHandler)
+        doUIUpdateEvent.Publish.RemoveHandler(itemsHandler))
     dp
 let inventoryAndHeartsContent(doUIUpdateEvent:Event<unit>) =
     let dp = new DockPanel(Background=Brushes.Black)
@@ -248,10 +252,9 @@ let inventoryAndHeartsContent(doUIUpdateEvent:Event<unit>) =
         dp.Children.Clear()
         dp.Children.Add(MakeInventoryAndHearts()) |> ignore
     redraw()
-    doUIUpdateEvent.Publish.Add(fun _ -> 
-//        printfn "redraw inventory and hearts"
-        redraw()
-        )
+    let updateHandler = Handler<unit>(fun _ _ -> redraw())   // subscribed only while on screen; see spotSummaryContent
+    dp.Loaded.Add(fun _ -> doUIUpdateEvent.Publish.AddHandler(updateHandler); redraw())
+    dp.Unloaded.Add(fun _ -> doUIUpdateEvent.Publish.RemoveHandler(updateHandler))
     new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(0.))   // no grey border in the popout window
 let remainingItemsContent(doUIUpdateEvent:Event<unit>) =
     remainingItemsIconScale <- TrackerModelOptions.RemainingItemsIconScale   // remembered from last time
@@ -260,10 +263,9 @@ let remainingItemsContent(doUIUpdateEvent:Event<unit>) =
         dp.Children.Clear()
         dp.Children.Add(MakeRemainingItemsDisplay()) |> ignore
     redraw()
-    doUIUpdateEvent.Publish.Add(fun _ -> 
-//        printfn "redraw remaining items"
-        redraw()
-        )
+    let updateHandler = Handler<unit>(fun _ _ -> redraw())   // subscribed only while on screen; see spotSummaryContent
+    dp.Loaded.Add(fun _ -> doUIUpdateEvent.Publish.AddHandler(updateHandler); redraw())
+    dp.Unloaded.Add(fun _ -> doUIUpdateEvent.Publish.RemoveHandler(updateHandler))
     let border = new Border(Child=dp, BorderBrush=Brushes.Gray, BorderThickness=Thickness(0.), Background=Brushes.Black)
     border.PreviewMouseWheel.Add(fun e ->
         if System.Windows.Input.Keyboard.Modifiers = System.Windows.Input.ModifierKeys.Control then

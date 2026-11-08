@@ -318,13 +318,20 @@ public static class Popouts
             dp.Children.Add(summary);
         }
         redraw();
-        TrackerModel.mapStateSummaryComputedEvent.Publish.AddHandler(new Microsoft.FSharp.Control.FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) =>
+        // (subscribed only while the popout is on screen: these are shared events that outlive the window, so a handler left behind would keep redrawing a closed window and pin it in memory)
+        var summaryHandler = new Microsoft.FSharp.Control.FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => redraw());
+        System.Action itemsHandler = () => redraw();   // also redraw as items get collected (the summary dims potions/letter/swords once collected)
+        dp.AttachedToVisualTree += (_, _) =>
         {
-//            printfn "redraw spot summary"
+            TrackerModel.mapStateSummaryComputedEvent.Publish.AddHandler(summaryHandler);
+            doUIUpdateEvent.Fired += itemsHandler;
             redraw();
-        }));
-        // also redraw as items get collected (the summary dims potions/letter/swords once collected)
-        doUIUpdateEvent.Fired += () => redraw();
+        };
+        dp.DetachedFromVisualTree += (_, _) =>
+        {
+            TrackerModel.mapStateSummaryComputedEvent.Publish.RemoveHandler(summaryHandler);
+            doUIUpdateEvent.Fired -= itemsHandler;
+        };
         return dp;
     }
     public static Border inventoryAndHeartsContent(Graphics.SharedEvent doUIUpdateEvent)
@@ -336,11 +343,9 @@ public static class Popouts
             dp.Children.Add(MakeInventoryAndHearts());
         }
         redraw();
-        doUIUpdateEvent.Fired += () =>
-        {
-//            printfn "redraw inventory and hearts"
-            redraw();
-        };
+        System.Action updateHandler = () => redraw();   // (subscribed only while on screen; see spotSummaryContent)
+        dp.AttachedToVisualTree += (_, _) => { doUIUpdateEvent.Fired += updateHandler; redraw(); };
+        dp.DetachedFromVisualTree += (_, _) => doUIUpdateEvent.Fired -= updateHandler;
         return new Border { Child = dp, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0.0) };   // no grey border in the popout window
     }
     public static Border remainingItemsContent(Graphics.SharedEvent doUIUpdateEvent)
@@ -353,11 +358,9 @@ public static class Popouts
             dp.Children.Add(MakeRemainingItemsDisplay());
         }
         redraw();
-        doUIUpdateEvent.Fired += () =>
-        {
-//            printfn "redraw remaining items"
-            redraw();
-        };
+        System.Action updateHandler = () => redraw();   // (subscribed only while on screen; see spotSummaryContent)
+        dp.AttachedToVisualTree += (_, _) => { doUIUpdateEvent.Fired += updateHandler; redraw(); };
+        dp.DetachedFromVisualTree += (_, _) => doUIUpdateEvent.Fired -= updateHandler;
         var border = new Border { Child = dp, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0.0), Background = Brushes.Black };
         // (WPF: PreviewMouseWheel, so a tunnelling handler; Keyboard.Modifiers → the event's KeyModifiers; whole notches only, see Graphics.wheelNotch)
         border.AddHandler(InputElement.PointerWheelChangedEvent, new EventHandler<PointerWheelEventArgs>((sender, e) =>
