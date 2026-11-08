@@ -274,6 +274,27 @@ public static class WPFUI
         var idents = TrackerModel.decorEntriesOf(packed).Where(e => decorSourceBmp(e.Item1) != null).Select(e => e.Item1).ToList();
         return n == 0 ? idents.Take(1).ToList() : idents;
     }
+    // removes the idx-th item (as shopItemBitmapsGlobal(n) lists them) from shop n (port only: middle click in the shop window)
+    // (by position, not by toggling the item: heart containers repeat, so adding one again adds another instead of removing it)
+    public static void removeShopItemAtGlobal(int n, int idx)
+    {
+        var label = n == 0 ? 5 : n;
+        var src = shopTilesWithItems(label);
+        var packed = src.Count > 0 ? TrackerModel.owSwordIcons[src[0].Item1, src[0].Item2] : TrackerModel.shopStash[label];
+        var es = TrackerModel.decorEntriesOf(packed).ToList();
+        var shown = Enumerable.Range(0, es.Count).Where(k => decorSourceBmp(es[k].Item1) != null).ToList();
+        if (idx < 0 || idx >= shown.Count) return;
+        var es2 = ListModule.OfSeq(es.Where((_, k) => k != shown[idx]));
+        if (src.Count > 0)
+        {
+            var (x, y) = src[0];   // (tiles of the same shop are synced, so one tile does them all)
+            setDecorIcons(x, y, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack(es2), label));
+            redrawOwTileHook(x, y);
+        }
+        else
+            TrackerModel.shopStash[label] = TrackerModel.decorEntriesPack(es2);
+        decorStateChanged();
+    }
     // index (within the item list shopItemBitmapsGlobal gives) of the key in numbered shop n, or -1 if that shop holds no key
     public static int shopKeyIndexGlobal(int n)
     {
@@ -1071,6 +1092,7 @@ public static class WPFUI
         OverworldMapTileCustomization.shopItemBitmapsHook = shopItemBitmapsGlobal;
         PieMenus.shopKeyIndexHook = shopKeyIndexGlobal;
         PieMenus.shopItemIdentsHook = shopItemIdentsGlobal;
+        PieMenus.removeShopItemAtHook = removeShopItemAtGlobal;
         PieMenus.cheapKeysChangedHook = () =>
         {
             for (int x = 0; x <= 15; x++)
