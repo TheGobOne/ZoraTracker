@@ -7,7 +7,13 @@
     <AssemblyName>ZoraTracker.CrossPlatform</AssemblyName>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!-- the same logo as the WPF tracker's exe (the .exe's icon in Explorer, the taskbar, Alt+Tab) -->
+    <ApplicationIcon>..\Z1R_WPF\icons\ztlogo64x64.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- (the window's own title-bar icon is loaded from this file at startup) -->
+    <None Include="..\Z1R_WPF\icons\ztlogo64x64.ico" Link="ztlogo64x64.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Headless" Version="11.3.22" />

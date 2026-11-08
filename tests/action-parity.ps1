@@ -77,7 +77,8 @@ $steps = @(
 )
 if ($Probe) {
     $pp = $Probe.Split(',')
-    $steps = @( @(157, 132, 'L'), @('wait', 8), @([int]$pp[0], [int]$pp[1], $pp[2]), @('wait', 2) )
+    if ($pp[0] -eq 'early') { $steps = @( @(157, 132, 'L'), @('wait', 1) ) }   # "early": the shot is taken right after 1st Quest is clicked, while "Loading UI..." shows
+    else { $steps = @( @(157, 132, 'L'), @('wait', 8), @([int]$pp[0], [int]$pp[1], $pp[2]), @('wait', 2) ) }
 }
 Add-Type -AssemblyName System.Drawing
 $files = @{}

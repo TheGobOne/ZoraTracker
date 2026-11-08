@@ -554,6 +554,13 @@ public static class Program
             Graphics.theWindow = this;
             // full window
             this.Title = "ZORATracker";
+            // (WPF gets the title-bar icon from the exe's ApplicationIcon; Avalonia needs it set on the window. The file sits next to the exe; skipped if it is missing.)
+            try
+            {
+                var iconFile = Path.Combine(AppContext.BaseDirectory, "ztlogo64x64.ico");
+                if (File.Exists(iconFile)) this.Icon = new WindowIcon(iconFile);
+            }
+            catch (Exception) { }
             this.CanResize = true;   // resizable: the whole UI scales to fit (see the SizeChanged handler below)
             this.MinWidth = Math.Round(WIDTH_SANS_CHROME*0.4 + CHROME_WIDTH) - CHROME_WIDTH;   // (Avalonia: client size)
             this.MinHeight = Math.Round(HEIGHT_SANS_CHROME*0.4 + CHROME_HEIGHT) - CHROME_HEIGHT;
@@ -2062,8 +2069,11 @@ public static class Program
                 }
 
                 var loadingText = new StringBuilder("Loading UI...");
-                var loadingTB = new TextBox { Text = loadingText.ToString(), IsReadOnly = true, Margin = spacing, Padding = new Thickness(5.0), MaxWidth = WIDTH/2.0 };
-                stackPanel.Children.Add(loadingTB);
+                // (in the empty strip between the Overworld card and the option cards, not at the bottom of the stack: there it was cut off by the window's bottom edge, and it pushed the cards)
+                var loadingTB = new TextBox { Text = loadingText.ToString(), IsReadOnly = true, Padding = new Thickness(5.0), Width = WIDTH/2.0, TextAlignment = TextAlignment.Center };
+                Canvas.SetLeft(loadingTB, (WIDTH_SANS_CHROME - loadingTB.Width) / 2.0);
+                Canvas.SetTop(loadingTB, 216.0);
+                startupOptionsCanvas.Children.Add(loadingTB);
                 var totalsw = Stopwatch.StartNew();
                 var sw = Stopwatch.StartNew();
                 var printStartupTimeDiagnostics = false;

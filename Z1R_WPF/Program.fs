@@ -1512,8 +1512,11 @@ type MyWindow() as this =
                 OptionsMenu.microphoneFailedToInitialize <- true
 
             let loadingText = new System.Text.StringBuilder("Loading UI...")
-            let tb = new TextBox(Text=loadingText.ToString(), IsReadOnly=true, Margin=spacing, Padding=Thickness(5.), MaxWidth=WIDTH/2.)
-            stackPanel.Children.Add(tb) |> ignore
+            // (in the empty strip between the Overworld card and the option cards, not at the bottom of the stack: there it was cut off by the window's bottom edge, and it pushed the cards)
+            let tb = new TextBox(Text=loadingText.ToString(), IsReadOnly=true, Padding=Thickness(5.), Width=WIDTH/2., TextAlignment=TextAlignment.Center)
+            Canvas.SetLeft(tb, (WIDTH_SANS_CHROME - tb.Width) / 2.)
+            Canvas.SetTop(tb, 216.)
+            startupOptionsCanvas.Children.Add(tb) |> ignore
             let totalsw = System.Diagnostics.Stopwatch.StartNew()
             let sw = System.Diagnostics.Stopwatch.StartNew()
             let displayStartupTimeDiagnostics(s) = if false then printfn "%s" s  // for debugging startup perf
