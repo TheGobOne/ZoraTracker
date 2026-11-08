@@ -295,6 +295,48 @@ public static class Graphics
             };
             return bd;
         });
+    // WPF-like slider: a thin grey track line, a small grey thumb, tick marks above and/or below (the Fluent slider is much taller, and its track is nearly invisible on black)
+    public static readonly FuncControlTemplate<Slider> wpfSliderTemplate =
+        new FuncControlTemplate<Slider>((s, scope) =>
+        {
+            var gray = new SolidColorBrush(Color.Parse("#8A8A8A"));
+            // (as tall as WPF's: the thumb alone, plus 6px for each side that has tick marks)
+            var sides = (s.TickPlacement == TickPlacement.Outside ? 2 : (s.TickPlacement == TickPlacement.None ? 0 : 1));
+            var rootH = 18.0 + 6.0 * sides;
+            var root = new Grid { Background = Brushes.Transparent, Height = rootH };
+            root.Children.Add(new Border { Height = 2.0, Background = new SolidColorBrush(Color.Parse("#606060")), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5.0, 0.0) });
+            if (s.TickPlacement != TickPlacement.None && s.TickFrequency > 0.0 && !double.IsNaN(s.Width) && s.Maximum > s.Minimum)
+            {
+                var ticks = new Canvas { IsHitTestVisible = false };
+                bool top = s.TickPlacement == TickPlacement.TopLeft || s.TickPlacement == TickPlacement.Outside;
+                bool bottom = s.TickPlacement == TickPlacement.BottomRight || s.TickPlacement == TickPlacement.Outside;
+                int n = (int)Math.Round((s.Maximum - s.Minimum) / s.TickFrequency);
+                for (int i = 0; i <= n; i++)
+                {
+                    double x = 5.0 + (double)i / n * (s.Width - 10.0);
+                    if (top) { var t = new Rectangle { Width = 1.0, Height = 4.0, Fill = gray }; Canvas.SetLeft(t, x - 0.5); Canvas.SetTop(t, 2.0); ticks.Children.Add(t); }
+                    if (bottom) { var t = new Rectangle { Width = 1.0, Height = 4.0, Fill = gray }; Canvas.SetLeft(t, x - 0.5); Canvas.SetTop(t, rootH - 6.0); ticks.Children.Add(t); }
+                }
+                root.Children.Add(ticks);
+            }
+            var emptyTemplate = new FuncControlTemplate<RepeatButton>((_, _) => new Border { Background = Brushes.Transparent });
+            var dec = new RepeatButton { Name = "PART_DecreaseButton", Template = emptyTemplate, Focusable = false };
+            var inc = new RepeatButton { Name = "PART_IncreaseButton", Template = emptyTemplate, Focusable = false };
+            var thumb = new Thumb
+            {
+                Width = 10.0, Height = 18.0,
+                Template = new FuncControlTemplate<Thumb>((_, _) => new Border { Background = new SolidColorBrush(Color.Parse("#B8B8B8")), BorderBrush = new SolidColorBrush(Color.Parse("#E0E0E0")), BorderThickness = new Thickness(1.0), CornerRadius = new CornerRadius(2.0) })
+            };
+            var track = new Track { Name = "PART_Track", Orientation = Orientation.Horizontal, DecreaseButton = dec, IncreaseButton = inc, Thumb = thumb };
+            track.Bind(RangeBase.MinimumProperty, new Avalonia.Data.Binding("Minimum") { Source = s });
+            track.Bind(RangeBase.MaximumProperty, new Avalonia.Data.Binding("Maximum") { Source = s });
+            track.Bind(RangeBase.ValueProperty, new Avalonia.Data.Binding("Value") { Source = s, Mode = Avalonia.Data.BindingMode.TwoWay });
+            scope.Register("PART_DecreaseButton", dec);
+            scope.Register("PART_IncreaseButton", inc);
+            scope.Register("PART_Track", track);
+            root.Children.Add(track);
+            return root;
+        });
     // rounded checkbox: dark rounded box, orange fill with a dark check when checked, light blue fill with a dark '?' when indeterminate (Random)
     private static readonly string checkMarkGeometry = "M 2,5.5 L 4.6,8.2 L 9,2.5";
     public static readonly FuncControlTemplate<CheckBox> roundedCheckBoxTemplate =
@@ -421,6 +463,17 @@ public static class Graphics
             ts.Setters.Add(new Setter(Layoutable.MinWidthProperty, 0.0));
             ts.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(2.0, 0.0, 2.0, 0.0)));
             app.Styles.Add(ts);
+            // WPF look for sliders (see wpfSliderTemplate)
+            var sls = new Style(x => x.OfType<Slider>());
+            sls.Setters.Add(new Setter(TemplatedControl.TemplateProperty, wpfSliderTemplate));
+            sls.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
+            sls.Setters.Add(new Setter(Layoutable.MinWidthProperty, 0.0));
+            app.Styles.Add(sls);
+            // (the Fluent theme's own horizontal/vertical slider templates win over the style above, so also set it on each slider as it appears)
+            Control.LoadedEvent.AddClassHandler<Slider>((sl, _) =>
+            {
+                if (sl.Orientation == Orientation.Horizontal && !ReferenceEquals(sl.Template, wpfSliderTemplate)) sl.Template = wpfSliderTemplate;
+            });
             // WPF metrics: WPF labels have 5px padding
             var ls = new Style(x => x.OfType<Label>());
             ls.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(5.0)));

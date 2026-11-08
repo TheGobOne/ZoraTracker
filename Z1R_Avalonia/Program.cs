@@ -2112,6 +2112,7 @@ public static class Program
                 Graphics.canvasAdd(hmsTimerCanvas, tbox, Layout.PANEL_X1 - 10.0, 8.0);   // (centered in the open space between the panel divider and the window edge)   // (the text sits low in its box, so the box starts a little above the TIMER heading's bottom edge to look centered)
                 Graphics.canvasAdd(hmsTimerCanvas, OverworldItemGridUI.niceTimerBox, Layout.PANEL_X1 - 13.0, 0.0);   // 'Nice timer bro' shows here while the timer is hidden
                 OverworldItemGridUI.niceTimerBox.Opacity = (OverworldItemGridUI.SHOW_NICE_TIMER_BRO && TrackerModelOptions.HideTimer.Value ? 1.0 : 0.0);   // (WPF: Visibility Visible / Hidden)
+                OptionsMenu.triggerHideTimerChanged();   // (apply the saved Hide Timer setting: the startup patch-up trigger fires before these timer boxes exist and so listens to nothing)
                 // Race Mode notice: once the app is up, tell the user what Race Mode does (unless they ticked "Do not show this again")
                 if (TrackerModelOptions.RaceMode.Value && !TrackerModelOptions.RaceModeNoticeHidden.Value)
                 {

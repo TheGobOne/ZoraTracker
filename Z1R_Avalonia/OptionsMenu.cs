@@ -775,8 +775,15 @@ public static class OptionsMenu
             style.Setters.Add(new Setter(TextBox.FontSizeProperty, 16.0));
             style.Setters.Add(new Setter(TextBox.ForegroundProperty, Brushes.Orange));
             style.Setters.Add(new Setter(TextBox.BackgroundProperty, Brushes.Black));
+            style.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));   // (WPF metrics: no minimum size, a hairline of padding)
+            style.Setters.Add(new Setter(Layoutable.MinWidthProperty, 0.0));
+            style.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(2.0, 0.0, 2.0, 0.0)));
             e.Styles.Add(style);
+            var style3 = new Style(x => x.OfType<Button>());
+            Graphics.addRoundedButtonSetters(style3);   // (the rounded dark look, like every other button)
+            e.Styles.Add(style3);
             var style2 = new Style(x => x.OfType<CheckBox>());
+            style2.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
             style2.Setters.Add(new Setter(CheckBox.HeightProperty, 22.0));
             style2.Setters.Add(new Setter(TemplatedControl.TemplateProperty, Graphics.roundedCheckBoxTemplate));
             style2.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(4.0, 0.0, 0.0, 0.0)));
