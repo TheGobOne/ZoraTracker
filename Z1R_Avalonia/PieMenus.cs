@@ -462,6 +462,7 @@ public static class PieMenus
     }
 
     public static Action cheapKeysChangedHook = () => { };   // set by the main UI: redraws the overworld tiles when a shop's 'cheap keys' box changes
+    public static Func<int, List<int>> shopItemIdentsHook = _ => new List<int>();   // set by the main UI: the item idents behind the icons of numbered shop n (index 0 = the P shop), in order
     public static Func<int, int> shopKeyIndexHook = _ => -1;   // set by the main UI: index of the key in the items shown for numbered shop n, or -1 if that shop has no key
     public static List<string> legacyDisabledChoices = new List<string>();   // set with crossedOutChoices: the crossed-out choices that are off because of Legacy Mode (they get a 'Disabled In Legacy Mode' tooltip; the box clears it)
     public static List<string> crossedOutChoices = new List<string>();   // set by the caller just before opening a cave choice box: these choices are shown crossed out and can't be picked (the box clears it)
@@ -826,6 +827,18 @@ public static class PieMenus
             // the items placed in this shop (collected ones are dimmed), a row under the count
             var items = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0.0, 2.0, 0.0, 2.0), MinHeight = 27.0, MinWidth = (n == 0 && TrackerModel.LegacyMode ? 0.0 : 72.0) };
             fillItems(n, items, shopItems[n]);
+            // middle click an item icon to remove that item from the shop (adding an item that is already there toggles it off, so this reuses addItem)
+            // (the P shop's panel is blue potion, its item, red potion: the item is the middle icon)
+            items.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, ea) =>
+            {
+                if (ea.GetCurrentPoint(items).Properties.PointerUpdateKind != PointerUpdateKind.MiddleButtonPressed) return;
+                ea.Handled = true;
+                var p = ea.GetPosition(items);
+                var childIdx = items.Children.ToList().FindIndex(ch => ch.Bounds.Contains(p));
+                var itemIdx = n == 0 ? childIdx - 1 : childIdx;
+                var idents = shopItemIdentsHook(n);
+                if (childIdx >= 0 && itemIdx >= 0 && itemIdx < idents.Count) applyItem(n, idents[itemIdx]);
+            }), RoutingStrategies.Tunnel);
             itemPanels.Add((n, items));
             Grid.SetRow(items, 1);
             sp.Children.Add(items);

@@ -265,6 +265,15 @@ public static class WPFUI
             return n == 0 ? all.Take(1).ToList() : all;
         }
     }
+    // the item idents behind the icons shopItemBitmapsGlobal(n) gives, in the same order (port only: middle clicking an icon in the shop window removes that item)
+    public static List<int> shopItemIdentsGlobal(int n)
+    {
+        var label = n == 0 ? 5 : n;
+        var src = shopTilesWithItems(label);
+        var packed = src.Count > 0 ? TrackerModel.owSwordIcons[src[0].Item1, src[0].Item2] : TrackerModel.shopStash[label];
+        var idents = TrackerModel.decorEntriesOf(packed).Where(e => decorSourceBmp(e.Item1) != null).Select(e => e.Item1).ToList();
+        return n == 0 ? idents.Take(1).ToList() : idents;
+    }
     // index (within the item list shopItemBitmapsGlobal gives) of the key in numbered shop n, or -1 if that shop holds no key
     public static int shopKeyIndexGlobal(int n)
     {
@@ -1050,6 +1059,7 @@ public static class WPFUI
         DrawingLayer.applyCustomMenuIcons();
         OverworldMapTileCustomization.shopItemBitmapsHook = shopItemBitmapsGlobal;
         PieMenus.shopKeyIndexHook = shopKeyIndexGlobal;
+        PieMenus.shopItemIdentsHook = shopItemIdentsGlobal;
         PieMenus.cheapKeysChangedHook = () =>
         {
             for (int x = 0; x <= 15; x++)
@@ -4499,6 +4509,13 @@ public static class WPFUI
         ScrollViewer.SetVerticalScrollBarVisibility(notesTextBox, ScrollBarVisibility.Auto);
         // (the Fluent theme turns a focused or hovered TextBox light gray; WPF's stays black)
         foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" }) notesTextBox.Resources[k] = Brushes.Black;
+        // WPF's notes box has a plain gray 1px border that doesn't change; the Fluent theme has none until focused, then draws its (here red) accent border
+        var notesBorderGray = new SolidColorBrush(Color.Parse("#ABADB3"));
+        notesTextBox.BorderThickness = new Thickness(1.0);
+        notesTextBox.BorderBrush = notesBorderGray;
+        foreach (var k in new[] { "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused" }) notesTextBox.Resources[k] = notesBorderGray;
+        notesTextBox.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(1.0);
+        notesTextBox.SelectionBrush = new SolidColorBrush(Color.Parse("#3399FF"));   // (WPF's selection blue, not the system accent)
         var notesFilename = Platform.Files.User("Notes.txt");   // (WPF: the exe folder; the same folder on Windows)
         if (!(System.IO.File.Exists(notesFilename)))
             notesTextBox.Text = "Notes\n";
