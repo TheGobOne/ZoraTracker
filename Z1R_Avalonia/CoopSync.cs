@@ -1043,8 +1043,9 @@ public static class CoopSync
     }
 
     // Create a mutable to debounce updates
-    public static string lastHiddenDungeonColorLabelPayload = "";
-    public static readonly Debouncer hiddenDungeonColorLabelDebouncer = new Debouncer(200);
+    // (one per dungeon: with a shared one, relabelling two dungeons within 200ms sent only the second)
+    public static readonly string[] lastHiddenDungeonColorLabelPayloads = Enumerable.Repeat("", 9).ToArray();
+    public static readonly Debouncer[] hiddenDungeonColorLabelDebouncers = Enumerable.Range(0, 9).Select(_ => new Debouncer(200)).ToArray();
 
     public static void subscribeToHiddenDungeonColorLabelChanges(string myConsoleId)
     {
@@ -1076,13 +1077,13 @@ public static class CoopSync
 
                         if (shouldSend("HiddenDungeonColorLabel", jsonPayload))
                         {
-                            hiddenDungeonColorLabelDebouncer.Trigger(() =>
+                            hiddenDungeonColorLabelDebouncers[i].Trigger(() =>
                             {
                                 Task.Run(() =>   // (F#: Async.Start)
                                 {
-                                    if (jsonPayload != lastHiddenDungeonColorLabelPayload)
+                                    if (jsonPayload != lastHiddenDungeonColorLabelPayloads[i])
                                     {
-                                        lastHiddenDungeonColorLabelPayload = jsonPayload;
+                                        lastHiddenDungeonColorLabelPayloads[i] = jsonPayload;
                                         SyncManager.EnqueueSync("HiddenDungeonColorLabel", jsonPayload, myConsoleId);
                                     }
                                 });

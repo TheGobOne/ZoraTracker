@@ -779,8 +779,9 @@ let subscribeToDungeonMapsChanges (myConsoleId: string) =
     Async.StartImmediate(loop())
 
 // Create a mutable to debounce updates
-let mutable lastHiddenDungeonColorLabelPayload = ""
-let hiddenDungeonColorLabelDebouncer = Debouncer.Debouncer(200)
+// (one per dungeon: with a shared one, relabelling two dungeons within 200ms sent only the second)
+let lastHiddenDungeonColorLabelPayloads : string[] = Array.create 9 ""
+let hiddenDungeonColorLabelDebouncers = Array.init 9 (fun _ -> Debouncer.Debouncer(200))
 
 let subscribeToHiddenDungeonColorLabelChanges (myConsoleId: string) =
     if TrackerModel.IsHiddenDungeonNumbers()
@@ -802,10 +803,10 @@ let subscribeToHiddenDungeonColorLabelChanges (myConsoleId: string) =
                         let jsonPayload = JsonConvert.SerializeObject(payload)
 
                         if shouldSend "HiddenDungeonColorLabel" jsonPayload then
-                            hiddenDungeonColorLabelDebouncer.Trigger(fun () ->
+                            hiddenDungeonColorLabelDebouncers.[i].Trigger(fun () ->
                                 async {
-                                    if jsonPayload <> lastHiddenDungeonColorLabelPayload then
-                                        lastHiddenDungeonColorLabelPayload <- jsonPayload
+                                    if jsonPayload <> lastHiddenDungeonColorLabelPayloads.[i] then
+                                        lastHiddenDungeonColorLabelPayloads.[i] <- jsonPayload
                                         SyncManager.EnqueueSync("HiddenDungeonColorLabel", jsonPayload, myConsoleId)
                                 } |> Async.Start
                             )

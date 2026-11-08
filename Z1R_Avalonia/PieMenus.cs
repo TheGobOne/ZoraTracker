@@ -728,10 +728,11 @@ public static class PieMenus
                 }
             }
         }
-        void applyItem(int shop, int ident)
+        void applyItem(int shop, int ident, bool removing = false)
         {
             // the item goes into that shop right away and the menu stays open (clicking a shop or its hotkey is what closes it)
-            if (TrackerModel.LegacyMode && shop != 0 && !legacyShopAllows(ident))
+            // (removing an item already in the shop is always allowed, even one Legacy Mode would not let you add)
+            if (!removing && TrackerModel.LegacyMode && shop != 0 && !legacyShopAllows(ident))
                 Graphics.ErrorBeepWithReminderLogText("Legacy Mode: a shop can only hold a wood arrow, blue candle, blue ring, regular key, bombs, meat, book or shield");
             else if (!(TrackerModel.LegacyMode && shop == 0))   // (Legacy Mode: the P shop holds only its two potions, no item)
             {
@@ -837,7 +838,7 @@ public static class PieMenus
                 var childIdx = items.Children.ToList().FindIndex(ch => ch.Bounds.Contains(p));
                 var itemIdx = n == 0 ? childIdx - 1 : childIdx;
                 var idents = shopItemIdentsHook(n);
-                if (childIdx >= 0 && itemIdx >= 0 && itemIdx < idents.Count) applyItem(n, idents[itemIdx]);
+                if (childIdx >= 0 && itemIdx >= 0 && itemIdx < idents.Count) applyItem(n, idents[itemIdx], true);
             }), RoutingStrategies.Tunnel);
             itemPanels.Add((n, items));
             Grid.SetRow(items, 1);
