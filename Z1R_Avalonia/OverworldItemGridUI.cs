@@ -156,7 +156,7 @@ public static class OverworldItemGridUI
             if (TrackerModelOptions.ShowDungeonHintIcons.Value)
             {
                 // a barely-visible white question mark icon (no box), to show the spot can be clicked to pick a hint
-                var qm = new Canvas { Width = 14.0, Height = 22.0, IsHitTestVisible = false, Opacity = 0.12 };
+                var qm = new Canvas { Width = 14.0, Height = 22.0, IsHitTestVisible = false, Opacity = 0.35 };   // (WPF: 0.12; brighter here, as the port's question mark was hard to see)
                 qm.Children.Add(new Rectangle { Width = 14.0, Height = 22.0, Fill = Brushes.White });
                 var t = new TextBlock { Text = "?", FontSize = 18.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Black, Width = 14.0, TextAlignment = TextAlignment.Center };
                 canvasAdd(qm, t, 0.0, -1.0);
