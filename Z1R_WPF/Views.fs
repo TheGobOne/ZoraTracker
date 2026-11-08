@@ -377,8 +377,10 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
                     cur <- (match cur with :? Visual -> System.Windows.Media.VisualTreeHelper.GetParent(cur) | _ -> null)
                 async {
                     do! Async.Sleep 3000
-                    c.Children.Remove(overlay)
-                    for (fe, z) in raised do Panel.SetZIndex(fe, z)
+                    // (back on the UI thread: WPF refuses a ZIndex change from the thread pool, so the map stayed raised over the popups)
+                    c.Dispatcher.BeginInvoke(new System.Action(fun () ->
+                        c.Children.Remove(overlay) |> ignore
+                        for (fe, z) in raised do Panel.SetZIndex(fe, z))) |> ignore
                 } |> Async.StartImmediate)
     let innerCanvasStairwayHider = new Canvas(Background=Brushes.Black, Width=21., Height=21.)
     let redraw() =
