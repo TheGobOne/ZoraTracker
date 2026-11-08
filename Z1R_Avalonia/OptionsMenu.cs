@@ -665,7 +665,7 @@ public static class OptionsMenu
 
     // the start screen tour: (labels that mark the section, title, description)
     public static readonly List<(string[] labels, string title, string body)> startScreenTourSteps = new List<(string[], string, string)> {
-        (new[] { "1st Quest", "Other ROM / map..." }, "Start a new run",
+        (new[] { "1st Quest", "Other..." }, "Start a new run",
             "Click the overworld your seed uses to begin a new run. The checkboxes below are set before you start."),
         (new[] { "Item Shuffle", "Off", "Full" }, "Item Shuffle",
             "Set this to match the seed's Item Shuffle: Off (dungeon items stay in dungeons), Intra (items anywhere, hearts within dungeons) or Full (items and hearts)."),

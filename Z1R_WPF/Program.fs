@@ -1686,7 +1686,7 @@ type MyWindow() as this =
             else
                 startButton.Margin <- spacing
             if n=0 then
-                let otherButton = Graphics.makeButton("Other ROM / map...", None, None)
+                let otherButton = Graphics.makeButton("Other...", None, None)
                 Layout.styleStartupButton(otherButton)
                 otherButton.Margin <- Thickness(0.)
                 otherButton.Click.Add(fun _ -> 

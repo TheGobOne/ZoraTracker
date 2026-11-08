@@ -109,7 +109,7 @@ public static class SelfTest
     // buttons the test must not press (they open file dialogs, other programs, web pages, or windows that need a person)
     private static readonly string[] avoid = { "save", "load", "hotkey", "popout", "site", "discord", "exit", "restart", "update", "quit", "download", "import", "export", "guided tour", "v2.", "-b1", "log" };
     private static bool isAvoided(string text) { var t = text.ToLowerInvariant(); return avoid.Any(a => t.Contains(a)); }
-    private static readonly string[] questButtons = { "1st Quest", "2nd Quest", "Mixed - 1Q", "Mixed - 2Q", "Randomized Quest", "Other ROM / map..." };
+    private static readonly string[] questButtons = { "1st Quest", "2nd Quest", "Mixed - 1Q", "Mixed - 2Q", "Randomized Quest", "Other..." };
 
     private static IList<Window> allWindows() =>
 #if BROWSER

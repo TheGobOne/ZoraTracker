@@ -2297,7 +2297,7 @@ public static class Program
                     startButton.Margin = spacing;
                 if (n == 0)
                 {
-                    var otherButton = Graphics.makeButton("Other ROM / map...", null, null);
+                    var otherButton = Graphics.makeButton("Other...", null, null);
                     Layout.styleStartupButton(otherButton);
                     otherButton.Margin = new Thickness(0.0);
                     otherButton.Click += (_, _) =>

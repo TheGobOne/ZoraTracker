@@ -535,7 +535,7 @@ let mainScreenTourSteps : (string list * string * string) list =
 
 // the start screen tour: (labels that mark the section, title, description)
 let startScreenTourSteps : (string list * string * string) list =
-    [ ["1st Quest"; "Other ROM / map..."], "Start a new run",
+    [ ["1st Quest"; "Other..."], "Start a new run",
         "Click the overworld your seed uses to begin a new run. The checkboxes below are set before you start."
       ["Item Shuffle"; "Off"; "Full"], "Item Shuffle",
         "Set this to match the seed's Item Shuffle: Off (dungeon items stay in dungeons), Intra (items anywhere, hearts within dungeons) or Full (items and hearts)."
