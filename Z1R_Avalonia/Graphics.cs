@@ -463,6 +463,10 @@ public static class Graphics
             ts.Setters.Add(new Setter(Layoutable.MinHeightProperty, 0.0));
             ts.Setters.Add(new Setter(Layoutable.MinWidthProperty, 0.0));
             ts.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(2.0, 0.0, 2.0, 0.0)));
+            // WPF's selection colors, not the system accent (selected text came out black on red); the theme reads this resource for it, so set that too
+            app.Resources["TextControlSelectionHighlightColor"] = new SolidColorBrush(Color.Parse("#3399FF"));
+            ts.Setters.Add(new Setter(TextBox.SelectionBrushProperty, new SolidColorBrush(Color.Parse("#3399FF"))));
+            ts.Setters.Add(new Setter(TextBox.SelectionForegroundBrushProperty, Brushes.White));
             app.Styles.Add(ts);
             // WPF look for sliders (see wpfSliderTemplate)
             var sls = new Style(x => x.OfType<Slider>());

@@ -1754,7 +1754,13 @@ public static class Program
             checkboxSP.Children.Add(mbArea);
 
             // custom level name (replaces 'LEVEL-n' at the top of each dungeon map)
-            var clnTextBox = new TextBox { MaxLength = 7, IsEnabled = false, Margin = new Thickness(6.0, 2.0, 2.0, 2.0), VerticalAlignment = VerticalAlignment.Center };
+            var clnTextBox = new TextBox { MaxLength = 7, IsEnabled = false, Margin = new Thickness(6.0, 2.0, 2.0, 2.0), VerticalAlignment = VerticalAlignment.Center,
+                                           Foreground = Brushes.Orange, Background = Brushes.Black,
+                                           SelectionBrush = new SolidColorBrush(Color.Parse("#3A3A3A")), SelectionForegroundBrush = Brushes.Orange };
+            // (the Fluent theme turned this box's text black on a red highlight once it was focused: keep it orange on black, with only a dark highlight behind selected text)
+            foreach (var k in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused", "TextControlForegroundDisabled" }) clnTextBox.Resources[k] = Brushes.Orange;
+            foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" }) clnTextBox.Resources[k] = Brushes.Black;
+            clnTextBox.Resources["TextControlSelectionHighlightColor"] = new SolidColorBrush(Color.Parse("#3A3A3A"));
             // (WPF: CharacterCasing = Upper. Avalonia's TextBox has no CharacterCasing, so typed text is upper-cased as it arrives, as DungeonUI does)
             clnTextBox.AddHandler(InputElement.TextInputEvent, new EventHandler<TextInputEventArgs>((_, tea) => { if (tea.Text != null) tea.Text = tea.Text.ToUpper(); }), RoutingStrategies.Tunnel);
             var clncb = new CheckBox { Content = new TextBox { Text = "Custom LEVEL Name", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false, Margin = new Thickness(2.0) } };
