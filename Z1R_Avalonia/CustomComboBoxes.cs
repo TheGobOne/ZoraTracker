@@ -1859,8 +1859,12 @@ public static class CustomComboBoxes
             {
                 var name = a.GetProperty("name").GetString();
                 var url = a.GetProperty("browser_download_url").GetString();
+                bool has(string s) => name != null && name.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0;
+                // (a release carries one port zip per system: the macOS and Linux ones say macOS / linux in the name, the Windows one says neither)
+                var forThisSystem = Platform.isWindows ? !(has("osx") || has("macos") || has("linux") || has("darwin")) : true;
                 if (found == null && name != null && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
-                   && name.IndexOf("CrossPlatform", StringComparison.OrdinalIgnoreCase) >= 0   // (the port's zips have CrossPlatform in the name; the WPF build's zip does not)
+                   && has("CrossPlatform")   // (the port's zips have CrossPlatform in the name; the WPF build's zip does not)
+                   && forThisSystem
                    && url != null && url.StartsWith("https://github.com/TheGobOne/ZoraTracker/releases/download/"))
                     found = url;
             }
@@ -1872,9 +1876,9 @@ public static class CustomComboBoxes
     // HotKeys.txt, settings file and custom images alone) and starts the new version. Returns an error message on failure, or None once the script is running (the caller then closes the app).
     // (null for None. Windows only: it replaces the app's files with the release's Windows build, so on other systems it refuses and changes nothing;
     // the version button opens the release page there instead. See PROGRESS.md, Stubs.)
-    // the release's .zip is the WPF Windows build; unpacking it over this app's folder swaps in the wrong FSharp.Core and Z1R_Tracker.dll and the app no longer starts.
-    // So the in-app install stays off until the releases carry a cross-platform zip; the version button opens the release page instead.
-    public static readonly bool inAppInstallIsSafe = false;
+    // the install takes the release's Windows cross-platform zip (fetchReleaseZipUrl skips the WPF zip and the macOS / Linux ones); unpacking the WPF zip over this app's folder
+    // would swap in the wrong FSharp.Core and Z1R_Tracker.dll and the app would no longer start. On macOS / Linux the version button still opens the release page.
+    public static readonly bool inAppInstallIsSafe = true;
     public static string downloadAndStageUpdate(string zipUrl, Action<int> onProgress)
     {
         if (!Platform.isWindows || !inAppInstallIsSafe)
