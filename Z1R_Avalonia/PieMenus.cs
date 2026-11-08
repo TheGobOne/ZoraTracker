@@ -969,6 +969,24 @@ public static class PieMenus
         firstButton.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         if (TrackerModelOptions.JumpMouseToShop.Value)
             Graphics.WarpMouseCursorTo(new Point(cx + 5.0 + 2.0 + 2.0 + firstButton.DesiredSize.Width / 2.0, cy + 5.0 + headerH + 2.0 + firstButton.DesiredSize.Height / 2.0));
+        // measured before it was in the window (the buttons come out smaller then), so once it has its real size: size the click area to match what is drawn
+        // (otherwise a click on the right or lower part counts as outside the window and closes it) and re-center it
+        var resizedOnce = false;
+        bord.SizeChanged += (_, _) =>
+        {
+            c.Width = bord.Bounds.Width;
+            c.Height = bord.Bounds.Height;
+            var left = areaW > 0.0 ? Math.Max(0.0, (areaW - bord.Bounds.Width) / 2.0) : cx;
+            var top = areaH > 0.0 ? Math.Max(0.0, (areaH - bord.Bounds.Height) / 2.0) : cy;
+            Canvas.SetLeft(c, left);
+            Canvas.SetTop(c, top);
+            if (!resizedOnce)
+            {
+                resizedOnce = true;
+                if (TrackerModelOptions.JumpMouseToShop.Value)   // (the cursor jump above aimed at the first, smaller layout)
+                    Graphics.WarpMouseCursorTo(new Point(left + 5.0 + 2.0 + 2.0 + firstButton.Bounds.Width / 2.0, top + 5.0 + headerH + 2.0 + firstButton.Bounds.Height / 2.0));
+            }
+        };
         await CustomComboBoxes.DoModal(cm, wh, cx, cy, c);
         return result;
     }
