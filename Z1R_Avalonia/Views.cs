@@ -561,8 +561,13 @@ public static class Views
                     CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
                     {
                         await Task.Delay(3000);
-                        c.Children.Remove(overlay);
-                        foreach (var (fe, z) in raised) fe.ZIndex = z;
+                        // (back on the UI thread: a ZIndex set from the thread pool was not put back, which left the map over the popups for good)
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            c.Children.Remove(overlay);
+                            foreach (var (fe, z) in raised) fe.ZIndex = z;
+                            ClickTrace.Log($"progressive glow ended: restored ZIndex on {raised.Count} element(s)");
+                        });
                     }))());
                 }
             }

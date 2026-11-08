@@ -473,6 +473,7 @@ public static class Program
                 if (Debugger.IsAttached)
                     Debugger.Break();
                 var ex = e.Exception;
+                ClickTrace.Log($"UNHANDLED EXCEPTION (UI thread): {ex}");
                 logCrashInfo("An unhandled exception from UI thread:");
                 crashSummary = ex is HotKeys.UserError ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
                 handle(ex);
@@ -500,6 +501,7 @@ public static class Program
                 switch (e.ExceptionObject)
                 {
                     case Exception ex:
+                        ClickTrace.Log($"UNHANDLED EXCEPTION (background thread): {ex}");
                         logCrashInfo("An unhandled exception from background thread:");
                         crashSummary = $"{ex.GetType().Name}: {ex.Message}";
                         handle(ex);

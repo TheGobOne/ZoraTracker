@@ -65,7 +65,18 @@ public static class CustomComboBoxes
     // (F#: `module GlobalFlag`, which callers `open`. In C#: CustomComboBoxes.GlobalFlag.popupIsActive.)
     public static class GlobalFlag
     {
-        public static bool popupIsActive = false;
+        private static bool popupIsActiveValue = false;
+        // (a property so every change lands in the trace log, with who made it: a stuck flag is one cause of a dead or gray screen)
+        public static bool popupIsActive
+        {
+            get => popupIsActiveValue;
+            set
+            {
+                if (popupIsActiveValue != value)
+                    ClickTrace.Log($"popupIsActive {popupIsActiveValue} -> {value}   by {ClickTrace.Caller()}");
+                popupIsActiveValue = value;
+            }
+        }
         // menus that draw a tip box under their grid (pixels of extra height to keep on screen); the one place to list them
         private static readonly Dictionary<string, double> menusWithTipBelow = new Dictionary<string, double> { ["MonsterDetail"] = 80.0, ["DungeonRoom"] = 80.0 };
         public static double extraBottomSpace(string uniqueName) => menusWithTipBelow.TryGetValue(uniqueName, out var v) ? v : 0.0;
@@ -73,6 +84,7 @@ public static class CustomComboBoxes
         // a popup that failed part-way: write the exception to the crash log (so a report of a dead overworld comes with a stack trace) and unlock the UI
         public static void logPopupFailure(string where, System.Exception e)
         {
+            ClickTrace.Log($"POPUP FAILURE in {where}: {e}");
             try
             {
                 System.IO.File.AppendAllText(System.IO.Path.Combine(System.AppContext.BaseDirectory, "Z1R_Tracker_crash_log.txt"),
@@ -230,6 +242,7 @@ public static class CustomComboBoxes
             opacityStack = new Stack<double>();
             width = rootCanvas.Width;
             sunglasses = new Canvas { Width = width, Height = rootCanvas.Height, Background = Brushes.Black, IsHitTestVisible = false };
+            ClickTrace.HookInput(rootCanvas);   // (clicks and key presses into Z1R_Tracker_trace_log.txt)
             // a click when no popup is supposed to be open but a popup layer is still there: remove the leftover layer so the tracker is usable again
             // (WPF PreviewMouseDown: a tunnelling handler)
             rootCanvas.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, _) =>
@@ -254,12 +267,14 @@ public static class CustomComboBoxes
         // (the crash log is a user file: Platform.Files.User, which is the exe folder on Windows, as in WPF)
         private void logPopupNote(string msg)
         {
+            ClickTrace.Log("POPUP NOTE: " + msg);
             try { System.IO.File.AppendAllText(Platform.Files.User("Z1R_Tracker_crash_log.txt"), $"\n\nPOPUP NOTE -- {DateTime.Now.ToString("yyyy-MM-dd-HH:mm:ss")} -- {msg}\n"); }
             catch { }
         }
         // removes every popup layer and the dimming layer (only used to recover from a layer that was left behind)
         private void clearAllPopups()
         {
+            ClickTrace.Log($"clearAllPopups: removing {popupCanvasStack.Count} layer(s) and releasing {modalDismissStack.Count} modal(s)");
             // let every suspended modal finish (its own cleanup then runs), rather than leave it waiting on a layer that is gone
             foreach (var w in modalDismissStack.ToArray()) { try { w.Set(); } catch { } }
             while (popupCanvasStack.Count > 0)
@@ -297,9 +312,11 @@ public static class CustomComboBoxes
             sunglasses.ZIndex = 100000;   // above everything on the layer, including elements with a raised ZIndex (e.g. the Show/Run Custom button)
             ((Canvas)rootCanvas.Children[rootCanvas.Children.Count - 1]).Children.Add(sunglasses);
             // put a new popup canvas in the root
-            var popupCanvas = new Canvas { Width = appMainCanvas.Width, Height = appMainCanvas.Height, Background = Brushes.Transparent, IsHitTestVisible = true, Opacity = 1.0 };
+            // (above the map and the sunglasses' layer, even when something on the map has a raised ZIndex, e.g. the progressive glow: a popup under the map is hidden and takes no clicks)
+            var popupCanvas = new Canvas { Width = appMainCanvas.Width, Height = appMainCanvas.Height, Background = Brushes.Transparent, IsHitTestVisible = true, Opacity = 1.0, ZIndex = 20000 + popupCanvasStack.Count };
             rootCanvas.Children.Add(popupCanvas);
             popupCanvasStack.Push(popupCanvas);
+            ClickTrace.Log($"popup layer opened (layers now {popupCanvasStack.Count}, window children {rootCanvas.Children.Count})   by {ClickTrace.Caller()}");
             try { AfterCreatePopupCanvas?.Invoke(popupCanvas); } catch (Exception e) { logPopupNote("a popup-created listener failed: " + e.Message); }   // (a failing listener must not leave this layer behind)
             // return the popup canvas
             return popupCanvas;
@@ -308,6 +325,7 @@ public static class CustomComboBoxes
         {
             // remove the popup canvas
             var pc = popupCanvasStack.Pop();
+            ClickTrace.Log($"popup layer closed (layers now {popupCanvasStack.Count})   by {ClickTrace.Caller()}");
             try { BeforeDismissPopupCanvas?.Invoke(pc); } catch (Exception e) { logPopupNote("a popup-dismissed listener failed: " + e.Message); }   // (the layer must come off even if a listener fails)
             rootCanvas.Children.Remove(pc);
             opacityStack.Pop();
@@ -395,10 +413,12 @@ public static class CustomComboBoxes
             throw new Exception("DoModalCore: popupIsActive was not set, which indicates programming error where a re-entrant UI thread may crash the program");
         // rather than use MouseCapture() API, just draw a canvas over entire window which will intercept all mouse gestures
         var c = cm.CreatePopup(blackSunglassesOpacity);
+        ClickTrace.Log($"popup content: {element.GetType().Name} (size {element.Width:F0}x{element.Height:F0}, closeOnOutsideClick={closeOnOutsideClick})");
         try
         {
             // place the element
             placeElementOntoCanvas(c, element);
+            ClickTrace.Log($"popup content placed; waiting for the popup to close");
             // catch mouse clicks outside the element
             c.PointerPressed += (_, ea) =>
             {
@@ -439,9 +459,16 @@ public static class CustomComboBoxes
             modalDismissStack.Push(wh);
             // (WPF: `let! _ = Async.AwaitWaitHandle(wh)` then `do! Async.SwitchToContext(ctxt)`; this await resumes on the UI thread's context)
             await AwaitWaitHandle(wh);
+            ClickTrace.Log("popup closed normally");
+        }
+        catch (Exception e)
+        {
+            ClickTrace.Log($"POPUP BUILD FAILED ({element.GetType().Name}): {e}");
+            throw;
         }
         finally
         {
+            ClickTrace.Log("popup cleanup: removing its layer");
             // (always runs, even if something above threw: take this popup's own layer off, so a failed popup can't leave a gray screen behind)
             if (modalDismissStack.Contains(wh))
             {

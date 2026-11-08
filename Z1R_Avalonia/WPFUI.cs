@@ -2210,7 +2210,7 @@ public static class WPFUI
                 void activatePopup(int activationDelta)
                 {
                     try { activatePopupCore(activationDelta); }
-                    catch (Exception e) { CustomComboBoxes.GlobalFlag.logPopupFailure($"overworld tile menu setup, {(char)('A' + j)}{i + 1}", e); }
+                    catch (Exception e) { ClickTrace.Log($"overworld tile menu setup failed, {(char)('A' + j)}{i + 1}"); CustomComboBoxes.GlobalFlag.logPopupFailure($"overworld tile menu setup, {(char)('A' + j)}{i + 1}", e); }
                 }
                 void activatePopupCore(int activationDelta)
                 {
@@ -4048,6 +4048,7 @@ public static class WPFUI
                     var old = progressiveLastTiers[f];
                     if (t != old)
                     {
+                        ClickTrace.Log($"progressive family {f}: tier {old} -> {t}");
                         progressivePrevTiers[f] = old;
                         progressiveChangedAt[f] = DateTime.Now;
                         progressiveLastTiers[f] = t;
@@ -4092,6 +4093,7 @@ public static class WPFUI
                                 for (int y = 0; y <= 7; y++)
                                     if (TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons[x, y]).Any(e => ids.Contains(e.Item1) && !e.Item2)) tiles.Add((x, y));
                             var boxes = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Where(b => ids.Contains(b.CellCurrent()) && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO)).ToArray();
+                            ClickTrace.Log($"progressive family {f} went up: {tiles.Count} marked map tile(s) and {boxes.Length} box(es) still to collect; the 'Progressive Item Upgraded' notification is {(tiles.Count != 0 || boxes.Length > 0 ? "sent" : "NOT sent (nothing else of this family is marked)")}");
                             if (tiles.Count != 0 || boxes.Length > 0)
                             {
                                 foreach (var b in boxes) TrackerModel.progressiveBoxGlow.Trigger(b);
@@ -4161,6 +4163,8 @@ public static class WPFUI
                         var (pc, pph) = prev;
                         var (c, ph) = (b.CellCurrent(), b.PlayerHas());
                         prev = (c, ph);
+                        if (TrackerModel.progressiveFamily(pc) > 0 || TrackerModel.progressiveFamily(c) > 0)
+                            ClickTrace.Log($"item box changed: item {pc}->{c}, has {pph}->{ph} (ProgressiveItems={TrackerModel.ProgressiveItems})");
                         if (TrackerModel.ProgressiveItems)
                         {
                             var nowF = ph.Equals(TrackerModel.PlayerHas.YES) ? TrackerModel.progressiveFamily(c) : 0;
@@ -4180,7 +4184,7 @@ public static class WPFUI
                 var pp = TrackerModel.playerProgressAndTakeAnyHearts;
                 var se = TrackerModel.startingItemsAndExtras;
                 foreach (TrackerModel.BoolProperty prop in new[] { pp.PlayerHasWoodSword, se.PlayerHasWhiteSword, se.PlayerHasMagicalSword, pp.PlayerHasBlueRing, se.PlayerHasRedRing, pp.PlayerHasBlueCandle, se.PlayerHasRedCandle, pp.PlayerHasWoodArrow, se.PlayerHasSilverArrow, se.PlayerHasBoomerang, se.PlayerHasMagicBoomerang })
-                    onEvent(prop.Changed, _ => { if (TrackerModel.ProgressiveItems) progressiveSwordCheckHook(); });
+                    onEvent(prop.Changed, _ => { ClickTrace.Log($"item flag changed (ProgressiveItems={TrackerModel.ProgressiveItems}, sword tier now {TrackerModel.progressiveFamilyTier(1)})"); if (TrackerModel.ProgressiveItems) progressiveSwordCheckHook(); });
             }
             // Progressive Items: a notification plus a 3 second glow-and-grow of every upgraded item on the map
             progressiveUpgradeHook = (tiles, fromBmp, toBmp) =>
