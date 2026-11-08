@@ -2306,7 +2306,9 @@ public static class Program
                         popupIsActive = true;
                         var dialog1 = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Black };
                         addDarkTheme(dialog1);
-                        var tb1 = new TextBox { IsReadOnly = true, BorderThickness = new Thickness(0.0), Foreground = Brushes.Orange };
+                        var tb1 = new TextBox { IsReadOnly = true, BorderThickness = new Thickness(0.0), Foreground = Brushes.Orange, Background = Brushes.Black };
+                        // (the Fluent theme turns a hovered or focused TextBox light gray; WPF's stays black, so keep it black here too)
+                        foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled" }) tb1.Resources[k] = Brushes.Black;
                         tb1.Text = "ZORATracker was designed for use with fcoughlin's Zelda 1 Randomizer.\n\n" +
 
                                     "There are other randomizers/ROM-Hacks for Zelda 1 which use other\n" +
