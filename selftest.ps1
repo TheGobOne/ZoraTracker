@@ -1,11 +1,13 @@
 # Background self-test of the tracker: runs the Release build from a COPY (the test changes settings) once per quest type.
 # Usage: powershell -File selftest.ps1 [-Quests 0,1,2,3] [-TimeoutMinutes 12]
-param([int[]]$Quests = @(0,1,2,3), [int]$TimeoutMinutes = 12, [switch]$Port)   # -Port: the cross-platform (Avalonia) build instead of WPF
+# (-Quests is text, split below: with `powershell -File`, "-Quests 0,1,2,3" arrives as ONE string, which an [int[]] parameter read as the number 123)
+param([string]$Quests = "0,1,2,3", [int]$TimeoutMinutes = 12, [switch]$Port)   # -Port: the cross-platform (Avalonia) build instead of WPF
+$questList = @($Quests -split '[,\s]+' | Where-Object { $_ -ne '' } | ForEach-Object { [int]$_ })
 $src = Join-Path $PSScriptRoot "Z1R_WPF\bin\Release"
 $exeName = "Z1R_WPF.exe"
 if ($Port) { $src = Join-Path $PSScriptRoot "Z1R_Avalonia_Desktop\bin\Release\net10.0"; $exeName = "ZoraTracker.CrossPlatform.exe" }
 $overall = 0
-foreach ($q in $Quests) {
+foreach ($q in $questList) {
     $dir = Join-Path $env:TEMP ($(if ($Port) {"zt_selftest_port_$q"} else {"zt_selftest_$q"}))
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
     Copy-Item $src $dir -Recurse
