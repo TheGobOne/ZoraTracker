@@ -1081,6 +1081,15 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
 
     do! showProgress("overworld magnifier")
     let onMouseForMagnifier, dungeonTabsOverlay, dungeonTabsOverlayContent = UIComponents.MakeMagnifier(mirrorOverworldFEs, owMapNum, owMapBMPs)
+    // Marking a spot opens a popup that takes the pointer off the tile (leave) and gives it back when it closes (enter). Hiding and rebuilding the magnifier
+    // across that made it flash, so: stay shown while a popup is open, and don't rebuild for the tile it already shows. Hiding waits 100 ms (see MouseLeave).
+    let mutable magnifierShownFor = (-1, -1)
+    let mutable pointerOverOwTile = false
+    let mutable magnifierHideTimer : System.Windows.Threading.DispatcherTimer = null
+    let hideMagnifier() =
+        dungeonTabsOverlayContent.Children.Clear()
+        dungeonTabsOverlay.Opacity <- 0.
+        magnifierShownFor <- (-1, -1)
     do! showProgress("overworld start 2")
     // ow map -> dungeon tabs interaction
     let selectDungeonTabEvent = new Event<_>()
@@ -1235,8 +1244,10 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                                                                 (if TrackerModelOptions.Overworld.HighlightNearby.Value then OverworldRouteDrawing.MaxGYR else 0),
                                                                 whetherToCyanOpenCavesOrArmos())
                                             )
-                                        if TrackerModelOptions.Overworld.ShowMagnifier.Value then
+                                        pointerOverOwTile <- true
+                                        if TrackerModelOptions.Overworld.ShowMagnifier.Value && (magnifierShownFor <> (i,j) || dungeonTabsOverlay.Opacity < 1.0) then
                                             onMouseForMagnifier(i,j)   // somewhat expensive, only call if it's getting shown
+                                            magnifierShownFor <- (i,j)
                                         // track current location for F5 & speech recognition purposes
                                         currentlyMousedOWX <- i
                                         currentlyMousedOWY <- j
@@ -1244,8 +1255,17 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
             c.MouseLeave.Add(fun _ -> c.Children.Remove(rect) |> ignore
                                       (let m = TrackerModel.overworldMapMarks.[i,j].Current()
                                        if m >= TrackerModel.MapSquareChoiceDomainHelper.WARP_1 && m <= TrackerModel.MapSquareChoiceDomainHelper.WARP_4 then hideLocator())
-                                      dungeonTabsOverlayContent.Children.Clear()
-                                      dungeonTabsOverlay.Opacity <- 0.
+                                      pointerOverOwTile <- false
+                                      if magnifierHideTimer = null then
+                                          // don't hide at once: a redraw or a popup makes the pointer leave and re-enter within milliseconds; hide only if no tile has it once things settle
+                                          let t = new System.Windows.Threading.DispatcherTimer(Interval=TimeSpan.FromMilliseconds(100.))
+                                          magnifierHideTimer <- t
+                                          t.Tick.Add(fun _ ->
+                                              if not popupIsActive then
+                                                  t.Stop()
+                                                  magnifierHideTimer <- null
+                                                  if not pointerOverOwTile then hideMagnifier())
+                                          t.Start()
                                       )
             c.MyKeyAdd(fun ea ->
                 match HotKeys.GlobalHotKeyProcessor.TryGetValue(ea.Key), displayIsCurrentlyMirrored with
