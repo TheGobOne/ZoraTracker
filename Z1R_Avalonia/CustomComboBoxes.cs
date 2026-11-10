@@ -1146,6 +1146,7 @@ public static class CustomComboBoxes
         var redrawGridFuncs = new List<Action>();
         void changeCurrentState(int newState)
         {
+            if (isReorderable && newState != currentState) ClickTrace.Log($"menu {uniqueName}: selection {currentState} -> {newState} (dragFrom={dragFrom}, origIdx={origIdx})   by {ClickTrace.Caller()}");
             currentState = newState;
             redrawTile(stateID());
             foreach (var r in redrawGridFuncs) r();
@@ -1164,7 +1165,8 @@ public static class CustomComboBoxes
                 currentState = (currentState - 1 + items.Length) % items.Length;
             changeCurrentState(currentState);
         }
-        void snapBack() { if (!allDoneSoNoLongerNeedToMouseLeaveSnapback) changeCurrentState(origIdx); }     // don't redraw and do other work after the popup is done (MouseLeave can be very error-prone if not careful!)
+        var swapJustHappened = false;   // (swapping two cells rebuilds the cell under the pointer, which raises a pointer-leave on the grid; that is not the user leaving)
+        void snapBack() { if (!allDoneSoNoLongerNeedToMouseLeaveSnapback && !swapJustHappened) changeCurrentState(origIdx); }     // don't redraw and do other work after the popup is done (MouseLeave can be very error-prone if not careful!)
         // original tile
         redrawTile(stateID());
         if (isResizable)
@@ -1417,6 +1419,8 @@ public static class CustomComboBoxes
         void refreshHighlights() { foreach (var r in redrawGridFuncs) r(); }
         void swapCells(int a, int m)
         {
+            swapJustHappened = true;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => swapJustHappened = false, Avalonia.Threading.DispatcherPriority.Background);
             var (ca, cm_) = (((Canvas)cellBorders[a].Child), ((Canvas)cellBorders[m].Child));
             ca.Children.Clear();
             cm_.Children.Clear();
@@ -1446,7 +1450,9 @@ public static class CustomComboBoxes
                 b.PointerEntered += (_, _) =>
                 {
                     var (ic, _, _) = items[n];
-                    if (ic == null) snapBack(); else changeCurrentState(n);
+                    // (while a Shift+drag is carrying an icon, an empty cell must not send the selection back to the original cell: that is what showed the red X)
+                    if (ic == null) { if (dragFrom < 0) snapBack(); }
+                    else changeCurrentState(n);
                 };
                 void redraw()
                 {
@@ -1482,6 +1488,8 @@ public static class CustomComboBoxes
                     // (breaking Shift+drag) and stop other cells' PointerEntered while the button is held; WPF doesn't capture, so release the capture)
                     ea.Pointer.Capture(null);
                     var (ic, isSel, _) = items[n];
+                    if (isReorderable) ClickTrace.Log($"menu {uniqueName}: pressed cell {n} (item={(ic != null)}, selectable={isSel}, shift={isShiftDown(ea.KeyModifiers)}, dragFrom={dragFrom}, currentState={currentState})");
+                    if (ic != null && currentState != n) changeCurrentState(n);   // the cell pressed is the one clicked, whatever the pointer last entered
                     if (isReorderable && ea.GetCurrentPoint(b).Properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed && isShiftDown(ea.KeyModifiers))
                     {
                         // Shift+drag: pick up this item (if there is one); it is dropped on whatever cell the mouse is released over
@@ -1503,6 +1511,7 @@ public static class CustomComboBoxes
                 };
                 b.PointerReleased += (_, ea) =>
                 {
+                    if (isReorderable) ClickTrace.Log($"menu {uniqueName}: released on cell {n} (dragFrom={dragFrom}, currentState={currentState})");
                     if (dragFrom >= 0 && ea.InitialPressMouseButton == MouseButton.Left)
                     {
                         ea.Handled = true;
@@ -1520,8 +1529,10 @@ public static class CustomComboBoxes
                 b.MyKeyAdd(handleCursorHotKey(x, y));
             }
         }
-        grid.PointerExited += (_, _) =>
+        grid.PointerExited += (_, pea) =>
         {
+            // a pointer-leave while the pointer is still inside the grid is the grid being rebuilt (after a swap), not the user leaving: it must not cancel the next Shift+drag
+            if (new Rect(grid.Bounds.Size).Contains(pea.GetPosition(grid))) return;
             if (dragFrom >= 0)
             {
                 dragFrom = -1;
@@ -1529,6 +1540,7 @@ public static class CustomComboBoxes
             }
             snapBack();
         };
+        // (the grid's own snap-back and the tile's are only for leaving the menu without a drag)
         foreach (var (d, x, y) in extraDecorations)
             canvasAdd(popupCanvas, d, x, y);
         if (isJumpCapable && isResizable) layoutMovables();   // (puts the explainer where the moved menu is)

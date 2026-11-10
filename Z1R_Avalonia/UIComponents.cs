@@ -472,15 +472,22 @@ public static class UIComponents
         // hovering shows the whistle (recorder) pattern for this overworld: 1,2,3,...,8 in a first quest overworld, 1,3,2,5,4,6,8,7 in a second quest one
         // (WPF: a ToolTip whose content is rebuilt in its Opened event. Avalonia uses a ToolTip set as the tip as it is, and raises ToolTipOpening on the
         // control just before showing it, so the content is rebuilt there. Placement and the show delay are attached properties of the control.)
-        var recorderPatternTip = new ToolTip { Background = Brushes.Black, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(2.0), Padding = new Thickness(4.0, 1.0, 4.0, 2.0) };
+        // (the tip must not take mouse clicks, and goes away as soon as the number is clicked: it used to sit over the number and get in the way of clicking it)
+        var recorderPatternTip = new ToolTip { Background = Brushes.Black, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(2.0), Padding = new Thickness(4.0, 1.0, 4.0, 2.0), IsHitTestVisible = false };
         ToolTip.SetPlacement(recorderDestinationButtonCanvas, PlacementMode.Top);
+        ToolTip.SetVerticalOffset(recorderDestinationButtonCanvas, -10.0);   // lifts the tip a little, clear of the number it describes
         ToolTip.SetTip(recorderDestinationButtonCanvas, recorderPatternTip);
         ToolTip.SetShowDelay(recorderDestinationButtonCanvas, 100);
         setToolTipShowDuration(recorderDestinationButtonCanvas, 60000);
         ToolTip.AddToolTipOpeningHandler(recorderDestinationButtonCanvas, (_, _) =>
         {
             var isFirst = TrackerModel.owInstance.Quest.IsFirstQuestOW;
-            var order = isFirst ? new[] { 1, 2, 3, 4, 5, 6, 7, 8 } : new[] { 1, 3, 2, 5, 4, 6, 8, 7 };
+            if (isFirst)
+            {
+                ToolTip.SetIsOpen(recorderDestinationButtonCanvas, false);   // 1st Quest: the order is 1-8, so no hover tip
+                return;
+            }
+            var order = new[] { 1, 3, 2, 5, 4, 6, 8, 7 };
             var col = new StackPanel { Orientation = Orientation.Vertical };
             TextBlock mk(string t, double size) => new TextBlock { Text = t, Foreground = Brushes.Orange, FontSize = size, FontWeight = FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center };
             col.Children.Add(mk((isFirst ? "1Q whistle order" : "2Q whistle order"), 12.0));
@@ -508,6 +515,7 @@ public static class UIComponents
                     0;
             currentRecorderDestinationIndex = (currentRecorderDestinationIndex + 8 + delta) % 8;
             updateCurrentRecorderDestinationNumeral();
+            ToolTip.SetIsOpen(recorderDestinationButtonCanvas, false);   // the whistle order tip closes on a click, so it can't be in the way of the next one
             ea.Handled = true;
         };
         /*   // This screwed me up multiple times, and the fact that it's not user-rebindable is bad.
