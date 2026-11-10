@@ -467,12 +467,22 @@ namespace Z1R_Avalonia
             var topSwordRank = timelineItems.Where(ti => ti.IsDone).Select(ti => swordRank(ti.TID)).Aggregate(0, Math.Max);
             // (one icon for the top sword: the starting-item flag and the cave's item box can both be stamped for the same sword, so show just the earliest)
             var topSwordItem = topSwordRank == 0 ? null : timelineItems.Where(ti => ti.IsDone && swordRank(ti.TID) == topSwordRank).OrderBy(ti => ti.FinishedTotalSeconds).FirstOrDefault();
-            var swordBoxHoldsSword = TrackerModel.sword3Box.IsDone() && TrackerModel.sword3Box.CellCurrent() == TrackerModel.ITEMS.MAGICALSWORD;
+            TimelineItem earliestOfRank(int rank) => timelineItems.Where(ti => ti.IsDone && swordRank(ti.TID) == rank).OrderBy(ti => ti.FinishedTotalSeconds).FirstOrDefault();
+            // Progressive Items: a sword picked up from an item box has its own entry (showing the tier it was collected at), and the sword's flag entry (e.g. the 4th sword's) is stamped
+            // by the same pickup. When an item-box entry already shows that tier's picture, the flag entry is the same sword a second time: leave it out.
+            bool shownByAnItemBoxEntry(int rank)
+            {
+                var tierBmp = Graphics.ow_progressive_tier_item_bmps[rank];
+                return timelineItems.Any(o => o.IsDone && swordRank(o.TID) == 0 && object.ReferenceEquals(o.Bmp, tierBmp));
+            }
+            var swordBoxHoldsSword =TrackerModel.sword3Box.IsDone() && TrackerModel.sword3Box.CellCurrent() == TrackerModel.ITEMS.MAGICALSWORD;
             foreach (var ti in timelineItems)
             {
                 // (the magical sword cave's item box already shows that sword on the timeline: its 'have the sword' flag would draw it a second time)
                 var dupOfCaveBox = swordBoxHoldsSword && (ti.TID.Tag switch { TimelineID.Tags.MagicalSword or TimelineID.Tags.StartingMagicalSword => true, _ => false });
-                if (ti.IsDone && !dupOfCaveBox && (swordRank(ti.TID) == 0 || (topSwordItem != null ? object.ReferenceEquals(topSwordItem, ti) : false)))
+                // (Progressive Items: each sword is shown once, at its earliest pickup, so the same sword from two sources (e.g. the 4th sword's map check and its item box) doesn't draw twice;
+                // without it only the top sword is shown)
+                if (ti.IsDone && !dupOfCaveBox && (swordRank(ti.TID) == 0 || (TrackerModel.ProgressiveItems ? (object.ReferenceEquals(earliestOfRank(swordRank(ti.TID)), ti) && !shownByAnItemBoxEntry(swordRank(ti.TID))) : (topSwordItem != null ? object.ReferenceEquals(topSwordItem, ti) : false))))
                 {
                     var tick = (int)((double)ti.FinishedTotalSeconds/(60.0*(double)minutesPerTick));
                     // (an item box can be stamped done while it has no icon, e.g. its item was cleared; draw nothing for it instead of crashing)
@@ -489,6 +499,10 @@ namespace Z1R_Avalonia
                 if (buckets.ContainsKey(tick))
                 {
                     var rowBmps = new List<(int, (System.Drawing.Bitmap, int, TrackerModel.PlayerHas, TimelineID))>();
+                    // (more icons at one moment than there are rows, e.g. four swords picked up within a minute: the extras share a row, so each later one is shifted
+                    // right a little instead of being drawn exactly over an earlier one)
+                    var rowUse = new Dictionary<int, int>();
+                    var slots = new List<int>();
                     var (xminOrig, xmaxOrig) = (x(tick)-iconSize/2.0, x(tick)+iconSize/2.0);
                     var (xmin, xmax) = (Math.Max(0, (int)xminOrig), Math.Min((int)xmaxOrig, (int)lineWidth));
                     foreach (var bmp in buckets[tick])
@@ -508,6 +522,9 @@ namespace Z1R_Avalonia
                         for (int x = xmin; x <= xmax; x++)
                             iconAreaFilled[x, bestRow] = iconAreaFilled[x, bestRow] + 1;
                         rowBmps.Add((bestRow, bmp));
+                        rowUse.TryGetValue(bestRow, out var usedInRow);
+                        rowUse[bestRow] = usedInRow + 1;
+                        slots.Add(usedInRow);
                     }
                     if (rowBmps.Count > 0)
                     {
@@ -516,8 +533,10 @@ namespace Z1R_Avalonia
                         var line = new Avalonia.Controls.Shapes.Line { StartPoint = new Point(x(tick)+0.5, (double)(bottomRow+1)*(iconSize+ICON_SPACING)-ICON_SPACING), EndPoint = new Point(x(tick)+0.5, iconAreaHeight+BIG_HASH/2.0), Stroke = Brushes.Gray, StrokeThickness = LINE_THICKNESS };
                         canvasAdd(itemCanvas, line, 0.0, 0.0);
                         // items
-                        foreach (var (row, (bmp, totalSeconds, has, tid)) in rowBmps)
+                        for (int ri = 0; ri < rowBmps.Count; ri++)
                         {
+                            var (row, (bmp, totalSeconds, has, tid)) = rowBmps[ri];
+                            var slotShift = slots[ri] * (iconSize / 3.0);
                             var c = new Canvas { Width = iconSize, Height = iconSize };
                             Image make_img()
                             {
@@ -555,7 +574,7 @@ namespace Z1R_Avalonia
                             {
                                 timelineCanvas.Children.Remove(timeToolTip);
                             };
-                            canvasAdd(itemCanvas, c, Math.Ceiling(xminOrig), (double)row*(iconSize+ICON_SPACING));
+                            canvasAdd(itemCanvas, c, Math.Ceiling(xminOrig) + slotShift, (double)row*(iconSize+ICON_SPACING));
                         }
                     }
                 }

@@ -314,7 +314,9 @@ public static class WPFUI
     }
     public static System.Drawing.Bitmap decorIconBmp(int item)
     {
-        if ((item == TrackerModel.ITEMS.PROGRESSIVESWORD || item == TrackerModel.ITEMS.WHITESWORD4) && !TrackerModel.ProgressiveItems)
+        if (item == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModel.ProgressiveItems && TrackerModelOptions.UseOldSwordIcons.Value)
+            return Graphics.ow_sword4_item_bmp;   // (Use old sword icons)
+        else if ((item == TrackerModel.ITEMS.PROGRESSIVESWORD || item == TrackerModel.ITEMS.WHITESWORD4) && !TrackerModel.ProgressiveItems)
             return extraSwordIconBmp(item);
         else
         {
@@ -1571,6 +1573,17 @@ public static class WPFUI
 
         await showProgress("overworld magnifier");
         var (onMouseForMagnifier, dungeonTabsOverlay, dungeonTabsOverlayContent) = UIComponents.MakeMagnifier(mirrorOverworldFEs, owMapNum, owMapBMPs);
+        // Marking a spot opens a popup that takes the pointer off the tile (exit) and gives it back when it closes (enter). Hiding and rebuilding the magnifier
+        // across that made it flash, so: stay shown while a popup is open, and don't rebuild for the tile it already shows.
+        var magnifierShownFor = (-1, -1);
+        var pointerOverOwTile = false;
+        DispatcherTimer magnifierHideTimer = null;
+        void hideMagnifier()
+        {
+            dungeonTabsOverlayContent.Children.Clear();
+            dungeonTabsOverlay.Opacity = 0.0;
+            magnifierShownFor = (-1, -1);
+        }
         await showProgress("overworld start 2");
         // ow map -> dungeon tabs interaction
         var selectDungeonTabEvent = new Graphics.SharedEvent<int>();
@@ -1802,7 +1815,14 @@ public static class WPFUI
                                             whetherToCyanOpenCavesOrArmos());
                     });
                     if (TrackerModelOptions.Overworld.ShowMagnifier.Value)
-                        onMouseForMagnifier(i, j);   // somewhat expensive, only call if it's getting shown
+                    {
+                        pointerOverOwTile = true;
+                        if (magnifierShownFor != (i, j) || dungeonTabsOverlay.Opacity < 1.0)
+                        {
+                            onMouseForMagnifier(i, j);   // somewhat expensive, only call if it's getting shown
+                            magnifierShownFor = (i, j);
+                        }
+                    }
                     // track current location for F5 & speech recognition purposes
                     currentlyMousedOWX = i;
                     currentlyMousedOWY = j;
@@ -1814,8 +1834,21 @@ public static class WPFUI
                         var m = TrackerModel.overworldMapMarks[i, j].Current();
                         if (m >= TrackerModel.MapSquareChoiceDomainHelper.WARP_1 && m <= TrackerModel.MapSquareChoiceDomainHelper.WARP_4) hideLocator();
                     }
-                    dungeonTabsOverlayContent.Children.Clear();
-                    dungeonTabsOverlay.Opacity = 0.0;
+                    pointerOverOwTile = false;
+                    if (magnifierHideTimer == null)
+                    {
+                        // don't hide at once: redrawing a marked tile, or a popup opening and closing, makes the pointer leave and re-enter within a few
+                        // milliseconds, and hiding then rebuilding is the flicker. Hide only if no tile has the pointer once things settle (and no popup is open).
+                        magnifierHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100.0) };
+                        magnifierHideTimer.Tick += (_, _) =>
+                        {
+                            if (popupIsActive) return;
+                            magnifierHideTimer.Stop();
+                            magnifierHideTimer = null;
+                            if (!pointerOverOwTile) hideMagnifier();
+                        };
+                        magnifierHideTimer.Start();
+                    }
                 };
                 c.MyKeyAdd(ea =>
                 {
@@ -2244,7 +2277,8 @@ public static class WPFUI
                         var isSelectable = ((n == originalState) || isSwordTile || TrackerModel.mapSquareChoiceDomain.CanAddUse(n)) && isLegalHere(n) && (n != TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || canPlacePotionShop(i, j));
                         // the sword cave icons are shown in the menu without their brown background, with white numbers
                         var tileBmp =
-                            isSwordTile ? Graphics.swordMenuBmp(new MapStateProxy(n).DefaultInteriorBmp())
+                            isSwordTile && TrackerModelOptions.UseOldSwordIcons.Value ? (n == TrackerModel.MapSquareChoiceDomainHelper.SWORD1 ? Graphics.ow_sword1_menu_bmp : n == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 ? Graphics.ow_sword2_menu_bmp : Graphics.ow_sword3_menu_bmp)   // (Use old sword icons: the plain sword pictures)
+                            : isSwordTile ? Graphics.swordMenuBmp(new MapStateProxy(n).DefaultInteriorBmp())
                             : n == TrackerModel.MapSquareChoiceDomainHelper.HINT_SHOP ? OverworldMapTileCustomization.hintShopMenuBmp(OverworldMapTileCustomization.lastHintShopColor)   // the hint shop icon shows the color the user last chose
                             : new MapStateProxy(n).DefaultInteriorBmp();
                         var img = Graphics.BMPtoImage(tileBmp);   // fresh image each popup; cell is wider than the 15px icon, so center it
@@ -2281,9 +2315,9 @@ public static class WPFUI
                         {
                             // the swords are 15x27 cave-style icons; the dungeon items are shown at full 21x21 size (without the black outline, which is only for the map)
                             var isSword = (ident == TrackerModel.ITEMS.PROGRESSIVESWORD || ident == TrackerModel.ITEMS.WHITESWORD4);
-                            var progSword = TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(ident) > 0;   // Progressive Items: the sword cells show the current P tier sprite (21x27)
+                            var progSword = TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(ident) > 0 && !(ident == TrackerModel.ITEMS.WHITESWORD4 && TrackerModelOptions.UseOldSwordIcons.Value);   // Progressive Items: the sword cells show the current P tier sprite (21x27) (Use old sword icons: the 4th sword cell keeps its checkered sword, greyed out when disabled)
                             int tierIndex() { var t = TrackerModel.progressiveSwordBoxTier(ident); return t >= 1 && t <= 4 ? t : 0; }
-                            var bmp = progSword ? Graphics.ow_progressive_tier_menu_bmps[tierIndex()] : isSword ? Graphics.swordMenuBmp(decorIconBmp(ident)) : TrackerModel.progressiveDisabledIdent(ident) && TrackerModel.progressiveFamily(ident) >= 2 ? CustomComboBoxes.boxCurrentBMP(ident, null) : decorSourceBmp(ident);   // (a disabled red ring / candle / silver arrow keeps its own picture)
+                            var bmp = progSword ? Graphics.ow_progressive_tier_menu_bmps[tierIndex()] : isSword && ident == TrackerModel.ITEMS.WHITESWORD4 && TrackerModelOptions.UseOldSwordIcons.Value ? Graphics.ow_sword4_menu_bmp : isSword ? Graphics.swordMenuBmp(decorIconBmp(ident)) : TrackerModel.progressiveDisabledIdent(ident) && TrackerModel.progressiveFamily(ident) >= 2 ? CustomComboBoxes.boxCurrentBMP(ident, null) : decorSourceBmp(ident);   // (a disabled red ring / candle / silver arrow keeps its own picture)
                             var img = Graphics.BMPtoImage(bmp);
                             img.Stretch = Stretch.Uniform;
                             img.Width = (progSword ? 21.0 : isSword ? 15.0 : 21.0);
@@ -2343,7 +2377,7 @@ public static class WPFUI
                         return (cell, true, CLEAR_ICONS);
                     }
                     var clearIconsCell = make_clearIconsCell();
-                    var tailCells = lastRowIdents.Select(swordIconCell).Append(clearIconsCell).ToArray();   // (no Don't Care cell: the clear option does it better)
+                    var tailCells = lastRowIdents.Select(swordIconCell).Append(clearIconsCell).Append(_darkXCell).ToArray();   // (Don't Care is the last cell, at the far right of the bottom row)
                     // 'Shops in menu' (a checkbox in the shop window): a row of buttons for the 5 shops (P, 1-4), starting on a new row; they work like picking that shop in the flyout
                     (Control, bool, int)[] shopRowCells;
                     if (!TrackerModelOptions.ShopsInMenu.Value) shopRowCells = new (Control, bool, int)[0];
@@ -4547,7 +4581,7 @@ public static class WPFUI
         await showProgress("notes, gettables");
         // notes
         notesTextBox = new TextBox { Width = appMainCanvas.Width - BLOCKERS_AND_NOTES_OFFSET, Height = dungeonTabs.Height - blockerGrid.Height,
-                                FontSize = TrackerModelOptions.NotesFontSize, Foreground = Brushes.LimeGreen, Background = Brushes.Black, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };   // long lines wrap instead of running off the box
+                                FontSize = TrackerModelOptions.NotesFontSize, Foreground = Brushes.LimeGreen, Background = Brushes.Black, CaretBrush = Brushes.LimeGreen, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };   // long lines wrap instead of running off the box (the caret defaults to the theme's dark text color: invisible on black)
         ScrollViewer.SetVerticalScrollBarVisibility(notesTextBox, ScrollBarVisibility.Auto);
         // (the Fluent theme turns a focused or hovered TextBox light gray; WPF's stays black)
         foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" }) notesTextBox.Resources[k] = Brushes.Black;

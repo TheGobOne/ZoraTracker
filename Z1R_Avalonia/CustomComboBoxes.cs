@@ -1590,10 +1590,10 @@ public static class CustomComboBoxes
     public static System.Drawing.Bitmap swordMenuBmpFor(int ident) =>
         ident switch
         {
-            19 => (TrackerModel.ProgressiveItems ? Graphics.ow_progressive_tier_menu_bmps[1] : Graphics.ow_sword1_menu_bmp),   // (with Progressive Items, the plain swords show as P1..P4 even though they are disabled)
-            13 => (TrackerModel.IsWSMSReplacedByBU.Invoke(null) ? null : TrackerModel.ProgressiveItems ? Graphics.ow_progressive_tier_menu_bmps[2] : Graphics.ow_sword2_menu_bmp),
-            20 => (TrackerModel.ProgressiveItems ? Graphics.ow_progressive_tier_menu_bmps[3] : Graphics.ow_sword3_menu_bmp),
-            21 => (TrackerModel.ProgressiveItems ? Graphics.ow_progressive_tier_menu_bmps[4] : Graphics.ow_sword4_menu_bmp),
+            19 => (TrackerModel.ProgressiveItems && !TrackerModelOptions.UseOldSwordIcons.Value ? Graphics.ow_progressive_tier_menu_bmps[1] : Graphics.ow_sword1_menu_bmp),   // (with Progressive Items, the plain swords show as P1..P4 even though they are disabled)
+            13 => (TrackerModel.IsWSMSReplacedByBU.Invoke(null) ? null : TrackerModel.ProgressiveItems && !TrackerModelOptions.UseOldSwordIcons.Value ? Graphics.ow_progressive_tier_menu_bmps[2] : Graphics.ow_sword2_menu_bmp),
+            20 => (TrackerModel.ProgressiveItems && !TrackerModelOptions.UseOldSwordIcons.Value ? Graphics.ow_progressive_tier_menu_bmps[3] : Graphics.ow_sword3_menu_bmp),
+            21 => (TrackerModel.ProgressiveItems && !TrackerModelOptions.UseOldSwordIcons.Value ? Graphics.ow_progressive_tier_menu_bmps[4] : Graphics.ow_sword4_menu_bmp),
             18 => Graphics.ow_progressive_tier_menu_bmps[0],
             _ => null,
         };

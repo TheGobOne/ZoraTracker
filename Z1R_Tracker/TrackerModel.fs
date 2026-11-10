@@ -1118,7 +1118,9 @@ let progressiveFamilyTier(family:int) : int =
         min 2 (1 + max n propLevel)
 // items that the option disables in the pickers: the plain swords (use the progressive sword) and the second tier of rings, candles and arrows
 let progressiveDisabledIdent(ident:int) : bool =
-    ProgressiveItems && ((progressiveSwordBoxTier(ident) >= 1 && progressiveSwordBoxTier(ident) <= 4) || ident = ITEMS.REDRING || ident = ITEMS.REDCANDLE || ident = ITEMS.SILVERARROW || ident = ITEMS.MAGICBOOMERANG)
+    // the progressive sword icon only exists with Progressive Items on (a save made with it off can still hold one: it does nothing, so it is greyed out)
+    if ident = ITEMS.PROGRESSIVESWORD then not ProgressiveItems
+    else ProgressiveItems && ((progressiveSwordBoxTier(ident) >= 1 && progressiveSwordBoxTier(ident) <= 4) || ident = ITEMS.REDRING || ident = ITEMS.REDCANDLE || ident = ITEMS.SILVERARROW || ident = ITEMS.MAGICBOOMERANG)
 let recomputePlayerStateSummary() =
     let mutable haveRecorder,haveLadder,haveAnyKey,haveCoastItem,haveWhiteSwordItem,havePowerBracelet,haveRaft,playerHearts = false,false,false,false,false,false,false,3
     let mutable swordLevel,candleLevel,ringLevel,haveBow,arrowLevel,haveWand,haveBookOrShield,boomerangLevel = 0,0,0,false,0,false,false,0

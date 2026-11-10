@@ -148,6 +148,7 @@ let mutable RaceModeNoticeHidden = Bool(false)   // "Do not show this again" on 
 let mutable ShowBroadcastWindow = Bool(false)
 let mutable BroadcastWindowSize = 3
 let mutable BroadcastWindowIncludesOverworldMagnifier = Bool(false)
+let mutable UseOldSwordIcons = Bool(false)   // the cross-platform tracker draws the plain old sword pictures (wood, white, magical, and a checkered 4th) instead of the numbered overworld sword icons; read at startup
 let mutable SmallerAppWindow = Bool(false)
 let mutable RememberStartupSelection = Bool(false)   // start screen: remember the Startup Options / ZORA Extras checkboxes between runs
 let mutable SavedStartupSelection = ""               // (comma separated keys of the checked ones, written when a game is started)
@@ -296,6 +297,7 @@ type ReadWrite() =
     member val ShowBroadcastWindow = false with get,set
     member val BroadcastWindowSize = 3 with get,set
     member val BroadcastWindowIncludesOverworldMagnifier = false with get,set
+    member val UseOldSwordIcons = false with get,set
     member val SmallerAppWindow = false with get,set
     member val RememberStartupSelection = false with get,set
     member val SavedStartupSelection = "" with get,set
@@ -450,6 +452,7 @@ let private writeImpl(filename) =
     data.ShowBroadcastWindow <- ShowBroadcastWindow.Value
     data.BroadcastWindowSize <- BroadcastWindowSize
     data.BroadcastWindowIncludesOverworldMagnifier <- BroadcastWindowIncludesOverworldMagnifier.Value
+    data.UseOldSwordIcons <- UseOldSwordIcons.Value
     data.SmallerAppWindow <- SmallerAppWindow.Value
     data.RememberStartupSelection <- RememberStartupSelection.Value
     data.SavedStartupSelection <- SavedStartupSelection
@@ -617,6 +620,7 @@ let private read(filename) =
         ShowBroadcastWindow.Value <- data.ShowBroadcastWindow
         BroadcastWindowSize <- max 1 (min 3 data.BroadcastWindowSize)
         BroadcastWindowIncludesOverworldMagnifier.Value <- data.BroadcastWindowIncludesOverworldMagnifier
+        UseOldSwordIcons.Value <- data.UseOldSwordIcons
         SmallerAppWindow.Value <- data.SmallerAppWindow
         RememberStartupSelection.Value <- data.RememberStartupSelection
         SavedStartupSelection <- (if data.SavedStartupSelection = null then "" else data.SavedStartupSelection)

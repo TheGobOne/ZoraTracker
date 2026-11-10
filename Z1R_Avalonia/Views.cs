@@ -591,7 +591,7 @@ public static class Views
                     canvasAdd(innerc, image, 4.0, 4.0);
                     var fam = TrackerModel.progressiveFamily(box.CellCurrent());
                     var l = uncollectedTierLetter(fam >= 2 ? TrackerModel.progressiveFamilyIdent(fam, TrackerModel.progressiveFamilyTier(fam)) : box.CellCurrent());   // (Progressive Items: the letter follows the tier shown)
-                    if (l != null)
+                    if (l != null && !TrackerModel.ProgressiveItems)   // (Progressive Items: no letter; the item itself shows the tier)
                         canvasAdd(innerc, makeTierLetter(l, 11.5), 0.0, 7.0);   // just the letter, centered over the item
                 }
                 else

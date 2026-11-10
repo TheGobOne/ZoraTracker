@@ -1373,6 +1373,14 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
+        cb3 = new CheckBox { Content = new TextBox { Text = "Use old sword icons", IsReadOnly = true } };
+        cb3.IsChecked = TrackerModelOptions.UseOldSwordIcons.Value;
+        Graphics.onChecked(cb3, () => TrackerModelOptions.UseOldSwordIcons.Value = true);
+        Graphics.onUnchecked(cb3, () => TrackerModelOptions.UseOldSwordIcons.Value = false);
+        ToolTip.SetTip(cb3, "Draw the swords as the plain old sword pictures (the 4th sword has a checkered blue handle)\ninstead of the numbered sword icons. The progressive sword icon in the menu stays the same.\nTakes effect the next time the tracker starts.");
+        setToolTipShowDuration(cb3, 10000);
+        options3sp.Children.Add(cb3);
+
         // one checkbox does both jobs: look for the seed and flags in other windows' titles (e.g. fceux), and show them in the bottom corner of the Notes box
         TrackerModelOptions.DisplaySeedAndFlags.Value = TrackerModelOptions.SnoopSeedAndFlags.Value;   // (older settings had these two apart: the one checkbox now sets both)
         cb3 = new CheckBox { Content = new TextBox { Text = "Display Seed + Flags", IsReadOnly = true } };

@@ -1999,12 +1999,12 @@ public static class Graphics
                 r.SetPixel(x, y, swordMenuPixel(interior.GetPixel(x, y)));
         return r;
     }
-    public static readonly System.Drawing.Bitmap ow_sword1_menu_bmp = swordMenuBmp(theInteriorBmpTable[15][0]);
-    public static readonly System.Drawing.Bitmap ow_sword2_menu_bmp = swordMenuBmp(theInteriorBmpTable[14][0]);
-    public static readonly System.Drawing.Bitmap ow_sword3_menu_bmp = swordMenuBmp(theInteriorBmpTable[13][0]);
-    public static readonly System.Drawing.Bitmap ow_sword1_item_bmp = swordIconAsItem(theInteriorBmpTable[15][0]);
-    public static readonly System.Drawing.Bitmap ow_sword2_item_bmp = swordIconAsItem(theInteriorBmpTable[14][0]);
-    public static readonly System.Drawing.Bitmap ow_sword3_item_bmp = swordIconAsItem(theInteriorBmpTable[13][0]);
+    public static readonly System.Drawing.Bitmap ow_sword1_menu_bmp_new = swordMenuBmp(theInteriorBmpTable[15][0]);
+    public static readonly System.Drawing.Bitmap ow_sword2_menu_bmp_new = swordMenuBmp(theInteriorBmpTable[14][0]);
+    public static readonly System.Drawing.Bitmap ow_sword3_menu_bmp_new = swordMenuBmp(theInteriorBmpTable[13][0]);
+    public static readonly System.Drawing.Bitmap ow_sword1_item_bmp_new = swordIconAsItem(theInteriorBmpTable[15][0]);
+    public static readonly System.Drawing.Bitmap ow_sword2_item_bmp_new = swordIconAsItem(theInteriorBmpTable[14][0]);
+    public static readonly System.Drawing.Bitmap ow_sword3_item_bmp_new = swordIconAsItem(theInteriorBmpTable[13][0]);
     // the overworld 4th-sword ('4') and progressive-sword ('P') icons: same pixel art as WPFUI.extraSwordIconBmp
     private static System.Drawing.Bitmap extraSwordInterior(bool isProg)
     {
@@ -2031,9 +2031,9 @@ public static class Graphics
             }
         return bmp;
     }
-    public static readonly System.Drawing.Bitmap ow_sword4_item_bmp = swordIconAsItem(extraSwordInterior(false));
+    public static readonly System.Drawing.Bitmap ow_sword4_item_bmp_new = swordIconAsItem(extraSwordInterior(false));
     public static readonly System.Drawing.Bitmap ow_progressive_item_bmp = swordIconAsItem(extraSwordInterior(true));
-    public static readonly System.Drawing.Bitmap ow_sword4_menu_bmp = swordMenuBmp(extraSwordInterior(false));
+    public static readonly System.Drawing.Bitmap ow_sword4_menu_bmp_new = swordMenuBmp(extraSwordInterior(false));
     public static readonly System.Drawing.Bitmap ow_progressive_menu_bmp = swordMenuBmp(extraSwordInterior(true));
     // the full 15x27 sword icons with a grey (instead of black) outline around the number/letter: shown in the sword item boxes
     public static System.Drawing.Bitmap swordBoxBmp(System.Drawing.Bitmap menuBmp)
@@ -2047,11 +2047,59 @@ public static class Graphics
             }
         return r;
     }
-    public static readonly System.Drawing.Bitmap ow_sword1_box_bmp = swordBoxBmp(ow_sword1_menu_bmp);
-    public static readonly System.Drawing.Bitmap ow_sword2_box_bmp = swordBoxBmp(ow_sword2_menu_bmp);
-    public static readonly System.Drawing.Bitmap ow_sword3_box_bmp = swordBoxBmp(ow_sword3_menu_bmp);
-    public static readonly System.Drawing.Bitmap ow_sword4_box_bmp = swordBoxBmp(ow_sword4_menu_bmp);
+    public static readonly System.Drawing.Bitmap ow_sword1_box_bmp_new = swordBoxBmp(ow_sword1_menu_bmp_new);
+    public static readonly System.Drawing.Bitmap ow_sword2_box_bmp_new = swordBoxBmp(ow_sword2_menu_bmp_new);
+    public static readonly System.Drawing.Bitmap ow_sword3_box_bmp_new = swordBoxBmp(ow_sword3_menu_bmp_new);
+    public static readonly System.Drawing.Bitmap ow_sword4_box_bmp_new = swordBoxBmp(ow_sword4_menu_bmp_new);
     public static readonly System.Drawing.Bitmap ow_progressive_box_bmp = swordBoxBmp(ow_progressive_menu_bmp);
+    // "Use old sword icons" (Options > Other): the plain sword pictures from icons7x7.png instead of the numbered overworld sword icons. Read each time an icon is asked for, but the
+    // pictures already on screen keep what they were built with, so the option takes effect when the tracker starts. The progressive sword icons are not part of this.
+    // The 4th sword is the white sword with its lavender part (guard and handle) checkered with dark blue.
+    private static System.Drawing.Bitmap oldFourthSwordSprite()
+    {
+        var r = new System.Drawing.Bitmap(21, 21);
+        var navy = System.Drawing.Color.FromArgb(255, 0, 0, 170);
+        for (int px = 0; px < 21; px++)
+            for (int py = 0; py < 21; py++)
+            {
+                var c = white_sword_bmp.GetPixel(px, py);
+                if (c.A == 255 && c.R == 128 && c.G == 128 && c.B == 255 && ((px / 3 + py / 3) % 2 == 0)) c = navy;
+                r.SetPixel(px, py, c);
+            }
+        return r;
+    }
+    // the 21x21 sprite in the 15x27 menu cell: the sword's art is 5 pixels wide (columns 1-5), so cropping 3 pixels off each side loses nothing; centered vertically
+    private static System.Drawing.Bitmap oldSwordAsMenu(System.Drawing.Bitmap sprite21)
+    {
+        var r = new System.Drawing.Bitmap(15, 27);
+        for (int x = 0; x < 15; x++)
+            for (int y = 0; y < 27; y++)
+            {
+                var sy = y - 3;
+                r.SetPixel(x, y, sy >= 0 && sy < 21 ? sprite21.GetPixel(x + 3, sy) : System.Drawing.Color.Transparent);
+            }
+        return r;
+    }
+    private static readonly System.Drawing.Bitmap[] oldSwordItemBmps = { brown_sword_bmp, white_sword_bmp, magical_sword_bmp, oldFourthSwordSprite() };
+    private static readonly System.Drawing.Bitmap[] oldSwordMenuBmps = oldSwordItemBmps.Select(oldSwordAsMenu).ToArray();
+    private static bool useOldSwords => TrackerModelOptions.UseOldSwordIcons.Value;
+    public static System.Drawing.Bitmap ow_sword1_item_bmp => useOldSwords ? oldSwordItemBmps[0] : ow_sword1_item_bmp_new;
+    public static System.Drawing.Bitmap ow_sword2_item_bmp => useOldSwords ? oldSwordItemBmps[1] : ow_sword2_item_bmp_new;
+    public static System.Drawing.Bitmap ow_sword3_item_bmp => useOldSwords ? oldSwordItemBmps[2] : ow_sword3_item_bmp_new;
+    public static System.Drawing.Bitmap ow_sword4_item_bmp => useOldSwords ? oldSwordItemBmps[3] : ow_sword4_item_bmp_new;
+    public static System.Drawing.Bitmap ow_sword1_menu_bmp => useOldSwords ? oldSwordMenuBmps[0] : ow_sword1_menu_bmp_new;
+    public static System.Drawing.Bitmap ow_sword2_menu_bmp => useOldSwords ? oldSwordMenuBmps[1] : ow_sword2_menu_bmp_new;
+    public static System.Drawing.Bitmap ow_sword3_menu_bmp => useOldSwords ? oldSwordMenuBmps[2] : ow_sword3_menu_bmp_new;
+    public static System.Drawing.Bitmap ow_sword4_menu_bmp => useOldSwords ? oldSwordMenuBmps[3] : ow_sword4_menu_bmp_new;
+    public static System.Drawing.Bitmap ow_sword1_box_bmp => useOldSwords ? oldSwordMenuBmps[0] : ow_sword1_box_bmp_new;   // (no black outline to turn grey on the old pictures)
+    public static System.Drawing.Bitmap ow_sword2_box_bmp => useOldSwords ? oldSwordMenuBmps[1] : ow_sword2_box_bmp_new;
+    public static System.Drawing.Bitmap ow_sword3_box_bmp => useOldSwords ? oldSwordMenuBmps[2] : ow_sword3_box_bmp_new;
+    public static System.Drawing.Bitmap ow_sword4_box_bmp => useOldSwords ? oldSwordMenuBmps[3] : ow_sword4_box_bmp_new;
+    // Progressive Items: the placed swords show their tier (P1..P4). With "Use old sword icons" the tiers 1-4 are the wood, white, magical and 4th sword pictures instead; index 0 (the plain P sword) is unchanged
+    private static System.Drawing.Bitmap[] oldTierItemBmpsCache;
+    public static System.Drawing.Bitmap[] ow_progressive_tier_item_bmps =>
+        !useOldSwords ? ow_progressive_tier_item_bmps_new
+        : (oldTierItemBmpsCache ??= new[] { ow_progressive_tier_item_bmps_new[0], oldSwordItemBmps[0], oldSwordItemBmps[1], oldSwordItemBmps[2], oldSwordItemBmps[3] });
     // Progressive Items: the progressive sword with its tier next to the P (P1 / P2 / P3 / P4), over a sword drawn like the item progress bar's swords (hilt, tall guard, blade).
     // 21x27: the P and number glyph on top (outlined like the plain P sword), the sword along the bottom. Index 0 of the arrays below is the plain P sword.
     private static System.Drawing.Bitmap progressiveTierSwordBmp(int tier)
@@ -2123,7 +2171,7 @@ public static class Graphics
         for (int t = 1; t <= 4; t++) a.Add(progressiveTierItemBmp(progressiveTierSwordBmp(t)));
         return a.ToArray();
     }
-    public static readonly System.Drawing.Bitmap[] ow_progressive_tier_item_bmps = make_ow_progressive_tier_item_bmps();
+    public static readonly System.Drawing.Bitmap[] ow_progressive_tier_item_bmps_new = make_ow_progressive_tier_item_bmps();
     private static System.Drawing.Bitmap[] make_ow_progressive_tier_menu_bmps()
     {
         var a = new List<System.Drawing.Bitmap> { ow_progressive_menu_bmp };
@@ -2280,7 +2328,7 @@ public static class Graphics
             _ => throw new Exception("bad SwordLevel"),
         };
     // the white sword with a yellow handle (instead of its usual blue one): shown in the item progress bar once a 4th sword has been collected
-    public static readonly System.Drawing.Bitmap white_sword4_bmp = ow_sword4_item_bmp;   // (the overworld sword icons are used everywhere; there are no plain sword pictures)
+    public static System.Drawing.Bitmap white_sword4_bmp => ow_sword4_item_bmp;   // (the overworld sword icons are used everywhere; there are no plain sword pictures)
     // the overworld cave-style sword icons (the 4th sword has a blue handle), used instead of the plain sword pictures in the item progress bar and popouts
     public static System.Drawing.Bitmap swordLevelToOwBmp(int swordLevel) =>
         swordLevel switch
