@@ -979,20 +979,22 @@ and Dungeon(id,numBoxes) =
             priorComplete
         else
             currentlyReentrant <- true
-            let r = 
+            // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
+            let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE)
+            let r =
                 match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
                 | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
                     if this.PlayerHasTriforce() then
                         let mutable numBoxesDone = 0
                         for b in boxes do
-                            if b.IsDone() then
+                            if boxDone b then
                                 numBoxesDone <- numBoxesDone + 1
                         let twoBoxers = if IsSecondQuestDungeons then "123567" else "234567"
                         numBoxesDone = 3 || (numBoxesDone = 2 && (twoBoxers |> Seq.contains this.LabelChar))
                     else
                         false
                 | DungeonTrackerInstanceKind.DEFAULT ->
-                    this.PlayerHasTriforce() && this.Boxes |> Array.forall (fun b -> b.IsDone()) && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || extraFloorBox.IsDone())   // (the floor item that replaces the triforce only has to be collected if one was recorded)
+                    this.PlayerHasTriforce() && this.Boxes |> Array.forall boxDone && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || extraFloorBox.IsDone())   // (the floor item that replaces the triforce only has to be collected if one was recorded)
             let needToNotify = priorComplete <> r
             priorComplete <- r
             if needToNotify then
