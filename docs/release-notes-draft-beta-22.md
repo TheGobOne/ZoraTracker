@@ -9,12 +9,12 @@
 **Fixes (Windows and cross-platform)**
 - The overworld magnifier no longer flickers when you mark an item on a tile.
 - A dungeon whose triforce is in a basement or item box now dims on the overworld once everything in it is collected.
+- Progressive Items: the timeline shows each sword once, at its first pickup, instead of hiding the lower ones or drawing duplicates (port).
+- The notes box text cursor is visible on the black background (port).
 
 **Changes (cross-platform port)**
 - Progressive Items: uncollected rings, candles and arrows no longer show the B/R/W/S letter. The item shows its tier.
-- Progressive Items: the timeline shows each sword once, at its first pickup, instead of hiding the lower ones or drawing duplicates.
 - The progressive sword is greyed out in the item pickers when Progressive Items is off.
-- The notes box text cursor is visible on the black background.
 
 ### Discord notes
 
@@ -27,11 +27,12 @@
 **Fixes**
 - The overworld magnifier no longer flickers when you mark an item.
 - Dungeons with the triforce in a basement or item box now dim when complete.
+- Progressive Items: the timeline shows each sword once (port).
+- The notes box cursor is visible (port).
 
 **Changes (port)**
-- Progressive Items: letters removed from uncollected rings, candles and arrows, and the timeline shows each sword once.
+- Progressive Items: letters removed from uncollected rings, candles and arrows.
 - The progressive sword is greyed out when Progressive Items is off.
-- The notes box cursor is visible.
 
 [Download](https://github.com/TheGobOne/ZoraTracker/releases/latest) or update via the app.
 Please report any bugs [here](https://github.com/TheGobOne/ZoraTracker/issues) or on [Issues on Github](https://github.com/TheGobOne/ZoraTracker/issues).
