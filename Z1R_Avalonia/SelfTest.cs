@@ -619,6 +619,18 @@ public static class SelfTest
         });
         log($"dungeon and shop checks done ({failures} failures so far)");
 
+        // 5. equations19's crash: a box taken out of the tree (its cell was rebuilt under the pointer) gets PointerEntered.
+        // The hover highlight used to throw on the null position; it must now just hide.
+        guard("hover on a box that left the tree", () =>
+        {
+            // (the highlight is already attached to the main canvas at startup)
+            var orphan = new Border { Width = 34, Height = 34 };   // never added to the window: no common ancestor with the main canvas
+            Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(orphan);
+            orphan.RaiseEvent(new PointerEventArgs(InputElement.PointerEnteredEvent, orphan, mouse, orphan, new Point(), (ulong)Environment.TickCount,
+                new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.Other), KeyModifiers.None));
+        });
+        log($"hover on a removed box checked ({failures} failures so far)");
+
         closeExtraWindows();
         log($"{clicks} button/checkbox clicks, {popupsSeen} popups opened and closed");
         log(failures == 0 ? "RESULT: PASS" : $"RESULT: FAIL ({failures})");

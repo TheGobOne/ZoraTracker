@@ -44,7 +44,9 @@ public static class Views
             {
                 if (b)
                 {
-                    var pos = e.TranslatePoint(new Point(-2.0, -2.0), c).Value;
+                    var maybePos = e.TranslatePoint(new Point(-2.0, -2.0), c);   // (null when e was removed from the tree, e.g. its cell was rebuilt under the pointer)
+                    if (maybePos == null) { globalBoxMouseOverHighlight.Opacity = 0.0; return; }
+                    var pos = maybePos.Value;
                     Canvas.SetLeft(globalBoxMouseOverHighlight, pos.X);
                     Canvas.SetTop(globalBoxMouseOverHighlight, pos.Y);
                     globalBoxMouseOverHighlight.Opacity = 1.0;
