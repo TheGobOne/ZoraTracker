@@ -20,10 +20,13 @@ type GlobalBoxMouseOverHighlight(stroke:Brush) =
         Canvas.SetZIndex(globalBoxMouseOverHighlight, 99999)
         setGlobalBoxMouseOverHighlight <- (fun(b,e) ->
             if b then
-                let pos = e.TranslatePoint(Point(-2.,-2.), c)
-                Canvas.SetLeft(globalBoxMouseOverHighlight, pos.X)
-                Canvas.SetTop(globalBoxMouseOverHighlight, pos.Y)
-                globalBoxMouseOverHighlight.Opacity <- 1.0
+                // (TranslatePoint throws when e is no longer in the same tree as c, e.g. its cell was rebuilt under the pointer: just hide the highlight then)
+                match (try Some(e.TranslatePoint(Point(-2.,-2.), c)) with _ -> None) with
+                | Some pos ->
+                    Canvas.SetLeft(globalBoxMouseOverHighlight, pos.X)
+                    Canvas.SetTop(globalBoxMouseOverHighlight, pos.Y)
+                    globalBoxMouseOverHighlight.Opacity <- 1.0
+                | None -> globalBoxMouseOverHighlight.Opacity <- 0.0
             else
                 globalBoxMouseOverHighlight.Opacity <- 0.0
             )
@@ -559,12 +562,15 @@ let MakeBoxItemWithExtraDecorations(cmo:CustomComboBoxes.CanvasManager option, b
             let hoverCanvas = new Canvas()
             c.MouseEnter.Add(fun _ ->
                 cm.AppMainCanvas.Children.Remove(hoverCanvas)  // safeguard, in case MouseEnter/MouseLeave parity is broken
-                let pos = c.TranslatePoint(Point(),cm.AppMainCanvas)
-                let extraDecorations = f(pos)
-                hoverCanvas.Children.Clear()
-                for fe, x, y in extraDecorations do
-                    canvasAdd(hoverCanvas, fe, x+3., y+3.)   // +3s because decorations are relative to the combobox popup, which is over the interior icon area, excluding the rectangle border
-                canvasAdd(cm.AppMainCanvas, hoverCanvas, pos.X, pos.Y) |> ignore
+                // (TranslatePoint throws when this box left the tree, e.g. it was rebuilt under the pointer: nothing to decorate then)
+                match (try Some(c.TranslatePoint(Point(),cm.AppMainCanvas)) with _ -> None) with
+                | None -> ()
+                | Some pos ->
+                    let extraDecorations = f(pos)
+                    hoverCanvas.Children.Clear()
+                    for fe, x, y in extraDecorations do
+                        canvasAdd(hoverCanvas, fe, x+3., y+3.)   // +3s because decorations are relative to the combobox popup, which is over the interior icon area, excluding the rectangle border
+                    canvasAdd(cm.AppMainCanvas, hoverCanvas, pos.X, pos.Y) |> ignore
                 )
             c.MouseLeave.Add(fun _ -> cm.AppMainCanvas.Children.Remove(hoverCanvas))
         | None -> ()
