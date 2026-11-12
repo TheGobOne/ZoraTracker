@@ -15,9 +15,6 @@
 ### Startup screen
 - Paste Flags moved under Startup Options. The custom level name moved under ZORA Extras. Both cards have two extra rows and are re-centered.
 
-[Download](https://github.com/TheGobOne/ZoraTracker/releases/latest) or update via the app.
-Please report any bugs [here](https://github.com/TheGobOne/ZoraTracker/issues) or on [Issues on Github](https://github.com/TheGobOne/ZoraTracker/issues).
-
 ## Discord
 
 ```
