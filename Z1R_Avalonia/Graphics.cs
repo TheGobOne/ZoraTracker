@@ -1446,31 +1446,8 @@ public static class Graphics
     public static readonly System.Drawing.Bitmap magical_boots_bmp = bmpFromBase64("iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAABkElEQVR4nM2UuUpDQRSGv5m5XJcEF0QQFGxMYxHb4AJpfAUVLXwCewt7KwvRIk/gWtvnCYJNELQIgqAIwS2Cy50Zi7lBSCbLFRF/GC53me/8Z+45B/5Cto201p/WWpvP54cAlFJeRuB7+PIGl7egpLsXwKeGsUGYGAFr2xvzQiv3sHUC6V7QFgIJj6+wPg9rC2B+Ap0eh6MNEAJs7NRYCGPn9QwSQbWF2puDgrtqA+kQ+tvzWkOvbmHrFFI9zqGS8PQKa7OwMucCJIYKAaFyqw4Ng85p19XyM+tZ3arL2Mn0f6BSSqGUQtTLo0HeH9VJtVrtQ2vd8n1iqAVyudxUOtV3XS6Xn6vVqrENfZso/SCQgQD293bPi8XiQzabHWwEdg01BvpDKF7A5iFU7k1kjIkKhcJxqVQ6aArugwhcoSsJIjYi46Fy8w53TzJI9UAmk1mMt6x2hEbGASLt5oDge7AIATtnbjZsL5toZrJ5vxc6OgBLOdeavk4SwEcEY8MykJ4DbCo06zv5DhKtCvY39QWjQ6CiSDEc2gAAAABJRU5ErkJggg==");
     public static System.Drawing.Bitmap boomerangOrBootsBmp() => TrackerModel.BootsReplaceBoomerangs ? boots_bmp : boomerang_bmp;
     public static System.Drawing.Bitmap magicBoomerangOrMagicalBootsBmp() => TrackerModel.BootsReplaceBoomerangs ? magical_boots_bmp : magic_boomerang_bmp;
-    // the AP Item (an Archipelago multiworld item that belongs to another world): a violet gem, 21x21 like the other item icons
-    public static readonly System.Drawing.Bitmap ap_item_bmp = make_ap_item_bmp();
-    private static System.Drawing.Bitmap make_ap_item_bmp()
-    {
-        var r = new System.Drawing.Bitmap(21, 21);
-        var clear = System.Drawing.Color.FromArgb(0, 0, 0, 0);
-        var outline = System.Drawing.Color.FromArgb(255, 40, 20, 70);
-        var light = System.Drawing.Color.FromArgb(255, 215, 170, 255);
-        var mid = System.Drawing.Color.FromArgb(255, 160, 90, 220);
-        var dark = System.Drawing.Color.FromArgb(255, 100, 50, 160);
-        for (int x = 0; x < 21; x++)
-            for (int y = 0; y < 21; y++)
-            {
-                int dx = x - 10, dy = y - 10, d = Math.Abs(dx) + Math.Abs(dy);
-                System.Drawing.Color c;
-                if (d > 10) c = clear;
-                else if (d >= 9) c = outline;
-                else if (d <= 2 && dx <= 0 && dy <= 0) c = light;                   // the shine
-                else if (dx + dy < -3) c = light;                                    // upper-left facet
-                else if (dx + dy > 3) c = dark;                                      // lower-right facet
-                else c = mid;
-                r.SetPixel(x, y, c);
-            }
-        return r;
-    }
+    // the AP Item (an Archipelago multiworld item that belongs to another world): the Archipelago logo mark, 21x21 like the other item icons
+    public static readonly System.Drawing.Bitmap ap_item_bmp = bmpFromBase64("iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAABcklEQVR42s1VoXICMRCNQCBPIipOnKioSGcqkBGICkQFn4ADgUCcOMFMO4NAVFQiEBWIfgKin4DgAyoQCAQCgUBcd5mXmUwm2TAoxJtcdt8+NrvZoJ4HH0pAg1AR/gg11gr2aJxKiC4h5mN5q+gL4RwRZfvjNaIFYUJYEN6x14SdJ7iDvQBvgbjCF+0RToFsehA4OzYNu3+KE+wX0Twg6BI5g2/s59jHynIktBS6WQuYIAP+fsORJf5YoSYSif0G3+YaPouWhAPWJ5SD1zFhj0wzCGbIdO/xNewHm+kDYHD/frF2uD4Icm9JDvsr4cfhG+i0LHEUOUoVuYuxPoxs97XQzRp+V1AL3MuVY9JUIM1QxxzHy7GfCTFTqfslarfy7CvYS6n7w4BjTWgSNpHADfzrgG+ocBx/vvmH+on72A8kxDqZLX6bsHWcBiMpic6dobBvbdt/pZoYQ1vLr4ToJ3g8JF3EJ9/TbkK0czcv/83/Uf9WKOHiQPnmlQAAAABJRU5ErkJggg==");
     public static readonly System.Drawing.Bitmap[] customItemBmps = new System.Drawing.Bitmap[16];   // the user's ExtraIcons-folder icons, resized to item-icon size (filled in by DrawingLayer.applyCustomMenuIcons)
     public static readonly System.Drawing.Bitmap[] allItemBMPs = new[] { book_bmp, boomerang_bmp, bow_bmp, power_bracelet_bmp, ladder_bmp, magic_boomerang_bmp, key_bmp, raft_bmp, recorder_bmp, red_candle_bmp, red_ring_bmp, silver_arrow_bmp, wand_bmp, white_sword_bmp };
     private static System.Drawing.Bitmap[] make_allItemBMPsWithHeartShuffle()

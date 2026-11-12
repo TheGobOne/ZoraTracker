@@ -695,6 +695,57 @@ public static class OverworldItemGridUI
         ToolTip.SetTip(rupeeIcon, "When hovered, highlights locations of Money Making Game,\nUnknown Secret, and not-yet-taken-Secret overworld spots");
         gridAddTuple(owItemGrid, rupeeIcon, OW_ITEM_GRID_LOCATIONS.RUPEE_ICON);
 
+        // Archipelago Support: the AP Item sprite with a count of how many have been placed (overworld tiles and shops, the dungeon item boxes, and the main item boxes);
+        // hovering it highlights every overworld tile that carries one. Only shown while the option is on.
+        {
+            var apCounter = new Canvas { Width = 30.0, Height = 30.0, Background = Brushes.Black };
+            canvasAdd(apCounter, new Rectangle { Width = 30.0, Height = 30.0, StrokeThickness = 3.0, Stroke = blueUnmarkedBrush }, 0.0, 0.0);
+            var apSprite = Graphics.BMPtoImage(Graphics.ap_item_bmp);
+            apSprite.Width = 15.0;
+            apSprite.Height = 15.0;
+            RenderOptions.SetBitmapInterpolationMode(apSprite, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+            canvasAdd(apCounter, apSprite, 4.0, 8.0);
+            var apCountText = new TextBlock { Text = "0", FontSize = 12.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, IsHitTestVisible = false };
+            canvasAdd(apCounter, apCountText, 19.0, 7.0);
+            bool tileHasAp(int x, int y) => TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[x, y]).Contains(TrackerModel.ITEMS.APITEM);
+            int countPlacedApItems()
+            {
+                var n = 0;
+                var shopLabelsCounted = new HashSet<int>();   // (every tile carrying the same SHOP n label is the same shop, so its items count once)
+                for (var x = 0; x <= 15; x++)
+                    for (var y = 0; y <= 7; y++)
+                    {
+                        var packed = TrackerModel.owSwordIcons[x, y];
+                        var label = TrackerModel.shopLabelOf(packed);
+                        if (label > 0 && !shopLabelsCounted.Add(label)) continue;
+                        n += TrackerModel.decorEntriesOf(packed).Count(e => e.Item1 == TrackerModel.ITEMS.APITEM && e.Item2);   // (only the ones checked off as collected)
+                    }
+                bool collectedAp(TrackerModel.Box b) => b.CellCurrent() == TrackerModel.ITEMS.APITEM && b.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
+                n += TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Count(collectedAp);
+                n += new[] { TrackerModel.ladderBox, TrackerModel.armosBox, TrackerModel.sword2Box, TrackerModel.sword3Box, TrackerModel.letterBox }.Count(collectedAp);
+                return n;
+            }
+            Views.appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(apCounter);
+            apCounter.PointerEntered += (_, _) => showLocatorInstanceFuncAll(tileHasAp);
+            apCounter.PointerExited += (_, _) => hideLocator();
+            ToolTip.SetTip(apCounter, "Archipelago items collected so far.\nWhen hovered, highlights the overworld spots that hold one");
+            void refreshApCounter()
+            {
+                apCounter.IsVisible = TrackerModelOptions.ArchipelagoSupport.Value;
+                if (apCounter.IsVisible)
+                {
+                    var n = countPlacedApItems().ToString();
+                    if (apCountText.Text != n) apCountText.Text = n;
+                }
+            }
+            DrawingLayer.ArchipelagoSupportChanged += refreshApCounter;
+            var apTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400.0) };
+            apTimer.Tick += (_, _) => refreshApCounter();
+            apTimer.Start();
+            refreshApCounter();
+            gridAddTuple(owItemGrid, apCounter, (4, 2));   // the free cell right of the Zelda box, in the row with the bomb and money icons
+        }
+
         CheckBox make_highlightOpenCavesCB()
         {
             if (isStandardHyrule)
