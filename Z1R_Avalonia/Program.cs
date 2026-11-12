@@ -1754,6 +1754,18 @@ public static class Program
             mbArea.PointerExited += (_, _) => explainHide();
             checkboxSP.Children.Add(new DockPanel { Width = 10.0 });
             checkboxSP.Children.Add(mbArea);
+            // Archipelago Support: offers the AP Item (an item that belongs to another world in a multiworld game) in the item and tile menus; the same setting as the Options menu checkbox
+            var apcb = new CheckBox { Content = new TextBox { Text = "Archipelago Support", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false, Margin = new Thickness(2.0) } };
+            Graphics.scaleUpCheckBoxBox(apcb, 1.66);
+            apcb.IsChecked = TrackerModelOptions.ArchipelagoSupport.Value;
+            Graphics.onChecked(apcb, () => { TrackerModelOptions.ArchipelagoSupport.Value = true; DrawingLayer.applyArchipelagoSupport(); });
+            Graphics.onUnchecked(apcb, () => { TrackerModelOptions.ArchipelagoSupport.Value = false; DrawingLayer.applyArchipelagoSupport(); });
+            DrawingLayer.ArchipelagoSupportChanged += () => { if (apcb.IsChecked != TrackerModelOptions.ArchipelagoSupport.Value) apcb.IsChecked = TrackerModelOptions.ArchipelagoSupport.Value; };
+            var apArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = apcb, VerticalAlignment = VerticalAlignment.Top });
+            apArea.PointerEntered += (_, _) => hoverExplain(apArea, "For Archipelago multiworld games: adds the AP Item, a gem for an item that belongs to another world,\nto the item-box menus and the overworld tile menu. Place it as many times as you need to mark checked locations.");
+            apArea.PointerExited += (_, _) => explainHide();
+            checkboxSP.Children.Add(new DockPanel { Width = 10.0 });
+            checkboxSP.Children.Add(apArea);
 
             // custom level name (replaces 'LEVEL-n' at the top of each dungeon map)
             var clnTextBox = new TextBox { MaxLength = 7, IsEnabled = false, Margin = new Thickness(6.0, 2.0, 2.0, 2.0), VerticalAlignment = VerticalAlignment.Center,
@@ -1937,11 +1949,12 @@ public static class Program
             // every button and text box on the start screen is this tall
             var startBoxHeight = 38.0;
             // Custom LEVEL Name lives here: its checkbox is in the same block as the checkboxes above it (so it lines up with them), a blank row above it; its name box is docked at the bottom of the card (see below), level with Paste Flags
+            // (Paste Flags and Custom LEVEL Name have swapped sides: Paste Flags is now at the bottom of the Startup Options card, the Custom LEVEL Name checkbox and box at the bottom of the ZORA Extras card.
+            //  Each card also has two spare checkbox rows above its bottom block.)
             var startupRows = plainRows(checkboxSP);
-            startupRows.Children.Add(new Border { Height = 34.0 });
+            for (int spare = 0; spare < 1; spare++) startupRows.Children.Add(new Border { Height = 30.0, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) });
             clnArea.HorizontalAlignment = HorizontalAlignment.Left;
             clnArea.Margin = new Thickness(0.0, 0.0, 0.0, 4.0);
-            startupRows.Children.Add(clnArea);
             clnTextBox.Margin = new Thickness(0.0, 8.0, 0.0, 0.0);
             clnTextBox.Height = startBoxHeight;
             clnTextBox.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -1951,10 +1964,14 @@ public static class Program
             extrasHeader.HorizontalAlignment = HorizontalAlignment.Center;   // centered over the quest button below it
             rightCol.Children.Add(extrasHeader);
             rightCol.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });   // line under the header
-            rightCol.Children.Add(plainRows(extrasSP));
+            var extrasRows = plainRows(extrasSP);
+            for (int spare = 0; spare < 2; spare++) extrasRows.Children.Add(new Border { Height = 30.0, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) });
+            extrasRows.Children.Add(new Border { Height = 34.0 });   // a blank row above the Custom LEVEL Name checkbox
+            extrasRows.Children.Add(clnArea);
+            rightCol.Children.Add(extrasRows);
             // the start screen's blocks are bordered cards of one width, a set distance apart
             var startCardsWidth = WIDTH_SANS_CHROME - 32.0;
-            var startCardsGap = 80.0;
+            var startCardsGap = 57.0;   // (was 80; the two spare rows added to each card are about 69px, taken back out of the three gaps so the bottom row stays on screen)
             Border startCard(Control child) => new Border { Child = child, BorderBrush = Brushes.SaddleBrown, BorderThickness = new Thickness(1.0), CornerRadius = new CornerRadius(6.0), Padding = new Thickness(14.0, 10.0, 14.0, 12.0) };
             var leftCard = startCard(leftCol);
             leftCard.Margin = new Thickness(0.0, 0.0, 11.0, 0.0);
@@ -2624,9 +2641,9 @@ public static class Program
                 }
                 CustomComboBoxes.StartImmediate(show());
             };
-            // the button sits at the bottom of the ZORA Extras card, one checkbox row of space below the last option (the card grows to fit, and Startup Options matches its height)
+            // the Paste Flags button sits at the bottom of the Startup Options card, one checkbox row of space below the last option (the card grows to fit, and ZORA Extras matches its height)
             {
-                rightCard.Child = null;
+                leftCard.Child = null;
                 var dp = new DockPanel { LastChildFill = true };
                 pasteFlagsButton.Margin = new Thickness(0.0, 8.0, 0.0, 0.0);
                 pasteFlagsButton.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -2637,17 +2654,17 @@ public static class Program
                 DockPanel.SetDock(gapRow, Dock.Bottom);
                 dp.Children.Add(pasteFlagsButton);
                 dp.Children.Add(gapRow);
-                dp.Children.Add(rightCol);
-                rightCard.Child = dp;
+                dp.Children.Add(leftCol);
+                leftCard.Child = dp;
             }
-            // the Custom LEVEL Name box sits at the bottom of the Startup Options card, level with Paste Flags and the same size
+            // the Custom LEVEL Name box sits at the bottom of the ZORA Extras card, level with Paste Flags and the same size
             {
-                leftCard.Child = null;
+                rightCard.Child = null;
                 var dp = new DockPanel { LastChildFill = true };
                 DockPanel.SetDock(clnTextBox, Dock.Bottom);
                 dp.Children.Add(clnTextBox);
-                dp.Children.Add(leftCol);
-                leftCard.Child = dp;
+                dp.Children.Add(rightCol);
+                rightCard.Child = dp;
             }
             var toolsButtons = new List<Button> { startButtons[999], tourButton, optionsToggle, vbButton };
             var toolsGrid = new UniformGrid { Columns = 4, Width = startCardsWidth, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, startCardsGap, 0.0, 0.0) };

@@ -190,8 +190,16 @@ public static class DrawingLayer
     }
     // the ExtraIcons-folder icons that can also be offered in the item-box and overworld tile menus (first 16 by name), resized to item-icon size
     public static readonly string[] customMenuIconNames = ExtraIconsResourceTable.Keys.OrderBy(k => k.ToLowerInvariant(), StringComparer.Ordinal).Take(16).ToArray();
+    // the AP Item can be placed (any number of times) only while the Archipelago Support option is on
+    public static event Action ArchipelagoSupportChanged;   // (the startup screen and Options menu checkboxes keep each other in step)
+    public static void applyArchipelagoSupport()
+    {
+        TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(TrackerModel.ITEMS.APITEM, TrackerModelOptions.ArchipelagoSupport.Value ? 1000 : 0);
+        ArchipelagoSupportChanged?.Invoke();
+    }
     public static void applyCustomMenuIcons()
     {
+        applyArchipelagoSupport();
         var n = customMenuIconNames.Length;
         for (int k = 0; k <= n - 1; k++)
         {

@@ -729,8 +729,10 @@ public static class Views
             }
             void activateComboBox(int activationDelta, CustomComboBoxes.GridClickDismissalWarpReturn gridClickDismissalWarpReturn)
             {
+                var maybePos = c.TranslatePoint(new Point(), cm.AppMainCanvas);
+                if (maybePos == null) return;   // (this box left the tree; there is nowhere to open the menu)
                 CustomComboBoxes.GlobalFlag.popupIsActive = true;
-                var pos = c.TranslatePoint(new Point(), cm.AppMainCanvas).Value;
+                var pos = maybePos.Value;
                 var extraDecorations = computeExtraDecorationsWhenPopupActivatedOrMouseOverOpt != null ? computeExtraDecorationsWhenPopupActivatedOrMouseOverOpt(pos) : new (Control, double, double)[0];
                 CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
                 {
@@ -827,7 +829,9 @@ public static class Views
                 c.PointerEntered += (_, _) =>
                 {
                     cm.AppMainCanvas.Children.Remove(hoverCanvas);  // safeguard, in case MouseEnter/MouseLeave parity is broken
-                    var pos = c.TranslatePoint(new Point(), cm.AppMainCanvas).Value;
+                    var maybePos = c.TranslatePoint(new Point(), cm.AppMainCanvas);
+                    if (maybePos == null) return;   // (null when this box left the tree, e.g. it was rebuilt under the pointer; nothing to decorate)
+                    var pos = maybePos.Value;
                     var extraDecorations = f(pos);
                     hoverCanvas.Children.Clear();
                     foreach (var (fe, x, y) in extraDecorations)

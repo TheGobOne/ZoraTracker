@@ -1166,7 +1166,14 @@ public static class UIComponents
                                             BorderThickness = new Thickness(0.0), VerticalAlignment = VerticalAlignment.Center, Text = "\U000025BC" };
                 dp2.Children.Add(chevron);
                 DockPanel.SetDock(chevron, Dock.Right);
-                dp2.Children.Add(tb2);
+                // The value text shrinks to fit the room left of the chevron instead of being clipped (Linux fonts are wider, which cut "Lost Hills" to "ost Hills")
+                var fitLabel = new Viewbox
+                {
+                    Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(5.0, 0.0, 2.0, 0.0),
+                    Child = new TextBlock { Text = tb2.Text, FontSize = 16.0, Foreground = tb2.Foreground, VerticalAlignment = VerticalAlignment.Center }
+                };
+                dp2.Children.Add(fitLabel);
                 button.Content = dp2;
             }
             updateViewFunctions[thisRow] = updateView;

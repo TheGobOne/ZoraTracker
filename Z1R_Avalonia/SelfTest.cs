@@ -629,6 +629,28 @@ public static class SelfTest
             orphan.RaiseEvent(new PointerEventArgs(InputElement.PointerEnteredEvent, orphan, mouse, orphan, new Point(), (ulong)Environment.TickCount,
                 new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.Other), KeyModifiers.None));
         });
+        // 5b. the same with the real boxes: take each small canvas on the main screen out of its parent, send it PointerEntered / PointerExited
+        // (every hover handler runs on a control that left the tree), then put it back. This is what hit equations19 a second time (MakeBoxItemWithExtraDecorations).
+        guard("hover on real boxes that left the tree", () =>
+        {
+            var tested = 0;
+            foreach (var c in descendants(win).OfType<Canvas>().Where(x => x.Bounds.Width >= 20 && x.Bounds.Width <= 80 && x.Bounds.Height >= 20 && x.Bounds.Height <= 80).ToList())
+            {
+                if (!(c.Parent is Panel p)) continue;
+                var idx = p.Children.IndexOf(c);
+                if (idx < 0) continue;
+                p.Children.RemoveAt(idx);
+                try
+                {
+                    foreach (var ev in new[] { InputElement.PointerEnteredEvent, InputElement.PointerExitedEvent })
+                        c.RaiseEvent(new PointerEventArgs(ev, c, mouse, c, new Point(), (ulong)Environment.TickCount, new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.Other), KeyModifiers.None));
+                    tested++;
+                }
+                finally { p.Children.Insert(idx, c); }
+            }
+            log($"hover on real boxes that left the tree: {tested} boxes tried");
+            if (tested < 20) fail($"hover on real boxes: only {tested} boxes found to try");
+        });
         log($"hover on a removed box checked ({failures} failures so far)");
 
         closeExtraWindows();

@@ -148,6 +148,7 @@ let mutable RaceModeNoticeHidden = Bool(false)   // "Do not show this again" on 
 let mutable ShowBroadcastWindow = Bool(false)
 let mutable BroadcastWindowSize = 3
 let mutable BroadcastWindowIncludesOverworldMagnifier = Bool(false)
+let mutable ArchipelagoSupport = Bool(false)   // the cross-platform tracker offers the AP Item (an Archipelago multiworld item that belongs to another world) in its item and tile menus
 let mutable UseOldSwordIcons = Bool(false)   // the cross-platform tracker draws the plain old sword pictures (wood, white, magical, and a checkered 4th) instead of the numbered overworld sword icons; read at startup
 let mutable SmallerAppWindow = Bool(false)
 let mutable RememberStartupSelection = Bool(false)   // start screen: remember the Startup Options / ZORA Extras checkboxes between runs
@@ -297,6 +298,7 @@ type ReadWrite() =
     member val ShowBroadcastWindow = false with get,set
     member val BroadcastWindowSize = 3 with get,set
     member val BroadcastWindowIncludesOverworldMagnifier = false with get,set
+    member val ArchipelagoSupport = false with get,set
     member val UseOldSwordIcons = false with get,set
     member val SmallerAppWindow = false with get,set
     member val RememberStartupSelection = false with get,set
@@ -452,6 +454,7 @@ let private writeImpl(filename) =
     data.ShowBroadcastWindow <- ShowBroadcastWindow.Value
     data.BroadcastWindowSize <- BroadcastWindowSize
     data.BroadcastWindowIncludesOverworldMagnifier <- BroadcastWindowIncludesOverworldMagnifier.Value
+    data.ArchipelagoSupport <- ArchipelagoSupport.Value
     data.UseOldSwordIcons <- UseOldSwordIcons.Value
     data.SmallerAppWindow <- SmallerAppWindow.Value
     data.RememberStartupSelection <- RememberStartupSelection.Value
@@ -620,6 +623,7 @@ let private read(filename) =
         ShowBroadcastWindow.Value <- data.ShowBroadcastWindow
         BroadcastWindowSize <- max 1 (min 3 data.BroadcastWindowSize)
         BroadcastWindowIncludesOverworldMagnifier.Value <- data.BroadcastWindowIncludesOverworldMagnifier
+        ArchipelagoSupport.Value <- data.ArchipelagoSupport
         UseOldSwordIcons.Value <- data.UseOldSwordIcons
         SmallerAppWindow.Value <- data.SmallerAppWindow
         RememberStartupSelection.Value <- data.RememberStartupSelection

@@ -261,10 +261,13 @@ module ITEMS =
         "CustomIcon14" , 27
         "CustomIcon15" , 27
         "CustomIcon16" , 27
+        // an Archipelago multiworld item (one that belongs to another world): marks a checked location, counts toward nothing, and can be placed any number of times (id 46)
+        "APItem" , 1000
         |]
     let NumBuiltIn = 30
     let CUSTOM_BASE = 30
     let CUSTOM_COUNT = 16
+    let APITEM = CUSTOM_BASE + CUSTOM_COUNT   // 46
     let customNames : string[] = Array.init CUSTOM_COUNT (fun i -> sprintf "Custom icon %d" (i+1))
     let mutable customMenuCount = 0   // how many custom icons the menus currently offer (0 when the option is off)
     let BOOKSHIELD = 0
@@ -331,6 +334,7 @@ module ITEMS =
         | 28 -> "bomb upgrade"
         | 29 -> "triforce"
         | n when n >= CUSTOM_BASE && n < CUSTOM_BASE + CUSTOM_COUNT -> customNames.[n - CUSTOM_BASE]
+        | 46 -> "AP Item"
         | _ -> failwith "bad ITEMS id"
     let AsHotKeyName(n) =
         if n>=0 && n<itemNamesAndCounts.Length then
@@ -370,6 +374,7 @@ module ITEMS =
         | 28 -> "Bomb Upgrade"
         | 29 -> "Triforce Piece"
         | n when n >= CUSTOM_BASE && n < CUSTOM_BASE + CUSTOM_COUNT -> customNames.[n - CUSTOM_BASE]
+        | 46 -> "AP Item"
         | _ -> failwith "bad ITEMS id"
 let allItemWithHeartShuffleChoiceDomain = ChoiceDomain("allItemsWithHeartShuffle", ITEMS.itemNamesAndCounts |> Array.map snd)
 

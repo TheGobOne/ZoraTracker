@@ -154,6 +154,7 @@ public static class CustomComboBoxes
             case 28: return Graphics.ws_ms_bomb_upgrade_bmp;
             case 29: return Graphics.triforce_item_bmp;
             case var n when n >= 30 && n < 46: return Graphics.customItemBmps[n - 30];
+            case 46: return Graphics.ap_item_bmp;   // the AP Item
             default:
                 if (timelineOrigin != null)
                 {
@@ -1645,18 +1646,23 @@ public static class CustomComboBoxes
             TrackerModel.ITEMS.BLUEPOTION, TrackerModel.ITEMS.LETTER, TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.ITEMS.TRIFORCE, -1,
             };
         // the user's custom icons (if that option is on) go in extra rows at the bottom; -2 pads out the last row with blank, unselectable cells
-        var emptyCellIdx = gridIdents0.Length - 1;
+        var emptyCellIdx = Array.IndexOf(gridIdents0, -1);   // (the clear cell is the -1 at the end of row 6, not the last cell now that row 7 follows)
         int[] make_gridIdents()
         {
             var nc = TrackerModel.ITEMS.customMenuCount;
             // a box that already holds a custom icon the menu no longer offers (option off / folder changed) still shows that icon as its current cell
             var stray = boxCellCurrent >= TrackerModel.ITEMS.CUSTOM_BASE && boxCellCurrent < TrackerModel.ITEMS.CUSTOM_BASE + TrackerModel.ITEMS.CUSTOM_COUNT && boxCellCurrent - TrackerModel.ITEMS.CUSTOM_BASE >= nc ? new[] { boxCellCurrent } : new int[0];
             var offered = Enumerable.Range(0, nc).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k).Concat(stray).ToArray();
-            if (offered.Length == 0) return gridIdents0;
+            // row 7: the AP Item (an Archipelago multiworld item that belongs to another world; it can be placed any number of times), when Archipelago Support is on
+            // (or when the box already holds one); -2 pads the row with blank cells
+            var withAp = TrackerModelOptions.ArchipelagoSupport.Value || boxCellCurrent == TrackerModel.ITEMS.APITEM
+                ? gridIdents0.Concat(new[] { TrackerModel.ITEMS.APITEM, -2, -2, -2, -2 }).ToArray()
+                : gridIdents0;
+            if (offered.Length == 0) return withAp;
             else
             {
                 var padded = ((offered.Length + 4) / 5) * 5;
-                return gridIdents0.Concat(Enumerable.Range(0, padded).Select(k => (k < offered.Length ? offered[k] : -2))).ToArray();
+                return withAp.Concat(Enumerable.Range(0, padded).Select(k => (k < offered.Length ? offered[k] : -2))).ToArray();
             }
         }
         var gridIdents = make_gridIdents();

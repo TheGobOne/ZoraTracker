@@ -1373,6 +1373,16 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
+        cb3 = new CheckBox { Content = new TextBox { Text = "Archipelago Support", IsReadOnly = true } };
+        cb3.IsChecked = TrackerModelOptions.ArchipelagoSupport.Value;
+        Graphics.onChecked(cb3, () => { TrackerModelOptions.ArchipelagoSupport.Value = true; DrawingLayer.applyArchipelagoSupport(); });
+        Graphics.onUnchecked(cb3, () => { TrackerModelOptions.ArchipelagoSupport.Value = false; DrawingLayer.applyArchipelagoSupport(); });
+        var apOptionCB = cb3;
+        DrawingLayer.ArchipelagoSupportChanged += () => { if (apOptionCB.IsChecked != TrackerModelOptions.ArchipelagoSupport.Value) apOptionCB.IsChecked = TrackerModelOptions.ArchipelagoSupport.Value; };
+        ToolTip.SetTip(cb3, "For Archipelago multiworld games: adds the AP Item, a gem for an item that belongs to another world,\nto the item-box menus and the overworld tile menu. Place it as many times as you need to mark checked locations.");
+        setToolTipShowDuration(cb3, 10000);
+        options3sp.Children.Add(cb3);
+
         cb3 = new CheckBox { Content = new TextBox { Text = "Use old sword icons", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.UseOldSwordIcons.Value;
         Graphics.onChecked(cb3, () => TrackerModelOptions.UseOldSwordIcons.Value = true);
