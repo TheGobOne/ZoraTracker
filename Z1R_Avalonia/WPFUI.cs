@@ -5777,6 +5777,8 @@ public static class WPFUI
                 SaveAndLoad.lastKnownFlags = data.Flags;
                 SaveAndLoad.seedAndFlagsUpdated.Trigger(null);
             }
+            SaveAndLoad.lastKnownZoraFlags = data.ZoraFlags ?? "";
+            SaveAndLoad.lastKnownZoraVersion = data.ZoraVersion ?? "";
             // Timeline
             if (data.OverworldSpotsRemainingOverTime != null)
                 for (int i = 0; i <= (data.OverworldSpotsRemainingOverTime.Length / 2) - 1; i++)

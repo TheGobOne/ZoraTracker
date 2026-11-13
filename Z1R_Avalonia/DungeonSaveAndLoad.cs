@@ -209,6 +209,8 @@ public static class DungeonSaveAndLoad
         public bool ShouldInitiallyHideOverworldMap { get; set; } = false;
         public string Seed { get; set; } = "";
         public string Flags { get; set; } = "";
+        public string ZoraVersion { get; set; } = "";
+        public string ZoraFlags { get; set; } = "";
         public int[] OverworldSpotsRemainingOverTime { get; set; } = null;
         public SaveAndLoad.TimelineDatum[] Timeline { get; set; } = null;
     }

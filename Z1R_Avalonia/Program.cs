@@ -2577,6 +2577,7 @@ public static class Program
                         if (err != null) lines.Add("ZORA flags: " + err);
                         else
                         {
+                            SaveAndLoad.lastKnownZoraFlags = zora;
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
                                         || z.Progressive;

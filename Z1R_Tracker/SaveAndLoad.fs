@@ -375,6 +375,10 @@ type SaveType =
     | AutoSave       // each time a minute has passed
 
 let mutable lastKnownSeed, lastKnownFlags = "", ""
+/// The ZORA flag string pasted on the startup screen or read from a loaded save (empty = none)
+let mutable lastKnownZoraFlags = ""
+/// The ZORA release (such as "2.0.0") a loaded save was made for; only a save file carries it, so a paste leaves it empty
+let mutable lastKnownZoraVersion = ""
 let seedAndFlagsUpdated = new Event<_>()
 let seedAndFlagsRegex = new System.Text.RegularExpressions.Regex("_(\d+)_([a-zA-Z0-9!]+)", System.Text.RegularExpressions.RegexOptions.None)
 let MaybePollSeedAndFlags() =
@@ -483,6 +487,10 @@ let BuildSaveLines(notesText:string, selectedDungeonTab:int, dungeonModelsJsonLi
             yield sprintf """    "Seed": "%s",""" lastKnownSeed
         if lastKnownFlags <> "" then
             yield sprintf """    "Flags": "%s",""" lastKnownFlags
+        if lastKnownZoraVersion <> "" then
+            yield sprintf """    "ZoraVersion": "%s",""" lastKnownZoraVersion
+        if lastKnownZoraFlags <> "" then
+            yield sprintf """    "ZoraFlags": "%s",""" lastKnownZoraFlags
         // write the timeline 'pretty' at the bottom of the file, for people who want to easily see/parse splits
         let flat = [| for x,y in TrackerModel.timelineDataOverworldSpotsRemain do 
                         yield x
