@@ -88,7 +88,6 @@ public static class CoopTest
             if (l.Contains("\"Timeline\": [")) break;   // (the timeline is last: its times differ, so it and the rest are left out)
             if (l.Contains("\"TimeInSeconds\"") || l.Contains("\"DungeonTabSelected\"") || l.Contains("\"OverworldSpotsRemainingOverTime\"") || l.Contains("\"CurrentRecorderDestinationIndex\""))
                 continue;
-            if (l.TrimStart().StartsWith("\"Notes\":")) continue;   // (whether notes sync is not decided yet: they are compared on their own, as INFO, see notesLine)
             keep.Add(l);
         }
         return string.Join("\n", keep);

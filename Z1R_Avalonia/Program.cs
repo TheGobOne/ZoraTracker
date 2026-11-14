@@ -676,6 +676,9 @@ public static class Program
                 {
                     if (senderId != me && senderId == target)
                     {
+                        // (a partner just heard from for the first time pings back at once, so both dots turn green without waiting for the 15 s ping)
+                        if (CoopSync.notePartnerSeen(msgType == "Ping"))
+                            Dispatcher.UIThread.Post(CoopSync.sendPing);
                         if (CoopSync.alreadyReceived(msgType, payloadJson))
                             TrackerModelOptions.DebugConfig.Log($"[Sync] Ignored duplicate message from {senderId}");
                         else
@@ -1359,6 +1362,37 @@ public static class Program
                                     }
                                     break;
 
+                                case "Ping":
+                                    break;   // (only says the partner is there: see notePartnerSeen above)
+
+                                case "Notes":
+                                    try
+                                    {
+                                        var notes = JsonConvert.DeserializeObject<CoopSync.NotesMessage>(payloadJson);
+                                        Dispatcher.UIThread.Post(() => CoopSync.receiveNotes(notes, senderId, timestamp));
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to apply Notes: {ex.Message}");
+                                    }
+                                    break;
+
+                                case "StartupOptions":
+                                    try
+                                    {
+                                        var opts = JsonConvert.DeserializeObject<CoopSync.StartupOptions>(payloadJson);
+                                        Dispatcher.UIThread.Post(() => CoopSync.applyStartupOptions(opts));
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to read StartupOptions: {ex.Message}");
+                                    }
+                                    break;
+
+                                case "StartupOptionsRequest":
+                                    Dispatcher.UIThread.Post(CoopSync.sendStartupOptions);
+                                    break;
+
                                 case "StateHello":
                                     try
                                     {
@@ -1429,6 +1463,7 @@ public static class Program
             // The negotiate URL of the live connection, or null while co-op is off. Saving the co-op settings turns co-op on again each time;
             // a working connection is only replaced when co-op was off or the URL changed (a needless reconnect lost the messages sent meanwhile).
             string connectedNegotiateUrl = null;
+            CoopSync.startPingLoop();
             if ((TrackerModelOptions.CoopSyncOptions.GetEnableCoop()))
             {
                 connectedNegotiateUrl = TrackerModelOptions.CoopSyncOptions.NegotiateUrl();
@@ -2081,6 +2116,39 @@ public static class Program
             // 'Remember startup selection' (Other options): bring back the checkboxes that were checked when the last game was started
             var rememberedCheckBoxes = new List<(string, CheckBox)> {
                 ("legacy", lmcb), ("hdn", hdcb), ("mirror", mocb), ("bomb", mbcb), ("4th", fscb), ("cln", clncb), ("boots", brcb), ("epb", epbcb), ("erb", erbcb), ("dw", dwcb), ("lh", lhcb), ("prog", pricb) };
+            // the co-op host's start screen choices, when a partner has already started (see CoopSync.StartupOptions); the quest button is highlighted further down
+            var coopOptionsNote = new TextBox { IsReadOnly = true, IsVisible = false, Padding = new Thickness(5.0), Width = WIDTH/2.0, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
+                                                Foreground = Brushes.LimeGreen, Background = Brushes.Black, BorderBrush = Brushes.LimeGreen, BorderThickness = new Thickness(1.0) };
+            coopOptionsNote.Focusable = false;
+            coopOptionsNote.FontSize = 12.0;
+            foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled" }) coopOptionsNote.Resources[k] = Brushes.Black;
+            Canvas.SetLeft(coopOptionsNote, (WIDTH_SANS_CHROME - coopOptionsNote.Width) / 2.0);
+            Canvas.SetTop(coopOptionsNote, 216.0);
+            startupOptionsCanvas.Children.Add(coopOptionsNote);
+            Action<int> highlightCoopQuest = null;   // (set once the start buttons exist)
+            var coopOptionsTaken = false;   // (only the first set is taken: a reconnect asks again, and must not undo what the player changed since)
+            void applyHostStartupOptions(CoopSync.StartupOptions o)
+            {
+                if (coopOptionsTaken || startButtonHasBeenClicked) return;   // (once Start is clicked, the run is reading these checkboxes)
+                coopOptionsTaken = true;
+                var keys = new HashSet<string>((o.Keys ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
+                var legacy = keys.Contains("legacy");
+                foreach (var (key, cb) in rememberedCheckBoxes)
+                {
+                    if (key == "cln") continue;   // (the custom LEVEL name is each player's own)
+                    if (legacy && extrasCheckBoxes.Contains(cb)) continue;   // (Legacy Mode keeps the ZORA Extras off: applyLegacyMode has cleared them)
+                    if (cb.IsThreeState && keys.Contains(key + "?")) cb.IsChecked = null;
+                    else cb.IsChecked = keys.Contains(key);
+                }
+                selectHeartMode(keys.Contains("full") ? 2 : keys.Contains("hsintra") ? 1 : 0);
+                setFourthLevel(keys.Contains("4th") && keys.Contains("4th9") ? 9 : 2);
+                highlightCoopQuest?.Invoke(o.Quest);
+                var questName = o.Quest >= 0 && o.Quest <= 3 ? new[] { "1st Quest", "2nd Quest", "Mixed - 1Q", "Mixed - 2Q" }[o.Quest] : null;
+                coopOptionsNote.Text = "Co-op partner started. Their options are checked here.\n"
+                                       + (questName != null ? $"Click {questName} (highlighted) to join." : "They used Other... (a custom map): use Other... too.");
+                coopOptionsNote.IsVisible = true;
+            }
+            CoopSync.startScreenOptionsHandler = applyHostStartupOptions;
             if (TrackerModelOptions.RememberStartupSelection.Value)
             {
                 var saved = new HashSet<string>(TrackerModelOptions.SavedStartupSelection.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
@@ -2180,7 +2248,9 @@ public static class Program
             async Task doStartup(int n, DungeonSaveAndLoad.AllData loadData)   // (loadData: null for None)
             {
                 // remember which startup checkboxes were checked (if the user asked for that)
-                if (loadData == null && TrackerModelOptions.RememberStartupSelection.Value)
+                CoopSync.hostStartupOptions = null;
+                CoopSync.startScreenOptionsHandler = null;   // (the run is starting: the checkboxes are being read)
+                if (loadData == null)
                 {
                     var keys = new List<string>();
                     foreach (var (key, cb) in rememberedCheckBoxes)
@@ -2190,10 +2260,15 @@ public static class Program
                     }
                     if (keys.Contains("4th") && fourthSwordLevel == 9) keys.Add("4th9");
                     switch (heartModeSelected()) { case 2: keys.Add("full"); break; case 1: keys.Add("hsintra"); break; default: break; }
-                    TrackerModelOptions.SavedStartupSelection = string.Join(",", keys);
-                    TrackerModelOptions.SavedCustomLevelName = (clnTextBox.Text ?? "").Trim().ToUpperInvariant();
-                    TrackerModelOptions.writeSettings();
+                    CoopSync.hostStartupOptions = new CoopSync.StartupOptions { Quest = n, Keys = string.Join(",", keys) };
+                    if (TrackerModelOptions.RememberStartupSelection.Value)
+                    {
+                        TrackerModelOptions.SavedStartupSelection = string.Join(",", keys);
+                        TrackerModelOptions.SavedCustomLevelName = (clnTextBox.Text ?? "").Trim().ToUpperInvariant();
+                        TrackerModelOptions.writeSettings();
+                    }
                 }
+                coopOptionsNote.IsVisible = false;
                 // loadData takes precedence over user selections
                 // (a loaded save restores whether it was Legacy Mode; older saves do not say, so they follow the start screen checkbox)
                 var legacyMode =
@@ -2678,6 +2753,13 @@ public static class Program
             randomizedQuestButton.Click += (_, _) => startButtonBehavior(3);   // 'Randomized quest' does exactly what 'Mixed - 2nd Quest Overworld' does; it's just its own entry
             // the six overworld choices sit in one block above the Startup Options and ZORA Extras columns (3 across, 2 rows)
             var popupButtons = new List<Button> { startButtons[0], startButtons[2], randomizedQuestButton, startButtons[1], startButtons[3], moreOptionsButton };
+            highlightCoopQuest = q =>
+            {
+                foreach (var b in new[] { startButtons[0], startButtons[1], startButtons[2], startButtons[3] }) b.Effect = null;
+                if (q >= 0 && q <= 3)
+                    startButtons[q].Effect = new DropShadowDirectionEffect { ShadowDepth = 0.0, BlurRadius = 24.0, Opacity = 1.0, Color = Colors.Orange };
+            };
+            CoopSync.requestStartupOptions();   // (co-op may already be on and connected)
             var owGrid = new UniformGrid { Columns = 3, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, 10.0, 0.0, 6.0) };
             foreach (var b in popupButtons)
             {

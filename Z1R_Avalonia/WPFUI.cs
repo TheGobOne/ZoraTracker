@@ -3774,7 +3774,7 @@ public static class WPFUI
         var racingLink = Layout.MakeLinkText("Z1R Racing Discord", "https://discord.gg/z1rracing", Layout.RacingLinkWidth);
         layout.AddKittyAndLogo(kitty, logoBorder, ztlogo, discordLink, racingLink);
         // the co-op dot: blue while connected to the relay, gray while connecting, hidden when co-op is off (updated from SyncManager.ConnectionStateChanged)
-        var coopDot = new Ellipse { Width = 20.0, Height = 20.0, Stroke = Brushes.Black, StrokeThickness = 2.0, IsHitTestVisible = false };
+        var coopDot = new Ellipse { Width = 20.0, Height = 20.0, Stroke = Brushes.Black, StrokeThickness = 2.0 };   // (hit-testable, so its tooltip shows)
         (kitty.Parent as Canvas)?.Children.Add(coopDot);
         void updateCoopDot()
         {
@@ -3782,11 +3782,13 @@ public static class WPFUI
             {
                 coopDot.IsVisible = TrackerModelOptions.CoopSyncOptions.GetEnableCoop();
                 var connected = SyncManager.IsConnected;
-                coopDot.Fill = connected ? Brushes.DodgerBlue : Brushes.Gray;
-                ToolTip.SetTip(coopDot, connected ? "Co-op: connected to the relay" : "Co-op: not connected to the relay");
+                var partner = connected && CoopSync.PartnerPresent;
+                coopDot.Fill = partner ? Brushes.LimeGreen : connected ? Brushes.DodgerBlue : Brushes.Gray;
+                ToolTip.SetTip(coopDot, partner ? "Co-op connected" : connected ? "Co-op: connected to the relay, waiting for your partner" : "Co-op: not connected to the relay");
             });
         }
         SyncManager.ConnectionStateChanged += updateCoopDot;
+        CoopSync.PartnerPresenceChanged += updateCoopDot;
         updateCoopDot();
         var zoraSiteLink = Layout.MakeLinkText("ZORA Site", "https://zora.gg/", Layout.DiscordLinkWidth);
         var racingSiteLink = Layout.MakeLinkText("Z1R Racing Site", "https://z1rracing.com/", Layout.RacingLinkWidth);

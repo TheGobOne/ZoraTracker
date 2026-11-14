@@ -800,6 +800,7 @@ public static class CoopSync
     private static readonly string[,] tileExtrasBaseline = new string[16, 8];
     private static int[] shopStashBaseline = new int[6];
     private static bool[] cheapKeyBaseline = new bool[6];
+    private static string boxTiersBaseline = "";   // (box tiers change without a box event when an overworld item is un-collected: the poll sends them)
 
     /// Records the current extras of every tile (and the shop stash) as known, so the poll only reports later changes. UI thread.
     public static void rebaselineTileExtras()
@@ -918,6 +919,12 @@ public static class CoopSync
                         cheapKeyBaseline = (bool[])TrackerModel.cheapKeyShops.Clone();
                         changedAny = true;
                     }
+                    var tiersNow = buildBoxTiers();
+                    if (tiersNow != boxTiersBaseline)
+                    {
+                        boxTiersBaseline = tiersNow;
+                        sendItemsUpdate(myConsoleId);   // (no noteLocalEdit: the un-collect that moved the tiers was already noted, and a partner's one must not count as ours)
+                    }
                     if (changedAny)
                     {
                         noteLocalEdit();
@@ -947,10 +954,11 @@ public static class CoopSync
             {
                 case "PlayerProgress": lastSentPlayerProgressJson = buildPlayerProgressJson(); break;
                 case "StartingItems": lastSentStartingItemsJson = buildStartingItemsJson(); break;
-                case "Items": lastSentHashes["Items"] = computeHash(buildItemsJson()); break;
+                case "Items": lastSentHashes["Items"] = computeHash(buildItemsJson()); boxTiersBaseline = buildBoxTiers(); break;
                 case "Blockers": lastSentHashes["Blockers"] = computeHash(buildBlockersJson()); break;
                 case "DungeonTriforce": lastSentHashes["DungeonTriforce"] = computeHash(buildTriforceJson()); break;
-                case "Overworld": lastSentOverworldJson = buildOverworldJson(); break;
+                case "Overworld": lastSentOverworldJson = buildOverworldJson(); boxTiersBaseline = buildBoxTiers(); break;
+                case "Notes": lastSentHashes["Notes"] = computeHash(buildNotesJson()); break;
             }
         }
         catch (Exception ex)
@@ -964,7 +972,7 @@ public static class CoopSync
     /// loadedTicks: for a loaded save, the save file's last write time (UTC ticks), used as its state time in the hello.
     public static void startupFinished(bool loadedSave, long loadedTicks = 0)
     {
-        foreach (var t in new[] { "PlayerProgress", "StartingItems", "Items", "Blockers", "DungeonTriforce", "Overworld" })
+        foreach (var t in new[] { "PlayerProgress", "StartingItems", "Items", "Blockers", "DungeonTriforce", "Overworld", "Notes" })
             rebaseline(t);
         try
         {
@@ -976,6 +984,9 @@ public static class CoopSync
         lock (stateLock) { hasState = loadedSave; stateTicks = loadedSave ? loadedTicks : 0; }
         startupBaselineDone = true;
         subscribeToOverworldExtrasChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId);   // (after the baseline: the loaded tiles are not sent as changes)
+        subscribeToNotesChanges();
+        startScreenOptionsHandler = null;
+        sendStartupOptions();
         sendStateHello(true);   // (a run that just started is joining the session)
     }
 
@@ -995,6 +1006,7 @@ public static class CoopSync
         sendDungeonTriforceUpdate(myConsoleId);
         sendOverworldUpdateDebounced(myConsoleId);
         sendDungeonMapsUpdate(myConsoleId);
+        sendNotesUpdate();
     }
 
     // The hello handshake, sent when a run starts and after every connect or reconnect (those hellos are "joining").
@@ -1050,6 +1062,184 @@ public static class CoopSync
             resetReceivedState();
             sendStateHello();   // our hello makes them send it (they decide by the same rule, so this ends)
         }
+    }
+
+    // ---- notes ----
+    // The notes box syncs as one whole text, sent half a second after the typing stops. Each text carries the time of its last keystroke,
+    // and both trackers keep the text with the later one (a tie goes to the lower console ID), so two players typing at once end up with the same notes.
+
+    public sealed class NotesMessage
+    {
+        public string Text { get; set; }
+        public long EditTicks { get; set; }   // UTC ticks of the last keystroke; 0 for notes not typed this run (loaded from Notes.txt)
+    }
+
+    public static bool isApplyingNotesFromSync = false;
+    private static bool notesSubscribed = false;
+    private static readonly Debouncer notesDebouncer = new Debouncer(500);
+    private static long notesEditTicks = 0;      // the edit time of the text in the box (ours, or the partner's once applied)
+    private static string lastAppliedNotes = null;
+
+    public static string buildNotesJson() =>
+        JsonConvert.SerializeObject(new NotesMessage { Text = OverworldItemGridUI.notesTextBox?.Text ?? "", EditTicks = notesEditTicks });
+
+    /// UI thread.
+    public static void sendNotesUpdate()
+    {
+        try
+        {
+            var json = buildNotesJson();
+            if (shouldSend("Notes", json)) trySend("Notes", json);
+        }
+        catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send Notes: {ex.Message}"); }
+    }
+
+    /// Once, after the run has started (the notes box exists then). UI thread.
+    public static void subscribeToNotesChanges()
+    {
+        var box = OverworldItemGridUI.notesTextBox;
+        if (notesSubscribed || box == null) return;
+        notesSubscribed = true;
+        box.TextChanged += (_, _) =>
+        {
+            if (isApplyingNotesFromSync) return;
+            if (lastAppliedNotes != null && box.Text == lastAppliedNotes) return;   // (the partner's text, if TextChanged is raised after the assignment)
+            lastAppliedNotes = null;
+            notesEditTicks = DateTime.UtcNow.Ticks;
+            noteLocalEdit();
+            notesDebouncer.Trigger(() => Dispatcher.UIThread.Post(sendNotesUpdate));
+        };
+    }
+
+    /// A partner's notes. UI thread.
+    public static void receiveNotes(NotesMessage m, string senderId, long timestamp)
+    {
+        var box = OverworldItemGridUI.notesTextBox;
+        if (box == null || m == null || m.Text == null) return;
+        bool theirsWins;
+        if (m.EditTicks != notesEditTicks)
+            theirsWins = m.EditTicks > notesEditTicks;
+        else if (m.EditTicks == 0)
+            theirsWins = true;   // (neither was typed this run: this is the partner's snapshot, which we take)
+        else
+            theirsWins = string.CompareOrdinal(senderId ?? "", TrackerModelOptions.CoopSyncOptions.MyConsoleId ?? "") < 0;
+        if (!theirsWins)
+        {
+            // ours is newer: make sure the partner gets it (it may have been sent before theirs arrived, or not sent yet)
+            if (box.Text != m.Text)
+            {
+                lastSentHashes.TryRemove("Notes", out _);
+                notesDebouncer.Trigger(() => Dispatcher.UIThread.Post(sendNotesUpdate));
+            }
+            return;
+        }
+        applyRemote(senderId, timestamp, () =>
+        {
+            notesEditTicks = m.EditTicks;
+            if (box.Text != m.Text)
+            {
+                var caret = box.CaretIndex;
+                isApplyingNotesFromSync = true;
+                try
+                {
+                    lastAppliedNotes = m.Text;
+                    box.Text = m.Text;
+                    box.CaretIndex = Math.Min(caret, m.Text.Length);
+                }
+                finally { isApplyingNotesFromSync = false; }
+            }
+            rebaseline("Notes");
+        });
+    }
+
+    // ---- partner presence (the green dot) ----
+    // Each tracker pings every 15 s while connected; the partner counts as there when it was heard from in the last 40 s.
+
+    private static long partnerSeenTicks = 0;   // UTC ticks
+    public static bool PartnerPresent => DateTime.UtcNow.Ticks - Interlocked.Read(ref partnerSeenTicks) < TimeSpan.FromSeconds(40.0).Ticks;
+    /// Raised on the UI thread when PartnerPresent changes.
+    public static event Action PartnerPresenceChanged;
+    private static bool lastReportedPresence = false;
+
+    private static void reportPresence()
+    {
+        var now = PartnerPresent;
+        if (now == lastReportedPresence) return;
+        lastReportedPresence = now;
+        PartnerPresenceChanged?.Invoke();
+    }
+
+    /// A message from the partner. Returns true when the partner was not counted as there before. Any thread.
+    /// Only a partner that pings counts: an older tracker never pings, so it stays blue instead of going green and back with each message.
+    private static volatile bool partnerPings = false;
+    public static bool notePartnerSeen(bool isPing)
+    {
+        if (isPing) partnerPings = true;
+        if (!partnerPings) return false;
+        var wasThere = PartnerPresent;
+        Interlocked.Exchange(ref partnerSeenTicks, DateTime.UtcNow.Ticks);
+        Dispatcher.UIThread.Post(reportPresence);   // (lastReportedPresence is only touched on the UI thread)
+        return !wasThere;
+    }
+
+    public static void sendPing()
+    {
+        if (!TrackerModelOptions.CoopSyncOptions.GetEnableCoop() || !SyncManager.IsConnected) return;
+        SyncManager.EnqueueSync("Ping", JsonConvert.SerializeObject(Guid.NewGuid().ToString()), TrackerModelOptions.CoopSyncOptions.MyConsoleId);
+    }
+
+    private static bool pingLoopStarted = false;
+    /// Once, when the window is set up (the start screen pings too). UI thread.
+    public static void startPingLoop()
+    {
+        if (pingLoopStarted) return;
+        pingLoopStarted = true;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15.0) };
+        timer.Tick += (_, _) => { sendPing(); reportPresence(); };
+        timer.Start();
+        SyncManager.ConnectionStateChanged += () => Dispatcher.UIThread.Post(() =>
+        {
+            if (SyncManager.IsConnected) { sendPing(); requestStartupOptions(); }
+            else { Interlocked.Exchange(ref partnerSeenTicks, 0); partnerPings = false; reportPresence(); }
+        });
+    }
+
+    // ---- startup options: the host's go to the client ----
+    // The host is the tracker that started its run first. It sends its start screen choices when its run starts and when a partner on the
+    // start screen asks. A partner still on the start screen takes them: its checkboxes are set and the host's overworld button is highlighted.
+    // (A tracker whose run has already started keeps its own options: they cannot change without restarting.)
+
+    public sealed class StartupOptions
+    {
+        public int Quest { get; set; }       // the start button: 0 1st Quest, 1 2nd Quest, 2 Mixed 1Q, 3 Mixed 2Q (others: no button to highlight)
+        public string Keys { get; set; }     // the start screen checkboxes, as in TrackerModelOptions.SavedStartupSelection
+        public string Nonce { get; set; }
+    }
+
+    /// Set when a new run starts (null for a loaded save, whose options come from the file).
+    public static StartupOptions hostStartupOptions = null;
+    /// Set by the start screen while it is up; cleared when the run starts. UI thread.
+    public static Action<StartupOptions> startScreenOptionsHandler = null;
+
+    public static void sendStartupOptions()
+    {
+        var o = hostStartupOptions;
+        if (o == null || !startupBaselineDone || !TrackerModelOptions.CoopSyncOptions.GetEnableCoop() || !SyncManager.IsConnected) return;
+        var msg = new StartupOptions { Quest = o.Quest, Keys = o.Keys, Nonce = Guid.NewGuid().ToString() };
+        SyncManager.EnqueueSync("StartupOptions", JsonConvert.SerializeObject(msg), TrackerModelOptions.CoopSyncOptions.MyConsoleId);
+    }
+
+    public static void requestStartupOptions()
+    {
+        if (startupBaselineDone || startScreenOptionsHandler == null || !TrackerModelOptions.CoopSyncOptions.GetEnableCoop() || !SyncManager.IsConnected) return;
+        SyncManager.EnqueueSync("StartupOptionsRequest", JsonConvert.SerializeObject(Guid.NewGuid().ToString()), TrackerModelOptions.CoopSyncOptions.MyConsoleId);
+    }
+
+    /// The host's options. UI thread.
+    public static void applyStartupOptions(StartupOptions o)
+    {
+        if (o == null || startupBaselineDone) return;
+        startScreenOptionsHandler?.Invoke(o);
     }
 
     public static string buildItemsJson()
@@ -1394,6 +1584,7 @@ public static class CoopSync
     {
         lastSentHashes.TryRemove("Items", out _);
         sendItemsUpdate(myConsoleId);
+        boxTiersBaseline = buildBoxTiers();
     }
 
 
