@@ -2856,6 +2856,7 @@ public static class Program
                         z1rBox.Text = z1r;
                         zoraBox.Text = zora;
                         lines.Add($"File name read: ZORA {named.Version}, seed {named.Seed}{(named.Music ? ", random music" : "")}");
+                        if (zora == "") lines.Add("The name has no ZORA flags (the site leaves them out when every ZORA flag is at its default), so every ZORA Extra was set to Off.");
                         var newer = FlagPaste.newerReleaseWarning(named.Version);
                         if (newer != null) lines.Add(newer);
                     }
@@ -2961,9 +2962,10 @@ public static class Program
                         Dispatcher.UIThread.Post(() => doApply(), DispatcherPriority.Background);
                     };
                 }
-                // a seed file (.nes, .spoiler.txt or .tracker.json) dropped on the dialog: its name holds both flag strings
+                // a seed file (.nes, .spoiler.txt or .tracker.json) dropped on the dialog: its name holds both flag strings.
+                // A tracker file whose name holds no flags (ZORA 2.0.0 named them zora-<version>-seed-<seed>-tracker.json) is read instead: its ZoraFlags gives the ZORA string.
                 DragDrop.SetAllowDrop(dialog, true);
-                DragDrop.AddDropHandler(dialog, (_, ea) =>
+                DragDrop.AddDropHandler(dialog, async (_, ea) =>
                 {
                     try
                     {
@@ -2971,10 +2973,30 @@ public static class Program
                         var file = ea.Data.GetFiles()?.FirstOrDefault();
 #pragma warning restore CS0618
                         if (file == null) return;
-                        z1rBox.Text = file.Name;
-                        zoraBox.Text = "";
-                        doApply();
                         ea.Handled = true;
+                        if (FlagPaste.parseFileName(file.Name) != null || !file.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || file is not Avalonia.Platform.Storage.IStorageFile sf)
+                        {
+                            z1rBox.Text = file.Name;
+                            zoraBox.Text = "";
+                            doApply();
+                            return;
+                        }
+                        string text;
+                        await using (var st = await sf.OpenReadAsync())
+                        using (var rd = new System.IO.StreamReader(st))
+                            text = await rd.ReadToEndAsync();
+                        string flags = null;
+                        try { flags = (string)Newtonsoft.Json.Linq.JObject.Parse(text)["ZoraFlags"]; } catch { }
+                        if (flags == null)
+                        {
+                            result.Text = "That tracker file holds no ZORA flags (the ZORA site's starter files from before 2.0.1 don't). Paste the flag strings instead.";
+                            result.IsVisible = true;
+                            return;
+                        }
+                        z1rBox.Text = "";
+                        zoraBox.Text = flags;
+                        if (doApply() && flags == "") { result.Text = "ZORA flags read from the tracker file: every ZORA flag is at its default."; }
+                        result.Text += "\n(A tracker file holds only the ZORA flags: paste the Z1R flags too, or drop the seed's .nes.)";
                     }
                     catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[PasteFlags] drop failed: {ex.Message}"); }
                 });
