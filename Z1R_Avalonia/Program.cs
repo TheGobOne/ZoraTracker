@@ -107,7 +107,7 @@ public static class Program
             // in debug mode, do not register hotkeys, as I need e.g. F10 to work to use the debugger!
 #else
             // (--selftest / --dump runs must not take F5 / F10 away from the user system-wide)
-            if (SelfTest.isSelfTest || LoadDump.isActive) return;
+            if (SelfTest.isSelfTest || LoadDump.isActive || CoopTest.isActive) return;
             if (!(Winterop.RegisterHotKey(this, Winterop.HOTKEY_ID, MOD_NONE, (uint)VK_F10)))
             {
                 // handle error
@@ -485,7 +485,7 @@ public static class Program
                 handle(ex);
                 e.Handled = true;
                 finishCrashInfo();
-                if (SelfTest.isSelfTest || LoadDump.isActive)
+                if (SelfTest.isSelfTest || LoadDump.isActive || CoopTest.isActive)
                 {
                     // (headless runs: nobody is there to read a window; the crash log has it)
                 }
@@ -518,7 +518,7 @@ public static class Program
                         finishCrashInfo();
                         break;
                 }
-                if (SelfTest.isSelfTest || LoadDump.isActive) { }
+                if (SelfTest.isSelfTest || LoadDump.isActive || CoopTest.isActive) { }
                 else if (Platform.GetConsoleWindow() == IntPtr.Zero)
                     showCrashDialog(null, true);   // (blocks: the process ends when this handler returns)
                 else
@@ -528,6 +528,11 @@ public static class Program
             HotKeys.PopulateHotKeyTables();
             var settingsWereSuccessfullyRead = false;
             TrackerModelOptions.settingsDirectory = Platform.UserDataDir();   // (the program's own folder on Windows, as WPF; a writable per-user folder on macOS/Linux)
+            if (CoopTest.isActive)   // (each side of the co-op test keeps its own settings, so two copies never write the same file)
+            {
+                TrackerModelOptions.settingsDirectory = CoopTest.settingsDir;
+                Directory.CreateDirectory(CoopTest.settingsDir);
+            }
             TrackerModelOptions.readSettings();
             settingsWereSuccessfullyRead = true;
             Z1R_SharedInterop.TrackerOptionsBridge.Initialize(
@@ -788,6 +793,9 @@ public static class Program
                                                 {
                                                     CoopSync.isApplyingItemsFromSync = false;
                                                 }
+                                                // the tier each progressive box was collected at (after the boxes: their change handlers note a tier of their own)
+                                                try { CoopSync.applyBoxTiers(data.ProgressiveBoxTiers, b => CoopSync.boxEditedAfter(b, timestamp)); }
+                                                catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not apply the box tiers: {ex.Message}"); }
                                                 if (keptLocalBox)
                                                     CoopSync.resendItems(TrackerModelOptions.CoopSyncOptions.MyConsoleId);   // (they built this before our edit: make sure they get it)
                                                 else
@@ -866,7 +874,10 @@ public static class Program
                                             // (a message without a Quest, e.g. from the WPF tracker, is applied as before)
                                             var theirQuest = (string)Newtonsoft.Json.Linq.JObject.Parse(payloadJson)["Quest"];
                                             var ourQuest = Dispatcher.UIThread.Invoke(() => CoopSync.currentOverworldQuest());
-                                            if (theirQuest != null && theirQuest != ourQuest)
+                                            // (the extras below come as raw JSON: SaveAndLoad.Overworld has no field for them)
+                                            var tileExtras = (Newtonsoft.Json.Linq.JObject.Parse(payloadJson)["TileExtras"] as Newtonsoft.Json.Linq.JArray)?.Select(t => (string)t).ToArray();
+                                            if (tileExtras != null && tileExtras.Length != 128) tileExtras = null;
+                                            if (theirQuest != null && theirQuest != "-1" && theirQuest != ourQuest)
                                             {
                                                 Console.WriteLine($"[Sync] Skipped Overworld update from {senderId}: they are on overworld quest {theirQuest}, this tracker is on {ourQuest}");
                                                 break;
@@ -875,6 +886,7 @@ public static class Program
                                             {
                                                 CoopSync.isApplyingOverworldFromSync = true;
                                                 var keptLocalTile = false;
+                                                var extrasChanged = new List<(int, int)>();
                                                 try
                                                 {
                                                     TrackerModel.MirrorOverworld = data.MirrorOverworld;
@@ -910,7 +922,7 @@ public static class Program
                                                                 if (CoopSync.tileEditedAfter(i, j, timestamp))
                                                                 {
                                                                     // we changed this tile after they built the message: keep ours and send it again below
-                                                                    if (TrackerModel.overworldMapMarks[i, j].Current() != cur) keptLocalTile = true;
+                                                                    if (TrackerModel.overworldMapMarks[i, j].Current() != cur || (tileExtras != null && tileExtras[j * 16 + i] != CoopSync.tileExtrasOf(i, j))) keptLocalTile = true;
                                                                     continue;
                                                                 }
                                                                 try
@@ -925,6 +937,12 @@ public static class Program
                                                                     TrackerModel.overworldMapCircles[i, j] = circ;
                                                                 }
                                                                 catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not set tile ({i},{j}): {ex.Message}"); }
+                                                                // the tile's marker icons, bomb dropper, price and the rest (older trackers send none: left as they are)
+                                                                try
+                                                                {
+                                                                    if (tileExtras != null && CoopSync.applyTileExtras(i, j, tileExtras[j * 16 + i])) extrasChanged.Add((i, j));
+                                                                }
+                                                                catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not set the extras of tile ({i},{j}): {ex.Message}"); }
                                                             }
                                                     }
                                                 }
@@ -932,6 +950,12 @@ public static class Program
                                                 {
                                                     CoopSync.isApplyingOverworldFromSync = false;
                                                 }
+                                                try
+                                                {
+                                                    CoopSync.applyShopGlobals(data.ShopStash, data.CheapKeyShops);
+                                                    CoopSync.finishTileExtras(extrasChanged);
+                                                }
+                                                catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not finish the overworld extras: {ex.Message}"); }
                                                 if (keptLocalTile)
                                                     CoopSync.resendOverworld(TrackerModelOptions.CoopSyncOptions.MyConsoleId);   // (they built this before our edit: make sure they get it)
                                                 else
@@ -1315,6 +1339,9 @@ public static class Program
                                                         TrackerModel.setOverworldMapExtraData(data.X, data.Y, edKey, data.ExtraData);
                                                     }
                                                     TrackerModel.overworldMapCircles[data.X, data.Y] = data.CircleValue;
+                                                    // the tile's marker icons, bomb dropper, price and the rest (older trackers send none: left as they are)
+                                                    if (data.Extras != null && CoopSync.applyTileExtras(data.X, data.Y, data.Extras))
+                                                        CoopSync.finishTileExtras(new List<(int, int)> { (data.X, data.Y) });
                                                 }
                                                 finally
                                                 {
@@ -3293,7 +3320,7 @@ public static class Program
         using var mutex = new Mutex(false, thisExeName);
         void killAnyZombieHosts()
         {
-            if (SelfTest.isSelfTest || LoadDump.isActive) return;   // (a test run must not kill the host of someone's real co-op session)
+            if (SelfTest.isSelfTest || LoadDump.isActive || CoopTest.isActive) return;   // (a test run must not kill the host of someone's real co-op session)
             // (only hosts started from this app's folder: another ZORATracker install may be running a live co-op session with its own host)
             var procs = Process.GetProcessesByName("Z1R_SignalRHost");
             foreach (var p in procs)
@@ -3390,6 +3417,7 @@ public class ZoraTrackerApp : Application
         {
             if (LoadDump.isActive) LoadDump.arm();
             if (SelfTest.isSelfTest) SelfTest.arm();   // (WPF arms it before app.Run; here Avalonia's dispatcher only exists once the app is running)
+            if (CoopTest.isActive) CoopTest.arm();   // (two-tracker co-op test: see CoopTest.cs)
             Program.theDummyWindow = new Program.DummyWindow(d);
             d.Exit += (_, _) => Program.stopLocalSignalRHost();
             Dispatcher.UIThread.Post(() => Program.theDummyWindow.Loaded());

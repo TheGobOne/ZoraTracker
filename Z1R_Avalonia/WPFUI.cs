@@ -26,6 +26,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Z1R_Sync;
 using Microsoft.FSharp.Collections;
 using Microsoft.FSharp.Control;
 using Microsoft.FSharp.Core;
@@ -3772,6 +3773,21 @@ public static class WPFUI
         var discordLink = Layout.MakeDiscordLink(discordUrl);
         var racingLink = Layout.MakeLinkText("Z1R Racing Discord", "https://discord.gg/z1rracing", Layout.RacingLinkWidth);
         layout.AddKittyAndLogo(kitty, logoBorder, ztlogo, discordLink, racingLink);
+        // the co-op dot: blue while connected to the relay, gray while connecting, hidden when co-op is off (updated from SyncManager.ConnectionStateChanged)
+        var coopDot = new Ellipse { Width = 20.0, Height = 20.0, Stroke = Brushes.Black, StrokeThickness = 2.0, IsHitTestVisible = false };
+        (kitty.Parent as Canvas)?.Children.Add(coopDot);
+        void updateCoopDot()
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                coopDot.IsVisible = TrackerModelOptions.CoopSyncOptions.GetEnableCoop();
+                var connected = SyncManager.IsConnected;
+                coopDot.Fill = connected ? Brushes.DodgerBlue : Brushes.Gray;
+                ToolTip.SetTip(coopDot, connected ? "Co-op: connected to the relay" : "Co-op: not connected to the relay");
+            });
+        }
+        SyncManager.ConnectionStateChanged += updateCoopDot;
+        updateCoopDot();
         var zoraSiteLink = Layout.MakeLinkText("ZORA Site", "https://zora.gg/", Layout.DiscordLinkWidth);
         var racingSiteLink = Layout.MakeLinkText("Z1R Racing Site", "https://z1rracing.com/", Layout.RacingLinkWidth);
         layout.AddExtraSiteLinks(zoraSiteLink, racingSiteLink);
@@ -3971,6 +3987,11 @@ public static class WPFUI
                 place(d, dTop);
                 Canvas.SetTop(kitty, zTop - kitty.Height - 1.0);
                 Canvas.SetLeft(kitty, cx - kitty.Width / 2.0);
+                if (coopDot != null)
+                {
+                    Canvas.SetLeft(coopDot, Canvas.GetLeft(kitty) + kitty.Width + 8.0);
+                    Canvas.SetTop(coopDot, Canvas.GetTop(kitty) + 9.0);
+                }
             }
         }
         foreach (var e in new[] { discordLink, zoraSiteLink })

@@ -61,6 +61,12 @@ if (tabChannel) {
     tabChannel.postMessage("hello");
 }
 
+// Avalonia cancels the browser's default action for keys it handles, which stopped F5 / Ctrl+F5 / Ctrl+R from reloading the page.
+// The web tracker has no use for those keys (global hotkeys are off here), so they are kept away from Avalonia and the browser reloads as usual.
+document.addEventListener("keydown", e => {
+    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"))) e.stopPropagation();
+}, true);
+
 const dotnetRuntime = await dotnet
     .withDiagnosticTracing(false)
     .withApplicationArgumentsFromQuery()

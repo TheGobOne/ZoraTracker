@@ -369,6 +369,24 @@ namespace Z1R_Sync
         /// Called (on a pool thread) after each successful connect or reconnect, so the app can resync with the partner.
         public static Action OnConnected;
 
+        /// The receive connection is up (used by the co-op test to wait for it).
+        public static bool IsConnected
+        {
+            get
+            {
+                var c = _connection;
+                return c != null && c.State == HubConnectionState.Connected;
+            }
+        }
+
+        /// Raised when the relay connection comes up, drops or is stopped (on whatever thread it happens; listeners marshal to the UI).
+        public static event Action ConnectionStateChanged;
+        private static void NotifyConnectionState()
+        {
+            try { ConnectionStateChanged?.Invoke(); }
+            catch (Exception ex) { Console.WriteLine($"[SyncManager] ConnectionStateChanged failed: {ex.Message}"); }
+        }
+
         public static async Task StartAsync(string negotiateUrl)
         {
             _wantConnected = true;
@@ -393,6 +411,7 @@ namespace Z1R_Sync
             {
                 var old = _connection;
                 _connection = null;
+                NotifyConnectionState();
                 if (old != null)
                 {
                     try { await old.DisposeAsync(); } catch (Exception) { }
@@ -405,6 +424,7 @@ namespace Z1R_Sync
         {
             try { OnConnected?.Invoke(); }
             catch (Exception ex) { Console.WriteLine($"[SyncManager] OnConnected failed: {ex.Message}"); }
+            NotifyConnectionState();
         }
 
         private static void StartReconnectLoop()
@@ -479,6 +499,7 @@ namespace Z1R_Sync
                         {
                             Console.WriteLine($"[SyncManager] Connection closed: {ex?.Message}");
                             StartReconnectLoop();
+                            NotifyConnectionState();
                         }
                         return Task.CompletedTask;
                     };

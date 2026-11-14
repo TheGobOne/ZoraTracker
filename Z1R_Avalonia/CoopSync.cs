@@ -101,6 +101,7 @@ public static class CoopSync
         public int ExtraData { get; init; }
         public int CircleValue { get; init; }
         public string Quest { get; init; }   // the sender's overworld quest (null from older trackers); a tile from another quest is skipped
+        public string Extras { get; init; }   // the tile's other state, see tileExtrasOf (null from older trackers: left as it is)
     }
 
 
@@ -227,6 +228,8 @@ public static class CoopSync
     /// Runs a partner's update with currentSyncSource set, so isCurrentlyApplyingRemoteUpdate() is true while it runs. Call it on the UI thread.
     public static void applyRemote(string senderId, long timestamp, Action apply)
     {
+        // a tile extras change made here less than a poll ago must be known (edit time, send) before a partner's state can overwrite it
+        detectLocalExtrasChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId);
         var saved = TrackerModelOptions.currentSyncSource;
         TrackerModelOptions.currentSyncSource = FSharpOption<string>.Some(senderId ?? "partner");
         try { apply(); }
@@ -753,12 +756,180 @@ public static class CoopSync
         return JsonConvert.SerializeObject(model);
     }
     // The overworld quest goes along with the map, so a partner on a different quest can skip it (the tile values mean other things there).
-    public static string currentOverworldQuest() => TrackerModel.owInstance.Quest.ToString();
+    // (the quest number as saves write it. The Overworld message used to put the quest's name in "Quest", which SaveAndLoad.Overworld reads
+    // as a number, so the receiver failed to read every full Overworld message.)
+    public static string currentOverworldQuest() => TrackerModel.owInstance.Quest.AsInt().ToString();
     public static string buildOverworldJson()
     {
-        var jo = Newtonsoft.Json.Linq.JObject.FromObject(createSerializableOverworldModel());
-        jo["Quest"] = currentOverworldQuest();
+        var model = createSerializableOverworldModel();
+        model.Quest = TrackerModel.owInstance.Quest.AsInt();
+        // the shop windows' stash and cheap key flags travel in the save's own fields
+        model.ShopStash = (int[])TrackerModel.shopStash.Clone();
+        model.CheapKeyShops = TrackerModel.cheapKeyShops.Select(b => b ? 1 : 0).ToArray();
+        var jo = Newtonsoft.Json.Linq.JObject.FromObject(model);
+        // each tile's other state (marker icons, bomb dropper, price, ...), row by row like Map; older trackers ignore it
+        var extras = new Newtonsoft.Json.Linq.JArray();
+        for (int j = 0; j <= 7; j++)
+            for (int i = 0; i <= 15; i++)
+                extras.Add(tileExtrasOf(i, j));
+        jo["TileExtras"] = extras;
         return jo.ToString(Formatting.None);
+    }
+
+    // ---- The state of an overworld tile beyond its icon value, extra data and circle ----
+    // (it changes without the tile's Changed event, so a poll finds the changes; see subscribeToOverworldExtrasChanges)
+    // Packed as "icons|bomb|price|hintColor|shuffledWoodSword|tiers|dups|circle":
+    //   icons: owSwordIcons, the marker icons with their collected checks and the SHOP n label; bomb: owBombDroppers (1/0);
+    //   price: overworldShopPrices (0 = none); hintColor: hintShopColors (-1 = none); shuffledWoodSword: shuffledWoodSwordTiles (1/0);
+    //   tiers: progressiveTileTier for this tile, "item:tier,..."; dups: WPFUI.dupLinks from this tile, "x:y,...";
+    //   circle: overworldMapCircles (also in Map, but a circle change fires no event: it is here so the poll finds it; older trackers send 7 fields).
+    public static string tileExtrasOf(int i, int j)
+    {
+        var key = Tuple.Create(i, j);
+        var icons = TrackerModel.owSwordIcons[i, j];
+        var bomb = TrackerModel.owBombDroppers[i, j] ? 1 : 0;
+        var price = TrackerModel.overworldShopPrices[i, j];
+        var hint = TrackerModel.hintShopColors.TryGetValue(key, out var h) ? h : -1;
+        var shuffled = TrackerModel.shuffledWoodSwordTiles.Contains(key) ? 1 : 0;
+        var tiers = string.Join(",", TrackerModel.progressiveTileTier.Where(kv => kv.Key.Item1 == i && kv.Key.Item2 == j)
+                                                                  .Select(kv => $"{kv.Key.Item3}:{kv.Value}").OrderBy(t => t, StringComparer.Ordinal));
+        var dups = WPFUI.dupLinks.TryGetValue((i, j), out var l) ? string.Join(",", l.Select(d => $"{d.Item1}:{d.Item2}").OrderBy(t => t, StringComparer.Ordinal)) : "";
+        return $"{icons}|{bomb}|{price}|{hint}|{shuffled}|{tiers}|{dups}|{TrackerModel.overworldMapCircles[i, j]}";
+    }
+
+    private static readonly string[,] tileExtrasBaseline = new string[16, 8];
+    private static int[] shopStashBaseline = new int[6];
+    private static bool[] cheapKeyBaseline = new bool[6];
+
+    /// Records the current extras of every tile (and the shop stash) as known, so the poll only reports later changes. UI thread.
+    public static void rebaselineTileExtras()
+    {
+        for (int i = 0; i <= 15; i++)
+            for (int j = 0; j <= 7; j++)
+                tileExtrasBaseline[i, j] = tileExtrasOf(i, j);
+        shopStashBaseline = (int[])TrackerModel.shopStash.Clone();
+        cheapKeyBaseline = (bool[])TrackerModel.cheapKeyShops.Clone();
+    }
+
+    /// Puts a partner's extras on one tile. Returns true when something changed (call finishTileExtras after a batch). UI thread, inside applyRemote.
+    public static bool applyTileExtras(int i, int j, string extras)
+    {
+        if (string.IsNullOrEmpty(extras) || extras == tileExtrasOf(i, j)) return false;
+        var p = extras.Split('|');
+        if (p.Length < 7) return false;
+        int num(string s, int d) => int.TryParse(s, out var v) ? v : d;
+        bool onMap(int x, int y) => x >= 0 && x <= 15 && y >= 0 && y <= 7;
+        var key = Tuple.Create(i, j);
+        TrackerModel.owSwordIcons[i, j] = num(p[0], -1);
+        TrackerModel.owBombDroppers[i, j] = p[1] == "1";
+        TrackerModel.overworldShopPrices[i, j] = Math.Max(0, num(p[2], 0));
+        var hint = num(p[3], -1);
+        if (hint >= 0) TrackerModel.hintShopColors[key] = hint; else TrackerModel.hintShopColors.Remove(key);
+        if (p[4] == "1") TrackerModel.shuffledWoodSwordTiles.Add(key); else TrackerModel.shuffledWoodSwordTiles.Remove(key);
+        foreach (var k in TrackerModel.progressiveTileTier.Keys.Where(k => k.Item1 == i && k.Item2 == j).ToList())
+            TrackerModel.progressiveTileTier.Remove(k);
+        foreach (var t in p[5].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var q = t.Split(':');
+            if (q.Length == 2 && int.TryParse(q[0], out var item) && int.TryParse(q[1], out var tier))
+                TrackerModel.progressiveTileTier[Tuple.Create(i, j, item)] = tier;
+        }
+        var dsts = new List<(int, int)>();
+        foreach (var t in p[6].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var q = t.Split(':');
+            if (q.Length == 2 && int.TryParse(q[0], out var x) && int.TryParse(q[1], out var y) && onMap(x, y) && (x, y) != (i, j) && !dsts.Contains((x, y)))
+                dsts.Add((x, y));
+        }
+        if (dsts.Count > 0) WPFUI.dupLinks[(i, j)] = dsts; else WPFUI.dupLinks.Remove((i, j));
+        if (p.Length >= 8) TrackerModel.overworldMapCircles[i, j] = num(p[7], TrackerModel.overworldMapCircles[i, j]);
+        tileExtrasBaseline[i, j] = tileExtrasOf(i, j);   // (a partner's state: the poll must not send it back)
+        return true;
+    }
+
+    /// The partner's shop stash and cheap key flags, from a full Overworld message (null arrays: older tracker, left alone). Returns true when they changed. UI thread.
+    public static bool applyShopGlobals(int[] stash, int[] cheapKeys)
+    {
+        var changed = false;
+        if (stash != null && stash.Length == 6)
+            for (int k = 0; k <= 5; k++)
+                if (TrackerModel.shopStash[k] != stash[k]) { TrackerModel.shopStash[k] = stash[k]; changed = true; }
+        if (cheapKeys != null && cheapKeys.Length == 6)
+            for (int k = 0; k <= 5; k++)
+                if (TrackerModel.cheapKeyShops[k] != (cheapKeys[k] == 1)) { TrackerModel.cheapKeyShops[k] = cheapKeys[k] == 1; changed = true; }
+        shopStashBaseline = (int[])TrackerModel.shopStash.Clone();
+        cheapKeyBaseline = (bool[])TrackerModel.cheapKeyShops.Clone();
+        if (changed) { try { PieMenus.cheapKeysChangedHook(); } catch (Exception) { } }
+        return changed;
+    }
+
+    /// After applying extras: recount what is collected on the map and redraw the changed tiles, as loading a save does. UI thread.
+    public static void finishTileExtras(List<(int, int)> changed)
+    {
+        if (changed.Count == 0) return;
+        WPFUI.rebuildMapCollected();
+        TrackerModel.recomputePlayerStateSummary();
+        WPFUI.decorStateChanged();
+        foreach (var (x, y) in changed)
+            WPFUI.redrawOwTileHook(x, y);
+    }
+
+    /// Polls for local changes to the tile extras and the shop stash (none of them fires an event) and sends them:
+    /// each changed tile as an OverworldTile message (so the conflict rules apply to it), and the full Overworld message.
+    private static bool extrasLoopStarted = false;
+    public static void subscribeToOverworldExtrasChanges(string myConsoleId)
+    {
+        if (extrasLoopStarted) return;
+        extrasLoopStarted = true;
+        rebaselineTileExtras();
+        async Task loop()
+        {
+            while (true)
+            {
+                await Task.Delay(500);
+                detectLocalExtrasChanges(myConsoleId);
+            }
+        }
+        CustomComboBoxes.StartImmediate(loop());
+    }
+
+    /// Finds tile extras (and shop stash) changes made here since the last look, records their edit times and sends them. UI thread.
+    public static void detectLocalExtrasChanges(string myConsoleId)
+    {
+        if (!extrasLoopStarted) return;
+        {
+            {
+                try
+                {
+                    var changedAny = false;
+                    for (int i = 0; i <= 15; i++)
+                        for (int j = 0; j <= 7; j++)
+                        {
+                            var now = tileExtrasOf(i, j);
+                            if (now == tileExtrasBaseline[i, j]) continue;
+                            tileExtrasBaseline[i, j] = now;
+                            changedAny = true;
+                            tileEditTicks[i, j] = DateTime.UtcNow.Ticks;   // (a local change: remote applies update the baseline themselves)
+                            sendTile(i, j);
+                        }
+                    if (!TrackerModel.shopStash.SequenceEqual(shopStashBaseline) || !TrackerModel.cheapKeyShops.SequenceEqual(cheapKeyBaseline))
+                    {
+                        shopStashBaseline = (int[])TrackerModel.shopStash.Clone();
+                        cheapKeyBaseline = (bool[])TrackerModel.cheapKeyShops.Clone();
+                        changedAny = true;
+                    }
+                    if (changedAny)
+                    {
+                        noteLocalEdit();
+                        sendOverworldUpdateDebounced(myConsoleId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    TrackerModelOptions.DebugConfig.Log($"[Sync] Overworld extras poll failed: {ex.Message}");
+                }
+            }
+        }
     }
     public static string buildDungeonMapsJson()
     {
@@ -804,6 +975,7 @@ public static class CoopSync
         lastSentTime = DateTime.Now;
         lock (stateLock) { hasState = loadedSave; stateTicks = loadedSave ? loadedTicks : 0; }
         startupBaselineDone = true;
+        subscribeToOverworldExtrasChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId);   // (after the baseline: the loaded tiles are not sent as changes)
         sendStateHello(true);   // (a run that just started is joining the session)
     }
 
@@ -905,8 +1077,50 @@ public static class CoopSync
                     return d;
                 }).ToArray();
 
+            // the tier each progressive item box was collected at, in the save's own format "boxname,tier;..." (older trackers send none)
+            model.ProgressiveBoxTiers = buildBoxTiers();
+
             return JsonConvert.SerializeObject(model);
         }
+    }
+
+    public static string buildBoxTiers()
+    {
+        try
+        {
+            return string.Join(";", SaveAndLoad.namedBoxes()
+                                               .Where(nb => TrackerModel.progressiveBoxTier.ContainsKey(nb.Item2))
+                                               .Select(nb => $"{nb.Item1},{TrackerModel.progressiveBoxTier[nb.Item2]}"));
+        }
+        catch (Exception) { return ""; }   // (before the dungeon tracker exists there are no named boxes)
+    }
+
+    /// A partner's box tiers (from an Items message). null: an older tracker, left alone. A box for which keepOurs is true keeps our tier.
+    /// UI thread, inside applyRemote, after the boxes themselves (their change handlers note a tier of their own).
+    public static void applyBoxTiers(string tiers, Func<object, bool> keepOurs)
+    {
+        if (tiers == null) return;
+        var byName = new Dictionary<string, TrackerModel.Box>();
+        foreach (var nb in SaveAndLoad.namedBoxes()) byName[nb.Item1] = nb.Item2;
+        var incoming = new Dictionary<TrackerModel.Box, int>();
+        foreach (var t in tiers.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var p = t.Split(',');
+            if (p.Length == 2 && byName.TryGetValue(p[0], out var b) && int.TryParse(p[1], out var tier))
+                incoming[b] = tier;
+        }
+        var changed = false;
+        foreach (var b in byName.Values)
+        {
+            if (keepOurs(b)) continue;
+            var had = TrackerModel.progressiveBoxTier.TryGetValue(b, out var old);
+            if (incoming.TryGetValue(b, out var tier))
+            {
+                if (!had || old != tier) { TrackerModel.progressiveBoxTier[b] = tier; changed = true; }
+            }
+            else if (had) { TrackerModel.progressiveBoxTier.Remove(b); changed = true; }
+        }
+        if (changed) TrackerModel.progressiveTierChanged.Trigger(null);   // (draw the boxes with their tiers)
     }
 
     public static bool isApplyingItemsFromSync = false;
@@ -1151,7 +1365,8 @@ public static class CoopSync
                     MapTileValue = cur,
                     ExtraData = ed,
                     CircleValue = circ,
-                    Quest = currentOverworldQuest()
+                    Quest = currentOverworldQuest(),
+                    Extras = tileExtrasOf(x, y)
                 };
 
                 var jsonPayload = JsonConvert.SerializeObject(update);

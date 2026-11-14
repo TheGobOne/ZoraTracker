@@ -1157,7 +1157,7 @@ public static class OptionsMenu
 
                     sp.Children.Add(urlLabel("Function App Base:"));
 
-                    var functionAppBaseBox = new TextBox { Text = TrackerModelOptions.CoopSyncOptions.FunctionAppBase };
+                    var functionAppBaseBox = new TextBox { Text = TrackerModelOptions.CoopSyncOptions.FunctionAppBase }; functionAppBaseBox.Foreground = Brushes.Orange; functionAppBaseBox.Background = Brushes.Black; functionAppBaseBox.CaretBrush = Brushes.Orange;
 
                     var functionAppBaseBorder = new Border
                     {
@@ -1227,7 +1227,7 @@ public static class OptionsMenu
 
 
                     sp.Children.Add(urlLabel("Negotiate Suffix:"));
-                    var negotiateUrlBox = new TextBox { Text = TrackerModelOptions.CoopSyncOptions.baseNegotiateUrl };
+                    var negotiateUrlBox = new TextBox { Text = TrackerModelOptions.CoopSyncOptions.baseNegotiateUrl }; negotiateUrlBox.Foreground = Brushes.Orange; negotiateUrlBox.Background = Brushes.Black; negotiateUrlBox.CaretBrush = Brushes.Orange;
                     negotiateUrlBox.HorizontalAlignment = HorizontalAlignment.Stretch;
                     negotiateUrlBox.TextAlignment = TextAlignment.Left;
                     var negotiateUrlBorder = new Border
@@ -1242,7 +1242,7 @@ public static class OptionsMenu
                     sp.Children.Add(negotiateUrlBorder);
 
                     sp.Children.Add(urlLabel("SyncUpdate Suffix:"));
-                    var syncUpdateUrlBox = new TextBox { Text = TrackerModelOptions.CoopSyncOptions.baseSyncUpdateUrl };
+                    var syncUpdateUrlBox = new TextBox { Text = TrackerModelOptions.CoopSyncOptions.baseSyncUpdateUrl }; syncUpdateUrlBox.Foreground = Brushes.Orange; syncUpdateUrlBox.Background = Brushes.Black; syncUpdateUrlBox.CaretBrush = Brushes.Orange;
                     syncUpdateUrlBox.HorizontalAlignment = HorizontalAlignment.Stretch;
                     syncUpdateUrlBox.TextAlignment = TextAlignment.Left;
                     var syncUpdateUrlBorder = new Border
@@ -1260,7 +1260,7 @@ public static class OptionsMenu
 
 
                     sp.Children.Add(new TextBox { Text = "Console ID (This instance):", IsReadOnly = true });
-                    var myIdBox = new TextBox();
+                    var myIdBox = new TextBox(); myIdBox.Foreground = Brushes.Orange; myIdBox.Background = Brushes.Black; myIdBox.CaretBrush = Brushes.Orange;
                     myIdBox.Text = TrackerModelOptions.CoopSyncOptions.MyConsoleId;
                     myIdBox.HorizontalAlignment = HorizontalAlignment.Stretch;
                     myIdBox.TextAlignment = TextAlignment.Center;
@@ -1289,7 +1289,7 @@ public static class OptionsMenu
                     sp.Children.Add(new DockPanel { Height = 10.0 });
 
                     sp.Children.Add(new TextBox { Text = "Target Console ID (to sync with):", IsReadOnly = true });
-                    var targetIdBox = new TextBox();
+                    var targetIdBox = new TextBox(); targetIdBox.Foreground = Brushes.Orange; targetIdBox.Background = Brushes.Black; targetIdBox.CaretBrush = Brushes.Orange;
                     targetIdBox.Text = TrackerModelOptions.CoopSyncOptions.TargetConsoleId;
                     targetIdBox.HorizontalAlignment = HorizontalAlignment.Stretch;
                     targetIdBox.TextAlignment = TextAlignment.Center;
