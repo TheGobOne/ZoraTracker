@@ -2123,7 +2123,7 @@ public static class Program
             coopOptionsNote.FontSize = 12.0;
             foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled" }) coopOptionsNote.Resources[k] = Brushes.Black;
             Canvas.SetLeft(coopOptionsNote, (WIDTH_SANS_CHROME - coopOptionsNote.Width) / 2.0);
-            Canvas.SetTop(coopOptionsNote, 216.0);
+            Canvas.SetTop(coopOptionsNote, 134.0);   // (in the gap between the Overworld card and the option cards, clear of their headings)
             startupOptionsCanvas.Children.Add(coopOptionsNote);
             Action<int> highlightCoopQuest = null;   // (set once the start buttons exist)
             var coopOptionsTaken = false;   // (only the first set is taken: a reconnect asks again, and must not undo what the player changed since)
@@ -2806,7 +2806,7 @@ public static class Program
                 addDarkTheme(dialog);
                 TextBox mkInfo(string t) => new TextBox { Text = t, IsReadOnly = true, BorderThickness = new Thickness(0.0), Foreground = Brushes.Orange, TextWrapping = TextWrapping.Wrap, Width = 600.0, Margin = new Thickness(0.0, 0.0, 0.0, 8.0) };
                 TextBox mkInput() => new TextBox { Width = 600.0, FontSize = 16.0, Foreground = Brushes.Orange, Background = Brushes.Black, BorderBrush = Brushes.Orange, CaretBrush = Brushes.Orange, Margin = new Thickness(0.0, 0.0, 0.0, 10.0) };
-                var intro = mkInfo("Paste the flag strings from the ZORA site and the tracker ticks the matching startup options when you paste, or when you click Apply. Leave a box empty to leave those settings alone.");
+                var intro = mkInfo("Paste the flag strings from the ZORA site and the tracker ticks the matching startup options when you paste, or when you click Apply. Leave a box empty to leave those settings alone. You can also paste a seed's file name (with or without .nes) into either box, or drop the seed file on this window: both flag strings are read from the name.");
                 var (z1rBox, zoraBox) = (mkInput(), mkInput());
                 var result = mkInfo("");
                 result.IsVisible = false;
@@ -2847,6 +2847,20 @@ public static class Program
                         }
                     }
                     var (z1r, zora) = ((z1rBox.Text ?? "").Trim(), (zoraBox.Text ?? "").Trim());
+                    // a seed file name (or a dropped file) in either box: the Z1R and ZORA flags come out of the name
+                    var zoraFromName = false;
+                    var named = FlagPaste.parseFileName(z1r) ?? FlagPaste.parseFileName(zora);
+                    if (named != null)
+                    {
+                        (z1r, zora, zoraFromName) = (named.Z1R, named.Zora, true);   // (an empty ZORA part means every ZORA flag is at its default)
+                        z1rBox.Text = z1r;
+                        zoraBox.Text = zora;
+                        lines.Add($"File name read: ZORA {named.Version}, seed {named.Seed}{(named.Music ? ", random music" : "")}");
+                        var newer = FlagPaste.newerReleaseWarning(named.Version);
+                        if (newer != null) lines.Add(newer);
+                    }
+                    else if ((z1r.StartsWith("zora-", StringComparison.OrdinalIgnoreCase) || zora.StartsWith("zora-", StringComparison.OrdinalIgnoreCase)))
+                        lines.Add("ZORA flags: that file name is not one the ZORA site made, so it holds no flags. Paste the flag strings instead.");
                     if (z1r != "")
                     {
                         var (p, err) = FlagPaste.decodeZ1R(z1r);
@@ -2871,13 +2885,14 @@ public static class Program
                             foreach (var n in p.Notes) lines.Add(n);
                         }
                     }
-                    if (zora != "")
+                    if (zora != "" || zoraFromName)
                     {
                         var (z, err) = FlagPaste.decodeZora(zora);
                         if (err != null) lines.Add("ZORA flags: " + err);
                         else
                         {
                             SaveAndLoad.lastKnownZoraFlags = zora;
+                            if (z.Warning != null) lines.Add(z.Warning);
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
                                         || z.Progressive;
@@ -2946,6 +2961,23 @@ public static class Program
                         Dispatcher.UIThread.Post(() => doApply(), DispatcherPriority.Background);
                     };
                 }
+                // a seed file (.nes, .spoiler.txt or .tracker.json) dropped on the dialog: its name holds both flag strings
+                DragDrop.SetAllowDrop(dialog, true);
+                DragDrop.AddDropHandler(dialog, (_, ea) =>
+                {
+                    try
+                    {
+#pragma warning disable CS0618   // (IDataObject.GetFiles: the DataTransfer replacement is not in every Avalonia 11 build)
+                        var file = ea.Data.GetFiles()?.FirstOrDefault();
+#pragma warning restore CS0618
+                        if (file == null) return;
+                        z1rBox.Text = file.Name;
+                        zoraBox.Text = "";
+                        doApply();
+                        ea.Handled = true;
+                    }
+                    catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[PasteFlags] drop failed: {ex.Message}"); }
+                });
                 async Task show()
                 {
                     var dialogBorder = new Border { Child = dialog, BorderThickness = new Thickness(3.0), BorderBrush = Brushes.Orange, Background = Brushes.Black, Padding = new Thickness(8.0) };

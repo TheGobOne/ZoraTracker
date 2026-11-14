@@ -138,13 +138,51 @@ public static class FlagPaste
                                   Tri ExtraRaftBlocks,
                                   Tri ExtraPowerBlocks,
                                   Tri RandomizeDeadWoods,
-                                  Tri RandomizeLostHills);
+                                  Tri RandomizeLostHills,
+                                  string Warning = null);   // (set when the string is newer than this tracker: it was read anyway)
+
+    // a seed file name from the ZORA page (the spec's file_name section): zora-<version>-<Z1R>-<ZORA>-<seed>[-music][.nes | .spoiler.txt | .tracker.json]
+    public sealed record FileNameParts(string Version, string Z1R, string Zora, string Seed, bool Music, string Extension);
+
+    // the ZORA release this tracker's flag tables are from (a seed from a newer one still reads, with a warning)
+    public const string specZoraVersion = "2.0.1";
+
+    private static readonly System.Text.RegularExpressions.Regex fileNameRegex = new System.Text.RegularExpressions.Regex(
+        @"^zora-([.0-9A-Z_a-z-]+?)-([0-9A-Z_a-z]+)-((?:[1-9][0-9]*\.[0-9A-Z_a-z]+)?)-([0-9]+)(-music)?(\.nes|\.spoiler\.txt|\.tracker\.json)?$");
+
+    // Reads a file name, with or without its extension, a full path, or quotes around it ("Copy as path"). Null when it is not one of the page's names.
+    public static FileNameParts parseFileName(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        s = s.Trim().Trim('"', '\'');
+        var slash = s.LastIndexOfAny(new[] { '/', '\\' });
+        if (slash >= 0) s = s.Substring(slash + 1);
+        // a browser that saved the name twice added " (1)" or "(1)" before the extension
+        s = System.Text.RegularExpressions.Regex.Replace(s, @" ?\([0-9]+\)(?=\.[A-Za-z.]+$|$)", "");
+        // the extension may be in any case (Windows)
+        foreach (var ext in new[] { ".spoiler.txt", ".tracker.json", ".nes" })
+            if (s.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) { s = s.Substring(0, s.Length - ext.Length) + ext; break; }
+        var m = fileNameRegex.Match(s);
+        if (!m.Success) return null;
+        return new FileNameParts(m.Groups[1].Value, m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value, m.Groups[5].Success, m.Groups[6].Value);
+    }
+
+    // null when the ZORA release in a file name is not newer than the tracker's tables; otherwise a warning to show
+    public static string newerReleaseWarning(string nameVersion)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(nameVersion ?? "", @"^[0-9]+(\.[0-9]+){1,3}");
+        if (!m.Success || !Version.TryParse(m.Value, out var seen) || !Version.TryParse(specZoraVersion, out var known)) return null;
+        return seen > known
+            ? $"This seed was made by ZORA {m.Value}, newer than this tracker knows ({specZoraVersion}). The flags were read anyway; if something looks wrong, update the tracker."
+            : null;
+    }
 
     // (F#: Result<ZoraPart, string>; error is null when it worked)
     public static (ZoraPart ok, string error) decodeZora(string s)
     {
         s = s.Trim();
         var values = new Dictionary<string, int>();
+        string warning = null;
         (ZoraPart, string) finish()
         {
             int v(string name) => values.TryGetValue(name, out var x) ? x : 0;
@@ -155,7 +193,8 @@ public static class FlagPaste
                                  ExtraRaftBlocks: tri(v("extra_raft_blocks")),
                                  ExtraPowerBlocks: tri(v("extra_power_bracelet_blocks")),
                                  RandomizeDeadWoods: tri(v("randomize_dead_woods")),
-                                 RandomizeLostHills: tri(v("randomize_lost_hills"))), null);
+                                 RandomizeLostHills: tri(v("randomize_lost_hills")),
+                                 Warning: warning), null);
         }
         if (s == "") return finish();
         var dot = s.IndexOf('.');
@@ -163,8 +202,9 @@ public static class FlagPaste
         var versionOk = dot > 0 && int.TryParse(s.Substring(0, dot), out version);
         if (!versionOk || version < 1)
             return (null, "That doesn't look like a ZORA flag string (it should look like 18.abc: a version, a dot, then letters and digits).");
-        else if (version > zoraCurrentVersion)
-            return (null, $"These ZORA flags are version {version}, newer than this tracker understands (up to {zoraCurrentVersion}). Update the tracker.");
+        // a newer string is read anyway: fields only ever get added above the old ones, so the ones this tracker knows still sit where they did
+        if (version > zoraCurrentVersion)
+            warning = $"These ZORA flags are version {version}, newer than this tracker understands (up to {zoraCurrentVersion}). They were read anyway; if something looks wrong, update the tracker.";
         var number = parseBase63(s.Substring(dot + 1));
         if (!number.HasValue)
             return (null, "That doesn't look like a ZORA flag string (the part after the dot should use only letters, digits and !).");
@@ -177,7 +217,7 @@ public static class FlagPaste
                 n = BigInteger.Divide(n, new BigInteger(slots));
             }
         }
-        if (!n.IsZero) return (null, "These ZORA flags have extra digits beyond their version, so they may have been mistyped.");
+        if (!n.IsZero && version <= zoraCurrentVersion) return (null, "These ZORA flags have extra digits beyond their version, so they may have been mistyped.");
         else return finish();
     }
 }

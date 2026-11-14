@@ -182,7 +182,27 @@ public static class SelfTest
             // the spec's current ZORA string version is 22 (fields 42..45 added in 19..22): an all-zero version 22 string must be accepted, and 23 refused
             var (z22, err22) = FlagPaste.decodeZora("22.0");
             if (z22 == null) fail("ZORA flags (version 22): " + err22);
-            if (FlagPaste.decodeZora("23.0").error == null) fail("ZORA flags (version 23, newer than the spec) were accepted");
+            // a newer version is read anyway, with a warning (and its extra digits are not an error: they are fields this tracker does not know)
+            var (z23, err23) = FlagPaste.decodeZora("23.1");
+            if (z23 == null || z23.Warning == null) fail("ZORA flags (version 23, newer than the spec) were refused or gave no warning: " + err23);
+            // seed file names, every way they can arrive
+            {
+                var full = "zora-2.0.1-91250lSP91JdxpR4V55maWlQu8UJ3A-20.7KrCiA5uIm16-2011";
+                foreach (var name in new[] { full + ".nes", full + ".spoiler.txt", full + ".tracker.json", full, full + "-music.nes", "\"C:\\Users\\x\\Downloads\\" + full + ".nes\"", full + " (1).tracker.json", full + "(1).nes", full + ".NES" })
+                {
+                    var f = FlagPaste.parseFileName(name);
+                    if (f == null) { fail($"file name '{name}' was not read"); continue; }
+                    if (f.Version != "2.0.1" || f.Z1R != "91250lSP91JdxpR4V55maWlQu8UJ3A" || f.Zora != "20.7KrCiA5uIm16" || f.Seed != "2011")
+                        fail($"file name '{name}' read wrong: {f.Version} {f.Z1R} {f.Zora} {f.Seed}");
+                }
+                var empty = FlagPaste.parseFileName("zora-2.0.1-8hq4BeR1JXo89BJ2_TFpTP02u8UJ3A--77.nes");
+                if (empty == null || empty.Zora != "" || empty.Seed != "77") fail("file name with an empty ZORA string was not read as empty");
+                var test = FlagPaste.parseFileName("zora-2.0.1-a1b2c3d-test-8hq4BeR1JXo89BJ2-18.1-5-music");
+                if (test == null || test.Version != "2.0.1-a1b2c3d-test" || !test.Music || test.Z1R != "8hq4BeR1JXo89BJ2" || test.Zora != "18.1" || test.Seed != "5") fail("test-channel file name read wrong");
+                if (FlagPaste.parseFileName("zora-seed-123.nes") != null) fail("an old-style file name was read as flags");
+                if (FlagPaste.parseFileName("AP_123_P1_Link.nes") != null) fail("an Archipelago file name was read as flags");
+                if (FlagPaste.newerReleaseWarning("2.0.1") != null || FlagPaste.newerReleaseWarning("2.1.0") == null) fail("newer-release warning wrong");
+            }
             // "22.0" passes whatever the field table holds, so also build a version 22 string with the four newest fields set.
             // The radixes below are copied from zora-flags.json (spec 1.0, current_version 22), in position order, apart from FlagPaste's own table.
             {
