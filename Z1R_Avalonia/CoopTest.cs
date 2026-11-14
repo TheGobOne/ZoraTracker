@@ -4,10 +4,12 @@
 // (--quest=1 is the 1st Quest, 2 the 2nd Quest. Both sides must use the same quest and run id.)
 // Each side starts a run, turns co-op on in code (not in the settings file), and waits for the other. Then A makes a scripted list of changes,
 // one step at a time, through the same model calls the click handlers use, and after each step writes its normalized save state to
-// <dir>/step-N-A.json. B polls its own state until it matches or 15 s pass, and appends PASS or FAIL (with a line diff) to <dir>/cooptest_report.txt.
+// step-N-A.json. B polls its own state until it matches or 15 s pass, and appends PASS or FAIL (with a line diff) to cooptest_report.txt.
 // Then B makes a second list of changes (mostly undoing and changing A's) and A checks. Failures do not stop the run.
 // Exit code: 0 every check this side made passed, 1 a check failed, 2 the harness itself failed (no connection, the other side never answered, the 10 minute limit).
 // Each side keeps its settings in <dir>/settings-A or <dir>/settings-B, so the two never write the same settings file.
+// The step files and the report go in <dir>/run-<run id>; use a new run id for each run. --cooptest-relay=<url> (or the environment variable
+// ZORATRACKER_COOPTEST_RELAY) picks another relay; the default is https://coop.zoratracker.gg.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -40,11 +42,18 @@ public static class CoopTest
     /// The settings folder for this side (Program uses it in place of the normal one).
     public static string settingsDir => Path.Combine(dir, "settings-" + role);
 
-    private const string relay = "https://coop.zoratracker.gg";
+    // The files the two sides exchange go in a folder of their own for each run id, so files from an earlier run cannot pass as this run's.
+    // (Each side also deletes the files it writes itself when it starts, in case a run id is used again; it never deletes the other side's.)
+    private static string runDir => Path.Combine(dir, "run-" + string.Concat(runId.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)));
+
+    // The relay: --cooptest-relay=<url>, else the ZORATRACKER_COOPTEST_RELAY environment variable, else the public relay.
+    private static readonly string relay =
+        argValue("--cooptest-relay") ?? (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ZORATRACKER_COOPTEST_RELAY")) ? null : Environment.GetEnvironmentVariable("ZORATRACKER_COOPTEST_RELAY").Trim())
+        ?? "https://coop.zoratracker.gg";
     private static readonly TimeSpan overallLimit = TimeSpan.FromMinutes(10);
     private static int failures = 0, passes = 0;
 
-    private static string reportPath => Path.Combine(dir, "cooptest_report.txt");
+    private static string reportPath => Path.Combine(runDir, "cooptest_report.txt");
     private static void report(string s)
     {
         var line = $"[{DateTime.Now:HH:mm:ss}] {role}: {s}\n";
@@ -59,18 +68,32 @@ public static class CoopTest
 
     private static void writeFile(string name, string text)
     {
-        var path = Path.Combine(dir, name);
+        var path = Path.Combine(runDir, name);
         var tmp = path + "." + role + ".tmp";
         File.WriteAllText(tmp, text);
         File.Move(tmp, path, true);   // (the other side never sees a half-written file)
     }
-    private static bool exists(string name) => File.Exists(Path.Combine(dir, name));
-    private static string readFile(string name) { try { return File.ReadAllText(Path.Combine(dir, name)); } catch { return null; } }
+    private static bool exists(string name) => File.Exists(Path.Combine(runDir, name));
+    private static string readFile(string name) { try { return File.ReadAllText(Path.Combine(runDir, name)); } catch { return null; } }
+
+    /// Deletes what this side writes (ready, finished, its own steps, its checks of the other side's steps, its temp files).
+    private static void clearOwnFiles()
+    {
+        var mine = new[] { $"ready-{role}.txt", $"finished-{role}.txt", $"step-*-{role}.json", $"step-*-{other}.json.done", $"*.{role}.tmp" };
+        foreach (var pattern in mine)
+            foreach (var f in Directory.GetFiles(runDir, pattern))
+            {
+                // (Windows matches "step-*-A.json" against "step-1-A.json.done" too: keep the other side's .done files)
+                var name = Path.GetFileName(f);
+                if (pattern.EndsWith(".json") && name.EndsWith(".done")) continue;
+                try { File.Delete(f); } catch (Exception) { }
+            }
+    }
 
     private static void exit(int code, string why)
     {
         report($"EXIT {code}: {why} ({passes} passed, {failures} failed)");
-        try { File.WriteAllText(Path.Combine(dir, $"finished-{role}.txt"), code.ToString()); } catch { }
+        try { File.WriteAllText(Path.Combine(runDir, $"finished-{role}.txt"), code.ToString()); } catch { }
         Environment.Exit(code);   // (the app's own shutdown path always returns 0)
     }
 
@@ -341,7 +364,8 @@ public static class CoopTest
     public static void arm()
     {
         if (string.IsNullOrEmpty(dir)) { Console.WriteLine("--cooptest needs --cooptest-dir=<shared folder>"); Environment.Exit(2); }
-        Directory.CreateDirectory(dir);
+        Directory.CreateDirectory(runDir);
+        clearOwnFiles();   // (stale files from an earlier run with this id gave false passes)
         // the 10 minute limit for this side
         DispatcherTimer.RunOnce(() => exit(2, "the 10 minute limit was reached"), overallLimit);
         var started = false;

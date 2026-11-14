@@ -1393,10 +1393,10 @@ let downloadAndStageUpdate(zipUrl:string, onProgress:int -> unit) : string optio
                 "  $bad = Install"
                 "}"
                 "if ($bad.Count -gt 0) {"
-                sprintf "  $msg = 'The update could not be fully installed, even after trying again and downloading it again. These files could not be replaced: ' + ($bad -join ', ') + '. Close ZORA Tracker, any other program using its folder, and your antivirus scan, then extract the downloaded zip over this folder by hand: ' + %s" (q zipPath)
+                sprintf "  $msg = 'The update could not be fully installed, even after trying again and downloading it again. These files could not be replaced: ' + ($bad -join ', ') + '. Close ZORATracker, any other program using its folder, and your antivirus scan, then extract the downloaded zip over this folder by hand: ' + %s" (q zipPath)
                 sprintf "  $msg | Out-File -LiteralPath %s" (q log)
                 "  Add-Type -AssemblyName PresentationFramework"
-                "  [System.Windows.MessageBox]::Show($msg, 'ZORA Tracker update', 'OK', 'Warning') | Out-Null"
+                "  [System.Windows.MessageBox]::Show($msg, 'ZORATracker update', 'OK', 'Warning') | Out-Null"
                 "} else {"
                 sprintf "  Start-Process -FilePath %s -WorkingDirectory %s" (q exe) (q appDir)
                 "}"
@@ -1493,7 +1493,7 @@ let downloadAndStageConversion(appDir0:string, zipUrl:string, onProgress:int -> 
                 "} catch {"
                 sprintf "  $_ | Out-File -LiteralPath %s" (q log)
                 "  Add-Type -AssemblyName PresentationFramework"
-                sprintf "  [System.Windows.MessageBox]::Show('Switching to the cross-platform version failed: ' + $_.Exception.Message + ' This install was not changed. The downloaded zip is at ' + %s, 'ZORA Tracker', 'OK', 'Warning') | Out-Null" (q zipPath)
+                sprintf "  [System.Windows.MessageBox]::Show('Switching to the cross-platform version failed: ' + $_.Exception.Message + ' This install was not changed. The downloaded zip is at ' + %s, 'ZORATracker', 'OK', 'Warning') | Out-Null" (q zipPath)
                 "}"
             ]
         let scriptPath = System.IO.Path.Combine(work, "convert.ps1")
@@ -1565,7 +1565,7 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
                     | Some(tag,url) -> 
                         popupIsActive <- true
                         let! ok = DoModalMessageBoxCore(cm, System.Drawing.SystemIcons.Question, 
-                                                        sprintf "Download %s and install it over this copy?\n\nThis OVERWRITES your current version of ZORA Tracker with the new one.\nIf you want to keep your current version and have a separate install,\ndownload the release from GitHub instead (Go to website).\n\nThe tracker will close and reopen on the new version.\nYour hotkeys, settings and custom images will NOT be touched.\nAny game in progress is discarded (save it first)." tag,
+                                                        sprintf "Download %s and install it over this copy?\n\nThis OVERWRITES your current version of ZORATracker with the new one.\nIf you want to keep your current version and have a separate install,\ndownload the release from GitHub instead (Go to website).\n\nThe tracker will close and reopen on the new version.\nYour hotkeys, settings and custom images will NOT be touched.\nAny game in progress is discarded (save it first)." tag,
                                                         ["Install and restart"; "Cancel"], 100., 300.)
                         if ok = "Install and restart" then
                             // a small progress popup while the zip downloads
@@ -1603,7 +1603,7 @@ let makeVersionButtonWithBehavior(cm:CanvasManager) =
                 elif r = "Switch to cross-platform" then
                     popupIsActive <- true
                     let! ok = DoModalMessageBoxCore(cm, System.Drawing.SystemIcons.Question,
-                                                    "Switch to the cross-platform version?\n\nThis downloads the cross-platform version into a NEW folder next to this one,\nand copies your hotkeys, settings and custom images into it.\nIt also puts a \"ZORATracker - Cross Platform\" shortcut on your desktop.\nThis copy of ZORA Tracker is NOT changed or removed, so you can come back to it.\n\nThe tracker will close and the cross-platform version will open.\nAny game in progress is discarded (save it first).",
+                                                    "Switch to the cross-platform version?\n\nThis downloads the cross-platform version into a NEW folder next to this one,\nand copies your hotkeys, settings and custom images into it.\nIt also puts a \"ZORATracker - Cross Platform\" shortcut on your desktop.\nThis copy of ZORATracker is NOT changed or removed, so you can come back to it.\n\nThe tracker will close and the cross-platform version will open.\nAny game in progress is discarded (save it first).",
                                                     ["Switch"; "Cancel"], 100., 300.)
                     if ok = "Switch" then
                         let onProgress, closeProgress = showDownloadProgress(cm, "Downloading cross-platform version...")

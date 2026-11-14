@@ -673,7 +673,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
             let resumeButton = Graphics.makeButton("Timer has been Paused.\nClick here to Resume.\n(Look below for Reset info.)", Some(16.), Some(Brushes.Orange))
             let restartTimerButton = Graphics.makeButton("Timer has been Paused.\nClick here to confirm you want to\nReset the TIMER to 0:00:00.", Some(16.), Some(Brushes.Orange))
             let resetTrackerButton = Graphics.makeButton("Click here to Reset the TRACKER,\n(remove inventory but preserve maps)\nfor groundhog/routers/4+4 purposes.", Some(16.), Some(Brushes.Orange))
-            let shutdownAndRestartButton = Graphics.makeButton("Click here to close ZORA Tracker,\nand restart the app. All your\ncurrent work will be discarded!", Some(16.), Some(Brushes.Orange))
+            let shutdownAndRestartButton = Graphics.makeButton("Click here to close ZORATracker,\nand restart the app. All your\ncurrent work will be discarded!", Some(16.), Some(Brushes.Orange))
             let mutable userPressedReset = false
             let sp = new StackPanel(Orientation=Orientation.Vertical)
             let hsp1 = new StackPanel(Orientation=Orientation.Horizontal)
@@ -723,7 +723,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
                         // make hard save
                         let filename = makeManualSave()
                         let filename = System.IO.Path.GetFileName(filename)  // remove directory info (could have username in path, don't display PII on-screen)
-                        let! r = CustomComboBoxes.DoModalMessageBox(cm, null, sprintf "ZORA Tracker data saved to file\n%s\nThe tracker will now be reset." filename, ["Ok"])
+                        let! r = CustomComboBoxes.DoModalMessageBox(cm, null, sprintf "ZORATracker data saved to file\n%s\nThe tracker will now be reset." filename, ["Ok"])
                         ignore r
                         // remove triforces
                         for i = 0 to 7 do
@@ -761,7 +761,7 @@ let MakeItemGrid(cm:CustomComboBoxes.CanvasManager, boxItemImpl, timelineItems:R
                         doUIUpdateEvent.Trigger()
                         wh.Set() |> ignore
                     with e ->
-                        let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, sprintf "ZORA Tracker was unable to save the\ntracker state to a file\nError:\n%s" e.Message, ["Ok"])
+                        let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, sprintf "ZORATracker was unable to save the\ntracker state to a file\nError:\n%s" e.Message, ["Ok"])
                         ignore r
                 } |> Async.StartImmediate)
             shutdownAndRestartButton.Click.Add(fun _ ->

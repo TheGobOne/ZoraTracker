@@ -639,9 +639,7 @@ public static class Program
             }
             runStaticInitializersInWpfCompileOrder();   // (port: see the method; the earliest point at which every class can initialize)
             // Stubbed SignalR sync startup
-
             // (the last applied DungeonMaps payload is CoopSync.lastReceivedDungeonMapsJson, so a hello can clear it)
-            var _dungeonMapsDebouncer = new Debouncer(500);
 
             void handleRemoteTileChange(string tileId, string iconId, string senderId)
             {
@@ -689,9 +687,10 @@ public static class Program
                                     try
                                     {
                                         TrackerModelOptions.DebugConfig.Log($"[Sync] Raw PlayerProgress payload: {payloadJson}");
-                                        var data = JsonConvert.DeserializeObject<SaveAndLoad.PlayerProgressAndTakeAnyHeartsModel>(payloadJson);
                                         Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                         {
+                                            // (only the flags the partner changed: one we changed at the same time stays, see mergeWholeState)
+                                            var data = JsonConvert.DeserializeObject<SaveAndLoad.PlayerProgressAndTakeAnyHeartsModel>(CoopSync.mergeWholeState("PlayerProgress", payloadJson, out var resendOurs));
                                             CoopSync.isApplyingPlayerProgressFromSync = true;
                                             try
                                             {
@@ -702,7 +701,7 @@ public static class Program
                                             {
                                                 CoopSync.isApplyingPlayerProgressFromSync = false;
                                             }
-                                            CoopSync.rebaseline("PlayerProgress");
+                                            CoopSync.finishWholeState("PlayerProgress", resendOurs);
                                             TrackerModel.TimelineItemModel.TriggerTimelineChanged();
                                         }));
                                     }
@@ -817,9 +816,11 @@ public static class Program
                                 case "StartingItems":
                                     try
                                     {
-                                        var data = JsonConvert.DeserializeObject<SaveAndLoad.StartingItemsAndExtrasModel>(payloadJson);
                                         Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                         {
+                                            // (only the items the partner changed: one we changed at the same time stays, see mergeWholeState.
+                                            // A field an older tracker does not send, such as PlayerHasSword4, keeps our value.)
+                                            var data = JsonConvert.DeserializeObject<SaveAndLoad.StartingItemsAndExtrasModel>(CoopSync.mergeWholeState("StartingItems", payloadJson, out var resendOurs));
                                             // (the items used to be set inside the triforce loop, so each was applied 8 times, firing its change events 8 times)
                                             for (int i = 0; i <= 7; i++)
                                                 TrackerModel.startingItemsAndExtras.HDNStartingTriforcePieces[i].Set(data.HDNStartingTriforcePieces[i]);
@@ -828,6 +829,7 @@ public static class Program
                                             {
                                                 TrackerModel.startingItemsAndExtras.PlayerHasWhiteSword.Set(data.PlayerHasWhiteSword);
                                                 TrackerModel.startingItemsAndExtras.PlayerHasMagicalSword.Set(data.PlayerHasMagicalSword);
+                                                TrackerModel.startingItemsAndExtras.PlayerHasSword4.Set(data.PlayerHasSword4);
                                                 TrackerModel.startingItemsAndExtras.PlayerHasSilverArrow.Set(data.PlayerHasSilverArrow);
                                                 TrackerModel.startingItemsAndExtras.PlayerHasBow.Set(data.PlayerHasBow);
                                                 TrackerModel.startingItemsAndExtras.PlayerHasWand.Set(data.PlayerHasWand);
@@ -851,7 +853,7 @@ public static class Program
                                             {
                                                 CoopSync.isApplyingStartingItemsFromSync = false;
                                             }
-                                            CoopSync.rebaseline("StartingItems");
+                                            CoopSync.finishWholeState("StartingItems", resendOurs);
                                         }));
                                     }
                                     catch (Exception ex)
@@ -975,18 +977,34 @@ public static class Program
                                 case "Hints":
                                     try
                                     {
-                                        var data = JsonConvert.DeserializeObject<SaveAndLoad.Hints>(payloadJson);
+                                        if (!trackerIsInitialized())
+                                        {
+                                            TrackerModelOptions.DebugConfig.Log($"[Sync] Skipping Hints update from {senderId}: TrackerModel not initialized");
+                                            break;
+                                        }
                                         Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                         {
-                                            for (int i = 0; i <= 10; i++)
-                                                TrackerModel.SetLevelHint.Invoke(Tuple.Create(i, TrackerModel.HintZone.FromIndex(data.LocationHints[i])));
+                                            // (only the hints the partner changed, see mergeWholeState)
+                                            var data = JsonConvert.DeserializeObject<SaveAndLoad.Hints>(CoopSync.mergeWholeState("Hints", payloadJson, out var resendOurs));
+                                            if (data.LocationHints != null)
+                                                for (int i = 0; i <= 10 && i < data.LocationHints.Length; i++)
+                                                    if (TrackerModel.GetLevelHint.Invoke(i).ToIndex() != data.LocationHints[i])   // (only a real change fires the redraw events)
+                                                        TrackerModel.SetLevelHint.Invoke(Tuple.Create(i, TrackerModel.HintZone.FromIndex(data.LocationHints[i])));
+                                            var dashesChanged = TrackerModel.NoFeatOfStrengthHintWasGiven != data.NoFeatOfStrengthHint || TrackerModel.SailNotHintWasGiven != data.SailNotHint;
                                             TrackerModel.NoFeatOfStrengthHintWasGiven = data.NoFeatOfStrengthHint;
                                             TrackerModel.SailNotHintWasGiven = data.SailNotHint;
                                             TrackerModel.SailToHintWasGiven = data.SailToHint;
                                             TrackerModel.PlayMelodyHintWasGiven = data.PlayMelodyHint;
                                             TrackerModel.StepOverWaterHintWasGiven = data.StepOverWaterHint;
                                             TrackerModel.FireArrowsHintWasGiven = data.FireArrowsHint;
-
+                                            if (dashesChanged)
+                                            {
+                                                // (as loading a save does: the overworld spots those two hints rule out are drawn dashed)
+                                                OverworldItemGridUI.hideFeatsOfStrength(TrackerModel.NoFeatOfStrengthHintWasGiven);
+                                                OverworldItemGridUI.hideRaftSpots(TrackerModel.SailNotHintWasGiven);
+                                                Views.triggerHintDashedItemsChanged();
+                                            }
+                                            CoopSync.finishWholeState("Hints", resendOurs);
                                             TrackerModelOptions.DebugConfig.Log($"[Sync] Applied Hints update from {senderId}");
                                         }));
                                     }
@@ -1002,9 +1020,10 @@ public static class Program
                                     {
                                         try
                                         {
-                                            var data = JsonConvert.DeserializeObject<SaveAndLoad.Blocker[][]>(payloadJson);
                                             Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
+                                                // (only the blockers the partner changed, see mergeWholeState)
+                                                var data = JsonConvert.DeserializeObject<SaveAndLoad.Blocker[][]>(CoopSync.mergeWholeState("Blockers", payloadJson, out var resendOurs));
                                                 CoopSync.isApplyingBlockersFromSync = true;   // (FinishIgnoreChangesDuringLoad fires the change event: do not send it back)
                                                 TrackerModel.DungeonBlockersContainer.StartIgnoreChangesDuringLoad();
                                                 try
@@ -1031,7 +1050,7 @@ public static class Program
                                                     try { TrackerModel.DungeonBlockersContainer.FinishIgnoreChangesDuringLoad(); }
                                                     finally { CoopSync.isApplyingBlockersFromSync = false; }
                                                 }
-                                                CoopSync.rebaseline("Blockers");
+                                                CoopSync.finishWholeState("Blockers", resendOurs);
                                                 TrackerModelOptions.DebugConfig.Log($"[Sync] Applied Blockers update from {senderId}");
                                             }));
                                         }
@@ -1049,9 +1068,10 @@ public static class Program
                                     {
                                         try
                                         {
-                                            var data = JsonConvert.DeserializeObject<CoopSync.DungeonsTriforceState>(payloadJson);
                                             Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
+                                                // (only the triforces the partner changed, see mergeWholeState)
+                                                var data = JsonConvert.DeserializeObject<CoopSync.DungeonsTriforceState>(CoopSync.mergeWholeState("DungeonTriforce", payloadJson, out var resendOurs));
                                                 CoopSync.isApplyingTriforceFromSync = true;
                                                 try
                                                 {
@@ -1071,7 +1091,7 @@ public static class Program
                                                 {
                                                     CoopSync.isApplyingTriforceFromSync = false;
                                                 }
-                                                CoopSync.rebaseline("DungeonTriforce");
+                                                CoopSync.finishWholeState("DungeonTriforce", resendOurs);
                                                 TrackerModel.TimelineItemModel.TriggerTimelineChanged();
                                             }));
                                         }
@@ -1106,12 +1126,15 @@ public static class Program
                                                 CoopSync.isApplyingRoomFromSync = true;
                                                 CoopSync.dungeonMapsSyncOrigin.MarkSyncStart();
                                                 var keptLocal = false;
+                                                var keptRooms = new List<(int, int, int)>();          // (level 1-9, x, y)
+                                                var keptDoors = new List<(int, int, int, bool)>();    // (level 1-9, x, y, horizontal)
                                                 try
                                                 {
                                                     for (int level = 0; level <= 8; level++)
                                                     {
                                                         // A whole map from the partner replaced every room and door, so an edit we made after they built it was lost
-                                                        // here while they got it by RoomChange, and the maps ended up different. Keep our rooms and doors that are newer.
+                                                        // here while they got it by RoomChange, and the maps ended up different. Keep our rooms and doors changed after it
+                                                        // was built or up to 5 s before (the clocks differ a little), and send them again below as RoomChange / DoorChange.
                                                         try
                                                         {
                                                             var dmIn = dungeonModels[level];
@@ -1123,12 +1146,27 @@ public static class Program
                                                                 for (int x = 0; x <= 7; x++)
                                                                     for (int y = 0; y <= 7; y++)
                                                                     {
-                                                                        if (CoopSync.localEditNewer($"DungeonRoom_{L}_{x}_{y}", timestamp))
-                                                                        { dmIn.RoomStates[y][x] = getMine().RoomStates[y][x]; keptLocal = true; }
-                                                                        if (x <= 6 && CoopSync.localEditNewer($"DoorChange_{L}_{x}_{y}_true", timestamp))
-                                                                        { dmIn.HorizontalDoors[y][x] = getMine().HorizontalDoors[y][x]; keptLocal = true; }
-                                                                        if (y <= 6 && CoopSync.localEditNewer($"DoorChange_{L}_{x}_{y}_false", timestamp))
-                                                                        { dmIn.VerticalDoors[y][x] = getMine().VerticalDoors[y][x]; keptLocal = true; }
+                                                                        var rk = CoopSync.roomEditKey(L, x, y);
+                                                                        if (CoopSync.localEditNewer(rk, timestamp))
+                                                                        {
+                                                                            if (JsonConvert.SerializeObject(dmIn.RoomStates[y][x]) != JsonConvert.SerializeObject(getMine().RoomStates[y][x])) keptRooms.Add((L, x, y));
+                                                                            dmIn.RoomStates[y][x] = getMine().RoomStates[y][x]; keptLocal = true;
+                                                                        }
+                                                                        else CoopSync.clearEdit(rk);   // (their value taken: our edit of this room is settled)
+                                                                        var hk = CoopSync.doorEditKey(L, x, y, true);
+                                                                        if (x <= 6 && CoopSync.localEditNewer(hk, timestamp))
+                                                                        {
+                                                                            if (dmIn.HorizontalDoors[y][x] != getMine().HorizontalDoors[y][x]) keptDoors.Add((L, x, y, true));
+                                                                            dmIn.HorizontalDoors[y][x] = getMine().HorizontalDoors[y][x]; keptLocal = true;
+                                                                        }
+                                                                        else CoopSync.clearEdit(hk);
+                                                                        var vk = CoopSync.doorEditKey(L, x, y, false);
+                                                                        if (y <= 6 && CoopSync.localEditNewer(vk, timestamp))
+                                                                        {
+                                                                            if (dmIn.VerticalDoors[y][x] != getMine().VerticalDoors[y][x]) keptDoors.Add((L, x, y, false));
+                                                                            dmIn.VerticalDoors[y][x] = getMine().VerticalDoors[y][x]; keptLocal = true;
+                                                                        }
+                                                                        else CoopSync.clearEdit(vk);
                                                                     }
                                                             }
                                                         }
@@ -1172,6 +1210,9 @@ public static class Program
                                                     CoopSync.dungeonMapsSyncOrigin.MarkSyncEnd();
                                                     CoopSync.isApplyingRoomFromSync = false;
                                                 }
+                                                // the rooms and doors we kept go back one by one, so the RoomChange / DoorChange conflict rule settles each on both sides
+                                                foreach (var (L, x, y) in keptRooms) CoopSync.resendRoom(L, x, y);
+                                                foreach (var (L, x, y, isH) in keptDoors) CoopSync.resendDoor(L, x, y, isH);
                                             }));
                                         }
                                         catch (Exception ex)
@@ -1209,14 +1250,21 @@ public static class Program
                                     try
                                     {
                                         var data = JsonConvert.DeserializeObject<CoopSync.DoorChangePayload>(payloadJson);
-                                        var key = $"DoorChange_{data.Level}_{data.X}_{data.Y}_{(data.IsHorizontal ? "true" : "false")}";
-                                        // (the echo check comes first: shouldApplyUpdate records the payload as applied, so a payload skipped here must not reach it)
-                                        if (!(CoopSync.localEditWins(key, 5000, timestamp, senderId)) && trackerIsInitialized() && CoopSync.shouldApplyUpdate("DoorChange", payloadJson, timestamp) && !(SyncManager.ShouldSuppressDoorChange(payloadJson)) && (CoopSync.isDoorChangeFresh(data.Level, data.X, data.Y, data.IsHorizontal, timestamp)))
+                                        var key = CoopSync.doorEditKey(data.Level, data.X, data.Y, data.IsHorizontal);
+                                        // (the conflict check comes first: shouldApplyUpdate records the payload as applied, so a payload skipped here must not reach it)
+                                        if (CoopSync.localEditWins(key, 5000, timestamp, senderId))
+                                        {
+                                            // we changed this door too, later (or within 5 s, and our console ID is lower): ours wins on both sides, so send it again
+                                            if (trackerIsInitialized())
+                                                Dispatcher.UIThread.Post(() => CoopSync.resendDoor(data.Level, data.X, data.Y, data.IsHorizontal));
+                                        }
+                                        else if (trackerIsInitialized() && CoopSync.shouldApplyUpdate("DoorChange", payloadJson, timestamp) && !(SyncManager.ShouldSuppressDoorChange(payloadJson)) && (CoopSync.isDoorChangeFresh(data.Level, data.X, data.Y, data.IsHorizontal, timestamp)))
                                         {
                                             CoopSync.recordDoorTimestamp(data.Level, data.X, data.Y, data.IsHorizontal, timestamp);
                                             Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
                                                 CoopSync.remoteDoorApplied();   // (setting it back to what we last sent must send again)
+                                                CoopSync.clearEdit(key);        // (their value taken: our edit of this door is settled)
                                                 try
                                                 {
                                                     var newState = Dungeon.DoorInterop.fromString(data.NewState.Case);
@@ -1264,15 +1312,22 @@ public static class Program
                                     {
                                         TrackerModelOptions.DebugConfig.Log($"[Sync] Raw RoomChange payload: {payloadJson}");
                                         var data = JsonConvert.DeserializeObject<CoopSync.RoomChangePayload>(payloadJson);
-                                        var key = $"DungeonRoom_{data.Level}_{data.X}_{data.Y}";
-                                        // (echo check first, see DoorChange)
-                                        if (!(CoopSync.localEditWins(key, 5000, timestamp, senderId)) && CoopSync.shouldApplyUpdate("RoomChange", payloadJson, timestamp) && (CoopSync.isRoomChangeFresh(data.Level, data.X, data.Y, timestamp)))
+                                        var key = CoopSync.roomEditKey(data.Level, data.X, data.Y);
+                                        // (conflict check first, see DoorChange)
+                                        if (CoopSync.localEditWins(key, 5000, timestamp, senderId))
+                                        {
+                                            // we changed this room too, later (or within 5 s, and our console ID is lower): ours wins on both sides, so send it again
+                                            if (trackerIsInitialized())
+                                                Dispatcher.UIThread.Post(() => CoopSync.resendRoom(data.Level, data.X, data.Y));
+                                        }
+                                        else if (CoopSync.shouldApplyUpdate("RoomChange", payloadJson, timestamp) && (CoopSync.isRoomChangeFresh(data.Level, data.X, data.Y, timestamp)))
                                         {
                                             CoopSync.recordRoomTimestamp(data.Level, data.X, data.Y, timestamp);
                                             Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
                                                 CoopSync.isApplyingRoomFromSync = true;
                                                 CoopSync.remoteRoomApplied();   // (setting it back to what we last sent must send again)
+                                                CoopSync.clearEdit(key);        // (their value taken: our edit of this room is settled)
                                                 try
                                                 {
                                                     Z1R_Tracker.Models.RoomSyncBridge.ApplyRoomChangeFromSync(
@@ -2117,14 +2172,13 @@ public static class Program
             var rememberedCheckBoxes = new List<(string, CheckBox)> {
                 ("legacy", lmcb), ("hdn", hdcb), ("mirror", mocb), ("bomb", mbcb), ("4th", fscb), ("cln", clncb), ("boots", brcb), ("epb", epbcb), ("erb", erbcb), ("dw", dwcb), ("lh", lhcb), ("prog", pricb) };
             // the co-op host's start screen choices, when a partner has already started (see CoopSync.StartupOptions); the quest button is highlighted further down
-            var coopOptionsNote = new TextBox { IsReadOnly = true, IsVisible = false, Padding = new Thickness(5.0), Width = WIDTH/2.0, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
+            var coopOptionsNote = new TextBox { IsReadOnly = true, IsVisible = false, Padding = new Thickness(5.0, 2.0), Width = WIDTH_SANS_CHROME - 60.0, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
                                                 Foreground = Brushes.LimeGreen, Background = Brushes.Black, BorderBrush = Brushes.LimeGreen, BorderThickness = new Thickness(1.0) };
             coopOptionsNote.Focusable = false;
             coopOptionsNote.FontSize = 12.0;
             foreach (var k in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled" }) coopOptionsNote.Resources[k] = Brushes.Black;
-            Canvas.SetLeft(coopOptionsNote, (WIDTH_SANS_CHROME - coopOptionsNote.Width) / 2.0);
-            Canvas.SetTop(coopOptionsNote, 134.0);   // (in the gap between the Overworld card and the option cards, clear of their headings)
-            startupOptionsCanvas.Children.Add(coopOptionsNote);
+            coopOptionsNote.HorizontalAlignment = HorizontalAlignment.Center;
+            coopOptionsNote.VerticalAlignment = VerticalAlignment.Center;   // (placed in the gap between the Overworld card and the option cards, further down, so it moves with them when the block is centered)
             Action<int> highlightCoopQuest = null;   // (set once the start buttons exist)
             var coopOptionsTaken = false;   // (only the first set is taken: a reconnect asks again, and must not undo what the player changed since)
             void applyHostStartupOptions(CoopSync.StartupOptions o)
@@ -2144,8 +2198,8 @@ public static class Program
                 setFourthLevel(keys.Contains("4th") && keys.Contains("4th9") ? 9 : 2);
                 highlightCoopQuest?.Invoke(o.Quest);
                 var questName = o.Quest >= 0 && o.Quest <= 3 ? new[] { "1st Quest", "2nd Quest", "Mixed - 1Q", "Mixed - 2Q" }[o.Quest] : null;
-                coopOptionsNote.Text = "Co-op partner started. Their options are checked here.\n"
-                                       + (questName != null ? $"Click {questName} (highlighted) to join." : "They used Other... (a custom map): use Other... too.");
+                coopOptionsNote.Text = questName != null ? $"Co-op partner started: click {questName} (highlighted) to join."
+                                                         : "Co-op partner started with Other... (a custom map): click Other... to join.";
                 coopOptionsNote.IsVisible = true;
             }
             CoopSync.startScreenOptionsHandler = applyHostStartupOptions;
@@ -2329,7 +2383,7 @@ public static class Program
                 // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
                 if (loadData != null) SaveAndLoad.ApplyLoadedOptions(loadData.Overworld);
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
-                foreach (var (id, maxUse) in new[] { (TrackerModel.ITEMS.PROGRESSIVESWORD, (TrackerModel.ProgressiveItems ? 4 : 3)), (TrackerModel.ITEMS.BLUERING, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.BLUECANDLE, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.WOODARROW, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.BOOMERANG, (TrackerModel.ProgressiveItems ? 2 : 1)) }) TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, maxUse);
+                OverworldItemGridUI.ApplyProgressiveItemCaps();
                 TrackerModel.CustomLevelName =
                     clncb.IsChecked == true ? (clnTextBox.Text ?? "").Trim().ToUpperInvariant() : "";
                 SpeechRecognition.SpeechRecognitionInstance speechRecognitionInstance = null;
@@ -2781,7 +2835,10 @@ public static class Program
                 owSP.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });   // line under the header
                 owSP.Children.Add(owGrid);
                 colsWrap.Children.Add(startCard(owSP));
-                twoCols.Margin = new Thickness(0.0, startCardsGap, 0.0, 0.0);
+                var owGap = new Panel { Height = startCardsGap };   // (the gap holds the co-op note, clear of both cards)
+                owGap.Children.Add(coopOptionsNote);
+                colsWrap.Children.Add(owGap);
+                twoCols.Margin = new Thickness(0.0);
                 colsWrap.Children.Add(twoCols);
                 hsPanel.Children.Insert(idx, colsWrap);
             }
@@ -2813,11 +2870,12 @@ public static class Program
                 var inputs = new StackPanel { Orientation = Orientation.Vertical };
                 inputs.Children.Add(mkInfo("Z1R flags"));
                 inputs.Children.Add(z1rBox);
-                inputs.Children.Add(mkInfo("ZORA flags (like 18.abc)"));
+                inputs.Children.Add(mkInfo("ZORA flags (like 22.abc)"));
                 inputs.Children.Add(zoraBox);
                 dialog.Children.Add(intro);
                 dialog.Children.Add(inputs);
-                dialog.Children.Add(result);
+                // (a long list scrolls, so Apply and Close stay on screen)
+                dialog.Children.Add(new ScrollViewer { Content = result, MaxHeight = 180.0, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto });
                 var wh = new ManualResetEvent(false);
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
                 var applyBtn = Graphics.makeButton(" Apply ", null, null);
@@ -2833,6 +2891,7 @@ public static class Program
                 dialog.Children.Add(buttons);
                 closeBtn.Click += (_, _) => wh.Set();
                 // applying sets the checkboxes and lists what was done under the boxes (the dialog stays open, so the second string can still be pasted)
+                var zoraGivenByDrop = false;   // (a dropped tracker file with empty ZoraFlags still sets the ZORA extras to their defaults)
                 bool doApply()   // true = no flag decode error
                 {
                     var lines = new List<string>();
@@ -2843,7 +2902,7 @@ public static class Program
                         {
                             case FlagPaste.Tri.On: setChk(cb, true); lines.Add("Checked: " + name); break;
                             case FlagPaste.Tri.Off: setChk(cb, false); break;
-                            case FlagPaste.Tri.Random: lines.Add(name + " is Random in these flags, so it was left as it was."); break;
+                            case FlagPaste.Tri.Random: lines.Add("Random (?): " + name + ", left as it was"); break;
                         }
                     }
                     var (z1r, zora) = ((z1rBox.Text ?? "").Trim(), (zoraBox.Text ?? "").Trim());
@@ -2886,7 +2945,7 @@ public static class Program
                             foreach (var n in p.Notes) lines.Add(n);
                         }
                     }
-                    if (zora != "" || zoraFromName)
+                    if (zora != "" || zoraFromName || zoraGivenByDrop)
                     {
                         var (z, err) = FlagPaste.decodeZora(zora);
                         if (err != null) lines.Add("ZORA flags: " + err);
@@ -2900,7 +2959,7 @@ public static class Program
                             if (anyOn && isOn(lmcb))
                             {
                                 setChk(lmcb, false);   // (Legacy Mode locks every ZORA Extra off)
-                                lines.Add("Legacy Mode turned off");
+                                lines.Add("Unchecked: Legacy Mode");
                             }
                             switch (z.FourthSword)
                             {
@@ -2910,13 +2969,16 @@ public static class Program
                                     lines.Add($"Checked: 4th Sword (Level {(z.FourthInLevel2 ? 2 : 9)})");
                                     break;
                                 case FlagPaste.Tri.Off: setChk(fscb, false); break;
-                                case FlagPaste.Tri.Random: lines.Add("4th Sword is Random in these flags, so it was left as it was."); break;
+                                case FlagPaste.Tri.Random: lines.Add("Random (?): 4th Sword, left as it was"); break;
                             }
-                            setTri(pricb, (z.Progressive || z.FourthSword == FlagPaste.Tri.On) ? FlagPaste.Tri.On : FlagPaste.Tri.Off, "Progressive Items");   // (the 4th Sword needs Progressive Items)
+                            var progressiveWanted = z.Progressive || z.FourthSword == FlagPaste.Tri.On;
+                            setTri(pricb, progressiveWanted ? FlagPaste.Tri.On : FlagPaste.Tri.Off, "Progressive Items");   // (the 4th Sword needs Progressive Items)
+                            // (a 4th Sword left checked, as when it is Random, holds Progressive Items on: say so. Progressive Items never turns the 4th Sword on)
+                            if (!progressiveWanted && pricb.IsChecked == true) lines.Add("Checked: Progressive Items (the 4th Sword needs it)");
                             if (z.BootsReplaceBoomerangs == FlagPaste.Tri.Random)
                             {
                                 brcb.IsChecked = null;
-                                lines.Add("Random (?, counts as Off until you set it in Overworld + Extras): Pegasus Boots");
+                                lines.Add("Random (?): Pegasus Boots, counts as Off until you set it in Overworld + Extras");
                             }
                             else setTri(brcb, z.BootsReplaceBoomerangs, "Pegasus Boots");
                             // the four block/hint options can be Random: shown as a ?, which the tracker treats as On
@@ -2925,7 +2987,7 @@ public static class Program
                                 if (t == FlagPaste.Tri.Random)
                                 {
                                     cb.IsChecked = null;
-                                    lines.Add("Random (?, counts as On): " + name);
+                                    lines.Add("Random (?): " + name + ", counts as On");
                                 }
                                 else setTri(cb, t, name);
                             }
@@ -2941,6 +3003,9 @@ public static class Program
                 }
                 // (Apply applies and closes, unless a flag string was bad: then the box stays open so the error can be read. Pasting only applies, so the second string can still be pasted)
                 applyBtn.Click += (_, _) => { if (doApply()) wh.Set(); };
+                // Enter in either box applies too (and closes, like Apply)
+                foreach (var box in new[] { z1rBox, zoraBox })
+                    box.KeyDown += (_, ke) => { if (ke.Key == Key.Enter) { ke.Handled = true; if (doApply()) wh.Set(); } };
                 // pasting into either box applies straight away
                 // (WPF: DataObject.AddPastingHandler, then doApply at Background priority once the text is in; Avalonia: PastingFromClipboard)
                 // (applied when the pasted text arrives, not at a fixed time after the paste: on Linux X11 the clipboard is read
@@ -2993,10 +3058,13 @@ public static class Program
                             result.IsVisible = true;
                             return;
                         }
-                        z1rBox.Text = "";
+                        var z1rWasEmpty = string.IsNullOrWhiteSpace(z1rBox.Text);   // (Z1R flags already pasted are kept, and applied with the dropped ZORA flags)
                         zoraBox.Text = flags;
-                        if (doApply() && flags == "") { result.Text = "ZORA flags read from the tracker file: every ZORA flag is at its default."; }
-                        result.Text += "\n(A tracker file holds only the ZORA flags: paste the Z1R flags too, or drop the seed's .nes.)";
+                        zoraGivenByDrop = true;
+                        bool ok;
+                        try { ok = doApply(); } finally { zoraGivenByDrop = false; }
+                        if (ok && flags == "") { result.Text = "ZORA flags read from the tracker file: every ZORA flag is at its default.\n" + result.Text; }
+                        if (ok && z1rWasEmpty) result.Text += "\n(A tracker file holds only the ZORA flags: paste the Z1R flags too, or drop the seed's .nes.)";
                     }
                     catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[PasteFlags] drop failed: {ex.Message}"); }
                 });
@@ -3309,7 +3377,8 @@ public static class Program
             }
 #if BROWSER
             // (port: closing the page mid-run leaves no crash log, so the web version offers the autosave from a visit in the last day)
-            if (!popupIsActive && BrowserStorage.WrittenAt(SaveAndLoad.AutoSaveFilename) is DateTime autoSavedAt && DateTime.UtcNow - autoSavedAt < TimeSpan.FromDays(1.0))
+            if (!popupIsActive && BrowserStorage.WrittenAt(SaveAndLoad.AutoSaveFilename) is DateTime autoSavedAt && DateTime.UtcNow - autoSavedAt < TimeSpan.FromDays(1.0)
+                && !BrowserStorage.Declined(SaveAndLoad.AutoSaveFilename))   // (No is remembered until the autosave is written again)
             {
                 popupIsActive = true;
                 async Task resume()
@@ -3320,6 +3389,7 @@ public static class Program
                                                                      $"There is an auto-save from your last visit ({agoText}).\n"+
                                                                      "Would you like to load it?", new[] { "Yes, load auto-save", "No" });
                     popupIsActive = false;
+                    if (r == "No") BrowserStorage.Decline(SaveAndLoad.AutoSaveFilename);   // only an explicit No; Esc or an outside click asks again
                     if (r == "Yes, load auto-save")
                     {
                         var startupBegan = false;

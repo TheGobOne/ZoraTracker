@@ -24,7 +24,6 @@ namespace Z1R_Sync
 
         // Delegates for handling different kinds of messages
         private static Action<string, string, string> _onTileChange;
-        private static Action<string, string, string> _onSyncMessage;
 
         private static Action<string, string, string, long> _onSyncMessageWithTimestamp;
 
@@ -182,37 +181,6 @@ namespace Z1R_Sync
             _onSyncMessageWithTimestamp = handler;
         }
 
-        private static async Task<HttpResponseMessage> PostWithRetry(HttpContent content, int maxRetries = 3)
-        {
-            int delayMs = 250;
-
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
-            {
-                try
-                {
-                    var response = await _httpClient.PostAsync(AzureFunctionUrl, content);
-                    if (response.IsSuccessStatusCode)
-                        return response; // SUCCESS
-
-                    Console.WriteLine($"[Sync] Attempt {attempt} failed: {response.StatusCode}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Sync] Retry {attempt} exception: {ex.Message}");
-                }
-
-                await Task.Delay(delayMs);
-                delayMs *= 2; // exponential backoff
-            }
-
-            Console.WriteLine("[Sync] All retries failed — giving up.");
-            return null;
-        }
-
-
-
-
-
         private static string lastSentDoorChangePayload = null;
 
         public static void MarkLastSentDoorChange(string payload)
@@ -225,17 +193,6 @@ namespace Z1R_Sync
             return lastSentDoorChangePayload == payload;
         }
 
-        private static string lastSentRoomChangePayload = null;
-
-        public static void MarkLastSentRoomChange(string payload)
-        {
-            lastSentRoomChangePayload = payload;
-        }
-
-        public static bool ShouldSuppressRoomChange(string payload)
-        {
-            return lastSentRoomChangePayload == payload;
-        }
         private static bool _suppressRoomChange = false;
 
         public static void BeginSuppressingRoomChanges()
@@ -272,92 +229,6 @@ namespace Z1R_Sync
             _onTileChange = handler;
         }
 
-        public static void SetSyncMessageHandler(Action<string, string, string> handler)
-        {
-            _onSyncMessage = handler;
-        }
-
-        public static async Task Send(string msgType, string payload, string senderId)
-        {
-            if (string.IsNullOrEmpty(AzureFunctionUrl))
-                throw new InvalidOperationException("AzureFunctionUrl is not set");
-
-            var request = new
-            {
-                messageType = msgType,
-                payload = payload,
-                senderId = senderId,
-                timeStamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-            };
-
-            var json = JsonConvert.SerializeObject(request);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            try
-            {
-                //var stopwatch = Stopwatch.StartNew();
-                //Console.WriteLine($"[Sync] Sending message {msgType} from {senderId} with payload length {json.Length}");
-
-                var response = await PostWithRetry(content);
-
-                //stopwatch.Stop();
-                //Console.WriteLine($"[Sync] Response for {msgType}: {(int)response.StatusCode} in {stopwatch.ElapsedMilliseconds}ms");
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var responseText = await response.Content.ReadAsStringAsync();
-                    //Console.WriteLine($"[Sync] Response content: {responseText}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Sync] ERROR sending message {msgType}: {ex.Message}");
-            }
-        }
-
-
-
-
-
-
-        private static Dictionary<string, string> _pendingMessages = new Dictionary<string, string>();
-        private static System.Timers.Timer _debounceTimer;
-
-        public static void SendModelUpdate(string msgType, object model, string senderId)
-        {
-            var payload = JsonConvert.SerializeObject(model);
-            lock (_pendingMessages)
-            {
-                _pendingMessages[msgType] = payload;
-            }
-
-            if (_debounceTimer == null)
-            {
-                _debounceTimer = new System.Timers.Timer(250); // 250 ms
-                _debounceTimer.Elapsed += async (sender, e) =>
-                {
-                    Dictionary<string, string> toSend;
-                    lock (_pendingMessages)
-                    {
-                        toSend = new Dictionary<string, string>(_pendingMessages);
-                        _pendingMessages.Clear();
-                    }
-
-                    foreach (var kvp in toSend)
-                    {
-                        await Send(kvp.Key, kvp.Value, senderId);
-                    }
-                };
-                _debounceTimer.AutoReset = false;
-            }
-
-            _debounceTimer.Stop();
-            _debounceTimer.Start();
-        }
-
-
-
-
         // one connection start at a time: two overlapping starts (co-op switched on twice quickly) would dispose each other's connection
         private static readonly System.Threading.SemaphoreSlim _startLock = new System.Threading.SemaphoreSlim(1, 1);
         // Reconnecting. WithAutomaticReconnect gives up after about 40 seconds, and a failed first connect was never retried,
@@ -387,19 +258,31 @@ namespace Z1R_Sync
             catch (Exception ex) { Console.WriteLine($"[SyncManager] ConnectionStateChanged failed: {ex.Message}"); }
         }
 
+        /// Co-op turned on: connect, and keep reconnecting until StopAsync.
         public static async Task StartAsync(string negotiateUrl)
         {
             _wantConnected = true;
             _negotiateUrl = negotiateUrl;
+            await StartInternalAsync(negotiateUrl);
+        }
+
+        // (the reconnect loop calls this, not StartAsync: only the app turns _wantConnected on, so a StopAsync racing the loop stays stopped)
+        private static async Task StartInternalAsync(string negotiateUrl)
+        {
             await _startLock.WaitAsync();
-            try { await StartAsyncCore(negotiateUrl); }
-            catch
+            try
             {
-                StartReconnectLoop();
-                throw;
+                if (!_wantConnected) return;   // (stopped while waiting for the lock)
+                try { await StartAsyncCore(negotiateUrl); }
+                catch
+                {
+                    StartReconnectLoop();
+                    throw;
+                }
+                // (inside the lock: a StopAsync waiting for it disposes this connection after, and no connected event follows a stop)
+                if (_wantConnected) RaiseConnected();
             }
             finally { _startLock.Release(); }
-            RaiseConnected();
         }
 
         /// Co-op turned off: close the connection and stop reconnecting.
@@ -442,7 +325,7 @@ namespace Z1R_Sync
                         if (!_wantConnected) break;
                         try
                         {
-                            await StartAsync(_negotiateUrl);
+                            await StartInternalAsync(_negotiateUrl);
                             break;
                         }
                         catch (Exception ex)
@@ -505,7 +388,8 @@ namespace Z1R_Sync
                     };
                     conn.Reconnected += _ =>
                     {
-                        RaiseConnected();   // messages sent while we were away were missed: resync
+                        if (ReferenceEquals(conn, _connection) && _wantConnected)
+                            RaiseConnected();   // messages sent while we were away were missed: resync
                         return Task.CompletedTask;
                     };
 

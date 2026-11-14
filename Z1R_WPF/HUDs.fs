@@ -14,7 +14,7 @@ let MakeHUDs(cm:CustomComboBoxes.CanvasManager, trackerDungeonMoused:Event<_>, t
     let makeOverlayWindow(_isRightClick) = // todo: save location/size/position/stayfade, use right click to reset defaults
         if nearMouseHUDChromeWindow <> null then
             nearMouseHUDChromeWindow.Close() // only one at a time
-        nearMouseHUDChromeWindow <- new Window(Title="ZORA Tracker near-mouse HUD controls", ResizeMode=ResizeMode.CanMinimize, SizeToContent=SizeToContent.WidthAndHeight, 
+        nearMouseHUDChromeWindow <- new Window(Title="ZORATracker near-mouse HUD controls", ResizeMode=ResizeMode.CanMinimize, SizeToContent=SizeToContent.WidthAndHeight, 
                                                 WindowStartupLocation=WindowStartupLocation.CenterOwner,
                                                 Owner=Application.Current.MainWindow, Background=Brushes.Black)
         let mutable lastMouse = DateTime.Now
@@ -105,7 +105,7 @@ let MakeHUDs(cm:CustomComboBoxes.CanvasManager, trackerDungeonMoused:Event<_>, t
         nearMouseHUDChromeWindow.Show()
         
         let W = appMainCanvas.Width
-        let nearMouseHUDWindow = new Window(Title="ZORA Tracker near-mouse HUD", ResizeMode=ResizeMode.NoResize, SizeToContent=SizeToContent.Manual, Owner=Application.Current.MainWindow, 
+        let nearMouseHUDWindow = new Window(Title="ZORATracker near-mouse HUD", ResizeMode=ResizeMode.NoResize, SizeToContent=SizeToContent.Manual, Owner=Application.Current.MainWindow, 
                                         Background=Brushes.Black, WindowStyle=WindowStyle.None, AllowsTransparency=true, Opacity=maxOpacity, Topmost=true)
         nearMouseHUDWindow.WindowStartupLocation <- WindowStartupLocation.Manual
         nearMouseHUDWindow.Left <- 0.0
@@ -210,7 +210,7 @@ let MakeHUDs(cm:CustomComboBoxes.CanvasManager, trackerDungeonMoused:Event<_>, t
     let makeMinimapOverlay(isRightClick) =
         if minimapOverlayWindow <> null then
             minimapOverlayWindow.Close() // only one at a time
-        minimapOverlayWindow <- new Window(Title="ZORA Tracker minimap overlay", ResizeMode=ResizeMode.NoResize, SizeToContent=SizeToContent.Manual,
+        minimapOverlayWindow <- new Window(Title="ZORATracker minimap overlay", ResizeMode=ResizeMode.NoResize, SizeToContent=SizeToContent.Manual,
                                                 WindowStartupLocation=WindowStartupLocation.Manual, Owner=Application.Current.MainWindow,
                                                 Background=Brushes.Transparent, WindowStyle=WindowStyle.None, AllowsTransparency=true,
                                                 Opacity=1.0, Topmost=true)
@@ -240,7 +240,7 @@ let MakeHUDs(cm:CustomComboBoxes.CanvasManager, trackerDungeonMoused:Event<_>, t
                 let b = new Border(BorderBrush=Brushes.White, BorderThickness=Thickness(3.), Child=c, Opacity=1.0, Height=12.*H/672. - 2. + 6.)
                 b
             let mkTxt(txt) = new TextBox(FontSize=oLegendRect.Height, Foreground=Brushes.Orange, Background=Brushes.Black, IsReadOnly=true, IsHitTestVisible=false, BorderThickness=Thickness(0.), Text=txt)
-            let oText1 = mkTxt("ZORA Tracker mouse ")
+            let oText1 = mkTxt("ZORATracker mouse ")
             let oText2 = mkTxt(" at H16")
             let oCaption = new StackPanel(Orientation=Orientation.Horizontal, Opacity=0.0)
             oCaption.Children.Add(oText1) |> ignore
@@ -303,7 +303,7 @@ let MakeHUDs(cm:CustomComboBoxes.CanvasManager, trackerDungeonMoused:Event<_>, t
         // 672   48 60 ...
 
         let sizerWindow = new Window()
-        sizerWindow.Title <- "ZORA Tracker sizer"
+        sizerWindow.Title <- "ZORATracker sizer"
         sizerWindow.ResizeMode <- ResizeMode.CanResize
         sizerWindow.SizeToContent <- SizeToContent.Manual
         let save() = 

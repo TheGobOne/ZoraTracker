@@ -135,7 +135,7 @@ runtime-test lists in the entries below.
 ## Mac app
 
 `Z1R_Avalonia_Desktop/macOS/make-app.sh [arm64|x64]` publishes the desktop app self-contained (no .NET install needed) and wraps it as
-`Z1R_Avalonia_Desktop/bin/macOS/<arch>/ZORA Tracker.app` (about 120 MB each): the publish output in `Contents/MacOS`, `Info.plist` from
+`Z1R_Avalonia_Desktop/bin/macOS/<arch>/ZORATracker.app` (about 120 MB each): the publish output in `Contents/MacOS`, `Info.plist` from
 `macOS/Info.plist` (bundle id `io.github.tetraly.ZoraTracker`, the version from `GlobalAssemblyInfo.fs`, macOS 14 or later), and
 `macOS/AppIcon.icns`. Two apps, not one universal app: the .NET runtime's own libraries are compiled for each processor, so they can't be
 merged with `lipo`. The icon is WPF's `ztlogo64x64.ico` (its 48px image) scaled up by whole pixels onto a black rounded square.
@@ -146,10 +146,10 @@ Translocation) until it's moved to Applications. As a real app it gets its own A
 
 Known: Gob's settings file and `Saves` folder are written next to the program, so inside the app (`Contents/MacOS`); this works for an app
 the user can write to (one they built or moved to Applications) but not from a read-only location, and it invalidates the bundle's
-signature seal (launching still works; risk 10 and the settings-location upstream PR). `Application.Name` is now "ZORA Tracker", which
+signature seal (launching still works; risk 10 and the settings-location upstream PR). `Application.Name` is now "ZORATracker", which
 macOS shows as the app menu's title (it said "Avalonia Application").
 
-Checked on the Mac (arm64): the app builds, its signature verifies, it launches and the menu bar says ZORA Tracker. x64 builds (not run).
+Checked on the Mac (arm64): the app builds, its signature verifies, it launches and the menu bar says ZORATracker. x64 builds (not run).
 
 ## Browser build
 

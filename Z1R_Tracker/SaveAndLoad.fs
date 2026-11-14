@@ -72,6 +72,7 @@ type Items() =
     member val DupLinks : string = null with get,set   // "si,sj,di,dj;..." overworld tiles whose items were duplicated onto other tiles (older saves do not have this)
     member val ShopPrices : string = null with get,set   // "i,j,price;..." rupee prices noted for shop tiles (older saves do not have this)
     member val TakeAnyTaken : string = null with get,set   // "i,j,slot,candle01,kind;..." take any caves and what was taken there (older saves do not have this)
+    member val TakeAnySlotGaveCandle : string = null with get,set   // "0100": per main screen take any heart slot, 1 when cycling it to the candle gave the blue candle (older saves do not have this: all 0)
     member val Level9TriforceCount = 8 with get,set   // triforces the level 9 entry rule needs (older saves: 8)
     member val Level9TriggerSwordTier = 1 with get,set   // progressive sword tier shown by a sword entry item (older saves: 1)
     member val Level9TriggerBox : Box = null with get,set   // the item that opens level 9 instead of triforces (older saves: null, none)
@@ -291,6 +292,8 @@ let namedBoxes() : (string * TrackerModel.Box)[] =
 let mutable DupLinksText : System.Func<string> = null
 // the UI keeps which take any caves were taken; it sets this so a save includes them (null: none)
 let mutable TakeAnyTakenText : System.Func<string> = null
+// and which main screen take any heart slots gave the blue candle ("0100"; null: none)
+let mutable TakeAnySlotGaveCandleText : System.Func<string> = null
 
 /// Puts the saved shop prices and level 9 entry rule back into the model (older saves keep the startup values).
 let ApplyLoadedItemExtras(items:Items) =
@@ -339,8 +342,9 @@ let SaveItems(prefix) =
         with _ -> ""
     let dupLinks = if isNull DupLinksText then "" else (try DupLinksText.Invoke() with _ -> "")
     let takeAnyTaken = if isNull TakeAnyTakenText then "" else (try TakeAnyTakenText.Invoke() with _ -> "")
+    let takeAnyCandle = if isNull TakeAnySlotGaveCandleText then "" else (try TakeAnySlotGaveCandleText.Invoke() with _ -> "")
     let shopPrices = [| for i = 0 to 15 do for j = 0 to 7 do if TrackerModel.overworldShopPrices.[i,j] > 0 then yield sprintf "%d,%d,%d" i j TrackerModel.overworldShopPrices.[i,j] |] |> String.concat ";"
-    lines.Add(sprintf """    }, "ShuffledWoodSwordTiles": "%s", "HintShopColors": "%s", "ProgressiveTileTiers": "%s", "ProgressiveBoxTiers": "%s", "DupLinks": "%s", "ShopPrices": "%s", "TakeAnyTaken": "%s", "CustomLevelName": "%s",""" shuffledTiles hintColors progressiveTiers boxTiers dupLinks shopPrices takeAnyTaken customName)
+    lines.Add(sprintf """    }, "ShuffledWoodSwordTiles": "%s", "HintShopColors": "%s", "ProgressiveTileTiers": "%s", "ProgressiveBoxTiers": "%s", "DupLinks": "%s", "ShopPrices": "%s", "TakeAnyTaken": "%s", "TakeAnySlotGaveCandle": "%s", "CustomLevelName": "%s",""" shuffledTiles hintColors progressiveTiers boxTiers dupLinks shopPrices takeAnyTaken takeAnyCandle customName)
     lines.Add(sprintf """    "Level9TriforceCount": %d, "Level9TriggerSwordTier": %d, "Level9TriggerBox": {""" TrackerModel.level9TriforceCount TrackerModel.level9TriggerSwordTier)
     SaveBox("    ", TrackerModel.level9TriggerBox)
     lines.Add(sprintf """    }, "Level2StairBoxEnabled": %b, "Level2StairBox": {""" TrackerModel.level2StairBoxEnabled)

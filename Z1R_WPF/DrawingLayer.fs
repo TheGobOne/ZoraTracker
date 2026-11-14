@@ -371,7 +371,7 @@ let InteractWithDrawingLayer(cm:CanvasManager, drawingCanvas:Canvas) = async {
             mouse <- Some(DrawingLayerIcon.ZTracker(k), makeImage(v))
             )
         ztIconGrid.Children.Add(button) |> ignore
-    canvasAdd(bottomCanvas, mkTxtBT("Here are some default icons that come with ZORA Tracker:", 0.), 10., 65.)
+    canvasAdd(bottomCanvas, mkTxtBT("Here are some default icons that come with ZORATracker:", 0.), 10., 65.)
     canvasAdd(bottomCanvas, ztIconGrid, 10., 85.)
     // ExtraIcons
     let extraIconGrid = new System.Windows.Controls.Primitives.UniformGrid(Rows=7, Columns=8)
@@ -402,7 +402,7 @@ let InteractWithDrawingLayer(cm:CanvasManager, drawingCanvas:Canvas) = async {
     let openFolderButton = Graphics.makeButton("Open ExtraIcons Folder", Some(12.), Some(Brushes.Orange))
     canvasAdd(bottomCanvas, openFolderButton, X, 110.)
     canvasAdd(bottomCanvas, mkTxtBT("<- add .png files here", 0.), X+150., 110.)
-    canvasAdd(bottomCanvas, mkTxtBT("(must re-start ZORA Tracker to reload these icons)", 0.), X, 130.)
+    canvasAdd(bottomCanvas, mkTxtBT("(must re-start ZORATracker to reload these icons)", 0.), X, 130.)
     canvasAdd(bottomCanvas, mkTxtBT("Here are icons found in your ExtraIcons folder:", 0.), X, 150.)
     canvasAdd(bottomCanvas, extraIconGrid, X, 170.)
     openFolderButton.Click.Add(fun _ ->

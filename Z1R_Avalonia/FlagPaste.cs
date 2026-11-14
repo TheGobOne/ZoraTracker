@@ -199,9 +199,10 @@ public static class FlagPaste
         if (s == "") return finish();
         var dot = s.IndexOf('.');
         var version = 0;
-        var versionOk = dot > 0 && int.TryParse(s.Substring(0, dot), out version);
+        // (digits only, no sign, spaces or leading zero: the spec's ^([1-9][0-9]*)\.)
+        var versionOk = dot > 0 && s[0] != '0' && int.TryParse(s.Substring(0, dot), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out version);
         if (!versionOk || version < 1)
-            return (null, "That doesn't look like a ZORA flag string (it should look like 18.abc: a version, a dot, then letters and digits).");
+            return (null, "That doesn't look like a ZORA flag string (it should look like 22.abc: a version, a dot, then letters and digits).");
         // a newer string is read anyway: fields only ever get added above the old ones, so the ones this tracker knows still sit where they did
         if (version > zoraCurrentVersion)
             warning = $"These ZORA flags are version {version}, newer than this tracker understands (up to {zoraCurrentVersion}). They were read anyway; if something looks wrong, update the tracker.";

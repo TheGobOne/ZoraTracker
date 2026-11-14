@@ -89,9 +89,16 @@ public class BrowserWindow : UserControl
             Platform.stub($"separate windows in the browser (\"{Title}\" isn't shown)");
     }
     public void Activate() { }
-    /// <summary>Closing the page's only "window" ends the app (the desktop app quits); in a page there's nothing to quit, so it's a no-op.</summary>
-    public void Close() { }
-    public void Close(object dialogResult) { }
+    /// <summary>Closing the page's only "window" ends the app (the desktop app quits); in a page there's nothing to quit, so for the main window it's
+    /// a no-op. Other windows raise Closed once, as a real window does, so the cleanup their owners hang on it (such as the broadcast window's) runs.</summary>
+    public void Close()
+    {
+        if (this is Program.MyWindow || closed) return;
+        closed = true;
+        OnClosed(EventArgs.Empty);
+    }
+    public void Close(object dialogResult) => Close();
+    private bool closed;
 }
 
 /// <summary>Keeps the tracker's files across page reloads. Files the tracker writes in a page go to an in-memory file system that's gone when the
@@ -104,6 +111,7 @@ public static partial class BrowserStorage
 {
     private const string keyPrefix = "zt:";
     private const string timePrefix = "zt-time:";   // (when each file was last written, since restoring a file makes it look new)
+    private const string declinedPrefix = "zt-declined:";   // (the version of a file the player said No to, see Decline)
     // each kept file's size and time when it was last saved, by path relative to the user folder
     private static readonly Dictionary<string, (long, DateTime)> saved = new();
     // when each kept file was written, from earlier visits too (UTC)
@@ -123,7 +131,10 @@ public static partial class BrowserStorage
     /// <summary>Puts the kept files back in the page's file system; call it before the tracker reads its settings.</summary>
     public static void Restore()
     {
-        foreach (var key in BrowserJs.StorageKeys(keyPrefix))
+        string[] keys;
+        try { keys = BrowserJs.StorageKeys(keyPrefix); }   // (site data can be blocked, so localStorage reads can throw)
+        catch (Exception e) { Console.WriteLine($"reading browser storage failed: {e.Message}"); return; }
+        foreach (var key in keys)
         {
             var rel = key.Substring(keyPrefix.Length);
             var path = Path.Combine(root, rel);
@@ -153,6 +164,7 @@ public static partial class BrowserStorage
     {
         try
         {
+            if (BrowserJs.StoragePaused()) return;   // (a newer tab of the tracker is open: its files win, see main.js)
             var seen = new HashSet<string>();
             foreach (var path in keptFiles())
             {
@@ -160,32 +172,117 @@ public static partial class BrowserStorage
                 seen.Add(rel);
                 var st = stamp(path);
                 if (saved.TryGetValue(rel, out var old) && old == st) continue;
-                if (BrowserJs.StorageSet(keyPrefix + rel, File.ReadAllText(path)))
+                if (didNotFit.TryGetValue(rel, out var failed) && failed == st) continue;   // (tried already and didn't fit: wait until it changes)
+                var text = File.ReadAllText(path);
+                // (when full, the oldest other save makes room: saves other than the autosave were also downloaded)
+                if (store(rel, st, text) || (evictOldestSave(rel) && store(rel, st, text)))
                 {
                     saved[rel] = st;
                     writtenAt[rel] = st.Item2;
-                    BrowserJs.StorageSet(timePrefix + rel, st.Item2.Ticks.ToString());
+                    didNotFit.Remove(rel);
                 }
-                else if (!reportedFull)
+                else
                 {
-                    reportedFull = true;
-                    Console.WriteLine($"the browser's storage is full: {rel} and later changes may not be kept");
+                    didNotFit[rel] = st;
+                    if (!reportedFull)
+                    {
+                        reportedFull = true;
+                        Console.WriteLine($"the browser's storage is full: {rel} and later changes may not be kept");
+                        tellPlayerStorageIsFull = true;
+                    }
                 }
             }
             foreach (var rel in saved.Keys.Where(k => !seen.Contains(k)).ToList())
             {
                 BrowserJs.StorageRemove(keyPrefix + rel);
                 BrowserJs.StorageRemove(timePrefix + rel);
+                BrowserJs.StorageRemove(declinedPrefix + rel);
                 saved.Remove(rel);
                 writtenAt.Remove(rel);
+                evicted.Remove(rel);
             }
+            foreach (var rel in didNotFit.Keys.Where(k => !seen.Contains(k)).ToList()) didNotFit.Remove(rel);
+            if (tellPlayerStorageIsFull) showStorageFull();
         }
         catch (Exception e) { Console.WriteLine($"saving to browser storage failed: {e.Message}"); }
+    }
+    // files that didn't fit, with the size and time that failed
+    private static readonly Dictionary<string, (long, DateTime)> didNotFit = new();
+    // saves taken out of localStorage to make room (still in the page's file system, and downloaded when they were written)
+    private static readonly HashSet<string> evicted = new();
+    private static bool tellPlayerStorageIsFull = false;
+
+    // stores one file and its time; false if it didn't fit, in which case neither is changed (so the content and time can't disagree)
+    private static bool store(string rel, (long, DateTime) st, string text)
+    {
+        var oldTime = BrowserJs.StorageGet(timePrefix + rel);
+        if (!BrowserJs.StorageSet(timePrefix + rel, st.Item2.Ticks.ToString())) return false;
+        if (BrowserJs.StorageSet(keyPrefix + rel, text))
+        {
+            evicted.Remove(rel);
+            return true;
+        }
+        if (oldTime == "") BrowserJs.StorageRemove(timePrefix + rel);
+        else BrowserJs.StorageSet(timePrefix + rel, oldTime);   // (the same size as the new one, so it fits)
+        return false;
+    }
+    // takes the oldest kept save other than the autosave (and other than rel) out of localStorage; false if there is none
+    private static bool evictOldestSave(string rel)
+    {
+        var savesRel = Path.GetRelativePath(root, SaveAndLoad.SavesDirectory).Replace('\\', '/') + "/";
+        var autoRel = Path.GetRelativePath(root, SaveAndLoad.AutoSaveFilename).Replace('\\', '/');
+        var oldest = saved.Keys.Where(k => k.StartsWith(savesRel) && k != autoRel && k != rel && !evicted.Contains(k) && writtenAt.ContainsKey(k))
+                               .OrderBy(k => writtenAt[k]).FirstOrDefault();
+        if (oldest == null) return false;
+        BrowserJs.StorageRemove(keyPrefix + oldest);
+        BrowserJs.StorageRemove(timePrefix + oldest);
+        BrowserJs.StorageRemove(declinedPrefix + oldest);
+        evicted.Add(oldest);   // (its entry in saved stays, so it isn't stored again unless it changes)
+        Console.WriteLine($"the browser's storage is full: removed the save {oldest} from it to make room for {rel}");
+        return true;
+    }
+    // tells the player once, in the tracker, that the browser's storage is full (when no other popup is up)
+    private static void showStorageFull()
+    {
+        var cm = CustomComboBoxes.CanvasManager.TheOnlyCanvasManager;
+        if (cm == null || CustomComboBoxes.GlobalFlag.popupIsActive) return;   // (asked again at the next flush)
+        tellPlayerStorageIsFull = false;
+        CustomComboBoxes.GlobalFlag.popupIsActive = true;
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Warning,
+                    "This browser's storage for the tracker is full, so some changes may not be kept after this page closes.\n" +
+                    "Saves other than the auto-save are also downloaded; keep those files, and open them with Load Save to get them back.", new[] { "Ok" });
+            }
+            catch (Exception e) { Console.WriteLine($"showing the storage-full message failed: {e.Message}"); }
+            finally { CustomComboBoxes.GlobalFlag.popupIsActive = false; }
+        });
     }
 
     /// <summary>When a kept file was last written (UTC), counting earlier visits; null if it isn't kept.</summary>
     public static DateTime? WrittenAt(string path) =>
         writtenAt.TryGetValue(Path.GetRelativePath(root, path).Replace('\\', '/'), out var t) ? t : null;
+
+    /// <summary>Remembers that the player said No to this version of a kept file (the autosave offer), so it isn't offered again until it is rewritten.</summary>
+    public static void Decline(string path)
+    {
+        try
+        {
+            if (WrittenAt(path) is DateTime t) BrowserJs.StorageSet(declinedPrefix + Path.GetRelativePath(root, path).Replace('\\', '/'), t.Ticks.ToString());
+        }
+        catch (Exception e) { Console.WriteLine($"remembering the No failed: {e.Message}"); }
+    }
+    /// <summary>True when the player already said No to this version of the file.</summary>
+    public static bool Declined(string path)
+    {
+        try
+        {
+            return WrittenAt(path) is DateTime t && BrowserJs.StorageGet(declinedPrefix + Path.GetRelativePath(root, path).Replace('\\', '/')) == t.Ticks.ToString();
+        }
+        catch (Exception) { return false; }
+    }
 
     /// <summary>Copies a file the user picked (Load, or a custom map image) into the page's file system and returns its path there. Picked saves go to
     /// the Saves folder, so they're kept and listed with the recent loads like on the desktop.</summary>
@@ -194,6 +291,9 @@ public static partial class BrowserStorage
         var dir = file.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? SaveAndLoad.SavesDirectory : Path.Combine(root, "Uploads");
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, Path.GetFileName(file.Name));
+        // (a picked file named like one already here, such as the autosave or a save from this browser, gets a free name instead of replacing it)
+        for (int n = 2; File.Exists(path); n++)
+            path = Path.Combine(dir, $"{Path.GetFileNameWithoutExtension(file.Name)} ({n}){Path.GetExtension(file.Name)}");
         await using (var src = await file.OpenReadAsync())
         await using (var dst = File.Create(path))
             await src.CopyToAsync(dst);
@@ -248,5 +348,7 @@ internal static partial class BrowserJs
     internal static partial bool StorageSet(string key, string value);
     [JSImport("storageRemove", "main.js")]
     internal static partial void StorageRemove(string key);
+    [JSImport("storagePaused", "main.js")]
+    internal static partial bool StoragePaused();
 }
 #endif

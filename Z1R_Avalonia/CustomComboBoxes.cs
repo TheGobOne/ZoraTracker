@@ -395,6 +395,8 @@ public static class CustomComboBoxes
 
     // Escape closes the topmost modal popup (the same as clicking outside it)
     private static readonly Stack<ManualResetEvent> modalDismissStack = new Stack<ManualResetEvent>();
+    // popups on the stack that Escape must not close (escapeCloses false): while one is on top, Escape does nothing, so it can't close the popup beneath
+    private static readonly HashSet<ManualResetEvent> notEscapable = new HashSet<ManualResetEvent>();
     private static bool escapeHandlerRegistered = false;
     private static void ensureEscapeHandler()
     {
@@ -411,16 +413,17 @@ public static class CustomComboBoxes
                 if (ea.Key == Key.Escape && modalDismissStack.Count > 0)
                 {
                     ea.Handled = true;
-                    modalDismissStack.Peek().Set();
+                    if (!notEscapable.Contains(modalDismissStack.Peek())) modalDismissStack.Peek().Set();
                 }
             }, RoutingStrategies.Tunnel);
         }
     }
 
-    // closes the topmost modal popup the way Escape does (used by the --selftest mode); false when no modal popup is open
+    // closes the topmost modal popup the way Escape does (used by the --selftest mode); false when no modal popup is open,
+    // or when the top one is a popup Escape doesn't close (it stays open, as with Escape)
     public static bool DismissTopModal()
     {
-        if (modalDismissStack.Count > 0)
+        if (modalDismissStack.Count > 0 && !notEscapable.Contains(modalDismissStack.Peek()))
         {
             modalDismissStack.Peek().Set();
             return true;
@@ -479,7 +482,9 @@ public static class CustomComboBoxes
                 }
             });
             ensureEscapeHandler();
-            if (escapeCloses) modalDismissStack.Push(wh);   // (a popup only code may close, such as the update download, stays off the Escape stack)
+            // (a popup only code may close, such as the update download, is on the Escape stack too, marked so Escape leaves it and the popups under it alone)
+            if (!escapeCloses) notEscapable.Add(wh);
+            modalDismissStack.Push(wh);
             // (WPF: `let! _ = Async.AwaitWaitHandle(wh)` then `do! Async.SwitchToContext(ctxt)`; this await resumes on the UI thread's context)
             await AwaitWaitHandle(wh);
             ClickTrace.Log("popup closed normally");
@@ -499,6 +504,7 @@ public static class CustomComboBoxes
                 modalDismissStack.Clear();
                 for (int k = keep.Length - 1; k >= 0; k--) modalDismissStack.Push(keep[k]);
             }
+            notEscapable.Remove(wh);
             try { removeElementFromCanvas(c, element); } catch { }
             cm.DismissPopupCanvas(c);
         }

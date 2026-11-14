@@ -1947,8 +1947,15 @@ public static class DungeonUI
                         lastRemoteRoomLevel = level;   // (Program calls redrawAllRoomsPublic right after this)
                         // This will also trigger redraw for that cell
                         setNewValueFunctions[level - 1][x, y](newRoom);
-                        isFirstTimeClickingAnyRoom[level - 1].Value = false;
-                        if (numeralsByLevel[level - 1] is TextBox nb) nb.Opacity = 0.0;   // (the tab now has marks: hide its big number, as a local first mark does)
+                        // (the tab now has marks: hide its big number, as a local first mark does. A partner who cleared the last room, or wiped
+                        //  the dungeon, leaves it all Unmarked: then the number and the first-click shortcut come back, as the local clear does)
+                        var rooms = masterRoomStates[level - 1];
+                        var allUnmarked = true;
+                        for (int i = 0; i <= 7 && allUnmarked; i++)
+                            for (int j = 0; j <= 7 && allUnmarked; j++)
+                                if (!RoomTypeExtensions.IsNotMarked(rooms[i, j].RoomType)) allUnmarked = false;
+                        isFirstTimeClickingAnyRoom[level - 1].Value = allUnmarked;
+                        if (numeralsByLevel[level - 1] is TextBox nb) nb.Opacity = allUnmarked ? 0.25 : 0.0;
                     }
 
                 });

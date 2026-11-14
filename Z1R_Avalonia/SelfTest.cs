@@ -179,9 +179,12 @@ public static class SelfTest
             var (z18, err18) = FlagPaste.decodeZora("18.1!5I5HHHX0dg");
             if (z18 == null) fail("ZORA flags (version 18): " + err18);
             else if (!(z18.Progressive && z18.FourthSword == FlagPaste.Tri.On && z18.BootsReplaceBoomerangs == FlagPaste.Tri.On)) fail("ZORA flags (version 18) decoded wrong");
-            // the spec's current ZORA string version is 22 (fields 42..45 added in 19..22): an all-zero version 22 string must be accepted, and 23 refused
+            // the spec's current ZORA string version is 22 (fields 42..45 added in 19..22): an all-zero version 22 string must be accepted (23 is checked below)
             var (z22, err22) = FlagPaste.decodeZora("22.0");
             if (z22 == null) fail("ZORA flags (version 22): " + err22);
+            // the version is plain digits with no leading zero (the spec's ^([1-9][0-9]*)\.): a sign, a space or a leading zero is refused
+            foreach (var bad in new[] { "+18.0", "18 .0", "018.0", "0.0", "-1.0" })
+                if (FlagPaste.decodeZora(bad).ok != null) fail($"ZORA flags '{bad}' were accepted (the version must be digits with no leading zero)");
             // a newer version is read anyway, with a warning (and its extra digits are not an error: they are fields this tracker does not know)
             var (z23, err23) = FlagPaste.decodeZora("23.1");
             if (z23 == null || z23.Warning == null) fail("ZORA flags (version 23, newer than the spec) were refused or gave no warning: " + err23);
@@ -429,6 +432,84 @@ public static class SelfTest
                     TrackerModel.CustomLevelName = sName; TrackerModel.MirrorOverworld = sMirror;
                     TrackerModel.level2StairBoxEnabled = sL2; TrackerModel.level9FloorBoxEnabled = sL9;
                     box9.AttemptToSet(sBox9Cell, sBox9Has);
+                }
+            });
+            // the save fields added since v2.2.0-beta-23: each is set to a value that is not the default, saved, and read back (or put back the way a real load does)
+            guard("newer save fields round trip", () =>
+            {
+                var pp = TrackerModel.playerProgressAndTakeAnyHearts; var se = TrackerModel.startingItemsAndExtras;
+                var sPrices = (int[,])TrackerModel.overworldShopPrices.Clone();
+                var sTri = TrackerModel.level9TriforceCount; var sTier = TrackerModel.level9TriggerSwordTier;
+                var trig = TrackerModel.level9TriggerBox; var sTrigCell = trig.CellCurrent(); var sTrigHas = trig.PlayerHas();
+                var sTaken = OverworldMapTileCustomization.takeAnyTaken.ToList();
+                var sCandle = (bool[])OverworldMapTileCustomization.takeAnySlotGaveCandle.Clone();
+                var sKind2 = pp.GetTakeAnyKind(2);
+                var sTileTiers = TrackerModel.progressiveTileTier.ToList(); var sBoxTiers = TrackerModel.progressiveBoxTier.ToList();
+                var sHint = TrackerModel.hintShopColors.ToList();
+                var sSword4 = se.PlayerHasSword4.Value(); var sMags = se.PlayerHasMagicalSword.Value();
+                var sZf = SaveAndLoad.lastKnownZoraFlags; var sZv = SaveAndLoad.lastKnownZoraVersion;
+                string build() => string.Join("\n", SaveAndLoad.BuildSaveLines("", 0, new[] { "}" }, new string[0], "", false, 0, false, false));
+                try
+                {
+                    TrackerModel.setShopPrice(3, 4, 160);
+                    TrackerModel.level9TriforceCount = 5;
+                    TrackerModel.level9TriggerSwordTier = 3;
+                    var trigCell = sTrigCell == TrackerModel.ITEMS.BOW ? TrackerModel.ITEMS.RAFT : TrackerModel.ITEMS.BOW;
+                    if (!trig.AttemptToSet(trigCell, TrackerModel.PlayerHas.SKIPPED)) fail("newer save fields: could not set the level 9 entry item");
+                    OverworldMapTileCustomization.takeAnyTaken.Clear();
+                    OverworldMapTileCustomization.takeAnyTaken[(5, 6)] = (2, true, 2);
+                    for (var k = 0; k < 4; k++) OverworldMapTileCustomization.takeAnySlotGaveCandle[k] = k == 1 || k == 3;
+                    TrackerModel.progressiveTileTier[Tuple.Create(7, 2, TrackerModel.ITEMS.BLUECANDLE)] = 2;
+                    TrackerModel.progressiveBoxTier[TrackerModel.sword2Box] = 3;
+                    TrackerModel.hintShopColors[Tuple.Create(9, 1)] = 4;
+                    se.PlayerHasSword4.Set(!sSword4); se.PlayerHasMagicalSword.Set(!sMags);
+                    SaveAndLoad.lastKnownZoraFlags = "22.7KrCiA"; SaveAndLoad.lastKnownZoraVersion = "2.0.1";
+                    var d = DungeonSaveAndLoad.LoadAll(build());
+                    var it = d.Items;
+                    if (it.ShopPrices == null || !it.ShopPrices.Split(';').Contains("3,4,160")) fail($"save round trip: ShopPrices came back as '{it.ShopPrices}'");
+                    if (it.Level9TriforceCount != 5) fail($"save round trip: Level9TriforceCount 5 came back as {it.Level9TriforceCount}");
+                    if (it.Level9TriggerSwordTier != 3) fail($"save round trip: Level9TriggerSwordTier 3 came back as {it.Level9TriggerSwordTier}");
+                    if (it.Level9TriggerBox == null || it.Level9TriggerBox.CellCurrent != trigCell) fail("save round trip: Level9TriggerBox did not come back");
+                    if (it.TakeAnyTaken == null || !it.TakeAnyTaken.Split(';').Contains("5,6,2,1,2")) fail($"save round trip: TakeAnyTaken came back as '{it.TakeAnyTaken}'");
+                    if (it.TakeAnySlotGaveCandle != "0101") fail($"save round trip: TakeAnySlotGaveCandle 0101 came back as '{it.TakeAnySlotGaveCandle}'");
+                    if (it.ProgressiveTileTiers == null || !it.ProgressiveTileTiers.Split(';').Contains($"7,2,{TrackerModel.ITEMS.BLUECANDLE},2")) fail($"save round trip: ProgressiveTileTiers came back as '{it.ProgressiveTileTiers}'");
+                    if (it.ProgressiveBoxTiers == null || !it.ProgressiveBoxTiers.Split(';').Contains("Sword2,3")) fail($"save round trip: ProgressiveBoxTiers came back as '{it.ProgressiveBoxTiers}'");
+                    if (it.HintShopColors == null || !it.HintShopColors.Split(';').Contains("9,1,4")) fail($"save round trip: HintShopColors came back as '{it.HintShopColors}'");
+                    if (d.StartingItemsAndExtras.PlayerHasSword4 != !sSword4 || d.StartingItemsAndExtras.PlayerHasMagicalSword != !sMags) fail("save round trip: the starting 4th sword / magical sword did not come back");
+                    if (d.ZoraFlags != "22.7KrCiA" || d.ZoraVersion != "2.0.1") fail($"save round trip: ZORA flags / version came back as '{d.ZoraFlags}' / '{d.ZoraVersion}'");
+                    // forget them, then put them back the way a real load does
+                    TrackerModel.setShopPrice(3, 4, 0); TrackerModel.level9TriforceCount = 8; TrackerModel.level9TriggerSwordTier = 1;
+                    trig.AttemptToSet(-1, TrackerModel.PlayerHas.SKIPPED);
+                    OverworldMapTileCustomization.takeAnyTaken.Clear();
+                    Array.Clear(OverworldMapTileCustomization.takeAnySlotGaveCandle, 0, 4);
+                    se.PlayerHasSword4.Set(sSword4); se.PlayerHasMagicalSword.Set(sMags);
+                    OverworldMapTileCustomization.applyLoadedItemExtras(it);
+                    d.StartingItemsAndExtras.Apply();
+                    if (TrackerModel.overworldShopPrices[3, 4] != 160 || TrackerModel.level9TriforceCount != 5 || TrackerModel.level9TriggerSwordTier != 3 || trig.CellCurrent() != trigCell)
+                        fail("save load: the shop price / level 9 entry rule was not put back");
+                    if (!OverworldMapTileCustomization.takeAnyTaken.TryGetValue((5, 6), out var tk) || tk != (2, true, 2)) fail("save load: the taken take any cave was not put back");
+                    if (!OverworldMapTileCustomization.takeAnySlotGaveCandle.SequenceEqual(new[] { false, true, false, true })) fail("save load: which take any slots gave the candle was not put back");
+                    if (se.PlayerHasSword4.Value() != !sSword4 || se.PlayerHasMagicalSword.Value() != !sMags) fail("save load: the starting 4th sword / magical sword was not put back");
+                    // a beta-23 save has no TakeAnySlotGaveCandle: no slot gave the candle
+                    var old = DungeonSaveAndLoad.LoadAll(build().Replace("\"TakeAnySlotGaveCandle\": \"0101\", ", ""));
+                    if (old.Items.TakeAnySlotGaveCandle != null) fail("a save without TakeAnySlotGaveCandle should load it as null");
+                    OverworldMapTileCustomization.applyLoadedItemExtras(old.Items);
+                    if (OverworldMapTileCustomization.takeAnySlotGaveCandle.Any(b => b)) fail("a save without TakeAnySlotGaveCandle should leave every slot as not having given the candle");
+                }
+                finally
+                {
+                    for (var i = 0; i <= 15; i++) for (var j = 0; j <= 7; j++) TrackerModel.overworldShopPrices[i, j] = sPrices[i, j];
+                    TrackerModel.level9TriforceCount = sTri; TrackerModel.level9TriggerSwordTier = sTier;
+                    trig.AttemptToSet(sTrigCell, sTrigHas);
+                    OverworldMapTileCustomization.takeAnyTaken.Clear();
+                    foreach (var kv in sTaken) OverworldMapTileCustomization.takeAnyTaken[kv.Key] = kv.Value;
+                    Array.Copy(sCandle, OverworldMapTileCustomization.takeAnySlotGaveCandle, 4);
+                    pp.SetTakeAnyKind(2, sKind2);
+                    TrackerModel.progressiveTileTier.Clear(); foreach (var kv in sTileTiers) TrackerModel.progressiveTileTier[kv.Key] = kv.Value;
+                    TrackerModel.progressiveBoxTier.Clear(); foreach (var kv in sBoxTiers) TrackerModel.progressiveBoxTier[kv.Key] = kv.Value;
+                    TrackerModel.hintShopColors.Clear(); foreach (var kv in sHint) TrackerModel.hintShopColors[kv.Key] = kv.Value;
+                    se.PlayerHasSword4.Set(sSword4); se.PlayerHasMagicalSword.Set(sMags);
+                    SaveAndLoad.lastKnownZoraFlags = sZf; SaveAndLoad.lastKnownZoraVersion = sZv;
                 }
             });
             log($"ZORA options save round trip done ({failures} failures so far)");
@@ -762,10 +843,15 @@ public static class SelfTest
         {
             var key = "SelfTestConflict";
             CoopSync.recordSend(key);
-            var later = DateTime.UtcNow.Ticks + TimeSpan.TicksPerSecond;
-            var earlier = DateTime.UtcNow.Ticks - 2 * TimeSpan.TicksPerSecond;
+            // (outside the 5 s window the later change wins; inside it the lower console ID wins)
+            var later = DateTime.UtcNow.Ticks + 10 * TimeSpan.TicksPerSecond;
+            var earlier = DateTime.UtcNow.Ticks - 10 * TimeSpan.TicksPerSecond;
+            var close = DateTime.UtcNow.Ticks + TimeSpan.TicksPerSecond;
             if (CoopSync.localEditWins(key, 5000, later, "partner")) fail("co-op: a partner's later change to the same room was ignored");
             if (!CoopSync.localEditWins(key, 5000, earlier, "partner")) fail("co-op: a partner's earlier change to the same room overwrote ours");
+            if (!CoopSync.localEditWins(key, 5000, close, "￿")) fail("co-op: a concurrent change from a higher console ID overwrote ours");
+            if (!string.IsNullOrEmpty(TrackerModelOptions.CoopSyncOptions.MyConsoleId) && CoopSync.localEditWins(key, 5000, close, ""))
+                fail("co-op: a concurrent change from a lower console ID was ignored");
             if (CoopSync.localEditWins("SelfTestNeverSent", 5000, earlier, "partner")) fail("co-op: a partner's change was ignored though we never changed that room");
         });
         // 6g. duplicate links go into the save

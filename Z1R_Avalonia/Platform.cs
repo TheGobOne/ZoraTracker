@@ -128,7 +128,7 @@ public static class Platform
     }
 
     /// <summary>Start an executable in its own folder with no console window, as WPF's ShowRunCustom RUN does
-    /// (stdout redirected, no shell execute). Exceptions propagate to the caller, as Process.Start's do in WPF.</summary>
+    /// (no shell execute; stdout is not redirected). Exceptions propagate to the caller, as Process.Start's do in WPF.</summary>
     public static void StartProcessHidden(string fileName, string arguments)
     {
         Process.Start(new ProcessStartInfo

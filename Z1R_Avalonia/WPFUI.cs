@@ -3784,7 +3784,7 @@ public static class WPFUI
                 var connected = SyncManager.IsConnected;
                 var partner = connected && CoopSync.PartnerPresent;
                 coopDot.Fill = partner ? Brushes.LimeGreen : connected ? Brushes.DodgerBlue : Brushes.Gray;
-                ToolTip.SetTip(coopDot, partner ? "Co-op connected" : connected ? "Co-op: connected to the relay, waiting for your partner" : "Co-op: not connected to the relay");
+                ToolTip.SetTip(coopDot, partner ? "Co-op: your partner is here" : connected ? "Co-op: on the relay, waiting for your partner" : "Co-op: not connected");
             });
         }
         SyncManager.ConnectionStateChanged += updateCoopDot;
@@ -4156,8 +4156,8 @@ public static class WPFUI
             redrawWhiteSwordCanvas(white_sword_canvas);
             redrawMagicalSwordCanvas(mags_canvas);
             // update specific-blockers that may have been (un)blocked
-            foreach (var f in Views.redrawBoxes) f();
-            foreach (var f in Views.redrawTriforces) f();
+            foreach (var f in Views.redrawBoxes.ToArray()) f();   // (copies: boxes leaving the visual tree remove themselves from the lists)
+            foreach (var f in Views.redrawTriforces.ToArray()) f();
             // the triforce reference chart follows the triforces however they were marked (numbered triforce, chart click, or a triforce piece in an item box)
             var havesKey = string.Join(",", TrackerModel.GetTriforceHaves().Select(b => b ? "1" : "0")) + (questRefIsSecond() ? "2" : "1");
             if (havesKey != lastQuestRefKey)
@@ -5773,8 +5773,8 @@ public static class WPFUI
                 foreach (var t in data.Items.HintShopColors.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
                 {
                     var p = t.Split(',');
-                    if (p.Length == 3)
-                        TrackerModel.hintShopColors[Tuple.Create(parseInt(p[0]), parseInt(p[1]))] = parseInt(p[2]);
+                    if (p.Length == 3 && int.TryParse(p[0], out var hi) && int.TryParse(p[1], out var hj) && int.TryParse(p[2], out var hc))   // (a damaged entry is skipped, not the whole load)
+                        TrackerModel.hintShopColors[Tuple.Create(hi, hj)] = hc;
                 }
             }
             TrackerModel.progressiveTileTier.Clear();
@@ -5783,8 +5783,8 @@ public static class WPFUI
                 foreach (var t in data.Items.ProgressiveTileTiers.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
                 {
                     var p = t.Split(',');
-                    if (p.Length == 4)
-                        TrackerModel.progressiveTileTier[Tuple.Create(parseInt(p[0]), parseInt(p[1]), parseInt(p[2]))] = parseInt(p[3]);
+                    if (p.Length == 4 && int.TryParse(p[0], out var ti) && int.TryParse(p[1], out var tj) && int.TryParse(p[2], out var titem) && int.TryParse(p[3], out var tier))   // (a damaged entry is skipped)
+                        TrackerModel.progressiveTileTier[Tuple.Create(ti, tj, titem)] = tier;
                 }
             }
             TrackerModel.shuffledWoodSwordTiles.Clear();
@@ -5961,20 +5961,7 @@ public static class WPFUI
             Timeline.isCurrentlyLoadingASave = false;
             resyncProgressiveTiers();   // (the progressive hook skipped the load: start from the loaded tiers, so nothing counts as a fresh upgrade)
             if (data.Items.ProgressiveBoxTiers == null && TrackerModel.ProgressiveItems)
-            {
-                // older saves have no box tiers: give the collected family boxes the top tiers the family has reached, one each, in box order
-                var loadedBoxesAll = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Distinct().ToList();
-                for (int fam = 1; fam <= 5; fam++)
-                {
-                    var famBoxes = loadedBoxesAll.Where(b => TrackerModel.progressiveFamily(b.CellCurrent()) == fam && b.PlayerHas().Equals(TrackerModel.PlayerHas.YES)
-                                                            && !TrackerModel.progressiveBoxTier.ContainsKey(b)).ToList();
-                    var famTop = Math.Max(1, TrackerModel.progressiveFamilyTier(fam) - 1);   // (the tier of the last item collected)
-                    var famCap = fam == 1 ? 4 : 2;
-                    for (int k = 0; k < famBoxes.Count; k++)
-                        TrackerModel.progressiveBoxTier[famBoxes[k]] = Math.Max(1, Math.Min(famCap, famTop - (famBoxes.Count - 1) + k));
-                }
-                TrackerModel.progressiveTierChanged.Trigger(null);   // (draw the boxes with their tiers)
-            }
+                OverworldItemGridUI.BackfillProgressiveBoxTiers();   // (older saves have no box tiers)
             TrackerModel.TimelineItemModel.TriggerTimelineChanged();  // redraw timeline once (redraws are ignored while loading)
             if (LoadDump.isActive)   // --load/--dump: write what the tracker now holds, and exit
                 LoadDump.Finish(SaveAndLoad.BuildSaveLines(notesTextBox.Text, DungeonUI.theDungeonTabControl.SelectedIndex, exportDungeonModelsJsonLines(), DungeonSaveAndLoad.SaveDrawingLayer(),

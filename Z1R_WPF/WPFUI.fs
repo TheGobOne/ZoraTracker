@@ -2846,13 +2846,13 @@ let makeAll(mainWindow:Window, cm:CustomComboBoxes.CanvasManager, drawingCanvas:
                         SaveAndLoad.pendingManualSaveName <- typedName
                         let filename = MakeManualSave()
                         let filename = System.IO.Path.GetFileName(filename)  // remove directory info (could have username in path, don't display PII on-screen)
-                        let! r = CustomComboBoxes.DoModalMessageBox(cm, null, sprintf "ZORA Tracker data saved to file\n%s" filename, ["Ok"])
+                        let! r = CustomComboBoxes.DoModalMessageBox(cm, null, sprintf "ZORATracker data saved to file\n%s" filename, ["Ok"])
                         ignore r
                         popupIsActive <- false
                 with e ->
                     HotKeys.suspendHotKeys <- false
                     SaveAndLoad.pendingManualSaveName <- ""
-                    let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, sprintf "ZORA Tracker was unable to save the\ntracker state to a file\nError:\n%s" e.Message, ["Ok"])
+                    let! r = CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, sprintf "ZORATracker was unable to save the\ntracker state to a file\nError:\n%s" e.Message, ["Ok"])
                     ignore r
                     popupIsActive <- false
             } |> Async.StartImmediate

@@ -173,7 +173,8 @@ public static class HotKeys
         {
             var x = mouseDirectlyOver(w) as Interactive;
             // (any text box the user is typing in keeps its keys: only the notes box was exempt, so a bound arrow or Backspace did not work in e.g. the co-op settings)
-            var typingInTextBox = w.FocusManager?.GetFocusedElement() is TextBox ftb && !ftb.IsReadOnly && ftb.IsEffectivelyVisible
+            // (a label TextBox that can't be clicked, IsHitTestVisible false, can still take focus with Tab: it isn't being typed in)
+            var typingInTextBox = w.FocusManager?.GetFocusedElement() is TextBox ftb && !ftb.IsReadOnly && ftb.IsEffectivelyVisible && ftb.IsHitTestVisible
                                   && Avalonia.VisualTree.VisualExtensions.GetVisualRoot(ftb) != null;   // (a box no longer in the window never blocks hotkeys)
             if (x != null && !suspendHotKeys && !(notesTextBox.IsFocused) && !typingInTextBox)
             {

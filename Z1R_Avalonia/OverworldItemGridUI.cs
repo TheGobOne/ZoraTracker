@@ -1155,6 +1155,7 @@ public static class OverworldItemGridUI
 
     // where the 4th sword's extra item check lives: 0 = nowhere (no 4th sword), 1 = the level 2 staircase, 2 = the level 9 floor. Moves whatever is marked in the old slot
     // (or clears it for 0). The new slot is switched on before the item is set, so its box has its change handlers (grid links, timeline) when the item arrives.
+    private static bool fourthSwordL2WithHiddenNumbers = false;   // (set once the level 2 slot was seen on with hidden dungeon numbers; the Extras checkbox then keeps its level 2 state)
     private static int fourthSwordStashItem = -1;
     private static TrackerModel.PlayerHas fourthSwordStashHas = TrackerModel.PlayerHas.NO;
     public static void SetFourthSwordLocation(int target)
@@ -1162,7 +1163,14 @@ public static class OverworldItemGridUI
         var l2 = TrackerModel.level2StairBox;
         var l9 = TrackerModel.GetDungeon(8).ExtraFloorBox;
         TrackerModelOptions.FourthSwordEnabled = target != 0;   // (before the slot events, which the level 2 placeholder reads)
-        if (target != 0) TrackerModel.ProgressiveItems = true;   // project rule: turning the 4th sword on also turns Progressive Items on (never the other way round)
+        if (target != 0 && !TrackerModel.ProgressiveItems)
+        {
+            // project rule: turning the 4th sword on also turns Progressive Items on (never the other way round)
+            TrackerModel.ProgressiveItems = true;
+            ApplyProgressiveItemCaps();   // (the pickers allow 4 swords and 2 of each ring / candle / arrow / boomerang now)
+            BackfillProgressiveBoxTiers();   // (boxes collected while it was off have no tier yet)
+            for (int f = 1; f <= 5; f++) WPFUI.progressiveLastTiers[f] = Math.Max(1, TrackerModel.progressiveFamilyTier(f));   // (start from the current tiers, so switching on is not an upgrade)
+        }
         var src = (TrackerModel.level9FloorBoxEnabled && target != 2) ? l9 : (TrackerModel.level2StairBoxEnabled && target != 1) ? l2 : null;
         var dest = target == 2 ? l9 : target == 1 ? l2 : null;
         if (target == 2) TrackerModel.SetLevel9FloorBoxEnabled(true);
@@ -1186,6 +1194,31 @@ public static class OverworldItemGridUI
         if (target != 2) TrackerModel.SetLevel9FloorBoxEnabled(false);
         if (target != 1) TrackerModel.SetLevel2StairBoxEnabled(false);
         TrackerModel.recomputePlayerStateSummary();
+    }
+
+    // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
+    // (at startup, and again when the 4th sword turns Progressive Items on mid-run)
+    public static void ApplyProgressiveItemCaps()
+    {
+        var p = TrackerModel.ProgressiveItems;
+        foreach (var (id, maxUse) in new[] { (TrackerModel.ITEMS.PROGRESSIVESWORD, (p ? 4 : 3)), (TrackerModel.ITEMS.BLUERING, (p ? 2 : 1)), (TrackerModel.ITEMS.BLUECANDLE, (p ? 2 : 1)), (TrackerModel.ITEMS.WOODARROW, (p ? 2 : 1)), (TrackerModel.ITEMS.BOOMERANG, (p ? 2 : 1)) })
+            TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, maxUse);
+    }
+    // collected family boxes with no recorded tier (an older save, or Progressive Items just turned on): give them the top tiers the family has reached, one each, in box order
+    public static void BackfillProgressiveBoxTiers()
+    {
+        if (!TrackerModel.ProgressiveItems) return;
+        var boxesAll = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Distinct().ToList();
+        for (int fam = 1; fam <= 5; fam++)
+        {
+            var famBoxes = boxesAll.Where(b => TrackerModel.progressiveFamily(b.CellCurrent()) == fam && b.PlayerHas().Equals(TrackerModel.PlayerHas.YES)
+                                                    && !TrackerModel.progressiveBoxTier.ContainsKey(b)).ToList();
+            var famTop = Math.Max(1, TrackerModel.progressiveFamilyTier(fam) - 1);   // (the tier of the last item collected)
+            var famCap = fam == 1 ? 4 : 2;
+            for (int k = 0; k < famBoxes.Count; k++)
+                TrackerModel.progressiveBoxTier[famBoxes[k]] = Math.Max(1, Math.Min(famCap, famTop - (famBoxes.Count - 1) + k));
+        }
+        TrackerModel.progressiveTierChanged.Trigger(null);   // (draw the boxes with their tiers)
     }
 
     public static Action<bool> hideFirstQuestFromMixed = _b => { };
@@ -1482,19 +1515,22 @@ public static class OverworldItemGridUI
                     {
                         // checked = level 9, unchecked = level 2 staircase, dash = no 4th sword (with hidden dungeon numbers there is no level 2 slot: checked = level 9, unchecked = no 4th sword)
                         var hiddenNumbers = TrackerModel.IsHiddenDungeonNumbers.Invoke(null);
+                        // (the start screen can still put the 4th sword in level 2 with hidden dungeon numbers: then keep all three states, so level 2 can be picked again)
+                        if (hiddenNumbers && TrackerModel.level2StairBoxEnabled) fourthSwordL2WithHiddenNumbers = true;
+                        var twoState = hiddenNumbers && !fourthSwordL2WithHiddenNumbers;
                         var swordTxt = mkTxt("4th sword in L9");
                         swordTxt.FontSize = 14.0;
                         bool? current = TrackerModel.level9FloorBoxEnabled ? true
-                                      : hiddenNumbers ? false
+                                      : twoState ? false
                                       : (TrackerModel.level2StairBoxEnabled || TrackerModelOptions.FourthSwordEnabled) ? false
                                       : (bool?)null;
-                        var swordCb = new CheckBox { Content = swordTxt, IsChecked = current, IsThreeState = !hiddenNumbers, Margin = new Thickness(6.0, 2.0, 14.0, 2.0) };
-                        ToolTip.SetTip(swordCb, hiddenNumbers
+                        var swordCb = new CheckBox { Content = swordTxt, IsChecked = current, IsThreeState = !twoState, Margin = new Thickness(6.0, 2.0, 14.0, 2.0) };
+                        ToolTip.SetTip(swordCb, twoState
                             ? "Checked: the 4th sword's item check is on the level 9 floor.\nUnchecked: there is no 4th sword.\nSwitching moves the item you marked there along with it."
                             : "Checked: the 4th sword's item check is on the level 9 floor.\nUnchecked: it is on the level 2 staircase.\nDash: there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it.");
                         swordCb.Click += (_, _) =>
                         {
-                            SetFourthSwordLocation(swordCb.IsChecked == true ? 2 : swordCb.IsChecked == false && !hiddenNumbers ? 1 : 0);
+                            SetFourthSwordLocation(swordCb.IsChecked == true ? 2 : swordCb.IsChecked == false && !twoState ? 1 : 0);
                             TrackerModel.recomputeMapStateSummary();
                             TrackerModel.forceUpdate();
                             refreshUIAfterOverworldTemplateChange();

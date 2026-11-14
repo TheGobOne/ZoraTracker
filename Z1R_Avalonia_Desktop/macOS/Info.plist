@@ -4,9 +4,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>ZORA Tracker</string>
+    <string>ZORATracker</string>
     <key>CFBundleDisplayName</key>
-    <string>ZORA Tracker</string>
+    <string>ZORATracker</string>
     <key>CFBundleIdentifier</key>
     <string>io.github.tetraly.ZoraTracker</string>
     <key>CFBundleExecutable</key>
@@ -28,6 +28,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>ZORA Tracker by TheGobOne; based on Z-Tracker by Dr. Brian Lorgon111</string>
+    <string>ZORATracker by TheGobOne; based on Z-Tracker by Dr. Brian Lorgon111</string>
 </dict>
 </plist>

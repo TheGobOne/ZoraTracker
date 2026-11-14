@@ -31,7 +31,7 @@ jobs:
           version=$(sed -n 's/.*AssemblyInformationalVersion("\([^"]*\)").*/\1/p' GlobalAssemblyInfo.fs)
           mkdir -p dist
           for arch in arm64 x64; do
-            ditto -c -k --keepParent "Z1R_Avalonia_Desktop/bin/macOS/$arch/ZORA Tracker.app" "dist/ZoraTracker-CrossPlatform-v${version}-macOS-${arch}.zip"
+            ditto -c -k --keepParent "Z1R_Avalonia_Desktop/bin/macOS/$arch/ZORATracker.app" "dist/ZoraTracker-CrossPlatform-v${version}-macOS-${arch}.zip"
           done
           ls -la dist
       - uses: actions/upload-artifact@v4

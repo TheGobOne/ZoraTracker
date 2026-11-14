@@ -2067,10 +2067,16 @@ public static class OverworldMapTileCustomization
     // saves include which take any caves were taken: "i,j,slot,candle01,kind;..."
     private static readonly Func<string> _takeAnyTakenText = SaveAndLoad.TakeAnyTakenText =
         () => string.Join(";", takeAnyTaken.Select(kv => $"{kv.Key.Item1},{kv.Key.Item2},{kv.Value.Item1},{(kv.Value.Item2 ? 1 : 0)},{kv.Value.Item3}"));
+    // and which main screen take any heart slots gave the blue candle: "0100"
+    private static readonly Func<string> _takeAnySlotGaveCandleText = SaveAndLoad.TakeAnySlotGaveCandleText =
+        () => string.Concat(takeAnySlotGaveCandle.Select(b => b ? '1' : '0'));
     // a loaded save puts back its shop prices, level 9 entry rule and taken take any caves (older saves keep the startup values)
     public static void applyLoadedItemExtras(SaveAndLoad.Items items)
     {
         SaveAndLoad.ApplyLoadedItemExtras(items);
+        // (older saves, or a damaged entry: no slot gave the candle)
+        var gave = items?.TakeAnySlotGaveCandle;
+        for (var k = 0; k < 4; k++) takeAnySlotGaveCandle[k] = gave != null && gave.Length == 4 && gave[k] == '1';
         if (items?.TakeAnyTaken == null) return;
         takeAnyTaken.Clear();
         foreach (var t in items.TakeAnyTaken.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
