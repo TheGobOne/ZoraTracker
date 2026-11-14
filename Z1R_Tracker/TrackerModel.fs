@@ -432,6 +432,13 @@ let MaxRemain2Q = 80
 let MaxRemainMQ = 93
 let MaxRemainUQ = 128
 let dummyOverworldTiles = overworldTiles(true,false)  // some bits need to read the hotkey names or array length, before the 1Q/2Q choice has been made by the user, this gives them that info
+// how many of each tile type can be marked: a mixed overworld can hold screens from both quests, so it takes the larger of the 1Q and 2Q counts
+let overworldTileMaxUses(quest:OverworldData.OWQuest) =
+    let q1 = overworldTiles(true,false) |> Array.map (fun (_,x,_,_) -> x)
+    let q2 = overworldTiles(false,false) |> Array.map (fun (_,x,_,_) -> x)
+    match quest with
+    | OverworldData.OWQuest.MIXED_FIRST | OverworldData.OWQuest.MIXED_SECOND -> Array.map2 max q1 q2
+    | q -> if q.IsFirstQuestOW then q1 else q2
 
 let mutable mapSquareChoiceDomain = null : ChoiceDomain
 let mapSquareChangedStable = new Event<ChoiceDomain*int>()   // forwards Changed from whichever ChoiceDomain is current (reinitializeOverworld replaces the domain)
@@ -1304,7 +1311,8 @@ do
 // Map
 
 let mutable owInstance = new OverworldData.OverworldInstance(OverworldData.OWQuest.FIRST)
-let overworldQuestChanged = new Event<unit>()   // fired when reinitializeOverworld switches to a new quest
+let overworldQuestChanged = new Event<unit>()   // fired when reinitializeOverworld switches to a new quest, after the new overworldMapMarks cells exist
+let overworldMarksDropped = new Event<(int*int*int)[]>()   // (x, y, old mark) of each mark reinitializeOverworld could not put back; fired before overworldQuestChanged
 
 let mapLastChangedTime = new LastChangedTime()
 let shopStash : int[] = Array.create 6 -1   // items entered in a shop window (index = shop label 1-5) while no tile of that shop is on the map: packed like a tile's icons, picked up by the first tile that becomes that shop
@@ -1391,7 +1399,8 @@ let pruneShuffledWoodSwordTiles() =
             shuffledWoodSwordTiles.Remove((i,j)) |> ignore
             sword1Box.Set(-1, PlayerHas.SKIPPED)
             recomputePlayerStateSummary()
-mapSquareChangedStable.Publish.Add(fun (_,key) -> if key = MapSquareChoiceDomainHelper.SWORD1 then pruneShuffledWoodSwordTiles())
+let mutable private suppressShuffledWoodSwordPrune = false   // true while reinitializeOverworld puts the marks back; it prunes once at the end
+mapSquareChangedStable.Publish.Add(fun (_,key) -> if key = MapSquareChoiceDomainHelper.SWORD1 && not suppressShuffledWoodSwordPrune then pruneShuffledWoodSwordTiles())
 let private overworldMapExtraData = Array2D.init 16 8 (fun _ _ -> Array.zeroCreate (MapSquareChoiceDomainHelper.DARK_X+1))
 // Per-shop price notes: 0 = not set, positive value = rupee price the user recorded for that shop
 let overworldShopPrices = Array2D.create 16 8 0
@@ -1446,6 +1455,36 @@ let mutable mapStateSummary = MapStateSummary(null,null,NOTFOUND,NOTFOUND,NOTFOU
 let owSpotTypeCounts : int[] = Array.zeroCreate 7   // remaining unmarked OW spots by type: burn, bomb, push, ladder, raft, whistle, open
 let mapStateSummaryComputedEvent = new Event<_>()
 let mapStateSummaryLastComputedTime = new LastChangedTime()
+// the level 9 entry item the user picked instead of the 8 triforces (-1 = the default rule), and whether it has been collected (any item box holding it, marked as obtained)
+let level9CustomTriggerItem() = (let c = level9TriggerBox.CellCurrent() in if c = ITEMS.TRIFORCE then -1 else c)   // picking the triforce item means the default rule
+let level9TriggerCollected() =
+    let it = level9CustomTriggerItem()
+    it <> -1 &&
+        (DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() |> Array.exists (fun b -> b.CellCurrent() = it && b.PlayerHas() = PlayerHas.YES)
+         || (let sm = playerComputedStateSummary
+             (it = ITEMS.REDRING && sm.RingLevel >= 2) || (it = ITEMS.BLUERING && sm.RingLevel >= 1)   // owned per the item progress (however it was marked)
+             || (it = ITEMS.REDCANDLE && sm.CandleLevel >= 2) || (it = ITEMS.BLUECANDLE && sm.CandleLevel >= 1)
+             || (it = ITEMS.BOW && sm.HaveBow) || (it = ITEMS.SILVERARROW && sm.ArrowLevel >= 2) || (it = ITEMS.WOODARROW && sm.ArrowLevel >= 1)
+             || (it = ITEMS.LADDER && sm.HaveLadder) || (it = ITEMS.RECORDER && sm.HaveRecorder) || (it = ITEMS.RAFT && sm.HaveRaft)
+             || (it = ITEMS.POWERBRACELET && sm.HavePowerBracelet) || (it = ITEMS.KEY && sm.HaveAnyKey) || (it = ITEMS.WAND && sm.HaveWand)
+             || (it = ITEMS.BOOKSHIELD && sm.HaveBookOrShield) || (it = ITEMS.BOOMERANG && sm.BoomerangLevel >= 1) || (it = ITEMS.MAGICBOOMERANG && sm.BoomerangLevel >= 2)
+             || (it = ITEMS.WHITESWORD && sm.SwordLevel >= 2) || (it = ITEMS.MAGICALSWORD && sm.SwordLevel >= 3)
+             || (it = ITEMS.WOODSWORD && sm.SwordLevel >= 1) || (it = ITEMS.PROGRESSIVESWORD && progressiveSwordTier() > level9TriggerSwordTier) || (it = ITEMS.WHITESWORD4 && (sm.SwordLevel >= 4 || playerHasSword4.Value = 1)))
+         || (it >= 0 && it < mapCollectedCount.Length && mapCollectedCount.[it] > 0)   // checked off on the overworld map
+         || [ladderBox; sword2Box; sword3Box; letterBox] |> List.exists (fun b -> b.CellCurrent() = it && b.PlayerHas() = PlayerHas.YES))
+// whether the level 9 entry rule is met: the picked entry item is collected, or enough triforces (HDN starting pieces count)
+let level9EntryRuleMet() =
+    if level9CustomTriggerItem() <> -1 then level9TriggerCollected()
+    else
+        let labeled = GetTriforceHaves() |> Array.filter id |> Array.length
+        // (HDN: a dungeon with its triforce but no 1-8 label yet still counts)
+        let unlabeled =
+            if IsHiddenDungeonNumbers() then
+                [| for i = 0 to 7 do
+                    let d = GetDungeon(i)
+                    if d.PlayerHasTriforce() && not (d.LabelChar >= '1' && d.LabelChar <= '8') then yield i |] |> Array.length
+            else 0
+        min 8 (labeled + unlabeled) >= level9TriforceCount
 let recomputeMapStateSummary() =
     let dungeonLocations = Array.create 9 NOTFOUND
     let anyRoadLocations = Array.create 4 NOTFOUND
@@ -1470,11 +1509,7 @@ let recomputeMapStateSummary() =
                     dungeonLocations.[x] <- i,j
                     if x < 8 && not(GetDungeon(x).IsComplete) then
                         owRouteworthySpots.[i,j] <- true
-                    let mutable playerHasAllTriforce = true
-                    for i = 0 to 7 do
-                        if not(GetDungeon(i).PlayerHasTriforce()) then
-                            playerHasAllTriforce <- false
-                    if x = 8 && playerHasAllTriforce then
+                    if x = 8 && level9EntryRuleMet() then
                         owRouteworthySpots.[i,j] <- true
                 | x when x>=9 && x<13 -> 
                     anyRoadLocations.[x-9] <- i,j
@@ -1850,23 +1885,6 @@ let unreachablePossibleDungeonSpotCount() =
                 if owInstance.Whistleable(x,y) && not(playerComputedStateSummary.HaveRecorder) then
                     count <- count + 1
     count
-// the level 9 entry item the user picked instead of the 8 triforces (-1 = the default rule), and whether it has been collected (any item box holding it, marked as obtained)
-let level9CustomTriggerItem() = (let c = level9TriggerBox.CellCurrent() in if c = ITEMS.TRIFORCE then -1 else c)   // picking the triforce item means the default rule
-let level9TriggerCollected() =
-    let it = level9CustomTriggerItem()
-    it <> -1 &&
-        (DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes() |> Array.exists (fun b -> b.CellCurrent() = it && b.PlayerHas() = PlayerHas.YES)
-         || (let sm = playerComputedStateSummary
-             (it = ITEMS.REDRING && sm.RingLevel >= 2) || (it = ITEMS.BLUERING && sm.RingLevel >= 1)   // owned per the item progress (however it was marked)
-             || (it = ITEMS.REDCANDLE && sm.CandleLevel >= 2) || (it = ITEMS.BLUECANDLE && sm.CandleLevel >= 1)
-             || (it = ITEMS.BOW && sm.HaveBow) || (it = ITEMS.SILVERARROW && sm.ArrowLevel >= 2) || (it = ITEMS.WOODARROW && sm.ArrowLevel >= 1)
-             || (it = ITEMS.LADDER && sm.HaveLadder) || (it = ITEMS.RECORDER && sm.HaveRecorder) || (it = ITEMS.RAFT && sm.HaveRaft)
-             || (it = ITEMS.POWERBRACELET && sm.HavePowerBracelet) || (it = ITEMS.KEY && sm.HaveAnyKey) || (it = ITEMS.WAND && sm.HaveWand)
-             || (it = ITEMS.BOOKSHIELD && sm.HaveBookOrShield) || (it = ITEMS.BOOMERANG && sm.BoomerangLevel >= 1) || (it = ITEMS.MAGICBOOMERANG && sm.BoomerangLevel >= 2)
-             || (it = ITEMS.WHITESWORD && sm.SwordLevel >= 2) || (it = ITEMS.MAGICALSWORD && sm.SwordLevel >= 3)
-             || (it = ITEMS.WOODSWORD && sm.SwordLevel >= 1) || (it = ITEMS.PROGRESSIVESWORD && progressiveSwordTier() > level9TriggerSwordTier) || (it = ITEMS.WHITESWORD4 && (sm.SwordLevel >= 4 || playerHasSword4.Value = 1)))
-         || (it >= 0 && it < mapCollectedCount.Length && mapCollectedCount.[it] > 0)   // checked off on the overworld map
-         || [ladderBox; sword2Box; sword3Box; letterBox] |> List.exists (fun b -> b.CellCurrent() = it && b.PlayerHas() = PlayerHas.YES))
 type TriforceAndGoSummary() =
     let customTrigger = level9CustomTriggerItem() <> -1
     let customTriggerCollected = level9TriggerCollected()
@@ -1875,7 +1893,7 @@ type TriforceAndGoSummary() =
     let haveSilvers = playerComputedStateSummary.ArrowLevel=2
     let silversKnownToBeInLevel9 = GetDungeon(8).Boxes.[0].CellCurrent()=ITEMS.SILVERARROW || GetDungeon(8).Boxes.[1].CellCurrent()=ITEMS.SILVERARROW
     let haveLadder = playerComputedStateSummary.HaveLadder
-    let haveRecorder = playerComputedStateSummary.HaveLadder
+    let haveRecorder = playerComputedStateSummary.HaveRecorder
     let unreachableCount = unreachablePossibleDungeonSpotCount()
     let mutable missingTriforceFromLocatedDungeonCount = 0   // TODO advanced flags: only need N triforces to enter 9
     let mutable missingDungeonCount = 0
@@ -2061,7 +2079,7 @@ let allUIEventingLogic(ite : ITrackerEvents) =
         ite.Sword3(mapStateSummary.Sword3Location)
     if mapStateSummary.Sword2Location <> NOTFOUND then
         ite.Sword2(mapStateSummary.Sword2Location)
-    let vanillaRecorderLocations = OverworldData.vanilla1QDungeonLocations.[0..7]
+    let vanillaRecorderLocations = (if IsSecondQuestDungeons then OverworldData.vanilla2QDungeonLocations else OverworldData.vanilla1QDungeonLocations).[0..7]   // (2nd quest dungeons: the recorder goes to the 2nd quest spots)
     let recorderDests = [|
         if playerComputedStateSummary.HaveRecorder then
             for tri = 0 to 7 do
@@ -2123,7 +2141,7 @@ let allUIEventingLogic(ite : ITrackerEvents) =
             ite.AnnounceTriforceAndGo(triforces, tagSummary)
             justAnnouncedTAG <- true
     // the level 9 entry rule has just been satisfied (enough triforces, or the item the user picked was collected): always play the go-time reminder
-    let entryRuleMet = if level9CustomTriggerItem() <> -1 then level9TriggerCollected() else triforces >= level9TriforceCount
+    let entryRuleMet = level9EntryRuleMet()
     if entryRuleMet && not previousLevel9EntryRuleMet then
         level9EntryAnnouncement <- true
         (try
@@ -2361,7 +2379,7 @@ type TimelineItemModel(desc: TimelineItemDescription) =
 
 let initializeAll(instance:OverworldData.OverworldInstance, kind) =
     if mapSquareChoiceDomain = null then
-        mapSquareChoiceDomain <- ChoiceDomain("mapSquare", overworldTiles(instance.Quest.IsFirstQuestOW,false) |> Array.map (fun (_,x,_,_) -> x))
+        mapSquareChoiceDomain <- ChoiceDomain("mapSquare", overworldTileMaxUses(instance.Quest))
         mapSquareChoiceDomain.Changed.Add(fun _ -> mapLastChangedTime.SetNow())
         mapSquareChoiceDomain.Changed.Add(fun x -> mapSquareChangedStable.Trigger(x))
         overworldMapMarks <- Array2D.init 16 8 (fun _ _ -> new Cell(mapSquareChoiceDomain))  
@@ -2392,7 +2410,7 @@ let reinitializeOverworld(newInstance: OverworldData.OverworldInstance) =
     owInstance <- newInstance
 
     // Replace ChoiceDomain (new quest may have different maxUses for a few tile types)
-    mapSquareChoiceDomain <- ChoiceDomain("mapSquare", overworldTiles(newInstance.Quest.IsFirstQuestOW, false) |> Array.map (fun (_,x,_,_) -> x))
+    mapSquareChoiceDomain <- ChoiceDomain("mapSquare", overworldTileMaxUses(newInstance.Quest))
     mapSquareChoiceDomain.Changed.Add(fun _ -> mapLastChangedTime.SetNow())
     mapSquareChoiceDomain.Changed.Add(fun x -> mapSquareChangedStable.Trigger(x))
 
@@ -2400,20 +2418,29 @@ let reinitializeOverworld(newInstance: OverworldData.OverworldInstance) =
     overworldMapMarks <- Array2D.init 16 8 (fun _ _ -> new Cell(mapSquareChoiceDomain))
 
     // Restore marks, preserving as much data as possible
-    for i = 0 to 15 do
-        for j = 0 to 7 do
-            if newInstance.AlwaysEmpty(i,j) then
-                overworldMapMarks.[i,j].Set(MapSquareChoiceDomainHelper.DARK_X)  // set to DARK_X
-            else
+    let dropped = ResizeArray<int*int*int>()
+    suppressShuffledWoodSwordPrune <- true   // (a wood sword cave not put back yet must not lose its shuffled item)
+    try
+        for i = 0 to 15 do
+            for j = 0 to 7 do
                 let v = savedMarks.[i,j]
                 let wasAlwaysEmpty = oldInstance.AlwaysEmpty(i,j)
-                if not wasAlwaysEmpty && v >= 0 && mapSquareChoiceDomain.CanAddUse(v) then
-                    // Tile was interactive in old quest with a mark — restore if compatible
-                    overworldMapMarks.[i,j].Set(v)
-                // else: was AlwaysEmpty (DARK_X auto-set), was empty (-1), or mark already used elsewhere → leave at -1
+                if newInstance.AlwaysEmpty(i,j) then
+                    overworldMapMarks.[i,j].Set(MapSquareChoiceDomainHelper.DARK_X)  // set to DARK_X
+                    if not wasAlwaysEmpty && v >= 0 && v <> MapSquareChoiceDomainHelper.DARK_X then dropped.Add((i,j,v))
+                else
+                    if not wasAlwaysEmpty && v >= 0 && mapSquareChoiceDomain.CanAddUse(v) then
+                        // Tile was interactive in old quest with a mark: restore it if compatible
+                        overworldMapMarks.[i,j].Set(v)
+                    elif not wasAlwaysEmpty && v >= 0 && v <> MapSquareChoiceDomainHelper.DARK_X then
+                        dropped.Add((i,j,v))   // the mark is already used up elsewhere in the new quest
+    finally
+        suppressShuffledWoodSwordPrune <- false
+    pruneShuffledWoodSwordTiles()
 
     recomputeMapStateSummary()
     for d in 0..8 do mapSquareChangedStable.Trigger((mapSquareChoiceDomain,d))   // refresh each dungeon's found/located display against the new domain
-    overworldQuestChanged.Trigger()   // notify listeners (e.g. Reminders) to reset cached spot counts
+    if dropped.Count > 0 then overworldMarksDropped.Trigger(dropped.ToArray())   // the UI gives back what was taken at the dropped caves
+    overworldQuestChanged.Trigger()   // the new cells exist now: listeners re-subscribe to them and reset cached spot counts
     forceUpdate()   // refresh 'OW Spots Left' counts and per-type breakdown immediately for the new quest
 

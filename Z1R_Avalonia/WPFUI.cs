@@ -89,12 +89,31 @@ public static class WPFUI
     public static bool isKeyDecor(int ident) => (ident == TrackerModel.ITEMS.KEY || ident == TrackerModel.ITEMS.OLDKEY);
     public static List<int> visibleDecorIcons(int packed)
     {
+        return TrackerModel.decorEntriesOf(packed).Where(isVisibleDecorEntry).Select(e => e.Item1).ToList();
+    }
+    // whether an icon of a tile is drawn (the same rule visibleDecorIcons uses)
+    private static bool isVisibleDecorEntry(Tuple<int, bool> e)
+    {
         var hideKeys = TrackerModel.playerComputedStateSummary.HaveAnyKey;
         var hideWoodArrows = TrackerModel.playerComputedStateSummary.ArrowLevel >= 2;   // silver arrows collected: wood arrow markers are no longer useful
         // an icon that has been checked off as collected always stays visible (greyscale), even when keys / wood arrows are otherwise hidden
-        return TrackerModel.decorEntriesOf(packed)
-            .Where(e => e.Item2 || (!(hideKeys && isKeyDecor(e.Item1)) && !(hideWoodArrows && e.Item1 == TrackerModel.ITEMS.WOODARROW)))
-            .Select(e => e.Item1).ToList();
+        return e.Item2 || (!(hideKeys && isKeyDecor(e.Item1)) && !(hideWoodArrows && e.Item1 == TrackerModel.ITEMS.WOODARROW));
+    }
+    // a drawn copy of an icon is the Nth visible copy; the click acts on the Nth copy among ALL the tile's copies (hidden ones included)
+    public static int fullCopyNumber(int packed, int ident, int visibleCopy)
+    {
+        int seenVisible = 0, all = 0;
+        foreach (var e in TrackerModel.decorEntriesOf(packed))
+        {
+            if (e.Item1 != ident) continue;
+            if (isVisibleDecorEntry(e))
+            {
+                if (seenVisible == visibleCopy) return all;
+                seenVisible++;
+            }
+            all++;
+        }
+        return visibleCopy;
     }
     // size and position (within the tile) of marker icon k of n; shared by drawing and by middle-click hit-testing
     // a dungeon entrance or an any road tile only gets the bomb dropper marker (no other marker icons)
@@ -657,8 +676,18 @@ public static class WPFUI
                 }
             }
         }
+        // a tile with no shop label whose last icon was just removed is no longer a copy or an original: forget its links
+        // (a paste whose items were all collected starts empty; that tile was already empty, so its link is kept)
+        if (TrackerModel.decorEntriesOf(newPacked).IsEmpty && TrackerModel.shopLabelOf(newPacked) == 0 && !oldEntriesForDups.IsEmpty)
+            unlinkDuplicateTile(i, j);
     }
-    private static bool init2() { OverworldMapTileCustomization.setDecorIconsHook = setDecorIcons; return true; }
+    private static bool init2()
+    {
+        OverworldMapTileCustomization.setDecorIconsHook = setDecorIcons;
+        // (saves include the duplicate links: "si,sj,di,dj;...")
+        SaveAndLoad.DupLinksText = () => string.Join(";", dupLinks.SelectMany(kv => kv.Value.Select(d => $"{kv.Key.Item1},{kv.Key.Item2},{d.Item1},{d.Item2}")));
+        return true;
+    }
     private static readonly bool _init2 = init2();
     // set (1-5) or remove (0) the tile's "SHOP n" text label
     // a duplicated item keeps the tier the original was collected at (otherwise its collected icon would show the current, higher tier)
@@ -683,9 +712,21 @@ public static class WPFUI
             dupLinks[src] = nl;
         }
     }
+    // forgets every duplicate link from or to this tile (it was cleared or became another shop, so its items are no longer copies)
+    public static void unlinkDuplicateTile(int i, int j)
+    {
+        dupLinks.Remove((i, j));
+        foreach (var key in dupLinks.Keys.ToList())
+        {
+            var l = dupLinks[key];
+            l.Remove((i, j));
+            if (l.Count == 0) dupLinks.Remove(key);
+        }
+    }
     public static void setShopLabel(int i, int j, int label)
     {
         var old = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]);
+        if (label != old) unlinkDuplicateTile(i, j);
         if (old > 0 && label != old && TrackerModel.shopLabelCount(old) == 1)
             // this was the last tile of that shop: its items stay in the shop window
             TrackerModel.shopStash[old] = TrackerModel.decorEntriesPack(TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons[i, j]));
@@ -734,6 +775,7 @@ public static class WPFUI
     public static void clearAllTileIcons(int i, int j)
     {
         setShopLabel(i, j, 0);
+        unlinkDuplicateTile(i, j);
         setDecorIcons(i, j, -1);
     }
     public static readonly TextBox owRemainingScreensTextBox = new TextBox { Width = 116.0, Height = 18.0, FontSize = 12.0, Margin = new Thickness(0.0, -5.0, 0.0, 0.0), Foreground = Brushes.Orange, Background = Brushes.Black, IsReadOnly = true, IsHitTestVisible = false, TextAlignment = TextAlignment.Center,
@@ -1650,6 +1692,12 @@ public static class WPFUI
         onEvent(TrackerModel.overworldQuestChanged.Publish, _ =>
         {
             var n = TrackerModel.owInstance.Quest.AsInt();
+            // the closures in this window read the local owInstance: point it at the new quest's instance
+            owInstance = TrackerModel.owInstance;
+            spokenOWTiles = TrackerModel.overworldTiles(owInstance.Quest.IsFirstQuestOW, TrackerModel.IsHiddenDungeonNumbers.Invoke(null)).Select(t => t.Item3).ToArray();
+            if (n == 0) maxOverworldRemain = TrackerModel.MaxRemain1Q;
+            else if (n == 1) maxOverworldRemain = TrackerModel.MaxRemain2Q;
+            else if (n == 2 || n == 3) maxOverworldRemain = TrackerModel.MaxRemainMQ;
             if (n >= 0 && n <= 3)
             {
                 try
@@ -1705,7 +1753,9 @@ public static class WPFUI
             else
             {
                 var k = 0;
-                foreach (var e in TrackerModel.decorEntriesOf(copiedMarkerPacked))
+                // (a paste onto a tile with no shop label leaves out collected items, so the cursor does too)
+                var cursorIsShop = TrackerModel.shopLabelOf(copiedMarkerPacked) > 0;
+                foreach (var e in TrackerModel.decorEntriesOf(copiedMarkerPacked).Where(e0 => cursorIsShop || !e0.Item2))
                 {
                     var (ident, col) = (e.Item1, e.Item2);
                     var bmp = decorIconBmp(ident);   // collected items just get a green checkmark
@@ -1888,9 +1938,19 @@ public static class WPFUI
                 var isPermEmpty = owInstance.AlwaysEmpty(i, j) && OverworldData.owMapSquaresSecondQuestOnly[j][i] != 'X' && OverworldData.owMapSquaresFirstQuestOnly[j][i] != 'X';
                 // fairy icons and the coast-item box live on always-empty tiles; they must be re-added on every redraw since redrawGridSpot clears the canvas
                 var permanentDecorations = new List<(Control, double, double)>();
+                if (i == 11 && j == 0)
+                {
+                    // the 2nd quest fairy spot: shown only while the current template is 2nd quest (the template can be switched from the 1Q/2Q menu)
+                    var fairy2Q = Graphics.BMPtoImage(Graphics.fairy_bmp);
+                    void updateFairy2Q() => fairy2Q.IsVisible = owInstance.Quest.Equals(OverworldData.OWQuest.SECOND) && owInstance.AlwaysEmpty(i, j)
+                                                && OverworldData.owMapSquaresSecondQuestOnly[j][i] != 'X' && OverworldData.owMapSquaresFirstQuestOnly[j][i] != 'X';
+                    updateFairy2Q();
+                    onEvent(TrackerModel.overworldQuestChanged.Publish, _ => updateFairy2Q());
+                    permanentDecorations.Add((fairy2Q, OMTW / 2.0 - 8.0, 1.0));
+                }
                 if (isPermEmpty)
                 {
-                    if (i == 9 && j == 3 || i == 3 && j == 4 || (owInstance.Quest.Equals(OverworldData.OWQuest.SECOND) && i == 11 && j == 0)) // fairy spots
+                    if (i == 9 && j == 3 || i == 3 && j == 4) // fairy spots (the 2nd quest one is above)
                         permanentDecorations.Add((Graphics.BMPtoImage(Graphics.fairy_bmp), OMTW / 2.0 - 8.0, 1.0));
                     if (i == 15 && j == 5) // coast item ladder spot
                     {
@@ -2042,7 +2102,7 @@ public static class WPFUI
                             var ident = decorList[k];
                             // (an icon can repeat, e.g. several heart containers: each copy has its own collected state)
                             var copyNumber = decorList.Take(k).Count(id => id == ident);
-                            var sameIdent = allEntries.Where(e => e.Item1 == ident).ToList();
+                            var sameIdent = allEntries.Where(e => e.Item1 == ident && isVisibleDecorEntry(e)).ToList();   // (only the drawn copies: hidden copies are not in decorList)
                             var collected = copyNumber < sameIdent.Count && sameIdent[copyNumber].Item2;
                             var justDim = collected && ident == TrackerModel.ITEMS.OLDKEY;   // regular key: just dimmed, collects nothing
                             // a single sword icon on an open tile is drawn at the same size as the sword on its cave tile (15x27), not shrunk into the square marker slot
@@ -2240,6 +2300,7 @@ public static class WPFUI
                 var ST = CustomComboBoxes.borderThickness;
                 var gridWidth = (double)(GCOL * (7 * 3 + 2 * (int)ST) + (int)ST) * 1.25;   // cells are 21 wide so the item icons can be shown at full size; the menu is drawn 1.25x bigger (see gridScale in DoModalGridSelect)
                 var tileImage = Graphics.BItoImage(owMapBIsRef[i, j]);
+                onEvent(TrackerModel.overworldQuestChanged.Publish, _ => tileImage.Source = owMapBIsRef[i, j]);   // (the tile menu shows the current template's art)
                 // (a failure while building or running the tile menu must never leave the overworld locked)
                 void activatePopup(int activationDelta)
                 {
@@ -2885,8 +2946,13 @@ public static class WPFUI
                         }
                         async Task go()
                         {
-                            setDecorIcons(i, j, copiedMarkerPacked);
-                            if (copiedMarkerSource != (-1, -1)) copyTileTiers(copiedMarkerSource, (i, j));   // just the duplicated markers: the tile itself is left as it was (a copied bomb shop makes this a bomb shop too)
+                            // a pasted copy on a tile with no shop label leaves out the items already collected on the original
+                            // (they were collected once; un-collecting one on the original adds it to this copy). Shop tiles keep everything, as every tile of a shop is the same shop.
+                            var isShopPaste = TrackerModel.shopLabelOf(copiedMarkerPacked) > 0;
+                            var pastePacked = isShopPaste ? copiedMarkerPacked
+                                : TrackerModel.decorEntriesPack(ListModule.OfSeq(TrackerModel.decorEntriesOf(copiedMarkerPacked).Where(e => !e.Item2)));
+                            setDecorIcons(i, j, pastePacked);
+                            if (copiedMarkerSource != (-1, -1) && isShopPaste) copyTileTiers(copiedMarkerSource, (i, j));   // just the duplicated markers: the tile itself is left as it was (a copied bomb shop makes this a bomb shop too)
                             if (copiedMarkerBomb && TrackerModel.mapSquareChoiceDomain.CanAddUse(TrackerModel.MapSquareChoiceDomainHelper.BOMB))
                                 await SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.BOMB, -1);
                             else if (!copiedMarkerBomb)
@@ -2940,7 +3006,9 @@ public static class WPFUI
                                 // (the same item can appear more than once, e.g. several heart containers: act on just the nearest copy)
                                 var nearestIdx = nearest.Item1;
                                 var nearestIdent = nearest.Item2;
-                                var copyNumber = vis.Take(nearestIdx).Count(id => id == nearestIdent);
+                                var visibleCopy = vis.Take(nearestIdx).Count(id => id == nearestIdent);
+                                // (the copy the user clicked, counted among all the tile's copies, so a hidden copy of the same icon is not toggled by mistake)
+                                var copyNumber = fullCopyNumber(TrackerModel.owSwordIcons[i, j], nearestIdent, visibleCopy);
                                 if (ctrlDown)
                                     // ctrl+left click removes just that one icon from the tile
                                     setDecorIcons(i, j, TrackerModel.decorRemoveNth(TrackerModel.owSwordIcons[i, j], nearestIdent, copyNumber));
@@ -3969,7 +4037,7 @@ public static class WPFUI
                             SaveAndLoad.pendingManualSaveName = typedName;
                             var filename = MakeManualSave();
                             filename = System.IO.Path.GetFileName(filename);  // remove directory info (could have username in path, don't display PII on-screen)
-                            var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORA Tracker data saved to file\n{filename}", new[] { "Ok" });
+                            var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORATracker data saved to file\n{filename}", new[] { "Ok" });
                             _ = r;
                             popupIsActive = false;
                         }
@@ -3982,7 +4050,7 @@ public static class WPFUI
                     {
                         HotKeys.suspendHotKeys = false;
                         SaveAndLoad.pendingManualSaveName = "";
-                        var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORA Tracker was unable to save the\ntracker state to a file\nError:\n{error.Message}", new[] { "Ok" });
+                        var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORATracker was unable to save the\ntracker state to a file\nError:\n{error.Message}", new[] { "Ok" });
                         _ = r;
                         popupIsActive = false;
                     }
@@ -4080,13 +4148,18 @@ public static class WPFUI
             recorderingCanvas.Children.Clear();
             // TODO event for redraw item progress? does any of this event interface make sense? hmmm
             redrawItemProgressBar();
-
-            // Progressive Items: each family (1 swords, 2 rings, 3 candles, 4 arrows) has a tier that follows the number collected; when it goes up, the others glow and the alert plays
-            for (int f = 1; f <= 5; f++) progressiveLastTiers[f] = Math.Max(1, TrackerModel.progressiveFamilyTier(f));
+            // (with Progressive Items off the hook is not called, so keep the last seen tiers in step here)
+            if (!TrackerModel.ProgressiveItems) resyncProgressiveTiers();
+        };
+            // Progressive Items setup. This runs once, not on every UI update.
+            // Each family (1 swords, 2 rings, 3 candles, 4 arrows) has a tier that follows the number collected; when it goes up, the others glow and the alert plays
+            void resyncProgressiveTiers() { for (int f = 1; f <= 5; f++) progressiveLastTiers[f] = Math.Max(1, TrackerModel.progressiveFamilyTier(f)); }
+            resyncProgressiveTiers();
             List<int> progressiveIdentsOf(int f) => Enumerable.Range(0, 128).Where(id => TrackerModel.progressiveFamily(id) == f).ToList();
             var progressiveAutoChecking = false;
             progressiveSwordCheckHook = () =>
             {
+                if (Timeline.isCurrentlyLoadingASave) return;   // (a save being loaded is applied piece by piece; the tiers are synced once it is done)
                 for (int f0 = 1; f0 <= 5; f0++)
                 {
                     var f = f0;
@@ -4209,6 +4282,7 @@ public static class WPFUI
                         var (pc, pph) = prev;
                         var (c, ph) = (b.CellCurrent(), b.PlayerHas());
                         prev = (c, ph);
+                        if (Timeline.isCurrentlyLoadingASave) return;   // (the saved box tiers are restored after the boxes)
                         if (TrackerModel.progressiveFamily(pc) > 0 || TrackerModel.progressiveFamily(c) > 0)
                             ClickTrace.Log($"item box changed: item {pc}->{c}, has {pph}->{ph} (ProgressiveItems={TrackerModel.ProgressiveItems})");
                         if (TrackerModel.ProgressiveItems)
@@ -4248,6 +4322,8 @@ public static class WPFUI
                     CustomComboBoxes.StartImmediate(go());
                 }
             };
+        doUIUpdateEvent.Fired += () =>
+        {
             TrackerModel.allUIEventingLogic(new TrackerEvents
             {
                 currentHearts = h => currentMaxHeartsTextBox.Text = $"Max Hearts: {h}",
@@ -5678,6 +5754,16 @@ public static class WPFUI
                         TrackerModel.hintShopColors[Tuple.Create(parseInt(p[0]), parseInt(p[1]))] = parseInt(p[2]);
                 }
             }
+            TrackerModel.progressiveTileTier.Clear();
+            if (!(string.IsNullOrEmpty(data.Items.ProgressiveTileTiers)))
+            {
+                foreach (var t in data.Items.ProgressiveTileTiers.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var p = t.Split(',');
+                    if (p.Length == 4)
+                        TrackerModel.progressiveTileTier[Tuple.Create(parseInt(p[0]), parseInt(p[1]), parseInt(p[2]))] = parseInt(p[3]);
+                }
+            }
             TrackerModel.shuffledWoodSwordTiles.Clear();
             if (!(string.IsNullOrEmpty(data.Items.ShuffledWoodSwordTiles)))
             {
@@ -5707,6 +5793,33 @@ public static class WPFUI
                 var dd = TrackerModel.GetDungeon(i);
                 if (!(ds.TryApply(dd))) anySetProblems = true;
             }
+            // the tier each progressive item box was collected at (after the boxes, whose change handlers note the current tier; older saves keep that)
+            if (data.Items.ProgressiveBoxTiers != null)
+            {
+                TrackerModel.progressiveBoxTier.Clear();
+                var byName = new Dictionary<string, TrackerModel.Box>();
+                foreach (var nb in SaveAndLoad.namedBoxes()) byName[nb.Item1] = nb.Item2;
+                foreach (var t in data.Items.ProgressiveBoxTiers.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var p = t.Split(',');
+                    if (p.Length == 2 && byName.TryGetValue(p[0], out var b) && int.TryParse(p[1], out var tier))
+                        TrackerModel.progressiveBoxTier[b] = tier;
+                }
+            }
+            // which tiles' items were duplicated onto which other tiles (so un-collecting the original still updates the copies)
+            if (data.Items.DupLinks != null)
+            {
+                dupLinks.Clear();
+                foreach (var t in data.Items.DupLinks.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var p = t.Split(',');
+                    bool onMap(int mx, int my) => mx >= 0 && mx <= 15 && my >= 0 && my <= 7;   // (a damaged save must not leave a link that crashes later)
+                    if (p.Length == 4 && int.TryParse(p[0], out var si) && int.TryParse(p[1], out var sj) && int.TryParse(p[2], out var di) && int.TryParse(p[3], out var dj)
+                            && onMap(si, sj) && onMap(di, dj) && (si, sj) != (di, dj))
+                        linkDuplicate((si, sj), (di, dj));
+                }
+            }
+            OverworldMapTileCustomization.applyLoadedItemExtras(data.Items);   // shop prices, level 9 entry rule, taken take any caves (older saves keep the startup values)
             await showProgress("finished loading items");
             // PlayerProgressAndTakeAnyHearts
             data.PlayerProgressAndTakeAnyHearts.Apply();
@@ -5813,6 +5926,7 @@ public static class WPFUI
                     TrackerModel.recomputeMapStateSummary();
                     TrackerModel.recomputeWhatIsNeeded();
                     TrackerModel.forceUpdate();
+                    resyncProgressiveTiers();
                 }
                 catch { }
                 throw;
@@ -5822,6 +5936,22 @@ public static class WPFUI
             TrackerModel.forceUpdate();
             doUIUpdateEvent.Trigger();
             Timeline.isCurrentlyLoadingASave = false;
+            resyncProgressiveTiers();   // (the progressive hook skipped the load: start from the loaded tiers, so nothing counts as a fresh upgrade)
+            if (data.Items.ProgressiveBoxTiers == null && TrackerModel.ProgressiveItems)
+            {
+                // older saves have no box tiers: give the collected family boxes the top tiers the family has reached, one each, in box order
+                var loadedBoxesAll = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Distinct().ToList();
+                for (int fam = 1; fam <= 5; fam++)
+                {
+                    var famBoxes = loadedBoxesAll.Where(b => TrackerModel.progressiveFamily(b.CellCurrent()) == fam && b.PlayerHas().Equals(TrackerModel.PlayerHas.YES)
+                                                            && !TrackerModel.progressiveBoxTier.ContainsKey(b)).ToList();
+                    var famTop = Math.Max(1, TrackerModel.progressiveFamilyTier(fam) - 1);   // (the tier of the last item collected)
+                    var famCap = fam == 1 ? 4 : 2;
+                    for (int k = 0; k < famBoxes.Count; k++)
+                        TrackerModel.progressiveBoxTier[famBoxes[k]] = Math.Max(1, Math.Min(famCap, famTop - (famBoxes.Count - 1) + k));
+                }
+                TrackerModel.progressiveTierChanged.Trigger(null);   // (draw the boxes with their tiers)
+            }
             TrackerModel.TimelineItemModel.TriggerTimelineChanged();  // redraw timeline once (redraws are ignored while loading)
             if (LoadDump.isActive)   // --load/--dump: write what the tracker now holds, and exit
                 LoadDump.Finish(SaveAndLoad.BuildSaveLines(notesTextBox.Text, DungeonUI.theDungeonTabControl.SelectedIndex, exportDungeonModelsJsonLines(), DungeonSaveAndLoad.SaveDrawingLayer(),
@@ -5898,25 +6028,49 @@ public static class WPFUI
             timer2.Interval = TimeSpan.FromSeconds(10.0);   // (checks every 10 seconds; it saves once the Auto-save interval option has passed)
             var lastAutoSave = DateTime.Now;
             var autoSaveFailureShown = false;
+            // (browser build: if the page closed while an autosave was being written, the old one is left as .bak: put it back under the autosave name)
+            void restoreLeftoverAutoSaveBackup()
+            {
+                try
+                {
+                    var bak = SaveAndLoad.AutoSaveFilename + ".bak";
+                    if (System.IO.File.Exists(bak) && !System.IO.File.Exists(SaveAndLoad.AutoSaveFilename))
+                        System.IO.File.Move(bak, SaveAndLoad.AutoSaveFilename);
+                }
+                catch { }
+            }
+            restoreLeftoverAutoSaveBackup();   // (desktop builds never write a .bak, so this does nothing there)
             timer2.Tick += (_, _) =>
             {
                 if ((DateTime.Now - lastAutoSave).TotalMinutes >= (double)TrackerModelOptions.AutoSaveMinutes - 0.01)
                 {
                     lastAutoSave = DateTime.Now;
+                    string browserBackup = null;   // (browser build: the old autosave, moved aside until the new one is written)
                     try
                     {
                         var saveType = SaveAndLoad.SaveType.AutoSave;
 #if BROWSER
                         // (port: an AutoSave also sets the file's creation time, which stops the WebAssembly runtime, so the page writes it as a save
-                        // named like the autosave, in place of the old one)
+                        // named like the autosave, in place of the old one. The old one is moved aside first and only deleted once the new one is written.)
                         SaveAndLoad.EnsureSavesDirectory();
-                        System.IO.File.Delete(SaveAndLoad.AutoSaveFilename);
+                        restoreLeftoverAutoSaveBackup();
+                        if (System.IO.File.Exists(SaveAndLoad.AutoSaveFilename))
+                        {
+                            browserBackup = SaveAndLoad.AutoSaveFilename + ".bak";
+                            if (System.IO.File.Exists(browserBackup)) System.IO.File.Delete(browserBackup);
+                            System.IO.File.Move(SaveAndLoad.AutoSaveFilename, browserBackup);
+                        }
                         SaveAndLoad.pendingManualSaveName = System.IO.Path.GetFileNameWithoutExtension(SaveAndLoad.AutoSaveFilename);
                         saveType = SaveAndLoad.SaveType.ManualSave;
 #endif
                         SaveAndLoad.SaveAll(notesTextBox.Text, DungeonUI.theDungeonTabControl.SelectedIndex, exportDungeonModelsJsonLines(), DungeonSaveAndLoad.SaveDrawingLayer(),
                                                 Graphics.alternativeOverworldMapFilename, Graphics.shouldInitiallyHideOverworldMap, currentRecorderDestinationIndex,
                                                 toggleBookShieldCheckBox.IsChecked.Value, bookIsAtlasCheckBox.IsChecked.Value, saveType);
+                        if (browserBackup != null)
+                        {
+                            try { System.IO.File.Delete(browserBackup); } catch { }   // (the new autosave is written: the old one can go)
+                            browserBackup = null;
+                        }
                         async Task go()
                         {
                             diskIcon.Opacity = 0.7;
@@ -5932,10 +6086,16 @@ public static class WPFUI
                     }
                     catch (Exception e)
                     {
+                        SaveAndLoad.pendingManualSaveName = "";   // (a failed save must not hand the autosave name to the next manual save)
+                        // (browser build: put the old autosave back, so a failed save does not lose it)
+                        if (browserBackup != null)
+                        {
+                            try { if (!System.IO.File.Exists(SaveAndLoad.AutoSaveFilename)) System.IO.File.Move(browserBackup, SaveAndLoad.AutoSaveFilename); } catch { }
+                        }
                         if (!autoSaveFailureShown)   // (say so once: otherwise a Saves folder that cannot be written fails silently for the whole game)
                         {
                             autoSaveFailureShown = true;
-                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Z1R_Tracker_crash_log.txt"), $"\n\nAUTOSAVE NOTE -- {DateTime.Now:yyyy-MM-dd-HH:mm:ss} -- auto-save failed: {e}\n"); } catch { }   // (also kept in the crash log, so a bug report shows it)
+                            try { System.IO.File.AppendAllText(Platform.Files.User("Z1R_Tracker_crash_log.txt"), $"\n\nAUTOSAVE NOTE -- {DateTime.Now:yyyy-MM-dd-HH:mm:ss} -- auto-save failed: {e}\n"); } catch { }   // (also kept in the crash log, so a bug report shows it)
                             Graphics.ErrorBeepWithReminderLogText($"Auto-save failed ({e.Message}). Use the Save button, and check the Saves folder is writable.");
                         }
                     }

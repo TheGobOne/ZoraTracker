@@ -49,7 +49,7 @@ Options that only some ZORA seeds use. The checkbox beside the header toggles al
 
 - **4th Sword** adds a fourth sword level above the magical sword. Choose where its item lives: the level 2 staircase slot (the default) or a level 9 floor item. Checking it also turns on Progressive Items.
 - **Progressive Items** makes the blue candle, blue ring, wood arrows and swords progressive.
-- **Boots Replace Boomerangs**, **Extra Power Bracelet Blocks**, **Extra Raft Blocks**, **Randomize Dead Woods** and **Randomize Lost Hills**.
+- **Pegasus Boots**, **Extra Power Bracelet Blocks**, **Extra Raft Blocks**, **Randomize Dead Woods** and **Randomize Lost Hills**.
 
 ### Random options
 

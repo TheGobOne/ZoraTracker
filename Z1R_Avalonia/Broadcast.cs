@@ -98,15 +98,22 @@ public static class Broadcast
 
             var leftTop = TrackerModelOptions.BroadcastWindowLT;
             var matches = System.Text.RegularExpressions.Regex.Match(leftTop, @"^(-?\d+),(-?\d+)$");
-            if (matches.Success)
+            // (a minimized-window position saved by an older version is ignored, so the window does not open off the screen)
+            if (matches.Success && !(double.Parse(matches.Groups[1].Value, CultureInfo.InvariantCulture) < ShowRunCustom.MINIMIZED_THRESHOLD)
+                                && !(double.Parse(matches.Groups[2].Value, CultureInfo.InvariantCulture) < ShowRunCustom.MINIMIZED_THRESHOLD))
                 ShowRunCustom.setLeftTop(broadcastWindow, double.Parse(matches.Groups[1].Value, CultureInfo.InvariantCulture), double.Parse(matches.Groups[2].Value, CultureInfo.InvariantCulture));
 
             broadcastWindow.Loaded += (_, _) => updateTopBar();
             broadcastWindow.PositionChanged += (_, _) =>
             {
                 updateTopBar();
-                TrackerModelOptions.BroadcastWindowLT = $"{(int)ShowRunCustom.leftOf(broadcastWindow)},{(int)ShowRunCustom.topOf(broadcastWindow)}";
-                TrackerModelOptions.writeSettings();
+                // (a minimized window reports -32000,-32000 on Windows: saving that put the window off the screen at the next start)
+                var (posL, posT) = (ShowRunCustom.leftOf(broadcastWindow), ShowRunCustom.topOf(broadcastWindow));
+                if (broadcastWindow.WindowState == WindowState.Normal && !(posL < ShowRunCustom.MINIMIZED_THRESHOLD) && !(posT < ShowRunCustom.MINIMIZED_THRESHOLD))
+                {
+                    TrackerModelOptions.BroadcastWindowLT = $"{(int)posL},{(int)posT}";
+                    ShowRunCustom.writeSettingsSoon();   // (was a file write on every move event while dragging)
+                }
             };
             broadcastWindow.Width = scaleSize + 16.0;
             // (WPF: broadcastWindow.Owner <- Application.Current.MainWindow; Avalonia passes the owner to Show, below)
@@ -118,7 +125,7 @@ public static class Broadcast
                 var popups = new Dictionary<Canvas, Rectangle>(ReferenceEqualityComparer.Instance);   // (keyed by popup layer, so closing popups out of order removes the right copy)
                 var popupCanvasArea = new Canvas();
                 canvasAdd(c, popupCanvasArea, 0.0, 0.0);
-                cm.AfterCreatePopupCanvas += pc =>
+                Action<Canvas> onCreate = pc =>
                 {
                     var viewbox = new Rect(new Point(0.0, 0.0), new Point(appMainCanvas.Width, appMainCanvas.Height));
                     var vb = new VisualBrush(pc);
@@ -129,7 +136,7 @@ public static class Broadcast
                     popups[pc] = bwRect;
                     canvasAdd(popupCanvasArea, bwRect, 0.0, topViewboxRelativeToThisBroadcast - topViewboxRelativeToApp);
                 };
-                cm.BeforeDismissPopupCanvas += pc =>
+                Action<Canvas> onDismiss = pc =>
                 {
                     if (popups.TryGetValue(pc, out var bwRect))   // (no entry if the user turned on the broadcast window mid-game, as the options window was a popup when the broadcast began)
                     {
@@ -137,6 +144,10 @@ public static class Broadcast
                         popupCanvasArea.Children.Remove(bwRect);
                     }
                 };
+                cm.AfterCreatePopupCanvas += onCreate;
+                cm.BeforeDismissPopupCanvas += onDismiss;
+                // (taken off when the window closes: each reopening used to leave its handlers, and its whole window, alive for the session)
+                broadcastWindow.Closed += (_, _) => { cm.AfterCreatePopupCanvas -= onCreate; cm.BeforeDismissPopupCanvas -= onDismiss; };
             }
 
             var timeline = makeViewRect(new Point(0.0, START_TIMELINE_H), new Point(W, THRU_TIMELINE_H));
@@ -244,16 +255,17 @@ public static class Broadcast
                 broadcastWindow.Height = double.Parse(wh.Groups[2].Value, CultureInfo.InvariantCulture);
             }
             var saveSizeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600.0) };
-            saveSizeTimer.Tick += (_, _) =>
+            void saveSize()
             {
                 saveSizeTimer.Stop();
                 if (broadcastWindow.WindowState == WindowState.Normal)
                 {
                     // (the client size, as Popouts saves; WPF's Width/Height are the outer size)
                     TrackerModelOptions.BroadcastWindowWH = $"{(int)broadcastWindow.ClientSize.Width},{(int)broadcastWindow.ClientSize.Height}";
-                    TrackerModelOptions.writeSettings();
+                    ShowRunCustom.writeSettingsSoon();
                 }
-            };
+            }
+            saveSizeTimer.Tick += (_, _) => saveSize();
             broadcastWindow.SizeChanged += (_, _) =>
             {
                 updateTopBar();
@@ -262,7 +274,7 @@ public static class Broadcast
             };
 
             var isUpper = true;
-            cm.RootCanvas.PointerMoved += (_, ea) =>   // we need RootCanvas to see mouse moving in popups
+            EventHandler<Avalonia.Input.PointerEventArgs> onPointerMoved = (_, ea) =>   // we need RootCanvas to see mouse moving in popups
             {
                 var mousePos = ea.GetPosition(appMainCanvas);
                 if (mousePos.Y < THRU_MAIN_MAP_AND_ITEM_PROGRESS_H)
@@ -294,6 +306,9 @@ public static class Broadcast
                     Canvas.SetTop(fakeBottomMouse, mousePos.Y - THRU_MAIN_MAP_AND_ITEM_PROGRESS_H + 230.0);
                 }
             };
+            cm.RootCanvas.PointerMoved += onPointerMoved;
+            // (a resize just before the window closes is saved now, not dropped with the timer)
+            broadcastWindow.Closed += (_, _) => { cm.RootCanvas.PointerMoved -= onPointerMoved; if (saveSizeTimer.IsEnabled) saveSize(); };
             return broadcastWindow;
         }
         Window broadcastWindow_ = null;

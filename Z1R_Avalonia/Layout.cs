@@ -134,14 +134,8 @@ public static class Layout
                 bd.Background = b.IsPointerOver ? templateHoverFill : templateFill;
                 bd.BorderBrush = Graphics.hasKeyboardFocus(b) ? Graphics.keyboardFocusBorder : b.IsPointerOver ? templateHoverBorder : templateBorder;
             }
-            refresh();
-            Graphics.trackKeyboardFocus(b, refresh);
-            b.PropertyChanged += (_, ea) =>
-            {
-                var p = ea.Property;
-                if (p == ContentControl.ContentProperty || p == ContentControl.ContentTemplateProperty || p == InputElement.IsPointerOverProperty)
-                    refresh();
-            };
+            // (handlers only while this template is shown: these buttons are re-templated, and each old template used to stay subscribed)
+            Graphics.listenWhileShown(b, bd, refresh, p => p == ContentControl.ContentProperty || p == ContentControl.ContentTemplateProperty || p == InputElement.IsPointerOverProperty, true);
             return bd;
         });
     private static readonly SolidColorBrush templateFill = new SolidColorBrush(Color.Parse("#171717"));
@@ -1090,8 +1084,12 @@ public static class Layout
         // Do not set Owner — owned windows go behind non-owned popout windows and cannot be brought back.
         // Instead, close manually when main window closes (same pattern as popout windows).
         var mainWindow = ShowRunCustom.mainWindow();   // (WPF: Application.Current.MainWindow)
+        EventHandler closeWithMain = (_, _) => { try { mmWindow.Close(); } catch { } };
         if (mainWindow != null)
-            mainWindow.Closed += (_, _) => { try { mmWindow.Close(); } catch { } };
+        {
+            mainWindow.Closed += closeWithMain;
+            mmWindow.Closed += (_, _) => mainWindow.Closed -= closeWithMain;   // (a closed magnifier must not stay referenced by the main window)
+        }
 
         var MSF = // main scale factor
             TrackerModelOptions.SmallerAppWindow.Value ? TrackerModelOptions.SmallerAppWindowScaleFactor : 1.0;
@@ -1136,13 +1134,19 @@ public static class Layout
         var w = mmWindow;
         void save()
         {
+            // a minimized window reports junk coordinates (-32000 on Windows); do not save them, as Popouts does
+            if (!loaded || w.WindowState == WindowState.Minimized || ShowRunCustom.leftOf(w) < ShowRunCustom.MINIMIZED_THRESHOLD || ShowRunCustom.topOf(w) < ShowRunCustom.MINIMIZED_THRESHOLD)
+                return;
             // (Left/Top in WPF units, through ShowRunCustom's helpers; the size is the client size, as Popouts' HotKeys window)
             TrackerModelOptions.MouseMagnifierWindowLTWH = $"{(int)ShowRunCustom.leftOf(w)},{(int)ShowRunCustom.topOf(w)},{(int)w.ClientSize.Width},{(int)w.ClientSize.Height}";
-            TrackerModelOptions.writeSettings();
+            ShowRunCustom.writeSettingsSoon();   // (called on every move and resize event)
         }
         var leftTopWidthHeight = TrackerModelOptions.MouseMagnifierWindowLTWH;
         var matches = System.Text.RegularExpressions.Regex.Match(leftTopWidthHeight, @"^(-?\d+),(-?\d+),(\d+),(\d+)$");
-        if (matches.Success)
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        // (a value saved while minimized is junk: ignore it and use the default spot)
+        if (matches.Success && !(double.Parse(matches.Groups[1].Value, inv) < ShowRunCustom.MINIMIZED_THRESHOLD) && !(double.Parse(matches.Groups[2].Value, inv) < ShowRunCustom.MINIMIZED_THRESHOLD)
+            && double.Parse(matches.Groups[3].Value, inv) >= 50.0 && double.Parse(matches.Groups[4].Value, inv) >= 50.0)
         {
             ShowRunCustom.setLeftTop(w, double.Parse(matches.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture), double.Parse(matches.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture));
             w.Width = double.Parse(matches.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture);
@@ -1183,30 +1187,47 @@ public static class Layout
         return mmWindow;
     }
 
+    // raised when the user closes the magnifier with its own X, which turns the option off
+    public static event Action MagnifierClosedByUser;
     public static void setupMouseMagnifier(CustomComboBoxes.CanvasManager cm, Action refocusMainWindow)
     {
         Window mouseMagnifierWindow = null;
-        if (TrackerModelOptions.ShowMouseMagnifierWindow.Value)
+        Window open()
         {
-            mouseMagnifierWindow = makeMouseMagnifierWindow(cm);
-            mouseMagnifierWindow.Show();
+            var w = makeMouseMagnifierWindow(cm);
+            var userClosed = false;
+#if !BROWSER
+            w.Closing += (_, e) => userClosed = !e.IsProgrammatic && e.CloseReason == WindowCloseReason.WindowClosing;
+#endif
+            w.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(mouseMagnifierWindow, w)) mouseMagnifierWindow = null;
+                // closed with its own X: turn the option off, so it does not come back on the next launch
+                if (userClosed && TrackerModelOptions.ShowMouseMagnifierWindow.Value)
+                {
+                    TrackerModelOptions.ShowMouseMagnifierWindow.Value = false;
+                    TrackerModelOptions.writeSettings();
+                    MagnifierClosedByUser?.Invoke();   // (the Options menu unticks its checkbox)
+                }
+            };
+            w.Show();
             refocusMainWindow();
+            return w;
         }
+        if (TrackerModelOptions.ShowMouseMagnifierWindow.Value)
+            mouseMagnifierWindow = open();
         OptionsMenu.mouseMagnifierWindowOptionChanged += () =>
         {
             // close existing
             if (mouseMagnifierWindow != null)
             {
-                mouseMagnifierWindow.Close();
+                var old = mouseMagnifierWindow;
                 mouseMagnifierWindow = null;
+                old.Close();
             }
             // maybe restart
             if (TrackerModelOptions.ShowMouseMagnifierWindow.Value)
-            {
-                mouseMagnifierWindow = makeMouseMagnifierWindow(cm);
-                mouseMagnifierWindow.Show();
-                refocusMainWindow();
-            }
+                mouseMagnifierWindow = open();
         };
     }
 }

@@ -168,12 +168,17 @@ public static class PieMenus
             ea.Handled = true;
             if (hkp.TryGetValue(ea.Key, out var which))
             {
-                if (which == 0) currentSelection = (int)Dock.Bottom;
-                else if (which == 1) currentSelection = (int)Dock.Left;
-                else if (which == 2) currentSelection = (int)Dock.Top;
-                else if (which == 3) currentSelection = (int)Dock.Right;
-                else throw new Exception("unexpected hkp which");
-                if (!isDisabledSelection())
+                // (a hotkey for a direction this menu has no panel for, or an index it has no direction for, is ignored: throwing here left the menu open)
+                var hasPanel = true;
+                var keyDock = -1;
+                if (which == 0) { keyDock = (int)Dock.Bottom; hasPanel = bottomPanel != null; }
+                else if (which == 1) { keyDock = (int)Dock.Left; hasPanel = leftPanel != null; }
+                else if (which == 2) { keyDock = (int)Dock.Top; hasPanel = topPanel != null; }
+                else if (which == 3) { keyDock = (int)Dock.Right; hasPanel = rightPanel != null; }
+                else hasPanel = false;
+                if (hasPanel) currentSelection = keyDock;   // (an unbound key leaves the mouse's own selection alone)
+                if (!hasPanel) { }
+                else if (!isDisabledSelection())
                 {
                     doBehavior();
                     wh.Set();

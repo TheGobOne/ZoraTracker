@@ -22,6 +22,29 @@ namespace Z1R_Avalonia;
 
 public static class OptionsMenu
 {
+    private static bool raceModeSavedMuted = false;   // the user's own mute choice while Race Mode forces mute on
+    private static bool raceModeWasOn = false;
+    // the mute choice is also kept in a small file while Race Mode is on, so turning Race Mode off after a restart still puts it back
+    private static string raceModeMuteFile() => Platform.Files.User("Z1R_Tracker_race_mode_mute.txt");
+    private static void writeRaceModeSavedMuted(bool muted)
+    {
+        try { System.IO.File.WriteAllText(raceModeMuteFile(), muted ? "1" : "0"); } catch { }
+    }
+    private static bool? readRaceModeSavedMuted()
+    {
+        try
+        {
+            var f = raceModeMuteFile();
+            if (!System.IO.File.Exists(f)) return null;
+            var s = System.IO.File.ReadAllText(f).Trim();
+            return s == "1" ? true : s == "0" ? false : (bool?)null;
+        }
+        catch { return null; }
+    }
+    private static void deleteRaceModeSavedMuted()
+    {
+        try { System.IO.File.Delete(raceModeMuteFile()); } catch { }
+    }
     public static readonly Platform.SpeechSynthesizer voice = new Platform.SpeechSynthesizer();
     private static string make_defaultVoice() { try { return voice.VoiceName; } catch { return ""; } }
     public static readonly string defaultVoice = make_defaultVoice();
@@ -226,8 +249,8 @@ public static class OptionsMenu
                 enableCheck.IsChecked = true;
             }
             TrackerModelOptions.CoopHostSession = true;
+            Dungeon.startLocalSignalRHost(port);   // (the host first: turning co-op on connects to it straight away)
             TrackerModelOptions.CoopSyncOptions.SetEnableCoop(true);
-            Dungeon.startLocalSignalRHost(port);
             wh.Set();
             window.Close();
         };
@@ -281,9 +304,12 @@ public static class OptionsMenu
 
         CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
         {
+            // (only clear the flag if this dialog set it: inside the in-app Options popup it is already set, and clearing it let hotkeys act behind Options)
+            var changedGlobal = !CustomComboBoxes.GlobalFlag.popupIsActive;
             CustomComboBoxes.GlobalFlag.popupIsActive = true;
             await CustomComboBoxes.DoModalDocked(cm, wh, Dock.Bottom, stylePanel);
-            CustomComboBoxes.GlobalFlag.popupIsActive = false;
+            if (changedGlobal)
+                CustomComboBoxes.GlobalFlag.popupIsActive = false;
         }))());
     }
 
@@ -672,7 +698,7 @@ public static class OptionsMenu
         (new[] { "Legacy Mode", "Hide Dungeon Numbers", "Mark Bomb Droppers", "Custom LEVEL Name" }, "Startup options",
             "Check the ones your seed uses. Legacy Mode is for non-ZORA seeds: it turns off and locks the ZORA Extras and limits shops to the original game's items, Hide Dungeon Numbers hides the level numbers, Mirrored Overworld flips the map, Mark Bomb Droppers lets you mark bomb-dropper spots, and Custom LEVEL Name replaces \"LEVEL\" in the dungeon headers with a name of your choice."),
         (new[] { "ZORA Extras", "Extra Power Bracelet Blocks", "Progressive Items" }, "ZORA Extras",
-            "Extra randomizer options that only some seeds use, such as 4th Sword, Boots Replace Boomerangs and Progressive Items. Check the ones your seed uses."),
+            "Extra randomizer options that only some seeds use, such as 4th Sword, Pegasus Boots and Progressive Items. Check the ones your seed uses."),
         (new[] { "Paste Flags" }, "Paste Flags",
             "Copy the Z1R and ZORA flag strings from the ZORA site, paste them in, then click Apply to set the options and close the box (pasting alone sets them too). The matching options are checked for you, and Boots and the four block and hint options show a ? (Random) when the flags left them to chance."),
         (new[] { "@0.021,0.744,0.979,0.844" }, "Recent saves",
@@ -765,7 +791,9 @@ public static class OptionsMenu
     {
         var width = cm.AppMainCanvas.Width;
         var all = new Border { BorderThickness = new Thickness(2.0), BorderBrush = Brushes.DarkGray, Background = Brushes.Black };
-        var optionsAllsp = new StackPanel { Orientation = Orientation.Horizontal, Width = width, Background = Brushes.Black };
+        // (no fixed width: the three columns take the width their labels need, and the Viewbox below shrinks them to fit the window if they need more.
+        // A fixed width clipped the last column's labels where text is wider, e.g. "Remember Startup Selection" in the browser build.)
+        var optionsAllsp = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Black };
         // (WPF: implicit styles keyed by type in e.Resources; Avalonia: styles in e.Styles, which apply to its descendants)
         void AddStyle(Control e)
         {
@@ -1365,13 +1393,16 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Check For Updates On Startup", IsReadOnly = true } };
-        cb3.IsChecked = TrackerModelOptions.CheckForUpdates.Value;
-        Graphics.onChecked(cb3, () => TrackerModelOptions.CheckForUpdates.Value = true);
-        Graphics.onUnchecked(cb3, () => TrackerModelOptions.CheckForUpdates.Value = false);
-        ToolTip.SetTip(cb3, "When the tracker starts, look on GitHub for a newer release.\nIf there is one, the version button glows green; click it for the download link.");
-        setToolTipShowDuration(cb3, 10000);
-        options3sp.Children.Add(cb3);
+        if (!Platform.isBrowser)   // (the web version is always the latest, and never checks for updates)
+        {
+            cb3 = new CheckBox { Content = new TextBox { Text = "Check For Updates On Startup", IsReadOnly = true } };
+            cb3.IsChecked = TrackerModelOptions.CheckForUpdates.Value;
+            Graphics.onChecked(cb3, () => TrackerModelOptions.CheckForUpdates.Value = true);
+            Graphics.onUnchecked(cb3, () => TrackerModelOptions.CheckForUpdates.Value = false);
+            ToolTip.SetTip(cb3, "When the tracker starts, look on GitHub for a newer release.\nIf there is one, the version button glows green; click it for the download link.");
+            setToolTipShowDuration(cb3, 10000);
+            options3sp.Children.Add(cb3);
+        }
 
         cb3 = new CheckBox { Content = new TextBox { Text = "Archipelago Support", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.ArchipelagoSupport.Value;
@@ -1488,6 +1519,9 @@ public static class OptionsMenu
         cb3.IsChecked = TrackerModelOptions.ShowMouseMagnifierWindow.Value;
         Graphics.onChecked(cb3, () => { TrackerModelOptions.ShowMouseMagnifierWindow.Value = true; triggerMouseMagnifierWindowOptionChanged(); });
         Graphics.onUnchecked(cb3, () => { TrackerModelOptions.ShowMouseMagnifierWindow.Value = false; triggerMouseMagnifierWindowOptionChanged(); });
+        // (closing the magnifier with its own X turns the option off: untick this box to match)
+        var magnifierCB = cb3;
+        Layout.MagnifierClosedByUser += () => Dispatcher.UIThread.Post(() => { if (magnifierCB.IsChecked != false) magnifierCB.IsChecked = false; });
         ToolTip.SetTip(cb3, "Open a separate, resizable window that shows a\nzoomed-in area around the mouse.\nCan be useful when using the app on a small screen\nwhere precise mouse targetting is hard to see.");
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
@@ -1524,7 +1558,7 @@ public static class OptionsMenu
 
         optionsAllsp.Children.Add(options3sp);
 
-        var total = new StackPanel { Orientation = Orientation.Vertical };
+        var total = new StackPanel { Orientation = Orientation.Vertical, Width = width, Background = Brushes.Black };
         if (includePopupExplainer)
         {
             var tb1 = new TextBox { Text = "Options Menu", IsReadOnly = true, FontWeight = FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center };
@@ -1535,15 +1569,34 @@ public static class OptionsMenu
         // some spare black space at the bottom of every column (so the dividers between the columns run all the way down), for future options
         foreach (var col in new[] { options1sp, options2sp, options3sp })
             col.Children.Add(new DockPanel { Height = 8.0, Background = Brushes.Black });
-        total.Children.Add(optionsAllsp);
+        total.Children.Add(new Viewbox { Child = optionsAllsp, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, MaxWidth = width, HorizontalAlignment = HorizontalAlignment.Left });
 
         all.Child = total;
+        if (includePopupExplainer)
+        {
+            // Escape closes the in-app Options popup. The app-wide Escape handler listens on the window, but in the browser build a key only passes
+            // through the window when focus is inside it, so the panel takes focus when it opens and closes the top popup itself if nothing else did.
+            all.Focusable = true;
+            all.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => { if (all.IsEffectivelyVisible) all.Focus(); }, DispatcherPriority.Background);
+            all.AddHandler(Avalonia.Input.InputElement.KeyDownEvent, new EventHandler<Avalonia.Input.KeyEventArgs>((_, ea) =>
+            {
+                if (ea.Key == Avalonia.Input.Key.Escape && !ea.Handled && CustomComboBoxes.DismissTopModal())
+                    ea.Handled = true;
+            }), Avalonia.Interactivity.RoutingStrategies.Tunnel | Avalonia.Interactivity.RoutingStrategies.Bubble);
+        }
 
         raceModeChanged += () =>
         {
             if (TrackerModelOptions.RaceMode.Value)
             {
-                // Mute audio, same as checking the box
+                // Mute audio, same as checking the box (remember the user's own choice, once: this handler runs for both options canvases, and the second one
+                // would otherwise save the mute the first one just forced on)
+                if (!raceModeWasOn)
+                {
+                    raceModeSavedMuted = TrackerModelOptions.IsMuted;
+                    writeRaceModeSavedMuted(raceModeSavedMuted);
+                }
+                raceModeWasOn = true;
                 TrackerModelOptions.IsMuted = true;
                 voice.Volume = 0;
                 muteCB.IsChecked = true;
@@ -1551,9 +1604,14 @@ public static class OptionsMenu
             else
             {
                 // Restore checkbox to what user had previously selected
-                TrackerModelOptions.IsMuted = false;
-                voice.Volume = TrackerModelOptions.Volume;
-                muteCB.IsChecked = false;
+                // (Race Mode on since an earlier run: the choice was kept in a small file, as memory starts empty)
+                if (!raceModeWasOn && readRaceModeSavedMuted() is bool fromFile)
+                    raceModeSavedMuted = fromFile;
+                deleteRaceModeSavedMuted();
+                raceModeWasOn = false;
+                TrackerModelOptions.IsMuted = raceModeSavedMuted;
+                voice.Volume = raceModeSavedMuted ? 0 : TrackerModelOptions.Volume;
+                muteCB.IsChecked = raceModeSavedMuted;   // (this raises the checkbox's own handler, which sets IsMuted from it: it must say the same thing)
             }
         };
 

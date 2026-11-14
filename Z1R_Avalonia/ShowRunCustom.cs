@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
+using Avalonia.Threading;
 
 namespace Z1R_Avalonia;
 
@@ -34,6 +35,35 @@ public static class ShowRunCustom
     {
         var s = w.IsVisible ? w.DesktopScaling : (mainWindow()?.DesktopScaling ?? 1.0);
         return s > 0.0 ? s : 1.0;
+    }
+    // Window moves report a new position many times a second while dragging; writing the settings file on each one was wasted disk work.
+    // Position handlers store the value at once and call this, which writes once the moves stop. The main window's Closed writes the settings itself.
+    private static DispatcherTimer settingsWriteTimer = null;
+    public static void writeSettingsSoon()
+    {
+        if (Popouts.theMainWindowHasClosed)
+        {
+            // (the app is closing: a deferred write could be lost, so write now, as before)
+            settingsWriteTimer?.Stop();
+            TrackerModelOptions.writeSettings();
+            return;
+        }
+        if (settingsWriteTimer == null)
+        {
+            settingsWriteTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500.0) };
+            settingsWriteTimer.Tick += (_, _) => flushSettingsSoon();
+        }
+        settingsWriteTimer.Stop();
+        settingsWriteTimer.Start();
+    }
+    public static void cancelSettingsSoon() => settingsWriteTimer?.Stop();
+    public static void flushSettingsSoon()
+    {
+        if (settingsWriteTimer != null && settingsWriteTimer.IsEnabled)
+        {
+            settingsWriteTimer.Stop();
+            TrackerModelOptions.writeSettings();
+        }
     }
     public static double leftOf(Window w) => w.Position.X / scalingOf(w);
     public static double topOf(Window w) => w.Position.Y / scalingOf(w);
@@ -197,6 +227,26 @@ public static class ShowRunCustom
 
     public static void WriteShowRunCustomFile(string filename, Line[] data) => System.IO.File.WriteAllLines(filename, data.Select(x => x.AsString()));
 
+    // puts a SHOW window's new position and size on its own line of the file as it is now on disk; nothing is written if that line is no longer
+    // a SHOW of the same image (the user edited the file) or the file no longer parses
+    private static void saveShowLine(int index, Line newLine)
+    {
+        try
+        {
+            if (!(newLine is Line.SHOW(var img, _))) return;
+            var onDisk = ParseShowRunCustomFile(ShowRunCustomFilename);
+            if (index >= onDisk.Count || !(onDisk[index] is Line.SHOW(var diskImg, _)) || diskImg != img) return;
+            var lines = System.IO.File.ReadAllLines(ShowRunCustomFilename);
+            if (index >= lines.Length) return;
+            lines[index] = newLine.AsString();
+            System.IO.File.WriteAllLines(ShowRunCustomFilename, lines);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"could not save the SHOW window position to '{ShowRunCustomFilename}': {e.Message}");
+        }
+    }
+
     public static readonly string ShowRunCustomFilename = Platform.Files.User("ShowRunCustom.txt");
 
     // (port helper: WPF opens a relative SHOW/RUN path relative to the current directory, which is the app folder when the tracker is started
@@ -240,7 +290,7 @@ public static class ShowRunCustom
                 if (window.IsLoaded && !(leftOf(window) < MINIMIZED_THRESHOLD))
                 {
                     TrackerModelOptions.ShowRunInfoWindowLT = $"{(int)leftOf(window)},{(int)topOf(window)}";
-                    TrackerModelOptions.writeSettings();
+                    writeSettingsSoon();
                 }
             };
             showOwned(window);
@@ -295,18 +345,27 @@ public static class ShowRunCustom
                             window.SizeToContent = SizeToContent.WidthAndHeight;
                         }
                         var cur = i;
+                        // (written once the window stops moving, and only this window's line: the whole file used to be rewritten on every move event,
+                        // from the copy read when the button was clicked, which undid edits the user made to the file meanwhile)
+                        var saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500.0) };
+                        saveTimer.Tick += (_, _) => { saveTimer.Stop(); saveShowLine(cur, data[cur]); };
                         void update()
                         {
-                            if (!(leftOf(window) < MINIMIZED_THRESHOLD)) // minimized
+                            if (!(leftOf(window) < MINIMIZED_THRESHOLD) && window.WindowState == WindowState.Normal) // minimized
                             {
                                 data[cur] = new Line.SHOW(imgFile, (leftOf(window), topOf(window), window.Bounds.Width, window.Bounds.Height));
-                                WriteShowRunCustomFile(ShowRunCustomFilename, data);
+                                saveTimer.Stop();
+                                saveTimer.Start();
                             }
                         }
                         window.SizeChanged += (_, _) => { update(); refocusMainWindow(); };
                         window.PositionChanged += (_, _) => { update(); refocusMainWindow(); };
                         openShowWindows.Add(window);
-                        window.Closed += (_, _) => openShowWindows.Remove(window);
+                        window.Closed += (_, _) =>
+                        {
+                            openShowWindows.Remove(window);
+                            if (saveTimer.IsEnabled) { saveTimer.Stop(); saveShowLine(cur, data[cur]); }
+                        };
                         showOwned(window);
                         didAnything = true;
                         break;

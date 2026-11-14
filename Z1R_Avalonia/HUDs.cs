@@ -42,7 +42,7 @@ public static class HUDs
             if (nearMouseHUDChromeWindow != null)
                 nearMouseHUDChromeWindow.Close(); // only one at a time
             // (WPF: ResizeMode=CanMinimize → CanResize=false; Owner → passed to Show, below)
-            nearMouseHUDChromeWindow = new Window { Title = "ZORA Tracker near-mouse HUD controls", CanResize = false, SizeToContent = SizeToContent.WidthAndHeight,
+            nearMouseHUDChromeWindow = new Window { Title = "ZORATracker near-mouse HUD controls", CanResize = false, SizeToContent = SizeToContent.WidthAndHeight,
                                                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                                                     Background = Brushes.Black };
             var chromeWindow = nearMouseHUDChromeWindow;   // (the closures below use this window, as WPF's do through the mutable)
@@ -145,7 +145,7 @@ public static class HUDs
 
             var W = appMainCanvas.Width;
             // (WPF: ResizeMode=NoResize, WindowStyle=None, AllowsTransparency=true, Owner → passed to Show, below)
-            var nearMouseHUDWindow = new Window { Title = "ZORA Tracker near-mouse HUD", CanResize = false, SizeToContent = SizeToContent.Manual,
+            var nearMouseHUDWindow = new Window { Title = "ZORATracker near-mouse HUD", CanResize = false, SizeToContent = SizeToContent.Manual,
                                             Background = Brushes.Black, Opacity = maxOpacity, Topmost = true };
             makeFramelessTransparent(nearMouseHUDWindow);
             nearMouseHUDWindow.WindowStartupLocation = WindowStartupLocation.Manual;
@@ -270,7 +270,7 @@ public static class HUDs
             if (minimapOverlayWindow != null)
                 minimapOverlayWindow.Close(); // only one at a time
             // (WPF: ResizeMode=NoResize, WindowStyle=None, AllowsTransparency=true, Owner → passed to Show, below)
-            minimapOverlayWindow = new Window { Title = "ZORA Tracker minimap overlay", CanResize = false, SizeToContent = SizeToContent.Manual,
+            minimapOverlayWindow = new Window { Title = "ZORATracker minimap overlay", CanResize = false, SizeToContent = SizeToContent.Manual,
                                                     WindowStartupLocation = WindowStartupLocation.Manual,
                                                     Background = Brushes.Transparent,
                                                     Opacity = 1.0, Topmost = true };
@@ -316,7 +316,7 @@ public static class HUDs
                 }
                 var oLegendRect = make_oLegendRect();
                 TextBox mkTxt(string txt) => new TextBox { FontSize = oLegendRect.Height, Foreground = Brushes.Orange, Background = Brushes.Black, IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), Text = txt };
-                var oText1 = mkTxt("ZORA Tracker mouse ");
+                var oText1 = mkTxt("ZORATracker mouse ");
                 var oText2 = mkTxt(" at H16");
                 var oCaption = new StackPanel { Orientation = Orientation.Horizontal, Opacity = 0.0 };
                 oCaption.Children.Add(oText1);
@@ -397,7 +397,7 @@ public static class HUDs
             // 672   48 60 ...
 
             var sizerWindow = new Window();
-            sizerWindow.Title = "ZORA Tracker sizer";
+            sizerWindow.Title = "ZORATracker sizer";
             sizerWindow.CanResize = true;   // (WPF: ResizeMode.CanResize)
             sizerWindow.SizeToContent = SizeToContent.Manual;
             void save()

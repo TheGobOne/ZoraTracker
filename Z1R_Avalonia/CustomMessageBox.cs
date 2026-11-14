@@ -75,7 +75,9 @@ public class CustomMessageBox : Window
                                   Background = Graphics.almostBlack, BorderBrush = Brushes.Orange };
             if (first)
             {
-                b.Focus();
+                // (Focus() does nothing before the button is in the window: focus it once it is shown)
+                var defaultButton = b;
+                defaultButton.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => defaultButton.Focus());
                 first = false;
             }
             DockPanel.SetDock(b, Dock.Right);

@@ -63,7 +63,7 @@ public static class Popouts
         void save()
         {
             TrackerModelOptions.HotKeyWindowLTWH = $"{(int)leftOf(w)},{(int)topOf(w)},{(int)w.ClientSize.Width},{(int)w.ClientSize.Height}";
-            TrackerModelOptions.writeSettings();
+            ShowRunCustom.writeSettingsSoon();   // (called on every move event)
         }
         var leftTopWidthHeight = TrackerModelOptions.HotKeyWindowLTWH;
         var matches = System.Text.RegularExpressions.Regex.Match(leftTopWidthHeight, @"^(-?\d+),(-?\d+),(\d+),(\d+)$");
@@ -433,7 +433,10 @@ public static class Popouts
         }
         //w.Owner <- Application.Current.MainWindow  // we don't do this; doing so causes clicking any window to bring all ZT windows to the front, making impossible to layer
                                                      // popout ZT windows with other Windows applications in Z-order of windows desktop
-        ShowRunCustom.mainWindow().Closed += (_, _) => { theMainWindowHasClosed = true; try { w.Close(); } catch { } };  // do this to get similar close behavior to ownership
+        EventHandler onMainClosed = (_, _) => { theMainWindowHasClosed = true; try { w.Close(); } catch { } };  // do this to get similar close behavior to ownership
+        var mainW = ShowRunCustom.mainWindow();
+        mainW.Closed += onMainClosed;
+        w.Closed += (_, _) => mainW.Closed -= onMainClosed;   // (each popout used to leave this handler, and its closed window, on the main window for the session)
         Action save = () => { };
         Action noDisplay = () => { };
         insideMakePopoutCall = true;
@@ -455,7 +458,7 @@ public static class Popouts
                         TrackerModelOptions.SpotSummaryPopout_DisplayedLT = $"0,{(int)restoreLeft},{(int)restoreTop}" + sz();
                     else
                         TrackerModelOptions.SpotSummaryPopout_DisplayedLT = $"1,{(int)leftOf(w)},{(int)topOf(w)}" + sz();
-                    TrackerModelOptions.writeSettings();
+                    ShowRunCustom.writeSettingsSoon();   // (called on every move event)
                 };
                 noDisplay = () =>
                 {
@@ -480,7 +483,7 @@ public static class Popouts
                         TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT = $"0,{(int)restoreLeft},{(int)restoreTop}" + sz();
                     else
                         TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT = $"1,{(int)leftOf(w)},{(int)topOf(w)}" + sz();
-                    TrackerModelOptions.writeSettings();
+                    ShowRunCustom.writeSettingsSoon();   // (called on every move event)
                 };
                 noDisplay = () =>
                 {
@@ -505,7 +508,7 @@ public static class Popouts
                         TrackerModelOptions.RemainingItemsPoput_DisplayedLT = $"0,{(int)restoreLeft},{(int)restoreTop}" + sz();
                     else
                         TrackerModelOptions.RemainingItemsPoput_DisplayedLT = $"1,{(int)leftOf(w)},{(int)topOf(w)}" + sz();
-                    TrackerModelOptions.writeSettings();
+                    ShowRunCustom.writeSettingsSoon();   // (called on every move event)
                 };
                 noDisplay = () =>
                 {
@@ -540,8 +543,39 @@ public static class Popouts
         w.PositionChanged += (_, _) => { save(); refocusMainWindow(); };
         var sizeSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600.0) };
         sizeSaveTimer.Tick += (_, _) => { sizeSaveTimer.Stop(); save(); };
-        w.SizeChanged += (_, _) => { if (w.IsLoaded && w.SizeToContent == SizeToContent.Manual) { sizeSaveTimer.Stop(); sizeSaveTimer.Start(); } };   // remember the size the user drags it to
-        w.Closed += (_, _) => { if (!(theMainWindowHasClosed) && !(insideMakePopoutCall)) noDisplay(); };
+        w.SizeChanged += (_, _) =>   // remember the size the user drags it to
+        {
+            if (w.IsLoaded && w.SizeToContent == SizeToContent.Manual)
+            {
+                noteRestoreBounds();   // (read while the window is open: its position can't be read once it has closed)
+                sizeSaveTimer.Stop();
+                sizeSaveTimer.Start();
+            }
+        };
+        void setDisplayedLT(string s)
+        {
+            switch (kind)
+            {
+                case PopoutKind.SpotSummaryPopout: TrackerModelOptions.SpotSummaryPopout_DisplayedLT = s; break;
+                case PopoutKind.InventoryAndHeartsPopout: TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT = s; break;
+                case PopoutKind.RemainingItemsPoput: TrackerModelOptions.RemainingItemsPoput_DisplayedLT = s; break;
+            }
+        }
+        w.Closed += (_, _) =>
+        {
+            // (a resize just before closing is saved now, not dropped with the timer. It uses the bounds remembered while the window was open,
+            // since a closed window's position reads as 0,0. noDisplay below then marks it closed if the user closed it.)
+            if (sizeSaveTimer.IsEnabled)
+            {
+                sizeSaveTimer.Stop();
+                if (restoreWidth > 0.0 && restoreHeight > 0.0)
+                {
+                    setDisplayedLT($"1,{(int)restoreLeft},{(int)restoreTop}" + sz());
+                    ShowRunCustom.writeSettingsSoon();
+                }
+            }
+            if (!(theMainWindowHasClosed) && !(insideMakePopoutCall)) noDisplay();
+        };
         w.Closed += (_, _) =>   // (so the Popout Windows menu knows it is no longer open)
         {
             switch (kind)
@@ -603,8 +637,10 @@ public static class Popouts
         }
         var w = new Window { Title = "Shop Prices", SizeToContent = SizeToContent.WidthAndHeight,
                              Background = Brushes.Black, Foreground = Brushes.Orange, Topmost = false };
-        ShowRunCustom.mainWindow().Closed += (_, _) => { try { w.Close(); } catch { } };
-        w.Closed += (_, _) => theShopPricesWindow = null;
+        EventHandler onMainClosed = (_, _) => { try { w.Close(); } catch { } };
+        var mainW = ShowRunCustom.mainWindow();
+        mainW.Closed += onMainClosed;
+        w.Closed += (_, _) => { theShopPricesWindow = null; mainW.Closed -= onMainClosed; };
         theShopPricesWindow = w;
         var sp = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(6.0) };
         var header = new TextBox { Text = "Shops found on overworld map — enter the price you saw:", IsReadOnly = true,
@@ -710,7 +746,7 @@ public static class Popouts
             if (w.IsLoaded && !(leftOf(w) < ShowRunCustom.MINIMIZED_THRESHOLD) && w.WindowState == WindowState.Normal)
             {
                 TrackerModelOptions.ShopPricesWindowLTWH = $"{(int)leftOf(w)},{(int)topOf(w)},{(int)w.Bounds.Width},{(int)w.Bounds.Height}";
-                TrackerModelOptions.writeSettings();
+                ShowRunCustom.writeSettingsSoon();   // (called on every move and resize event)
             }
         }
         w.PositionChanged += (_, _) => saveBounds();

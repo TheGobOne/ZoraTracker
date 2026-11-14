@@ -24,6 +24,34 @@ public static class Views
     public static void canvasAdd(Canvas c, Control item, double left, double top) => Graphics.canvasAdd(c, item, left, top);
     // (port helper: WPF's `modelEvent.Add(f)` on an F# IEvent of the model)
     private static void onEvent<T>(IEvent<FSharpHandler<T>, T> e, Action<T> f) => e.AddHandler(new FSharpHandler<T>((_, x) => f(x)));
+    // Keeps a subscription only while the owner is in the visual tree. A view that is thrown away (a redrawn overworld tile, a closed or rebuilt window)
+    // stops listening when it leaves the tree. If it comes back, it subscribes again and refreshes, since it missed the changes made while it was out.
+    public static void WhileInTree(Control owner, Action subscribe, Action unsubscribe, Action refresh)
+    {
+        var on = true;
+        subscribe();
+        owner.AttachedToVisualTree += (_, _) => { if (!on) { on = true; subscribe(); refresh?.Invoke(); } };
+        owner.DetachedFromVisualTree += (_, _) => { if (on) { on = false; unsubscribe(); } };
+    }
+    private static void onEventInTree<T>(Control owner, IEvent<FSharpHandler<T>, T> e, Action<T> f, Action refresh)
+    {
+        var h = new FSharpHandler<T>((_, x) => f(x));
+        WhileInTree(owner, () => e.AddHandler(h), () => e.RemoveHandler(h), refresh);
+    }
+    // the 'new location known' logic of SynthesizeANewLocationKnownEvent, for a view: subscribed only while the view is in the tree
+    private static void onNewLocationKnownInTree<T>(Control owner, IEvent<FSharpHandler<T>, T> mapChoiceDomainChangePublished, Action f, Action refresh)
+    {
+        var needDetailAboutNewLocation = false;
+        onEventInTree(owner, mapChoiceDomainChangePublished, _ => needDetailAboutNewLocation = true, refresh);
+        onEventInTree(owner, TrackerModel.mapStateSummaryComputedEvent.Publish, _ =>
+        {
+            if (needDetailAboutNewLocation)
+            {
+                needDetailAboutNewLocation = false;
+                f();
+            }
+        }, null);
+    }
 
     public class GlobalBoxMouseOverHighlight
     {
@@ -122,7 +150,8 @@ public static class Views
     {
         if (owInstanceOpt != null)
         {
-            var owInstance = owInstanceOpt;
+            // (the instance passed in only says 'draw it'; the current one is read here, so a change of overworld template is followed)
+            var owInstance = TrackerModel.owInstance ?? owInstanceOpt;
             if (!location.Equals(TrackerModel.NOTFOUND))
             {
                 // mark overworld block in the upper right corner
@@ -218,6 +247,8 @@ public static class Views
         return c;
     }
     // 'Progressive Items': a bright golden halo behind the full-colour upgraded item that swells and shrinks again; the caller adds it where the item is and removes it after 3 seconds
+    // the ZIndex each glow-raised element had before its first glow, and how many glows still hold it up
+    private static readonly Dictionary<Control, (int, int)> glowRaised = new Dictionary<Control, (int, int)>();
     public static Control makeProgressiveGlow(System.Drawing.Bitmap bmp, double size)
     {
         var root = new Canvas { Width = size, Height = size, IsHitTestVisible = false };
@@ -380,20 +411,21 @@ public static class Views
             Dungeon.HotKeyAHiddenDungeonLabel(innerc, dungeon, null);
             appMainCanvasGlobalBoxMouseOverHighlight.ApplyBehavior(innerc);
         }
+        // (every subscription below lasts only while this view is in the visual tree, so thrown-away copies stop listening)
         // redraw if PlayerHas changes
-        onEvent(dungeon.PlayerHasTriforceChanged, _ => redraw());
+        onEventInTree(innerc, dungeon.PlayerHasTriforceChanged, _ => redraw(), redraw);
         // redraw after we can look up its new location coordinates
-        var newLocation = SynthesizeANewLocationKnownEvent(dungeon.HasBeenLocatedChanged);
-        newLocation.Fired += () => redraw();
+        onNewLocationKnownInTree(innerc, dungeon.HasBeenLocatedChanged, redraw, null);
         // redraw if hinting changes
         if (!TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
-            onEvent(TrackerModel.LevelHintChanged.Invoke(trackerIndex), _ => redraw());
+            onEventInTree(innerc, TrackerModel.LevelHintChanged.Invoke(trackerIndex), _ => redraw(), null);
         else
-            for (int i = 0; i <= 7; i++) onEvent(TrackerModel.LevelHintChanged.Invoke(i), _ => redraw());   // just redraw on any hints, rather than try to subscribe/unsubscribe based on LabelChar changes
+            for (int i = 0; i <= 7; i++) onEventInTree(innerc, TrackerModel.LevelHintChanged.Invoke(i), _ => redraw(), null);   // just redraw on any hints, rather than try to subscribe/unsubscribe based on LabelChar changes
         // redraw if label changed, as that can (un)link an existing hint; or if blockers changed (may need to rewdraw specific-blocker)
-        onEvent(dungeon.HiddenDungeonColorOrLabelChanged, _ => redraw());
-        onEvent(TrackerModel.DungeonBlockersContainer.AnyBlockerChanged, _ => redraw());
-        redrawTriforces.Add(redraw);
+        onEventInTree(innerc, dungeon.HiddenDungeonColorOrLabelChanged, _ => redraw(), null);
+        onEventInTree(innerc, TrackerModel.DungeonBlockersContainer.AnyBlockerChanged, _ => redraw(), null);
+        Action redrawA = redraw;
+        WhileInTree(innerc, () => redrawTriforces.Add(redrawA), () => redrawTriforces.Remove(redrawA), null);
         return innerc;
     }
     public static Canvas MakeLevel9View(OverworldData.OverworldInstance owInstanceOpt)   // (owInstanceOpt: null for None)
@@ -411,11 +443,11 @@ public static class Views
             drawTinyIconIfLocationIsOverworldBlock(level9NumeralCanvas, owInstanceOpt, TrackerModel.mapStateSummary.DungeonLocations[8]);
         }
         redraw();
+        // (these subscriptions last only while this view is in the visual tree)
         // redraw after we can look up its new location coordinates
-        var newLocation = SynthesizeANewLocationKnownEvent(dungeon.HasBeenLocatedChanged);
-        newLocation.Fired += () => redraw();
+        onNewLocationKnownInTree(level9NumeralCanvas, dungeon.HasBeenLocatedChanged, redraw, redraw);
         // redraw if hinting changes
-        onEvent(TrackerModel.LevelHintChanged.Invoke(8), _ => redraw());
+        onEventInTree(level9NumeralCanvas, TrackerModel.LevelHintChanged.Invoke(8), _ => redraw(), null);
         return level9NumeralCanvas;
     }
     public static Canvas MakeColorNumberCanvasForHDN(int dungeonIndex)
@@ -434,7 +466,7 @@ public static class Views
                     colorCanvas.Children.Add(Graphics.BMPtoImage(Graphics.alphaNumOnTransparentBmp(labelChar, color, 28, 28, 3, 2)));
             }
             redraw(d.Color, d.LabelChar);
-            onEvent(d.HiddenDungeonColorOrLabelChanged, t => redraw(t.Item1, t.Item2));
+            onEventInTree(colorCanvas, d.HiddenDungeonColorOrLabelChanged, t => redraw(t.Item1, t.Item2), () => redraw(d.Color, d.LabelChar));   // (only while in the visual tree)
             return colorCanvas;
         }
         else
@@ -447,17 +479,17 @@ public static class Views
         onEvent(TrackerModel.IsCurrentlyBookChanged, _ =>
         {
             TrackerModel.forceUpdate();
-            foreach (var f in redrawBoxes)
+            foreach (var f in redrawBoxes.ToArray())   // (a copy: boxes leaving the visual tree remove themselves from the list)
                 f();
         });
         onEvent(TrackerModel.DungeonBlockersContainer.AnyBlockerChanged, _ =>
         {
-            foreach (var f in redrawBoxes)
+            foreach (var f in redrawBoxes.ToArray())
                 f();
         });
         onEvent(TrackerModel.IsWSMSReplacedByBUChanged, _ =>
         {
-            foreach (var f in redrawBoxes)
+            foreach (var f in redrawBoxes.ToArray())
                 f();
         });
         return true;
@@ -485,24 +517,24 @@ public static class Views
             {
                 case TrackerModel.StairKind.Tags.LikeL2:
                     {
-                        void update() => stairImg.Opacity = TrackerModel.IsSecondQuestDungeons && TrackerModelOptions.ShowBasementInfo.Value ? 1.0 : 0.0;
-                        OptionsMenu.secondQuestDungeonsOptionChanged += update;
-                        OptionsMenu.showBasementInfoOptionChanged += update;
+                        Action update = () => stairImg.Opacity = TrackerModel.IsSecondQuestDungeons && TrackerModelOptions.ShowBasementInfo.Value ? 1.0 : 0.0;
+                        WhileInTree(c, () => { OptionsMenu.secondQuestDungeonsOptionChanged += update; OptionsMenu.showBasementInfoOptionChanged += update; },
+                                       () => { OptionsMenu.secondQuestDungeonsOptionChanged -= update; OptionsMenu.showBasementInfoOptionChanged -= update; }, update);
                         update();
                         break;
                     }
                 case TrackerModel.StairKind.Tags.LikeL3:
                     {
-                        void update() => stairImg.Opacity = !TrackerModel.IsSecondQuestDungeons && TrackerModelOptions.ShowBasementInfo.Value ? 1.0 : 0.0;
-                        OptionsMenu.secondQuestDungeonsOptionChanged += update;
-                        OptionsMenu.showBasementInfoOptionChanged += update;
+                        Action update = () => stairImg.Opacity = !TrackerModel.IsSecondQuestDungeons && TrackerModelOptions.ShowBasementInfo.Value ? 1.0 : 0.0;
+                        WhileInTree(c, () => { OptionsMenu.secondQuestDungeonsOptionChanged += update; OptionsMenu.showBasementInfoOptionChanged += update; },
+                                       () => { OptionsMenu.secondQuestDungeonsOptionChanged -= update; OptionsMenu.showBasementInfoOptionChanged -= update; }, update);
                         update();
                         break;
                     }
                 case TrackerModel.StairKind.Tags.Always:
                     {
-                        void update() => stairImg.Opacity = TrackerModelOptions.ShowBasementInfo.Value ? 1.0 : 0.0;
-                        OptionsMenu.showBasementInfoOptionChanged += update;
+                        Action update = () => stairImg.Opacity = TrackerModelOptions.ShowBasementInfo.Value ? 1.0 : 0.0;
+                        WhileInTree(c, () => OptionsMenu.showBasementInfoOptionChanged += update, () => OptionsMenu.showBasementInfoOptionChanged -= update, update);
                         update();
                         break;
                     }
@@ -531,7 +563,7 @@ public static class Views
                 else return CustomComboBoxes.boxCurrentBMP(TrackerModel.progressiveFamilyIdent(f, Math.Min(2, Math.Max(1, shown))), null);
             }
         }
-        onEvent(TrackerModel.progressiveBoxGlow.Publish, b =>
+        onEventInTree(c, TrackerModel.progressiveBoxGlow.Publish, b =>   // (only while this box is in the visual tree)
         {
             // (WPF: c.IsVisible, which is false when an ancestor is hidden too, so Avalonia's IsEffectivelyVisible)
             if (ReferenceEquals(b, box) && c.IsEffectivelyVisible)
@@ -555,7 +587,12 @@ public static class Views
                         // (WPF: FrameworkElement.Parent is the logical parent, as Avalonia's Control.Parent)
                         if (curV is Control fe && (fe.Parent is Panel || ReferenceEquals(fe, c)))
                         {
-                            raised.Add((fe, fe.ZIndex));
+                            // (a container shared by several glowing boxes is raised once: the original is kept from the first raise, so the last restore puts back the real value)
+                            if (glowRaised.TryGetValue(fe, out var entry))
+                                glowRaised[fe] = (entry.Item1, entry.Item2 + 1);
+                            else
+                                glowRaised[fe] = (fe.ZIndex, 1);
+                            raised.Add((fe, 0));
                             fe.ZIndex = 5000;
                         }
                         curV = curV.GetVisualParent();
@@ -567,13 +604,23 @@ public static class Views
                         Dispatcher.UIThread.Post(() =>
                         {
                             c.Children.Remove(overlay);
-                            foreach (var (fe, z) in raised) fe.ZIndex = z;
+                            foreach (var (fe, _) in raised)
+                            {
+                                if (!glowRaised.TryGetValue(fe, out var entry)) continue;
+                                if (entry.Item2 <= 1)
+                                {
+                                    glowRaised.Remove(fe);
+                                    fe.ZIndex = entry.Item1;
+                                }
+                                else
+                                    glowRaised[fe] = (entry.Item1, entry.Item2 - 1);
+                            }
                             ClickTrace.Log($"progressive glow ended: restored ZIndex on {raised.Count} element(s)");
                         });
                     }))());
                 }
             }
-        });
+        }, null);
         var innerCanvasStairwayHider = new Canvas { Background = Brushes.Black, Width = 21.0, Height = 21.0 };
         void redraw()
         {
@@ -682,13 +729,14 @@ public static class Views
             }
         }
         redraw();
-        try { onEvent(TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxProgress.Changed, _ => redraw()); }
+        // (every subscription below lasts only while this box is in the visual tree, so thrown-away boxes, e.g. on redrawn overworld tiles, stop listening)
+        try { onEventInTree(c, TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxProgress.Changed, _ => redraw(), null); }
         catch { } // we create fake Views on the startup menu to preview Heart Shuffle; TheDungeonTrackerInstance does not exist yet and throws
         // redraw on changes
-        redrawBoxes.Add(() => redraw());
-        hintDashedItemsChanged += () => redraw();
-        onEvent(box.Changed, _ => redraw());
-        onEvent(TrackerModel.progressiveTierChanged.Publish, _ => redraw());   // Progressive Items: the progressive sword's P1..P4 sprite follows the number collected
+        Action redrawA = redraw;
+        WhileInTree(c, () => { redrawBoxes.Add(redrawA); hintDashedItemsChanged += redrawA; }, () => { redrawBoxes.Remove(redrawA); hintDashedItemsChanged -= redrawA; }, redraw);
+        onEventInTree(c, box.Changed, _ => redraw(), null);
+        onEventInTree(c, TrackerModel.progressiveTierChanged.Publish, _ => redraw(), null);   // Progressive Items: the progressive sword's P1..P4 sprite follows the number collected
         // interactions
         if (cmo != null)
         {

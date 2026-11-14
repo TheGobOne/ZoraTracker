@@ -294,11 +294,19 @@ public static class MainTrackerTriforcesAndItems
                 vb.StretchDirection = StretchDirection.Both;   // (also when a remembered size was restored, otherwise it could never scale up)
             };
             // the item-slot options that add boxes can change while the window is open
-            onEvent(TrackerModel.level2StairBoxEnabledChanged.Publish, _ => { if (itemLocationsWindow != null) build(); });
-            onEvent(TrackerModel.level9FloorBoxEnabledChanged.Publish, _ => { if (itemLocationsWindow != null) build(); });
-            ShowRunCustom.mainWindow().Closed += (_, _) => { mainClosing = true; try { w.Close(); } catch { } };   // (stays 'open' in the settings, so it reappears next time)
+            // (these handlers are removed when this window closes: each reopening used to add another set that stayed for the session)
+            var stairHandler = new FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => { if (itemLocationsWindow == w) build(); });
+            var floorHandler = new FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => { if (itemLocationsWindow == w) build(); });
+            TrackerModel.level2StairBoxEnabledChanged.Publish.AddHandler(stairHandler);
+            TrackerModel.level9FloorBoxEnabledChanged.Publish.AddHandler(floorHandler);
+            var mainWin = ShowRunCustom.mainWindow();
+            EventHandler onMainClosed = (_, _) => { mainClosing = true; try { w.Close(); } catch { } };   // (stays 'open' in the settings, so it reappears next time)
+            mainWin.Closed += onMainClosed;
             w.Closed += (_, _) =>
             {
+                TrackerModel.level2StairBoxEnabledChanged.Publish.RemoveHandler(stairHandler);
+                TrackerModel.level9FloorBoxEnabledChanged.Publish.RemoveHandler(floorHandler);
+                mainWin.Closed -= onMainClosed;
                 itemLocationsWindow = null;
                 saveTimer.Stop();
                 if (!mainClosing) save(false);   // the user closed it themselves: don't reopen it next time
@@ -374,9 +382,12 @@ public static class MainTrackerTriforcesAndItems
                 }
                 vb.StretchDirection = StretchDirection.Both;
             };
-            ShowRunCustom.mainWindow().Closed += (_, _) => { mainClosing = true; try { w.Close(); } catch { } };   // (stays 'open' in the settings, so it reappears next time)
+            var mainWin = ShowRunCustom.mainWindow();
+            EventHandler onMainClosed = (_, _) => { mainClosing = true; try { w.Close(); } catch { } };   // (stays 'open' in the settings, so it reappears next time)
+            mainWin.Closed += onMainClosed;
             w.Closed += (_, _) =>
             {
+                mainWin.Closed -= onMainClosed;   // (removed with this window: each reopening used to add another one)
                 itemProgressWindow = null;
                 saveTimer.Stop();
                 if (!mainClosing) save(false);   // the user closed it themselves: don't reopen it next time
@@ -861,8 +872,7 @@ public static class MainTrackerTriforcesAndItems
         }
         gridAdd(mainTrackerGrid, level9ColorCanvas, 8, 0);
         mainTrackerCanvases[8, 0] = level9ColorCanvas;
-        // optional level 9 floor item check (the '4th Sword' start option can place the 4th sword there instead of the level 2 staircase): it takes the bottom cell under level 9,
-        // and the Extras button moves up into the (then hidden) level 9 hint cell while it is shown
+        // optional level 9 floor item check (the '4th Sword' start option can place the 4th sword there instead of the level 2 staircase): it takes the bottom cell under level 9
         {
             Canvas l9slot = null;
             Canvas l9host = null;   // its own cell host, placed straight into the grid (row 4 of the level 9 column) on top of everything else there
@@ -883,15 +893,6 @@ public static class MainTrackerTriforcesAndItems
                 }
                 else if (l9host != null)
                     mainTrackerGrid.Children.Remove(l9host);
-                // (the Extras image is later moved out of this grid into the legend: leave it there, since adding it here again would throw 'already the logical child of another element')
-                if (extrasImage.Parent == null || object.ReferenceEquals(extrasImage.Parent, mainTrackerGrid))
-                {
-                    mainTrackerGrid.Children.Remove(extrasImage);
-                    gridAdd(mainTrackerGrid, extrasImage, 8, (enabled ? 0 : 4));
-                }
-                // (WPF: Visibility.Hidden / Visible)
-                level9ColorCanvas.Opacity = enabled ? 0.0 : 1.0;
-                level9ColorCanvas.IsHitTestVisible = !enabled;
             }
             onEvent(TrackerModel.level9FloorBoxEnabledChanged.Publish, _ => refreshL9Slot());
             refreshL9Slot();

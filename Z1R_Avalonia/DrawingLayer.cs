@@ -163,14 +163,26 @@ public static class DrawingLayer
         {
             System.IO.Directory.CreateDirectory(extraIconsDirectory);
             var results = new List<(string, System.Drawing.Bitmap)>();
+            var badFiles = new List<string>();
             foreach (var filename in System.IO.Directory.EnumerateFiles(extraIconsDirectory, "*.png"))
             {
                 currentFilename = System.IO.Path.GetFileName(filename);
-                var bmp = (System.Drawing.Bitmap)System.Drawing.Bitmap.FromFile(filename);
-                var shortFilename = System.IO.Path.GetFileNameWithoutExtension(filename);
-                results.Add((shortFilename, bmp));
+                // (one unreadable file is skipped on its own. It used to empty the whole table, and every ExtraIcon stamp then vanished from the next save.)
+                try
+                {
+                    var bmp = (System.Drawing.Bitmap)System.Drawing.Bitmap.FromFile(filename);
+                    var shortFilename = System.IO.Path.GetFileNameWithoutExtension(filename);
+                    results.Add((shortFilename, bmp));
+                }
+                catch (Exception e)
+                {
+                    badFiles.Add($"{currentFilename}: {e.Message}");
+                }
             }
-            if (results.Count == 0)
+            currentFilename = "";
+            if (badFiles.Count > 0)
+                anyErrorMessageRelatedToExtraIcons = "These files could not be read and were skipped:\n" + string.Join("\n", badFiles);
+            if (results.Count == 0 && badFiles.Count == 0)
             {
                 anyErrorMessageRelatedToExtraIcons = "No .png files found in ExtraIcons directory";
                 arr = new (string, System.Drawing.Bitmap)[0];
@@ -394,16 +406,23 @@ public static class DrawingLayer
             {
                 if (icon.Extra)
                 {
-                    if (ExtraIconsResourceTable.ContainsKey(icon.Name))
+                    if (icon.Name != null && ExtraIconsResourceTable.ContainsKey(icon.Name))
                     {
                         var img = makeImage(ExtraIconsResourceTable[icon.Name]);
+                        if (icon.HalfSize) img.RenderTransform = new ScaleTransform(0.5, 0.5);
+                        AllDrawingLayerStamps.Add((new DrawingLayerIcon.ExtraIcon(icon.Name), icon.X, icon.Y, img));
+                    }
+                    else if (icon.Name != null)
+                    {
+                        // (the icon file is missing or could not be read: keep the stamp as an empty image, so the next save still has it)
+                        var img = new Image { Width = 32.0, Height = 32.0, IsHitTestVisible = false, RenderTransformOrigin = RelativePoint.TopLeft };
                         if (icon.HalfSize) img.RenderTransform = new ScaleTransform(0.5, 0.5);
                         AllDrawingLayerStamps.Add((new DrawingLayerIcon.ExtraIcon(icon.Name), icon.X, icon.Y, img));
                     }
                 }
                 else
                 {
-                    if (ZTrackerResourceTable.ContainsKey(icon.Name))
+                    if (icon.Name != null && ZTrackerResourceTable.ContainsKey(icon.Name))
                     {
                         var img = makeImage(ZTrackerResourceTable[icon.Name]);
                         if (icon.HalfSize) img.RenderTransform = new ScaleTransform(0.5, 0.5);
@@ -419,7 +438,7 @@ public static class DrawingLayer
     public static async Task InteractWithDrawingLayer(CanvasManager cm, Canvas drawingCanvas)
     {
         var wh = new ManualResetEvent(false);
-        var thisSessionHasEnded = false;  // we keep adding new handlers to RootCanvas, no way to remove them, but need to ensure old ones quit running
+        var thisSessionHasEnded = false;  // (the RootCanvas handlers below are removed when the session ends; this also stops them if one fires late)
 
         var interactionCanvas = new Canvas { Width = cm.AppMainCanvas.Width, Height = cm.AppMainCanvas.Height };
         interactionCanvas.Children.Add(imgHighlightBorder);
@@ -427,7 +446,7 @@ public static class DrawingLayer
         interactionCanvas.Children.Add(topCanvasToHoldIcons);
         var mouseCarry = new Border { BorderBrush = Brushes.White, BorderThickness = new Thickness(1.0), Opacity = 0.0, IsHitTestVisible = false };
         var DIFF = 31.0;
-        cm.RootCanvas.PointerMoved += (_, ea) =>   // (WPF: MouseMove)
+        EventHandler<PointerEventArgs> onRootMoved = (_, ea) =>   // (WPF: MouseMove)
         {
             if (!thisSessionHasEnded)
             {
@@ -447,7 +466,7 @@ public static class DrawingLayer
                 }
             }
         };
-        cm.RootCanvas.PointerPressed += (_, ea) =>   // (WPF: MouseDown)
+        EventHandler<PointerPressedEventArgs> onRootPressed = (_, ea) =>   // (WPF: MouseDown)
         {
             if (!thisSessionHasEnded)
             {
@@ -480,6 +499,8 @@ public static class DrawingLayer
                 }
             }
         };
+        cm.RootCanvas.PointerMoved += onRootMoved;
+        cm.RootCanvas.PointerPressed += onRootPressed;
 
         var bottomCanvas = new Canvas { Width = interactionCanvas.Width, Height = interactionCanvas.Height - OverworldItemGridUI.THRU_MAIN_MAP_AND_ITEM_PROGRESS_H, Background = Brushes.Black };
         canvasAdd(interactionCanvas, bottomCanvas, 0.0, OverworldItemGridUI.THRU_MAIN_MAP_AND_ITEM_PROGRESS_H);
@@ -531,7 +552,7 @@ public static class DrawingLayer
             };
             ztIconGrid.Children.Add(button);
         }
-        canvasAdd(bottomCanvas, mkTxtBT("Here are some default icons that come with ZORA Tracker:", 0.0), 10.0, 65.0);
+        canvasAdd(bottomCanvas, mkTxtBT("Here are some default icons that come with ZORATracker:", 0.0), 10.0, 65.0);
         canvasAdd(bottomCanvas, ztIconGrid, 10.0, 85.0);
         // ExtraIcons
         var extraIconGrid = new UniformGrid { Rows = 7, Columns = 8 };
@@ -569,7 +590,7 @@ public static class DrawingLayer
         var openFolderButton = Graphics.makeButton("Open ExtraIcons Folder", 12.0, Brushes.Orange);
         canvasAdd(bottomCanvas, openFolderButton, X, 110.0);
         canvasAdd(bottomCanvas, mkTxtBT("<- add .png files here", 0.0), X + 150.0, 110.0);
-        canvasAdd(bottomCanvas, mkTxtBT("(must re-start ZORA Tracker to reload these icons)", 0.0), X, 130.0);
+        canvasAdd(bottomCanvas, mkTxtBT("(must re-start ZORATracker to reload these icons)", 0.0), X, 130.0);
         canvasAdd(bottomCanvas, mkTxtBT("Here are icons found in your ExtraIcons folder:", 0.0), X, 150.0);
         canvasAdd(bottomCanvas, extraIconGrid, X, 170.0);
         openFolderButton.Click += (_, _) =>
@@ -599,6 +620,8 @@ public static class DrawingLayer
         // turn off the heavy parts of the mouse listener, which will continue to fire
         mouse = null;
         thisSessionHasEnded = true;
+        cm.RootCanvas.PointerMoved -= onRootMoved;
+        cm.RootCanvas.PointerPressed -= onRootPressed;
         // cleanup
         interactionCanvas.Children.Remove(imgHighlightBorder);
         // move images back to top layer

@@ -92,6 +92,11 @@ public static class UIComponents
         dtocPlusLegendScaled.VerticalAlignment = VerticalAlignment.Center;
         dungeonTabsOverlay.Child = dtocPlusLegendScaled;
         var overlayTiles = new Image[16, 8];
+        // the map art in use; changed when the overworld template is switched from the 1Q/2Q menu
+        var curMapNum = owMapNum;
+        var curMapBMPs = owMapBMPs;
+        void buildOverlayTiles()
+        {
         for (int i = 0; i <= 15; i++)
         {
             for (int j = 0; j <= 7; j++)
@@ -99,7 +104,7 @@ public static class UIComponents
                 System.Drawing.Bitmap make_bmp()
                 {
                     // (WPF: <exe folder>\Magnifier\...; moved to Platform.Files.User like the Overworld tile cache, see Graphics.overworldMapBMPs. sprintf "%2d" pads with a space.)
-                    var magnifierFilename = Platform.Files.User("Magnifier", $"quest.{owMapNum}.ow.{i,2}.{j,2}.bmp");
+                    var magnifierFilename = Platform.Files.User("Magnifier", $"quest.{curMapNum}.ow.{i,2}.{j,2}.bmp");
                     return Graphics.readCacheFileOrCreateBmp(magnifierFilename, () =>
                     {
                         var bmp = new System.Drawing.Bitmap(16 * (int)ENLARGE, 11 * (int)ENLARGE);
@@ -107,7 +112,7 @@ public static class UIComponents
                         {
                             for (int y = 0; y <= 10; y++)
                             {
-                                var c0 = owMapBMPs[i, j].GetPixel(x * 3, y * 3);
+                                var c0 = curMapBMPs[i, j].GetPixel(x * 3, y * 3);
                                 for (int px = 0; px <= (int)ENLARGE - 1; px++)
                                 {
                                     for (int py = 0; py <= (int)ENLARGE - 1; py++)
@@ -118,39 +123,39 @@ public static class UIComponents
                                             // The diagonal rock data is based on the first quest map. A few screens are different in 2nd/mixed quest.
                                             // So we apply a kludge to load the correct diagonal data.
                                             var (i2, j2) =
-                                                (owMapNum == 1 && i == 4 && j == 7) ? // second quest has a cave like 14,5 here
+                                                (curMapNum == 1 && i == 4 && j == 7) ? // second quest has a cave like 14,5 here
                                                     (14, 5)
-                                                : (owMapNum == 1 && i == 11 && j == 0) ? // second quest has fairy here, borrow 2,4
+                                                : (curMapNum == 1 && i == 11 && j == 0) ? // second quest has fairy here, borrow 2,4
                                                     (2, 4)
-                                                : (owMapNum != 0 && i == 12 && j == 3) ? // non-first quest has a whistle lake here, borrow 2,4
+                                                : (curMapNum != 0 && i == 12 && j == 3) ? // non-first quest has a whistle lake here, borrow 2,4
                                                     (2, 4)
                                                 :
                                                     (i, j);
                                             if (OverworldData.owNEupperRock[i2, j2][x, y])
                                             {
                                                 if (px + py > (int)ENLARGE - 1)
-                                                    return owMapBMPs[i2, j2].GetPixel(x * 3, (y + 1) * 3);
+                                                    return curMapBMPs[i2, j2].GetPixel(x * 3, (y + 1) * 3);
                                                 else
                                                     return c0;
                                             }
                                             else if (OverworldData.owSEupperRock[i2, j2][x, y])
                                             {
                                                 if (px < py)
-                                                    return owMapBMPs[i2, j2].GetPixel(x * 3, (y + 1) * 3);
+                                                    return curMapBMPs[i2, j2].GetPixel(x * 3, (y + 1) * 3);
                                                 else
                                                     return c0;
                                             }
                                             else if (OverworldData.owNElowerRock[i2, j2][x, y])
                                             {
                                                 if (px + py < (int)ENLARGE - 1)
-                                                    return owMapBMPs[i2, j2].GetPixel(x * 3, (y - 1) * 3);
+                                                    return curMapBMPs[i2, j2].GetPixel(x * 3, (y - 1) * 3);
                                                 else
                                                     return c0;
                                             }
                                             else if (OverworldData.owSElowerRock[i2, j2][x, y])
                                             {
                                                 if (px > py)
-                                                    return owMapBMPs[i2, j2].GetPixel(x * 3, (y - 1) * 3);
+                                                    return curMapBMPs[i2, j2].GetPixel(x * 3, (y - 1) * 3);
                                                 else
                                                     return c0;
                                             }
@@ -175,11 +180,11 @@ public static class UIComponents
                         {
                             for (int y = 1; y <= 9; y++)
                             {
-                                var c = owMapBMPs[i, j].GetPixel(x * 3, y * 3);
+                                var c = curMapBMPs[i, j].GetPixel(x * 3, y * 3);
                                 System.Drawing.Color? border;
                                 if (c.ToArgb() == System.Drawing.Color.Black.ToArgb())    // black open cave
                                 {
-                                    var c2 = owMapBMPs[i, j].GetPixel((x - 1) * 3, y * 3);
+                                    var c2 = curMapBMPs[i, j].GetPixel((x - 1) * 3, y * 3);
                                     if (c2.ToArgb() == System.Drawing.Color.Black.ToArgb())    // also black to the left, this is vanilla 6 two-wide entrance, only show one
                                         border = null;
                                     else
@@ -219,6 +224,26 @@ public static class UIComponents
                 overlayTiles[i, j] = Graphics.BMPtoImage(bmp_);
             }
         }
+        }
+        buildOverlayTiles();
+        // a 1Q/2Q template switch: rebuild the tiles from the new template's map art (only while the overlay is in the window)
+        var questHandler = new FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) =>
+        {
+            var n = TrackerModel.owInstance.Quest.AsInt();
+            if (n < 0 || n > 3 || n == curMapNum) return;   // (the blank map has no magnifier; same template: nothing to do)
+            try
+            {
+                var bmps = Graphics.overworldMapBMPs(n);
+                (curMapNum, curMapBMPs) = (n, bmps);
+                buildOverlayTiles();
+                dungeonTabsOverlayContent.Children.Clear();   // (drop the old tiles; the next mouse move draws the new ones)
+            }
+            catch (Exception e) { ClickTrace.Log($"magnifier rebuild failed: {e.Message}"); }
+        });
+        Views.WhileInTree(dungeonTabsOverlay,
+            () => TrackerModel.overworldQuestChanged.Publish.AddHandler(questHandler),
+            () => TrackerModel.overworldQuestChanged.Publish.RemoveHandler(questHandler),
+            () => questHandler.Invoke(null, null));   // (catch up on a switch made while the overlay was out of the window)
         TextBox makeArrow(string text)
         {
             var tb = new TextBox { Text = text, FontSize = 20.0, Foreground = arrowColor, Background = bgColor, IsReadOnly = true, BorderThickness = new Thickness(0.0) };

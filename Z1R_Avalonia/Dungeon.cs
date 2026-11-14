@@ -99,6 +99,8 @@ public static class Dungeon
             get => state;
             set
             {
+                // An unchanged door is not redrawn or sent to co-op. Redraw() repaints without going through here.
+                if (state == value) return;
                 state = value;
                 redraw(value);
                 // Sync back to C# model
@@ -140,7 +142,14 @@ public static class Dungeon
             this.State = newState;
         }
 
-        public void Redraw() => redraw(state);
+        // set while a Redraw is only repainting: the door did not change, so nothing should be sent to co-op
+        public static bool IsRedrawingOnly;
+        public void Redraw()
+        {
+            IsRedrawingOnly = true;
+            try { redraw(state); }
+            finally { IsRedrawingOnly = false; }
+        }
 
         public bool IsTraversible =>
             state == DoorState.YES || state == DoorState.YELLOW || state == DoorState.PURPLE;
@@ -287,6 +296,17 @@ public static class Dungeon
             return contigous;
         }
 
+        // true when dropping at (mouseX, mouseY) would push any grabbed room off the 8x8 grid (such a drop is refused)
+        public bool WouldDropOffGrid(int mouseX, int mouseY)
+        {
+            var (dx, dy) = (mouseX - grabMouseX, mouseY - grabMouseY);
+            for (int i = 0; i <= 7; i++)
+                for (int j = 0; j <= 7; j++)
+                    if (grabContiguousRooms[i, j] && (i + dx < 0 || i + dx > 7 || j + dy < 0 || j + dy > 7))
+                        return true;
+            return false;
+        }
+
         public (bool[,], bool[,]) PreviewDrop(int mouseX, int mouseY)
         {
             if (!this.IsGrabMode || !this.HasGrab)
@@ -294,6 +314,18 @@ public static class Dungeon
             var (dx, dy) = (mouseX - grabMouseX, mouseY - grabMouseY);
             var contiguousOk = new bool[8, 8];
             var contiguousWarn = new bool[8, 8];
+            if (WouldDropOffGrid(mouseX, mouseY))
+            {
+                // the drop will be refused: show every room that would land on the grid as a warning, not as a valid drop
+                for (int x = 0; x <= 7; x++)
+                    for (int y = 0; y <= 7; y++)
+                    {
+                        var (i0, j0) = (x - dx, y - dy);
+                        if (i0 >= 0 && i0 <= 7 && j0 >= 0 && j0 <= 7 && grabContiguousRooms[i0, j0])
+                            contiguousWarn[x, y] = true;
+                    }
+                return (contiguousOk, contiguousWarn);
+            }
             for (int x = 0; x <= 7; x++)
             {
                 for (int y = 0; y <= 7; y++)
@@ -303,7 +335,8 @@ public static class Dungeon
                     {
                         if (grabContiguousRooms[i, j])
                         {
-                            if (!(roomStatesIfGrabWereACut[x, y].IsEmpty))
+                            // A cell that one of the grabbed rooms leaves is free, so landing there is not an overwrite.
+                            if (!grabContiguousRooms[x, y] && !(roomStatesIfGrabWereACut[x, y].IsEmpty))
                                 contiguousWarn[x, y] = true;
                             else
                                 contiguousOk[x, y] = true;
@@ -319,6 +352,14 @@ public static class Dungeon
             if (!this.IsGrabMode || !this.HasGrab)
                 throw new Exception("bad");
             var (dx, dy) = (mouseX - grabMouseX, mouseY - grabMouseY);
+            // refuse a drop that would push any grabbed room off the grid: the room would be cleared without being copied (silent data loss)
+            for (int i = 0; i <= 7; i++)
+                for (int j = 0; j <= 7; j++)
+                    if (grabContiguousRooms[i, j] && (i + dx < 0 || i + dx > 7 || j + dy < 0 || j + dy > 7))
+                    {
+                        this.Abort();
+                        return;
+                    }
             var oldRoomStates = init2D(roomStates.GetLength(0), roomStates.GetLength(1), (x, y) =>
             {
                 var s = roomStates[x, y];
@@ -342,6 +383,24 @@ public static class Dungeon
             for (int x = 0; x < roomIsCircledIfGrabWereACut.GetLength(0); x++) for (int y = 0; y < roomIsCircledIfGrabWereACut.GetLength(1); y++) roomIsCircled[x, y] = roomIsCircledIfGrabWereACut[x, y];
             for (int x = 0; x < horizontalDoorsIfGrabWereACut.GetLength(0); x++) for (int y = 0; y < horizontalDoorsIfGrabWereACut.GetLength(1); y++) horizontalDoors[x, y].State = horizontalDoorsIfGrabWereACut[x, y];
             for (int x = 0; x < verticalDoorsIfGrabWereACut.GetLength(0); x++) for (int y = 0; y < verticalDoorsIfGrabWereACut.GetLength(1); y++) verticalDoors[x, y].State = verticalDoorsIfGrabWereACut[x, y];
+
+            // Clear the source cells that no grabbed room lands on, before copying.
+            // A co-op partner then sees the old room go away before the moved one arrives, so a moved transport is not refused there as a third copy.
+            // (The copy below reads from oldRoomStates, so clearing first loses nothing.)
+            for (int i = 0; i <= 7; i++)
+            {
+                for (int j = 0; j <= 7; j++)
+                {
+                    if (grabContiguousRooms[i, j])
+                    {
+                        var (si, sj) = (i - dx, j - dy);
+                        var isAlsoDestination = si >= 0 && si <= 7 && sj >= 0 && sj <= 7 && grabContiguousRooms[si, sj];
+                        if (!isAlsoDestination)
+                            resetToFreshRoom(roomStates[i, j].CSharp);
+                    }
+                }
+            }
+
             for (int i = 0; i <= 7; i++)
             {
                 for (int j = 0; j <= 7; j++)
@@ -376,24 +435,20 @@ public static class Dungeon
                 }
             }
 
-            // Second pass: clear source positions that are not also destinations of another grabbed room.
-            // Doing this in the same loop as the copy causes rooms to be erroneously cleared when the
-            // destination of one grabbed room coincides with the source of another (e.g. moving a group right).
-            for (int i = 0; i <= 7; i++)
-            {
-                for (int j = 0; j <= 7; j++)
-                {
-                    if (grabContiguousRooms[i, j])
-                    {
-                        var (si, sj) = (i - dx, j - dy);
-                        var isAlsoDestination = si >= 0 && si <= 7 && sj >= 0 && sj <= 7 && grabContiguousRooms[si, sj];
-                        if (!isAlsoDestination)
-                            roomStates[i, j].CSharp.Clear();
-                    }
-                }
-            }
-
             this.Abort();
+        }
+
+        // Make a vacated cell look like a room nobody has touched: the same values as a new CDungeonRoomState.
+        // (CDungeonRoomState.Clear() leaves it dim and not complete, so a floor drop marked there later drew dimmed.)
+        private static void resetToFreshRoom(CDungeonRoomState room)
+        {
+            var fresh = new CDungeonRoomState();
+            room.RoomType = fresh.RoomType;
+            room.MonsterDetail = fresh.MonsterDetail;
+            room.FloorDropDetail = fresh.FloorDropDetail;
+            room.FloorDropAppearsBright = fresh.FloorDropAppearsBright;
+            room.IsComplete = fresh.IsComplete;
+            room.FireChangedManually();
         }
 
         public void ToggleGrabMode() => isGrabMode = !isGrabMode;

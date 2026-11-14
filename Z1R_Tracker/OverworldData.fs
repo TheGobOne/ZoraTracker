@@ -7,10 +7,10 @@ let version : Version =
     Assembly.GetExecutingAssembly().GetName().Version
 let VersionString : string =
     sprintf "%d.%d.%d" version.Major version.Minor version.Build
-let ProgramNameString = sprintf "ZORA Tracker v%s" VersionString
+let ProgramNameString = sprintf "ZORATracker v%s" VersionString
 let Website = "https://github.com/TheGobOne/ZoraTracker"
 let OriginalWebsite = "https://github.com/Neononane/Zelda1RandoTools"
-let AboutBody = sprintf "ZORA Tracker v%s\nby TheGobOne\n\nBased on Z-Tracker, originally by Dr. Brian Lorgon111 with updates by Neononane\n(%s)\n\nLearn more at\n%s\n" VersionString OriginalWebsite Website
+let AboutBody = sprintf "ZORATracker v%s\nby TheGobOne\n\nBased on Z-Tracker, originally by Dr. Brian Lorgon111 with updates by Neononane\n(%s)\n\nLearn more at\n%s\n" VersionString OriginalWebsite Website
 
 
 

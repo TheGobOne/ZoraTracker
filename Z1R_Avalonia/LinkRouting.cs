@@ -3,6 +3,7 @@
 // The F# `open OverworldMapTileCustomization.OW_ITEM_GRID_LOCATIONS` is a `using static`, so `Locate(BOMB_BOX)` reads as in WPF.
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -147,6 +148,7 @@ public static class LinkRouting
                         {
                             var cur = TrackerModel.overworldMapMarks[i, j].Current();
                             if (cur == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP ||
+                                TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]) == 5 ||   // (a tile labeled "P SHOP" in the Shop flyout is a potion shop too)
                                 (cur == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY && TrackerModel.getOverworldMapExtraData(i, j, cur) != cur))
                                 spots.Add((i, j));
                         }
@@ -154,16 +156,39 @@ public static class LinkRouting
                         makeIconTarget((c => canvasAdd(c, Graphics.BMPtoImage(Graphics.theInteriorBmpTable[TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP][0]), 4.0, 4.0)),
                                                                 330.0, 120.0, new RouteDestination.OW_MAP(spots));
                 }
+                // the marker icon that the shop hotkeys and the tile menu place for a shop item (shops are now marked with these icons, often on a DARK_X tile)
+                int shopMarkerIdent(int shopDest) =>
+                    shopDest == TrackerModel.MapSquareChoiceDomainHelper.ARROW ? TrackerModel.ITEMS.WOODARROW
+                    : shopDest == TrackerModel.MapSquareChoiceDomainHelper.BOMB ? TrackerModel.DECOR_BOMB
+                    : shopDest == TrackerModel.MapSquareChoiceDomainHelper.BOOK ? TrackerModel.ITEMS.BOOKSHIELD
+                    : shopDest == TrackerModel.MapSquareChoiceDomainHelper.BLUE_CANDLE ? TrackerModel.ITEMS.BLUECANDLE
+                    : shopDest == TrackerModel.MapSquareChoiceDomainHelper.BLUE_RING ? TrackerModel.ITEMS.BLUERING
+                    : shopDest == TrackerModel.MapSquareChoiceDomainHelper.MEAT ? TrackerModel.ITEMS.MEAT
+                    : shopDest == TrackerModel.MapSquareChoiceDomainHelper.KEY ? TrackerModel.ITEMS.OLDKEY
+                    : -1;
+                bool tileHasMarker(int i, int j, int ident) =>
+                    ident != -1 && TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons[i, j]).Any(e => e.Item1 == ident);
                 void makeShopIconTarget(Action<Canvas> draw, (double x, double y) xy, int shopDest)
                 {
                     var (x, y) = xy;
                     var spots = new List<(int, int)>();
+                    var ident = shopMarkerIdent(shopDest);
+                    // numbered shops: every tile with the same shop number is the same shop, so if one of them holds the item, they all do
+                    var labelsWithItem = new HashSet<int>();
+                    for (int i = 0; i <= 15; i++)
+                        for (int j = 0; j <= 7; j++)
+                        {
+                            var label = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]);
+                            if (label > 0 && tileHasMarker(i, j, ident)) labelsWithItem.Add(label);
+                        }
                     for (int i = 0; i <= 15; i++)
                         for (int j = 0; j <= 7; j++)
                         {
                             var cur = TrackerModel.overworldMapMarks[i, j].Current();
-                            if (new OverworldMapTileCustomization.MapStateProxy(cur).IsThreeItemShop &&
-                                    (cur == shopDest || TrackerModel.getShopItem2_1based(i, j) == TrackerModel.MapSquareChoiceDomainHelper.ToItem(shopDest) || TrackerModel.getShopItem3_1based(i, j) == TrackerModel.MapSquareChoiceDomainHelper.ToItem(shopDest)))
+                            var oldStyleShop = new OverworldMapTileCustomization.MapStateProxy(cur).IsThreeItemShop &&
+                                    (cur == shopDest || TrackerModel.getShopItem2_1based(i, j) == TrackerModel.MapSquareChoiceDomainHelper.ToItem(shopDest) || TrackerModel.getShopItem3_1based(i, j) == TrackerModel.MapSquareChoiceDomainHelper.ToItem(shopDest));
+                            var label = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]);
+                            if (oldStyleShop || tileHasMarker(i, j, ident) || (label > 0 && labelsWithItem.Contains(label)))
                                 spots.Add((i, j));
                         }
                     if (spots.Count > 0)
@@ -191,7 +216,7 @@ public static class LinkRouting
                 }
                 // open caves
                 void openCave(Canvas c) => canvasAdd(c, Graphics.BMPtoImage(Graphics.openCaveIconBmp), 0.0, 0.0);
-                makeIconTargetImpl(20.0, 20.0, openCave, openCave, (529.0, 120.0), new RouteDestination.UNMARKEDINSTANCEFUNC(owInstance.Nothingable));
+                makeIconTargetImpl(20.0, 20.0, openCave, openCave, (529.0, 120.0), new RouteDestination.UNMARKEDINSTANCEFUNC(TrackerModel.owInstance.Nothingable));   // (the current overworld template, read when the popup opens)
                 // triforces
                 if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
                 {

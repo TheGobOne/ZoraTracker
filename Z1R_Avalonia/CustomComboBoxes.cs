@@ -36,7 +36,18 @@ public static class CustomComboBoxes
 {
     // (port helper, see the top of the file: WPF's `x |> Async.StartImmediate`. Starts the task now, on this thread; an exception that
     // escapes it is rethrown on the UI thread's SynchronizationContext, like an exception escaping an F# async started with StartImmediate.)
-    public static async void StartImmediate(Task t) => await t;
+    // (a failure inside one of these popup tasks used to leave popupIsActive set, as most go()/body() blocks clear it only on normal completion: every click was then ignored
+    // until the stuck-flag self-heal in CanvasManager noticed. Clear it here, then rethrow so the crash handling still sees the exception.)
+    public static async void StartImmediate(Task t)
+    {
+        try { await t; }
+        catch
+        {
+            // (only when no popup layer is left open: a failing side task inside a popup that is still on screen must not clear the flag under it)
+            if (!CanvasManager.AnyPopupLayerOpen) GlobalFlag.popupIsActive = false;
+            throw;
+        }
+    }
     // (port helper: WPF's Async.AwaitWaitHandle. The wait happens on the thread pool; the caller's await resumes on its own context.)
     private static Task AwaitWaitHandle(WaitHandle wh)
     {
@@ -87,7 +98,7 @@ public static class CustomComboBoxes
             ClickTrace.Log($"POPUP FAILURE in {where}: {e}");
             try
             {
-                System.IO.File.AppendAllText(System.IO.Path.Combine(System.AppContext.BaseDirectory, "Z1R_Tracker_crash_log.txt"),
+                System.IO.File.AppendAllText(Platform.Files.User("Z1R_Tracker_crash_log.txt"),   // (the user folder: the app folder is read-only on macOS/Linux)
                     $"\n\nPOPUP FAILURE -- {System.DateTime.Now:yyyy-MM-dd-HH:mm:ss} -- {where}\n{e}\n");
             }
             catch { }
@@ -112,9 +123,11 @@ public static class CustomComboBoxes
     }
     public static readonly SolidColorBrush no = new SolidColorBrush(Color.FromRgb(0xA8, 0x00, 0x00));
     public static readonly SolidColorBrush[] noPctBrushes = Enumerable.Range(0, 101).Select(i => new SolidColorBrush(Color.FromRgb((byte)(0xFF - (byte)(100 - i)), (byte)(i / 2), (byte)(i * 2 / 3)))).ToArray();
-    public static SolidColorBrush noPct(double f) => noPctBrushes[(int)(f * 100.0)];
+    // (the progress value is clamped: a value a little above 1 or below 0 used to throw IndexOutOfRange and crash the redraw)
+    private static int pctIndex(double f) => double.IsNaN(f) ? 0 : (int)(Math.Max(0.0, Math.Min(1.0, f)) * 100.0);
+    public static SolidColorBrush noPct(double f) => noPctBrushes[pctIndex(f)];
     public static readonly SolidColorBrush[] noNEPctBrushes = Enumerable.Range(0, 101).Select(i => new SolidColorBrush(Color.FromRgb(0xFF, (byte)(i / 2), (byte)(i * 2 / 3)))).ToArray();
-    public static SolidColorBrush noAndNotEmpty(double f) => noNEPctBrushes[(int)(f * 100.0)];
+    public static SolidColorBrush noAndNotEmpty(double f) => noNEPctBrushes[pctIndex(f)];
     public static readonly SolidColorBrush yes = new SolidColorBrush(Color.FromRgb(0x32, 0xA8, 0x32));
     public static readonly IImmutableSolidColorBrush skipped = Graphics.skipped;
     public static readonly IImmutableSolidColorBrush skippedAndEmpty = Brushes.White;
@@ -228,6 +241,8 @@ public static class CustomComboBoxes
         // (F#: Event<Canvas>s only this class triggers, so C# events; WPF's `cm.AfterCreatePopupCanvas.Add(fun pc -> ...)` becomes `cm.AfterCreatePopupCanvas += pc => ...`)
         public event Action<Canvas> AfterCreatePopupCanvas;
         public event Action<Canvas> BeforeDismissPopupCanvas;
+        // true while at least one popup layer is on the stack
+        public static bool AnyPopupLayerOpen => theOnlyCanvasManager != null && theOnlyCanvasManager.popupCanvasStack.Count > 0;
         public CanvasManager(Canvas rootCanvas, Canvas appMainCanvas)
         {
             this.rootCanvas = rootCanvas;
@@ -246,15 +261,18 @@ public static class CustomComboBoxes
             ClickTrace.HookInput(rootCanvas);   // (clicks and key presses into Z1R_Tracker_trace_log.txt)
             // a click when no popup is supposed to be open but a popup layer is still there: remove the leftover layer so the tracker is usable again
             // (WPF PreviewMouseDown: a tunnelling handler)
-            rootCanvas.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, _) =>
+            rootCanvas.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, pea) =>
             {
-                var opening = (DateTime.Now - GlobalFlag.popupOpenStamp).TotalMilliseconds < 1500.0;   // a menu is still being set up: not stuck
+                var opening = (DateTime.Now - GlobalFlag.popupOpenStamp).TotalMilliseconds < 1500.0   // a menu is still being set up: not stuck
+                              || Graphics.IsWarpingCursor;   // (a click pumped during the warp before a popup opens is not a stuck flag)
                 var orphanLayers = rootCanvas.Children.Count - 1 != popupCanvasStack.Count;         // a layer in the window that is not on the stack (or the reverse)
                 if ((popupCanvasStack.Count > 0 && !GlobalFlag.popupIsActive) || (orphanLayers && !opening))
                 {
                     logPopupNote($"{popupCanvasStack.Count} leftover popup layer(s) (window has {rootCanvas.Children.Count - 1}) with no popup active; removed on click");
                     clearAllPopups();
                     GlobalFlag.popupIsActive = false;
+                    // this click only recovers: if it went on to open a new menu, the closed popups' code (which clears the flag once they finish) would clear it under that menu
+                    pea.Handled = true;
                 }
                 else if (popupCanvasStack.Count == 0 && GlobalFlag.popupIsActive && !opening)
                 {
@@ -384,8 +402,12 @@ public static class CustomComboBoxes
         {
             escapeHandlerRegistered = true;
             // (WPF: EventManager.RegisterClassHandler(typeof<Window>, Keyboard.PreviewKeyDownEvent, ...): a tunnelling class handler on every Window)
-            InputElement.KeyDownEvent.AddClassHandler<Window>((_, ea) =>
+            InputElement.KeyDownEvent.AddClassHandler<Window>((win, ea) =>
             {
+                // only Escape in the window that holds the popups: Escape in a popout or another dialog must not close a menu there
+                var cmRoot = CanvasManager.TheOnlyCanvasManager?.RootCanvas;
+                var popupWindow = cmRoot == null ? null : TopLevel.GetTopLevel(cmRoot);
+                if (popupWindow is Window && !ReferenceEquals(win, popupWindow)) return;
                 if (ea.Key == Key.Escape && modalDismissStack.Count > 0)
                 {
                     ea.Handled = true;
@@ -408,7 +430,7 @@ public static class CustomComboBoxes
 
     // TODO rename DoModals
     // (placeElementOntoCanvas / removeElementFromCanvas: F# functions of a (Canvas, element) tuple)
-    public static async Task DoModalCoreEx(CanvasManager cm, ManualResetEvent wh, Action<Canvas, Control> placeElementOntoCanvas, Action<Canvas, Control> removeElementFromCanvas, Control element, double blackSunglassesOpacity, bool closeOnOutsideClick)
+    public static async Task DoModalCoreEx(CanvasManager cm, ManualResetEvent wh, Action<Canvas, Control> placeElementOntoCanvas, Action<Canvas, Control> removeElementFromCanvas, Control element, double blackSunglassesOpacity, bool closeOnOutsideClick, bool escapeCloses = true)
     {
         if (!GlobalFlag.popupIsActive)
             throw new Exception("DoModalCore: popupIsActive was not set, which indicates programming error where a re-entrant UI thread may crash the program");
@@ -457,7 +479,7 @@ public static class CustomComboBoxes
                 }
             });
             ensureEscapeHandler();
-            modalDismissStack.Push(wh);
+            if (escapeCloses) modalDismissStack.Push(wh);   // (a popup only code may close, such as the update download, stays off the Escape stack)
             // (WPF: `let! _ = Async.AwaitWaitHandle(wh)` then `do! Async.SwitchToContext(ctxt)`; this await resumes on the UI thread's context)
             await AwaitWaitHandle(wh);
             ClickTrace.Log("popup closed normally");
@@ -549,7 +571,9 @@ public static class CustomComboBoxes
             var b = new Button { MinWidth = 88.0, MaxWidth = 200.0, Height = 26.0, Margin = new Thickness(5.0), HorizontalAlignment = HorizontalAlignment.Right, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
             if (first || (noIcon && bt == lastText))
             {
-                b.Focus();
+                // (Focus() does nothing before the button is in the window: focus it once it is shown)
+                var defaultButton = b;
+                defaultButton.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => defaultButton.Focus());
                 first = false;
             }
             DockPanel.SetDock(b, Dock.Right);
@@ -626,11 +650,21 @@ public static class CustomComboBoxes
         canvasAdd(canvas, rightLine, 0.0, 0.0);
     }
 
+    // takes a shared (cached) control out of whatever panel still holds it, so it can be added to a new popup
+    public static void detachFromParent(Control c)
+    {
+        if (c?.Parent is Panel p) p.Children.Remove(c);
+        else if (c?.Parent is ContentControl cc && ReferenceEquals(cc.Content, c)) cc.Content = null;
+        else if (c?.Parent is Decorator d && ReferenceEquals(d.Child, c)) d.Child = null;
+    }
     public static readonly Dictionary<string, Canvas> prettyDashesCache = new Dictionary<string, Canvas>();
     public static Canvas GetPrettyDashes(string name, IBrush brush, double W, double H, double ST, double dash, double space)
     {
         if (prettyDashesCache.TryGetValue(name, out var c0))
+        {
+            detachFromParent(c0);   // (a popup that failed before its cleanup ran leaves the cached dashes in its canvas; adding them again would throw)
             return c0;
+        }
         else
         {
             var c = new Canvas();
@@ -1543,7 +1577,10 @@ public static class CustomComboBoxes
         };
         // (the grid's own snap-back and the tile's are only for leaving the menu without a drag)
         foreach (var (d, x, y) in extraDecorations)
+        {
+            detachFromParent(d);   // (shared decorations, such as the item box explainer, may still sit in a popup that failed before its cleanup)
             canvasAdd(popupCanvas, d, x, y);
+        }
         if (isJumpCapable && isResizable) layoutMovables();   // (puts the explainer where the moved menu is)
         // initial input
         switch (activationDelta)
@@ -1847,7 +1884,8 @@ public static class CustomComboBoxes
     private static bool updateCheckStarted = false;
     public static void startupUpdateCheck()
     {
-        if (!updateCheckStarted && TrackerModelOptions.CheckForUpdates.Value)
+        // (the web build never asks GitHub: a page has nothing to install, and the request is cross-site)
+        if (!updateCheckStarted && TrackerModelOptions.CheckForUpdates.Value && !Platform.isBrowser)
         {
             updateCheckStarted = true;
             checkForUpdatesAsync((_, newer) =>
@@ -1971,10 +2009,10 @@ public static class CustomComboBoxes
                     "  $bad = Install",
                     "}",
                     "if ($bad.Count -gt 0) {",
-                    $"  $msg = 'The update could not be fully installed, even after trying again and downloading it again. These files could not be replaced: ' + ($bad -join ', ') + '. Close ZORA Tracker, any other program using its folder, and your antivirus scan, then extract the downloaded zip over this folder by hand: ' + {q(zipPath)}",
+                    $"  $msg = 'The update could not be fully installed, even after trying again and downloading it again. These files could not be replaced: ' + ($bad -join ', ') + '. Close ZORATracker, any other program using its folder, and your antivirus scan, then extract the downloaded zip over this folder by hand: ' + {q(zipPath)}",
                     $"  $msg | Out-File -LiteralPath {q(log)}",
                     "  Add-Type -AssemblyName PresentationFramework",
-                    "  [System.Windows.MessageBox]::Show($msg, 'ZORA Tracker update', 'OK', 'Warning') | Out-Null",
+                    "  [System.Windows.MessageBox]::Show($msg, 'ZORATracker update', 'OK', 'Warning') | Out-Null",
                     "} else {",
                     $"  Start-Process -FilePath {q(exe)} -WorkingDirectory {q(appDir)}",
                     "}",
@@ -2024,7 +2062,9 @@ public static class CustomComboBoxes
                     var (bodyText, buttons) =
                         updateAvailable.HasValue
                             ? ($"{OverworldData.AboutBody}\n*** A newer version is available: {updateAvailable.Value.Item1} (you have v{CurrentReleaseLabel}) ***\n", new[] { "Install update", "Open folder", "Go to website", "Ok" })
-                            : (OverworldData.AboutBody, new[] { "Check for updates", "Open folder", "Go to website", "Ok" });
+                            : Platform.isBrowser
+                                ? (OverworldData.AboutBody, new[] { "Go to website", "Ok" })   // (web build: no update check, and no folder to open)
+                                : (OverworldData.AboutBody, new[] { "Check for updates", "Open folder", "Go to website", "Ok" });
                     var r = await DoModalMessageBox(cm, null, bodyText, buttons);
                     GlobalFlag.popupIsActive = false;
                     if (r == "Go to website")
@@ -2049,8 +2089,10 @@ public static class CustomComboBoxes
                                 return;
                             }
                             GlobalFlag.popupIsActive = true;
+                          try
+                          {
                             var ok = await DoModalMessageBoxCore(cm, System.Drawing.SystemIcons.Question,
-                                                            $"Download {tag} and install it over this copy?\n\nThis OVERWRITES your current version of ZORA Tracker with the new one.\nIf you want to keep your current version and have a separate install,\ndownload the release from GitHub instead (Go to website).\n\nThe tracker will close and reopen on the new version.\nYour hotkeys, settings and custom images will NOT be touched.\nAny game in progress is discarded (save it first).",
+                                                            $"Download {tag} and install it over this copy?\n\nThis OVERWRITES your current version of ZORATracker with the new one.\nIf you want to keep your current version and have a separate install,\ndownload the release from GitHub instead (Go to website).\n\nThe tracker will close and reopen on the new version.\nYour hotkeys, settings and custom images will NOT be touched.\nAny game in progress is discarded (save it first).",
                                                             new[] { "Install and restart", "Cancel" }, 100.0, 300.0);
                             if (ok == "Install and restart")
                             {
@@ -2070,7 +2112,9 @@ public static class CustomComboBoxes
                                     Canvas.SetLeft(progressBorder, Math.Max(0.0, (cm.AppMainCanvas.Width - progressBorder.Bounds.Width) / 2.0));
                                     Canvas.SetTop(progressBorder, Math.Max(0.0, (cm.AppMainCanvas.Height - progressBorder.Bounds.Height) / 2.0));
                                 };
-                                StartImmediate(DoModal(cm, progressWh, pcx, pcy, progressBorder));
+                                // (only the download finishing closes this box: a stray click or Escape used to hide it while the download ran on)
+                                var progressModal = DoModalCoreEx(cm, progressWh, (layer, el) => canvasAdd(layer, el, pcx, pcy), (layer, el) => layer.Children.Remove(el), progressBorder, 0.5, false, false);
+                                StartImmediate(progressModal);
                                 void onProgress(int pct)
                                 {
                                     Dispatcher.UIThread.Post(() =>
@@ -2080,12 +2124,22 @@ public static class CustomComboBoxes
                                     });
                                 }
                                 // (WPF: Async.SwitchToThreadPool() ... Async.SwitchToContext ctx)
-                                var result = await Task.Run(() =>
+                                string result;
+                                try
                                 {
-                                    var zip = fetchReleaseZipUrl(tag);
-                                    return zip != null ? downloadAndStageUpdate(zip, onProgress) : "no downloadable zip was found on that release";
-                                });
-                                progressWh.Set();
+                                    result = await Task.Run(() =>
+                                    {
+                                        var zip = fetchReleaseZipUrl(tag);
+                                        return zip != null ? downloadAndStageUpdate(zip, onProgress) : "no downloadable zip was found on that release";
+                                    });
+                                }
+                                catch (Exception e) { result = e.Message; }
+                                finally
+                                {
+                                    progressWh.Set();
+                                    // (wait for the progress layer to come off before any other box goes on: popups must close in the order they opened)
+                                    try { await progressModal; } catch { }
+                                }
                                 if (result == null)
                                 {
                                     // (the update script waits for this to exit, then copies the files and relaunches)
@@ -2099,7 +2153,8 @@ public static class CustomComboBoxes
                                     Platform.OpenWithShell(url != null && url.StartsWith(OverworldData.Website) ? url : OverworldData.Website);
                                 }
                             }
-                            GlobalFlag.popupIsActive = false;
+                          }
+                          finally { if (!CanvasManager.AnyPopupLayerOpen) GlobalFlag.popupIsActive = false; }   // (never leave the UI locked, but never clear the flag under another open popup)
                         }
                     }
                     else if (r == "Check for updates")
@@ -2118,15 +2173,29 @@ public static class CustomComboBoxes
                                 (msg, _icon) = ($"You are up to date (v{CurrentReleaseLabel}).", System.Drawing.SystemIcons.Information);
                             else
                                 (msg, _icon) = ("Could not check for updates right now.\n(Are you offline?)", System.Drawing.SystemIcons.Warning);
-                            if (!GlobalFlag.popupIsActive)
+                            void showWhenFree()
                             {
                                 GlobalFlag.popupIsActive = true;
                                 async Task showIt()
                                 {
-                                    await DoModalMessageBox(cm, null, msg, new[] { "Ok" });
-                                    GlobalFlag.popupIsActive = false;
+                                    try { await DoModalMessageBox(cm, null, msg, new[] { "Ok" }); }
+                                    finally { GlobalFlag.popupIsActive = false; }
                                 }
                                 StartImmediate(showIt());
+                            }
+                            if (!GlobalFlag.popupIsActive)
+                                showWhenFree();
+                            else
+                            {
+                                // another popup is open: show the result once it closes, rather than dropping it
+                                var wait = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300.0) };
+                                wait.Tick += (_, _) =>
+                                {
+                                    if (GlobalFlag.popupIsActive) return;
+                                    wait.Stop();
+                                    showWhenFree();
+                                };
+                                wait.Start();
                             }
                         });
                     }

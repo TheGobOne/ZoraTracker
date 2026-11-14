@@ -213,7 +213,7 @@ type ReadWrite() =
     member val Zones = false with get,set
     member val Coords = false with get,set
     member val HoverZonesCoords = true with get,set
-    member val Gettables = false with get,set
+    member val Gettables = true with get,set   // (same default as Overworld.Gettables, for settings files written before this key)
     member val OpenCaves = false with get,set
 
     member val Voice_DungeonFeedback = true with get,set
@@ -658,6 +658,7 @@ let private read(filename) =
         SwapMouseButtons <- data.SwapMouseButtons
         ItemProgressWindow_DisplayedLT <- (if isNull data.ItemProgressWindow_DisplayedLT then "" else data.ItemProgressWindow_DisplayedLT)
         DungeonSummaryTabMode <- data.DungeonSummaryTabMode
+        PortNumber <- (if System.String.IsNullOrWhiteSpace(data.PortNumber) then "5000" else data.PortNumber)   // (it was saved but never loaded back)
 
         AllowItemIconOnNonShopTile.Value <- data.AllowItemIconOnNonShopTile
         PersonalPrefMarkersEnabled.Value <- false   // feature removed; ignore any old saved value

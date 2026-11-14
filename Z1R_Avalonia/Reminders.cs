@@ -412,7 +412,9 @@ public static class Reminders
                 var n = TrackerModel.mapSquareChoiceDomain.NumUses(TrackerModel.MapSquareChoiceDomainHelper.DOOR_REPAIR_CHARGE);
                 var max = TrackerModel.mapSquareChoiceDomain.MaxUses(TrackerModel.MapSquareChoiceDomainHelper.DOOR_REPAIR_CHARGE);
                 var icons = new Control[] { upcb(Graphics.theInteriorBmpTable[TrackerModel.MapSquareChoiceDomainHelper.DOOR_REPAIR_CHARGE][0]), ReminderTextBox($"{n}/{max}") };
-                SendReminder(TrackerModel.ReminderCategory.DoorRepair, $"You found {(n == max ? "all " : "")}{n} of {max} door repairs", icons);
+                // (in a mixed quest the cap is the larger of the 1Q and 2Q counts, so reaching it does not mean every door repair was found)
+                var isMixedQuest = TrackerModel.owInstance.Quest.Equals(OverworldData.OWQuest.MIXED_FIRST) || TrackerModel.owInstance.Quest.Equals(OverworldData.OWQuest.MIXED_SECOND);
+                SendReminder(TrackerModel.ReminderCategory.DoorRepair, $"You found {(n == max && !isMixedQuest ? "all " : "")}{n} of {max} door repairs", icons);
                 owPreviouslyAnnounceDoorRepairCount = n;
             }
         }

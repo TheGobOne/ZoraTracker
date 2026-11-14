@@ -136,7 +136,7 @@ public static class Platform
             WorkingDirectory = Path.GetDirectoryName(fileName),
             FileName = fileName,
             Arguments = arguments,
-            RedirectStandardOutput = true,
+            RedirectStandardOutput = false,   // (a redirected pipe nobody reads fills up and hangs a target that prints a lot)
             UseShellExecute = false,
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
@@ -450,7 +450,7 @@ public static class Platform
             {
                 var desktopPath = Path.ChangeExtension(lnkPath, ".desktop");
                 string quote(string s) => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
-                var text = "[Desktop Entry]\nType=Application\nName=ZORA Tracker\nComment=" + description + "\nExec=" + quote(targetPath) + "\nPath=" + workingDirectory
+                var text = "[Desktop Entry]\nType=Application\nName=ZORATracker\nComment=" + description + "\nExec=" + quote(targetPath) + "\nPath=" + workingDirectory
                          + "\nIcon=" + iconPath + "\nTerminal=false\nCategories=Game;\n";
                 if (!File.Exists(desktopPath) || File.ReadAllText(desktopPath) != text)
                     File.WriteAllText(desktopPath, text);

@@ -254,16 +254,37 @@ public static class Graphics
     // (WPF: an IsKeyboardFocused trigger turns the border white. Avalonia has no such property, so the focus is tracked here: only focus that arrived by Tab or the arrow keys counts, as in WPF)
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, object> keyboardFocused = new System.Runtime.CompilerServices.ConditionalWeakTable<Control, object>();
     public static bool hasKeyboardFocus(Control c) => keyboardFocused.TryGetValue(c, out _);
-    public static void trackKeyboardFocus(Control c, Action refresh)
+    public static readonly SolidColorBrush keyboardFocusBorder = new SolidColorBrush(Colors.White);
+    // A code template listens to its control's property changes (and focus) to redraw itself. It used to subscribe each time it was built and
+    // never unsubscribe, so a re-templated control kept every old template alive and redrawing. This keeps the handlers until the control gets
+    // a different template. They stay on while the control is out of the window: a control changed while hidden (for example a Hint Decoder
+    // button whose Content is replaced while its popup is closed) must still move the new content into its presenter, or the presenter keeps the
+    // old content, which has lost its logical parent, and Avalonia throws when the control is shown again.
+    public static void listenWhileShown(TemplatedControl owner, Control root, Action refresh, Func<AvaloniaProperty, bool> watches, bool trackFocus)
     {
-        c.GotFocus += (_, e) =>
+        EventHandler<AvaloniaPropertyChangedEventArgs> onProp = (_, ea) => { if (watches(ea.Property)) refresh(); };
+        EventHandler<GotFocusEventArgs> onGot = (_, e) =>
         {
-            if (e.NavigationMethod == NavigationMethod.Tab || e.NavigationMethod == NavigationMethod.Directional) keyboardFocused.AddOrUpdate(c, new object());
+            if (e.NavigationMethod == NavigationMethod.Tab || e.NavigationMethod == NavigationMethod.Directional) keyboardFocused.AddOrUpdate(owner, new object());
             refresh();
         };
-        c.LostFocus += (_, _) => { keyboardFocused.Remove(c); refresh(); };
+        EventHandler<RoutedEventArgs> onLost = (_, _) => { keyboardFocused.Remove(owner); refresh(); };
+        EventHandler<TemplateAppliedEventArgs> onTemplateApplied = null;
+        onTemplateApplied = (_, _) =>
+        {
+            // a new template took over when this root is no longer the control's visual child: stop listening for good
+            if (ReferenceEquals(Avalonia.VisualTree.VisualExtensions.GetVisualParent(root), owner)) return;
+            owner.PropertyChanged -= onProp;
+            if (trackFocus) { owner.GotFocus -= onGot; owner.LostFocus -= onLost; }
+            owner.TemplateApplied -= onTemplateApplied;
+        };
+        owner.PropertyChanged += onProp;
+        if (trackFocus) { owner.GotFocus += onGot; owner.LostFocus += onLost; }
+        owner.TemplateApplied += onTemplateApplied;
+        // (focus can be cleared while the control is out of the window; drop a stale keyboard-focus mark when it is shown again)
+        root.AttachedToVisualTree += (_, _) => { if (!owner.IsFocused && keyboardFocused.TryGetValue(owner, out _)) { keyboardFocused.Remove(owner); refresh(); } };
+        refresh();
     }
-    public static readonly SolidColorBrush keyboardFocusBorder = new SolidColorBrush(Colors.White);
     public static readonly FuncControlTemplate<Button> roundedButtonTemplate =
         new FuncControlTemplate<Button>((b, _scope) =>
         {
@@ -284,16 +305,11 @@ public static class Graphics
                 cp.HorizontalAlignment = b.HorizontalContentAlignment;
                 cp.VerticalAlignment = b.VerticalContentAlignment;
             }
-            refresh();
-            trackKeyboardFocus(b, refresh);
-            b.PropertyChanged += (_, ea) =>
-            {
-                var p = ea.Property;
-                if (p == ContentControl.ContentProperty || p == ContentControl.ContentTemplateProperty || p == Button.IsPressedProperty || p == InputElement.IsPointerOverProperty || p == InputElement.IsEffectivelyEnabledProperty
+            listenWhileShown(b, bd, refresh, p =>
+                p == ContentControl.ContentProperty || p == ContentControl.ContentTemplateProperty || p == Button.IsPressedProperty || p == InputElement.IsPointerOverProperty || p == InputElement.IsEffectivelyEnabledProperty
                     || p == TemplatedControl.BackgroundProperty || p == TemplatedControl.BorderBrushProperty || p == TemplatedControl.BorderThicknessProperty
-                    || p == TemplatedControl.PaddingProperty || p == ContentControl.HorizontalContentAlignmentProperty || p == ContentControl.VerticalContentAlignmentProperty)
-                    refresh();
-            };
+                    || p == TemplatedControl.PaddingProperty || p == ContentControl.HorizontalContentAlignmentProperty || p == ContentControl.VerticalContentAlignmentProperty,
+                true);
             return bd;
         });
     // WPF-like slider: a thin grey track line, a small grey thumb, tick marks above and/or below (the Fluent slider is much taller, and its track is nearly invisible on black)
@@ -385,15 +401,10 @@ public static class Graphics
                 if (hasKeyboardFocus(cb)) box.BorderBrush = keyboardFocusBorder;
                 grid.Opacity = cb.IsEffectivelyEnabled ? 1.0 : 0.5;
             }
-            refresh();
-            trackKeyboardFocus(cb, refresh);
-            cb.PropertyChanged += (_, ea) =>
-            {
-                var p = ea.Property;
-                if (p == ContentControl.ContentProperty || p == ContentControl.ContentTemplateProperty || p == ToggleButton.IsCheckedProperty || p == InputElement.IsPointerOverProperty || p == InputElement.IsEffectivelyEnabledProperty
-                    || p == TemplatedControl.PaddingProperty)
-                    refresh();
-            };
+            listenWhileShown(cb, grid, refresh, p =>
+                p == ContentControl.ContentProperty || p == ContentControl.ContentTemplateProperty || p == ToggleButton.IsCheckedProperty || p == InputElement.IsPointerOverProperty || p == InputElement.IsEffectivelyEnabledProperty
+                    || p == TemplatedControl.PaddingProperty,
+                true);
             return grid;
         });
     // rounded text box: WPF replaces the template; Avalonia's TextBox template has many required parts, so this keeps the
@@ -570,15 +581,11 @@ public static class Graphics
             }
             bd.Opacity = ti.IsEffectivelyEnabled ? 1.0 : 0.56;
         }
-        refresh();
-        ti.PropertyChanged += (_, ea) =>
-        {
-            var p = ea.Property;
-            if (p == HeaderedContentControl.HeaderProperty || p == HeaderedContentControl.HeaderTemplateProperty || p == TabItem.IsSelectedProperty
+        listenWhileShown(ti, bd, refresh, p =>
+            p == HeaderedContentControl.HeaderProperty || p == HeaderedContentControl.HeaderTemplateProperty || p == TabItem.IsSelectedProperty
                 || p == InputElement.IsPointerOverProperty || p == InputElement.IsEffectivelyEnabledProperty || p == TemplatedControl.BackgroundProperty
-                || p == TemplatedControl.PaddingProperty)
-                refresh();
-        };
+                || p == TemplatedControl.PaddingProperty,
+            false);
         return bd;
     });
     // (Avalonia: WPF's default TabControl shape. The tab strip sits above the content with a 2,2,2,0 margin, and only the content has the
@@ -601,17 +608,13 @@ public static class Graphics
             contentBorder.BorderThickness = tc.BorderThickness;
             contentBorder.Padding = tc.Padding;
         }
-        refresh();
-        tc.PropertyChanged += (_, ea) =>
-        {
-            var p = ea.Property;
-            if (p == TabControl.SelectedContentProperty || p == TabControl.SelectedContentTemplateProperty || p == TemplatedControl.BackgroundProperty
-                || p == TemplatedControl.BorderBrushProperty || p == TemplatedControl.BorderThicknessProperty || p == TemplatedControl.PaddingProperty)
-                refresh();
-        };
         var dp = new DockPanel();
         dp.Children.Add(items);
         dp.Children.Add(contentBorder);
+        listenWhileShown(tc, dp, refresh, p =>
+            p == TabControl.SelectedContentProperty || p == TabControl.SelectedContentTemplateProperty || p == TemplatedControl.BackgroundProperty
+                || p == TemplatedControl.BorderBrushProperty || p == TemplatedControl.BorderThicknessProperty || p == TemplatedControl.PaddingProperty,
+            false);
         return dp;
     });
     public static void styleRoundedButton(Button b)
@@ -664,13 +667,13 @@ public static class Graphics
     public static System.Drawing.Bitmap greyscale(System.Drawing.Bitmap bmp) =>
         transformColor(bmp, c =>
         {
-            if (c.ToArgb() == System.Drawing.Color.Transparent.ToArgb())
+            if (c.A == 0)   // (any fully transparent pixel, not just exactly Color.Transparent: PNG-decoded art such as the boots has 0x00000000 pixels, which became opaque black)
                 return c;
             else
             {
                 var avg = ((int)c.R + (int)c.G + (int)c.B) / 5;  // not just average, but overall darker
                 avg = avg == 0 ? 0 : avg + 60;                   // never too dark
-                return System.Drawing.Color.FromArgb(avg, avg, avg);
+                return System.Drawing.Color.FromArgb(c.A, avg, avg, avg);
             }
         });
     public static System.Drawing.Color desaturateColor(System.Drawing.Color c, double pct)
@@ -854,11 +857,15 @@ public static class Graphics
                     {
                         //printfn "%A  -  %A" startPoint pos
                         isDragging = true;
-                        onStartDrag(ea, initiateDragFunc);
-                        isDragging = false;
-                        startPoint = null;
-                        clickFunc = null;
-                        initiateDragFunc = null;
+                        try { onStartDrag(ea, initiateDragFunc); }
+                        finally
+                        {
+                            // (always reset: a failed drag must not leave every later click ignored)
+                            isDragging = false;
+                            startPoint = null;
+                            clickFunc = null;
+                            initiateDragFunc = null;
+                        }
                     }
                 }
             }), RoutingStrategies.Tunnel);
@@ -1499,13 +1506,27 @@ public static class Graphics
     public static System.Drawing.Bitmap readCacheFileOrCreateBmp(string filename, Func<System.Drawing.Bitmap> createF)
     {
         // always treat the tiles as 96dpi, whatever the cache file (or this machine's display scaling) says; a tile with another dpi gets drawn smaller than 48x33, leaving dark lines between map tiles
+        // (a cache file cut short by a crash used to throw here on every launch: a file that will not load is regenerated;
+        // the bytes are read into memory so the file is not locked while the app runs)
         if (System.IO.File.Exists(filename))
         {
-            var bmp = (System.Drawing.Bitmap)System.Drawing.Bitmap.FromFile(filename);
-            bmp.SetResolution(96.0f, 96.0f);
-            return bmp;
+            try
+            {
+                using (var ms = new System.IO.MemoryStream(System.IO.File.ReadAllBytes(filename)))
+                using (var loaded = new System.Drawing.Bitmap(ms))
+                {
+                    var bmp = new System.Drawing.Bitmap(loaded);
+                    bmp.SetResolution(96.0f, 96.0f);
+                    return bmp;
+                }
+            }
+            catch (Exception e)
+            {
+                // (only a file that cannot be decoded is deleted: a sharing violation, say from a virus scanner, leaves a good file alone)
+                if (!(e is System.IO.IOException))
+                    try { System.IO.File.Delete(filename); } catch (Exception) { }
+            }
         }
-        else
         {
             var bmp = createF();
             bmp.SetResolution(96.0f, 96.0f);
@@ -2461,19 +2482,29 @@ public static class Graphics
             w.PointerMoved += (_, _) => sawMouseEvent = true;
         }
     }
+    // true while a warp's message pump runs (a popup about to open warps the cursor first; the stuck-popup self-heal must leave it alone)
+    public static bool IsWarpingCursor => theFrame != null;
     public static void SilentlyWarpMouseCursorTo(Point pos)
     {
         if (theFrame == null)  // Note: cannot process a second of these calls while one is active; I think that's fine
         {
             theFrame = new DispatcherFrame();
-            sawMouseEvent = false;
-            theCounter = 0;
-            theTimer.Start();
-            if (Win32.SetCursor(pos.X, pos.Y))    // this queues a mouse move input, and we want to block until that event is processed, to avoid spurious MouseLeave()s and other reasons
-                Dispatcher.UIThread.PushFrame(theFrame);   // creates a blocking message pump that only stops when Continue set to false
-            else
-                theTimer.Stop();   // (this platform can't warp the cursor, so there's no mouse move to wait for)
-            theFrame = null;
+            try
+            {
+                sawMouseEvent = false;
+                theCounter = 0;
+                theTimer.Start();
+                if (Win32.SetCursor(pos.X, pos.Y))    // this queues a mouse move input, and we want to block until that event is processed, to avoid spurious MouseLeave()s and other reasons
+                    Dispatcher.UIThread.PushFrame(theFrame);   // creates a blocking message pump that only stops when Continue set to false
+                else
+                    theTimer.Stop();   // (this platform can't warp the cursor, so there's no mouse move to wait for)
+            }
+            finally
+            {
+                // (a failure here used to leave theFrame set, so every later warp did nothing for the rest of the session)
+                theTimer.Stop();
+                theFrame = null;
+            }
         }
     }
     public static void WarpMouseCursorTo(Point pos)

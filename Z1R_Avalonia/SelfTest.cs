@@ -17,6 +17,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Z1R_Sync;
 
 namespace Z1R_Avalonia;
 
@@ -178,6 +179,39 @@ public static class SelfTest
             var (z18, err18) = FlagPaste.decodeZora("18.1!5I5HHHX0dg");
             if (z18 == null) fail("ZORA flags (version 18): " + err18);
             else if (!(z18.Progressive && z18.FourthSword == FlagPaste.Tri.On && z18.BootsReplaceBoomerangs == FlagPaste.Tri.On)) fail("ZORA flags (version 18) decoded wrong");
+            // the spec's current ZORA string version is 22 (fields 42..45 added in 19..22): an all-zero version 22 string must be accepted, and 23 refused
+            var (z22, err22) = FlagPaste.decodeZora("22.0");
+            if (z22 == null) fail("ZORA flags (version 22): " + err22);
+            if (FlagPaste.decodeZora("23.0").error == null) fail("ZORA flags (version 23, newer than the spec) were accepted");
+            // "22.0" passes whatever the field table holds, so also build a version 22 string with the four newest fields set.
+            // The radixes below are copied from zora-flags.json (spec 1.0, current_version 22), in position order, apart from FlagPaste's own table.
+            {
+                var specRadixes = new[] { 2, 2, 6, 2, 2,  3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,  2, 2, 4, 2, 3, 3, 3, 3, 3, 3, 2, 4, 3, 4, 4, 4, 4, 2, 3, 3, 8, 8, 2, 3,  3, 2, 3, 3 };
+                var digits = new int[specRadixes.Length];
+                digits[3] = 1;    // progressive_items On
+                digits[6] = 1;    // add_l4_sword On
+                digits[42] = 2;   // universal_drops_v2 Random (version 19)
+                digits[43] = 1;   // detailed_spoiler_log On (version 20)
+                digits[44] = 1;   // wizzrobes_shoot_wallmasters On (version 21)
+                digits[45] = 2;   // item_counter Random (version 22)
+                var n = System.Numerics.BigInteger.Zero;
+                for (var k = specRadixes.Length - 1; k >= 0; k--) n = n * specRadixes[k] + digits[k];
+                const string alphabet63 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!";
+                var payload = "";
+                while (n > 0) { payload = alphabet63[(int)(n % 63)] + payload; n /= 63; }
+                var (z22b, err22b) = FlagPaste.decodeZora("22." + payload);
+                if (z22b == null) fail($"ZORA flags (version 22, newest fields set, '22.{payload}'): {err22b}");
+                else if (!(z22b.Progressive && z22b.FourthSword == FlagPaste.Tri.On)) fail($"ZORA flags (version 22, '22.{payload}') decoded wrong");
+                // the same payload read as version 21 leaves item_counter over: it must be refused, not read as other flags
+                if (FlagPaste.decodeZora("21." + payload).error == null) fail($"ZORA flags: '21.{payload}' (a version 22 field set) was accepted as version 21");
+            }
+            // '_' is an alias for '!' (flags copied from a seed file name): both spellings must decode the same
+            var (pa, _e1) = FlagPaste.decodeZ1R("8hq4BeR1JXo89BJ2!TFpTP02u8UJ3A");
+            var (pb, _e2) = FlagPaste.decodeZ1R("8hq4BeR1JXo89BJ2_TFpTP02u8UJ3A");
+            if (pa == null || pb == null || pa.Quest != pb.Quest || pa.ItemShuffle != pb.ItemShuffle || pa.Mirror != pb.Mirror || pa.HideNumbers != pb.HideNumbers) fail("Z1R flags with '_' did not decode like the same flags with '!'");
+            var (za, _e3) = FlagPaste.decodeZora("18.1!5I5HHHX0dg");
+            var (zb, _e4) = FlagPaste.decodeZora("18.1_5I5HHHX0dg");
+            if (za == null || zb == null || za.Progressive != zb.Progressive || za.FourthSword != zb.FourthSword) fail("ZORA flags with '_' did not decode like the same flags with '!'");
         });
         log("flag decode done");
 
@@ -539,9 +573,9 @@ public static class SelfTest
                         }
                     }
                     // Boots: Off, On, or ? (the flags left it to chance: counts as Off, the boomerangs stay, until it is confirmed)
-                    var bootsCb = cbNamed("Boots Replace Boomerangs");
+                    var bootsCb = cbNamed("Pegasus Boots");
                     if (bootsCb == null) fail("Overworld + Extras: no Boots checkbox");
-                    else if (!bootsCb.IsThreeState) fail("Boots Replace Boomerangs should have a ? (Random) state");
+                    else if (!bootsCb.IsThreeState) fail("Pegasus Boots should have a ? (Random) state");
                     else
                     {
                         await clickTo(bootsCb, true);
@@ -652,6 +686,110 @@ public static class SelfTest
             if (tested < 20) fail($"hover on real boxes: only {tested} boxes found to try");
         });
         log($"hover on a removed box checked ({failures} failures so far)");
+
+        // 6. co-op logic, in-process (no network, no second tracker): the pieces whose bugs only showed up between two players
+        guard("co-op checks", () =>
+        {
+            // 6a. a message identical to the one just before it is a duplicate; a state that comes back (A, B, A) is a real change and must get through
+            var seq = new[] { "A", "B", "A", "A" };
+            var expect = new[] { false, false, false, true };
+            for (int i = 0; i < seq.Length; i++)
+                if (CoopSync.alreadyReceived("SelfTestRepeat", seq[i]) != expect[i])
+                    fail($"co-op: message {i + 1} of A,B,A,A was judged {(expect[i] ? "new" : "a duplicate")} wrongly (the third, A again after B, must be applied)");
+            // 6b. repainting a door must not send anything to the partner; changing one sends exactly one message
+            var sent = 0;
+            Action<DungeonUI.DoorChangeInfo> count = _ => sent++;
+            DungeonUI.doorChangedEvent += count;
+            try
+            {
+                var doors = DungeonUI.horizontalDoorsPerLevel[0];
+                for (int x = 0; x < 7; x++) for (int y = 0; y < 8; y++) doors[x, y].Redraw();
+                if (sent != 0) fail($"co-op: redrawing 56 unchanged doors sent {sent} door messages (should be 0)");
+                var before = doors[5, 5].State;
+                sent = 0;
+                doors[5, 5].State = before == Dungeon.DoorState.YES ? Dungeon.DoorState.NO : Dungeon.DoorState.YES;
+                if (sent != 1) fail($"co-op: changing one door sent {sent} door messages (should be exactly 1)");
+                doors[5, 5].State = before;
+            }
+            finally { DungeonUI.doorChangedEvent -= count; }
+            // 6c. a burst of different updates trips the anti-spam mute, and the update that trips it is dropped (the caller then has to schedule a retry)
+            CoopSync.autoMutedUntil = DateTime.MinValue;
+            var results = Enumerable.Range(0, CoopSync.syncBurstLimit + 1).Select(i => CoopSync.shouldSendUpdate("SelfTestBurst", "payload " + i)).ToList();
+            if (!results.Contains(false)) fail("co-op: a burst of updates never tripped the auto-mute");
+            if (CoopSync.autoMutedUntil <= DateTime.UtcNow) fail("co-op: the auto-mute was not set after a burst");
+            CoopSync.autoMutedUntil = DateTime.MinValue;
+            // 6d. Race Mode forces mute on and turning it off puts the user's own choice back (here: muted before, so still muted)
+            var sMuted = TrackerModelOptions.IsMuted; var sRace = TrackerModelOptions.RaceMode.Value;
+            try
+            {
+                // (the button clicks above can leave Race Mode on: start from off, as a user would before choosing to mute)
+                TrackerModelOptions.RaceMode.Value = false; OptionsMenu.triggerRaceModeChanged();
+                TrackerModelOptions.IsMuted = true;
+                TrackerModelOptions.RaceMode.Value = true; OptionsMenu.triggerRaceModeChanged();
+                TrackerModelOptions.RaceMode.Value = false; OptionsMenu.triggerRaceModeChanged();
+                if (!TrackerModelOptions.IsMuted) fail("co-op/options: Race Mode off unmuted a user who had muted before turning it on");
+            }
+            finally
+            {
+                TrackerModelOptions.RaceMode.Value = sRace; OptionsMenu.triggerRaceModeChanged();
+                TrackerModelOptions.IsMuted = sMuted;
+            }
+        });
+        log($"co-op checks done ({failures} failures so far)");
+
+        // 6f. both players change the same room within 5 s: the later change wins on both sides (they used to ignore each other and stay different)
+        guard("co-op conflict rule", () =>
+        {
+            var key = "SelfTestConflict";
+            CoopSync.recordSend(key);
+            var later = DateTime.UtcNow.Ticks + TimeSpan.TicksPerSecond;
+            var earlier = DateTime.UtcNow.Ticks - 2 * TimeSpan.TicksPerSecond;
+            if (CoopSync.localEditWins(key, 5000, later, "partner")) fail("co-op: a partner's later change to the same room was ignored");
+            if (!CoopSync.localEditWins(key, 5000, earlier, "partner")) fail("co-op: a partner's earlier change to the same room overwrote ours");
+            if (CoopSync.localEditWins("SelfTestNeverSent", 5000, earlier, "partner")) fail("co-op: a partner's change was ignored though we never changed that room");
+        });
+        // 6g. duplicate links go into the save
+        guard("duplicate links in the save", () =>
+        {
+            var had = WPFUI.dupLinks.ContainsKey((15, 7));
+            WPFUI.linkDuplicate((15, 7), (14, 6));
+            try
+            {
+                var text = SaveAndLoad.DupLinksText?.Invoke() ?? "";
+                if (!text.Split(';').Contains("15,7,14,6")) fail($"save: duplicate link 15,7 -> 14,6 missing from the save text '{text}'");
+            }
+            finally { if (!had) WPFUI.dupLinks.Remove((15, 7)); }
+        });
+
+        // 6e. a DungeonMaps update dropped by the anti-spam mute must be sent again once the mute ends (no network: the send hook catches it)
+        {
+            var maps = new List<string>();
+            var savedLast = CoopSync.lastSentDungeonMapsPayload;
+            SyncManager.TestSendHook = (t, p, s) => { if (t == "DungeonMaps") lock (maps) maps.Add(p); };
+            CoopSync.testForceCoop = true;
+            try
+            {
+                CoopSync.autoMutedUntil = DateTime.MinValue;
+                CoopSync.lastSentDungeonMapsPayload = "";
+                for (int i = 0; i <= CoopSync.syncBurstLimit; i++) CoopSync.shouldSendUpdate("SelfTestBurst2", "payload " + i);   // trips the mute
+                if (CoopSync.autoMutedUntil <= DateTime.UtcNow) fail("co-op: could not trip the auto-mute for the retry test");
+                CoopSync.sendDungeonMapsUpdate("selftest");
+                await pause(600);   // (200 ms debounce plus the send task)
+                int whileMuted; lock (maps) whileMuted = maps.Count;
+                if (whileMuted != 0) fail($"co-op: a DungeonMaps update was sent {whileMuted} time(s) while muted");
+                await pause(2200);   // (mute 1000 ms, retry after +100 ms, then the debounce again)
+                int afterwards; lock (maps) afterwards = maps.Count;
+                if (afterwards != 1) fail($"co-op: the DungeonMaps update dropped by the mute was sent {afterwards} time(s) afterwards (should be exactly 1)");
+            }
+            finally
+            {
+                SyncManager.TestSendHook = null;
+                CoopSync.testForceCoop = false;
+                CoopSync.autoMutedUntil = DateTime.MinValue;
+                CoopSync.lastSentDungeonMapsPayload = savedLast;
+            }
+        }
+        log($"co-op retry check done ({failures} failures so far)");
 
         closeExtraWindows();
         log($"{clicks} button/checkbox clicks, {popupsSeen} popups opened and closed");

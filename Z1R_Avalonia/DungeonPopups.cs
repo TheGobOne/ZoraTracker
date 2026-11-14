@@ -449,6 +449,9 @@ public static class DungeonPopups
             Graphics.WarpMouseCursorTo(cellPoint((double)x + 0.5, (double)y + 0.5));
         }
 
+        // (try/finally: if the menu or the room change throws, the popup canvas must still go, or it stays on screen over an unlocked UI)
+        try
+        {
         var r = await CustomComboBoxes.DoModalGridSelect<RoomType, RoomType>(cm, tileX, tileY - THE_DIFF, tileCanvas, gridElementsSelectablesAndIDs, originalStateIndex, activationDelta, (gnc, gnr, gcw, grh),
                        (double)gcw / 2.0, (double)grh / 2.0, gx, gy, redrawTile, onClick, extraDecorations, brushes, gridClickDismissalWarpReturn, null, "DungeonRoom", null);
 
@@ -456,6 +459,9 @@ public static class DungeonPopups
         {
             case (false, _): break;
             case (true, var curState):
+                // Start from the room as it is now, not as it was when the menu opened: a co-op partner may have
+                // changed its monster or floor drop meanwhile, and only the type and completed mark are picked here.
+                workingCopy = originalRoomState.Clone();
                 workingCopy.CSharp.IsPreview = false;
                 workingCopy.RoomType = curState;
                 workingCopy.IsComplete = (curState != RoomType.BombUpgrade && curState != RoomType.HungryGoriyaMeatBlock);   // a placed bomb upgrade room starts un-collected (blue dot on the level number); left click it to clear the dot. A placed meat-blocked room starts without its green check; left click it to add the check
@@ -469,9 +475,11 @@ public static class DungeonPopups
                 //setNewValue(originalRoomState)
                 break;
         }
-
-        popupCanvas.Children.Clear();
-        cm.DismissPopupCanvas(popupCanvas);
-
+        }
+        finally
+        {
+            popupCanvas.Children.Clear();
+            cm.DismissPopupCanvas(popupCanvas);
+        }
     }
 }

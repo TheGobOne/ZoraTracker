@@ -338,6 +338,8 @@ public static class Program
         private readonly double HEIGHT;
         private readonly double WIDTH;
         private bool loggedAnyCrash = false;
+        private bool crashEntryOpen = false;   // a crash entry has text but no END CRASH LOG yet
+        private long loadedSaveTicks = 0;   // the loaded save file's last write time (UTC ticks), for the co-op hello
         private bool promptedCrashRecovery = false;
         private bool gotThruStartup = false;
         private string crashSummary = null;   // (port: the exception's type and message, for the crash window)
@@ -428,15 +430,19 @@ public static class Program
                         File.AppendAllText(crashLogFilename, $"\n\nBEGIN CRASH LOG -- {OverworldData.ProgramNameString} -- {DateTime.Now.ToString(dateTimeFormat)}\n");
                     }
                     File.AppendAllText(crashLogFilename, $"{s}\n");
+                    crashEntryOpen = true;
                 }
                 catch (Exception) { }
             }
             void finishCrashInfoImpl(string extra)
             {
+                crashEntryOpen = false;
                 var finalText = gotThruStartup ? extra : "(during startup)\n";  // this intentionally interacts with crash recovery dialog
-                File.AppendAllText(crashLogFilename, $"END CRASH LOG\n{DateTime.Now.ToString(dateTimeFormat)}\n{finalText}");
+                try { File.AppendAllText(crashLogFilename, $"END CRASH LOG\n{DateTime.Now.ToString(dateTimeFormat)}\n{finalText}"); }
+                catch (Exception) { }   // (a failed write must not throw out of a crash handler and lose the rest of it)
             }
-            void finishCrashInfo() => finishCrashInfoImpl("");
+            // (closes a crash entry once: the UI-thread handler and handle() both called this, which wrote END CRASH LOG twice per crash)
+            void finishCrashInfo() { if (crashEntryOpen) finishCrashInfoImpl(""); }
             void handle(Exception ex)
             {
                 switch (ex)
@@ -559,12 +565,14 @@ public static class Program
             // full window
             this.Title = "ZORATracker";
             // (WPF gets the title-bar icon from the exe's ApplicationIcon; Avalonia needs it set on the window. The file sits next to the exe; skipped if it is missing.)
+#if !BROWSER
             try
             {
                 var iconFile = Path.Combine(AppContext.BaseDirectory, "ztlogo64x64.ico");
                 if (File.Exists(iconFile)) this.Icon = new WindowIcon(iconFile);
             }
             catch (Exception) { }
+#endif
             this.CanResize = true;   // resizable: the whole UI scales to fit (see the SizeChanged handler below)
             this.MinWidth = Math.Round(WIDTH_SANS_CHROME*0.4 + CHROME_WIDTH) - CHROME_WIDTH;   // (Avalonia: client size)
             this.MinHeight = Math.Round(HEIGHT_SANS_CHROME*0.4 + CHROME_HEIGHT) - CHROME_HEIGHT;
@@ -600,7 +608,8 @@ public static class Program
                 else
                 {
                     TrackerModelOptions.MainWindowLT = $"{(int)left},{(int)top}";
-                    TrackerModelOptions.writeSettings();
+                    // (dragging the window fires this many times a second: write the file once the window has been still for half a second)
+                    ShowRunCustom.writeSettingsSoon();
                 }
             };
             this.Width = APP_WIDTH - CHROME_WIDTH;   // (Avalonia: client size)
@@ -626,24 +635,7 @@ public static class Program
             runStaticInitializersInWpfCompileOrder();   // (port: see the method; the earliest point at which every class can initialize)
             // Stubbed SignalR sync startup
 
-            var lastOverworldSyncSource = "";
-            var lastOverworldSyncTime = DateTime.MinValue;
-
-            bool shouldApplyUpdate(string senderId)
-            {
-                var now = DateTime.UtcNow;
-                var elapsed = now - lastOverworldSyncTime;
-                if (lastOverworldSyncSource == senderId && elapsed.TotalMilliseconds < 500.0)
-                    return false;
-                else
-                {
-                    lastOverworldSyncSource = senderId;
-                    lastOverworldSyncTime = now;
-                    return true;
-                }
-            }
-
-            var lastDungeonMapsJson = "";
+            // (the last applied DungeonMaps payload is CoopSync.lastReceivedDungeonMapsJson, so a hello can clear it)
             var _dungeonMapsDebouncer = new Debouncer(500);
 
             void handleRemoteTileChange(string tileId, string iconId, string senderId)
@@ -690,7 +682,7 @@ public static class Program
                                     {
                                         TrackerModelOptions.DebugConfig.Log($"[Sync] Raw PlayerProgress payload: {payloadJson}");
                                         var data = JsonConvert.DeserializeObject<SaveAndLoad.PlayerProgressAndTakeAnyHeartsModel>(payloadJson);
-                                        Dispatcher.UIThread.Invoke(() =>
+                                        Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                         {
                                             CoopSync.isApplyingPlayerProgressFromSync = true;
                                             try
@@ -702,8 +694,9 @@ public static class Program
                                             {
                                                 CoopSync.isApplyingPlayerProgressFromSync = false;
                                             }
+                                            CoopSync.rebaseline("PlayerProgress");
                                             TrackerModel.TimelineItemModel.TriggerTimelineChanged();
-                                        });
+                                        }));
                                     }
                                     catch (Exception ex)
                                     {
@@ -721,9 +714,17 @@ public static class Program
                                         try
                                         {
                                             var data = JsonConvert.DeserializeObject<SaveAndLoad.Items>(payloadJson);
-                                            Dispatcher.UIThread.Invoke(() =>
+                                            Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
                                                 CoopSync.isApplyingItemsFromSync = true;
+                                                // (a box we changed after they built this message keeps our value; ours is sent again below)
+                                                var keptLocalBox = false;
+                                                bool keepOurs(object box)
+                                                {
+                                                    if (!CoopSync.boxEditedAfter(box, timestamp)) return false;
+                                                    keptLocalBox = true;
+                                                    return true;
+                                                }
                                                 try
                                                 {
                                                     // Top-level flags
@@ -731,12 +732,12 @@ public static class Program
                                                     TrackerModel.IsSecondQuestDungeons = data.SecondQuestDungeons;
 
                                                     // Top-level boxes — only apply if value has actually changed to avoid re-timestamping
-                                                    if (data.WhiteSwordBox.CellCurrent != TrackerModel.sword2Box.CellCurrent() || data.WhiteSwordBox.PlayerHas != TrackerModel.sword2Box.PlayerHas().AsInt())
-                                                        data.WhiteSwordBox.TryApply(TrackerModel.sword2Box);
-                                                    if (data.LadderBox.CellCurrent != TrackerModel.ladderBox.CellCurrent() || data.LadderBox.PlayerHas != TrackerModel.ladderBox.PlayerHas().AsInt())
-                                                        data.LadderBox.TryApply(TrackerModel.ladderBox);
-                                                    if (data.ArmosBox.CellCurrent != TrackerModel.armosBox.CellCurrent() || data.ArmosBox.PlayerHas != TrackerModel.armosBox.PlayerHas().AsInt())
-                                                        data.ArmosBox.TryApply(TrackerModel.armosBox);
+                                                    if ((data.WhiteSwordBox.CellCurrent != TrackerModel.sword2Box.CellCurrent() || data.WhiteSwordBox.PlayerHas != TrackerModel.sword2Box.PlayerHas().AsInt()) && !keepOurs(TrackerModel.sword2Box))
+                                                    { data.WhiteSwordBox.TryApply(TrackerModel.sword2Box); CoopSync.clearBoxEdit(TrackerModel.sword2Box); }
+                                                    if ((data.LadderBox.CellCurrent != TrackerModel.ladderBox.CellCurrent() || data.LadderBox.PlayerHas != TrackerModel.ladderBox.PlayerHas().AsInt()) && !keepOurs(TrackerModel.ladderBox))
+                                                    { data.LadderBox.TryApply(TrackerModel.ladderBox); CoopSync.clearBoxEdit(TrackerModel.ladderBox); }
+                                                    if ((data.ArmosBox.CellCurrent != TrackerModel.armosBox.CellCurrent() || data.ArmosBox.PlayerHas != TrackerModel.armosBox.PlayerHas().AsInt()) && !keepOurs(TrackerModel.armosBox))
+                                                    { data.ArmosBox.TryApply(TrackerModel.armosBox); CoopSync.clearBoxEdit(TrackerModel.armosBox); }
 
                                                     // Dungeons
                                                     for (int i = 0; i < data.Dungeons.Length; i++)
@@ -771,8 +772,8 @@ public static class Program
                                                             {
                                                                 var (srcBox, destBox) = (dungeon.Boxes[j], targetDungeon.Boxes[j]);
                                                                 // Only apply if value has actually changed to avoid re-timestamping in the timeline
-                                                                if (srcBox != null && (srcBox.CellCurrent != destBox.CellCurrent() || srcBox.PlayerHas != destBox.PlayerHas().AsInt()))
-                                                                    srcBox.TryApply(destBox);
+                                                                if (srcBox != null && (srcBox.CellCurrent != destBox.CellCurrent() || srcBox.PlayerHas != destBox.PlayerHas().AsInt()) && !keepOurs(destBox))
+                                                                { srcBox.TryApply(destBox); CoopSync.clearBoxEdit(destBox); }   // (their value taken: our edit of this box is settled)
                                                             }
 
                                                             // If any box has an item, mark this dungeon as seen so the summary tab shows content
@@ -787,9 +788,13 @@ public static class Program
                                                 {
                                                     CoopSync.isApplyingItemsFromSync = false;
                                                 }
+                                                if (keptLocalBox)
+                                                    CoopSync.resendItems(TrackerModelOptions.CoopSyncOptions.MyConsoleId);   // (they built this before our edit: make sure they get it)
+                                                else
+                                                    CoopSync.rebaseline("Items");
                                                 // Force the timeline to redraw now that items have been applied
                                                 TrackerModel.TimelineItemModel.TriggerTimelineChanged();
-                                            });
+                                            }));
 
                                         }
                                         catch (Exception ex)
@@ -802,11 +807,14 @@ public static class Program
                                     try
                                     {
                                         var data = JsonConvert.DeserializeObject<SaveAndLoad.StartingItemsAndExtrasModel>(payloadJson);
-                                        Dispatcher.UIThread.Invoke(() =>
+                                        Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                         {
+                                            // (the items used to be set inside the triforce loop, so each was applied 8 times, firing its change events 8 times)
                                             for (int i = 0; i <= 7; i++)
-                                            {
                                                 TrackerModel.startingItemsAndExtras.HDNStartingTriforcePieces[i].Set(data.HDNStartingTriforcePieces[i]);
+                                            CoopSync.isApplyingStartingItemsFromSync = true;   // (each Set fires a change event: do not send a half-applied state back)
+                                            try
+                                            {
                                                 TrackerModel.startingItemsAndExtras.PlayerHasWhiteSword.Set(data.PlayerHasWhiteSword);
                                                 TrackerModel.startingItemsAndExtras.PlayerHasMagicalSword.Set(data.PlayerHasMagicalSword);
                                                 TrackerModel.startingItemsAndExtras.PlayerHasSilverArrow.Set(data.PlayerHasSilverArrow);
@@ -828,7 +836,12 @@ public static class Program
 
                                                 TrackerModelOptions.DebugConfig.Log($"[Sync] Applied StartingItems update from {senderId}");
                                             }
-                                        });
+                                            finally
+                                            {
+                                                CoopSync.isApplyingStartingItemsFromSync = false;
+                                            }
+                                            CoopSync.rebaseline("StartingItems");
+                                        }));
                                     }
                                     catch (Exception ex)
                                     {
@@ -837,10 +850,11 @@ public static class Program
                                     break;
 
                                 case "Overworld":
-                                    if (TrackerModel.overworldMapMarks == null)
+                                    // (the old 500 ms throttle dropped the newer of two quick messages; stale and repeated ones are caught by timestamp and hash)
+                                    if (TrackerModel.overworldMapMarks == null || !trackerIsInitialized())
                                         TrackerModelOptions.DebugConfig.Log("[Sync] Skipping Overworld update — TrackerModel not initialized yet.");
-                                    else if (!(shouldApplyUpdate(senderId)))
-                                        TrackerModelOptions.DebugConfig.Log($"[Sync] Ignored Overworld update from {senderId} (too soon after last update)");
+                                    else if (!(CoopSync.shouldApplyUpdate("Overworld", payloadJson, timestamp)))
+                                        TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped Overworld update from {senderId} — repeated or older");
                                     else
                                     {
                                         TrackerModelOptions.DebugConfig.Log($"[Sync] Raw Overworld payload: {payloadJson}");
@@ -848,34 +862,82 @@ public static class Program
                                         try
                                         {
                                             var data = JsonConvert.DeserializeObject<SaveAndLoad.Overworld>(payloadJson);
-                                            Dispatcher.UIThread.Invoke(() =>
+                                            // a partner on another overworld quest: their tile values mean other things here, so the map is left alone
+                                            // (a message without a Quest, e.g. from the WPF tracker, is applied as before)
+                                            var theirQuest = (string)Newtonsoft.Json.Linq.JObject.Parse(payloadJson)["Quest"];
+                                            var ourQuest = Dispatcher.UIThread.Invoke(() => CoopSync.currentOverworldQuest());
+                                            if (theirQuest != null && theirQuest != ourQuest)
                                             {
-                                                TrackerModel.MirrorOverworld = data.MirrorOverworld;
-                                                TrackerModel.startIconX = data.StartIconX;
-                                                TrackerModel.startIconY = data.StartIconY;
-                                                TrackerModel.customWaypointX = data.CustomWaypointX;
-                                                TrackerModel.customWaypointY = data.CustomWaypointY;
-
-                                                if (data.Map != null && data.Map.Length == 384)
+                                                Console.WriteLine($"[Sync] Skipped Overworld update from {senderId}: they are on overworld quest {theirQuest}, this tracker is on {ourQuest}");
+                                                break;
+                                            }
+                                            Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
+                                            {
+                                                CoopSync.isApplyingOverworldFromSync = true;
+                                                var keptLocalTile = false;
+                                                try
                                                 {
-                                                    for (int j = 0; j <= 7; j++)
-                                                        for (int i = 0; i <= 15; i++)
-                                                        {
-                                                            var idx = (j * 16 + i) * 3;
-                                                            var cur = data.Map[idx];
-                                                            var ed  = data.Map[idx + 1];
-                                                            var circ = data.Map[idx + 2];
-                                                            TrackerModel.overworldMapMarks[i, j].Set(cur);
-                                                            if (cur != -1)
+                                                    TrackerModel.MirrorOverworld = data.MirrorOverworld;
+                                                    TrackerModel.startIconX = data.StartIconX;
+                                                    TrackerModel.startIconY = data.StartIconY;
+                                                    TrackerModel.customWaypointX = data.CustomWaypointX;
+                                                    TrackerModel.customWaypointY = data.CustomWaypointY;
+
+                                                    if (data.Map != null && data.Map.Length == 384)
+                                                    {
+                                                        // First clear every tile that changes, then set the new values. Setting in place failed with
+                                                        // "choice domain overflow" when an icon allowed once (a dungeon number) moved to a tile earlier in the loop,
+                                                        // and that error stopped the rest of the map from being applied.
+                                                        for (int j = 0; j <= 7; j++)
+                                                            for (int i = 0; i <= 15; i++)
                                                             {
-                                                                var edKey = TrackerModel.MapSquareChoiceDomainHelper.IsItem(cur) ? TrackerModel.MapSquareChoiceDomainHelper.SHOP : cur;
-                                                                TrackerModel.setOverworldMapExtraData(i, j, edKey, ed);
+                                                                var cur = data.Map[(j * 16 + i) * 3];
+                                                                if (CoopSync.tileEditedAfter(i, j, timestamp)) continue;   // (our newer edit of this tile stays)
+                                                                try
+                                                                {
+                                                                    if (TrackerModel.overworldMapMarks[i, j].Current() != cur)
+                                                                        TrackerModel.overworldMapMarks[i, j].Set(-1);
+                                                                }
+                                                                catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not clear tile ({i},{j}): {ex.Message}"); }
                                                             }
-                                                            TrackerModel.overworldMapCircles[i, j] = circ;
-                                                        }
+                                                        for (int j = 0; j <= 7; j++)
+                                                            for (int i = 0; i <= 15; i++)
+                                                            {
+                                                                var idx = (j * 16 + i) * 3;
+                                                                var cur = data.Map[idx];
+                                                                var ed  = data.Map[idx + 1];
+                                                                var circ = data.Map[idx + 2];
+                                                                if (CoopSync.tileEditedAfter(i, j, timestamp))
+                                                                {
+                                                                    // we changed this tile after they built the message: keep ours and send it again below
+                                                                    if (TrackerModel.overworldMapMarks[i, j].Current() != cur) keptLocalTile = true;
+                                                                    continue;
+                                                                }
+                                                                try
+                                                                {
+                                                                    TrackerModel.overworldMapMarks[i, j].Set(cur);
+                                                                    CoopSync.clearTileEdit(i, j);   // (their value taken: our edit of this tile is settled)
+                                                                    if (cur != -1)
+                                                                    {
+                                                                        var edKey = TrackerModel.MapSquareChoiceDomainHelper.IsItem(cur) ? TrackerModel.MapSquareChoiceDomainHelper.SHOP : cur;
+                                                                        TrackerModel.setOverworldMapExtraData(i, j, edKey, ed);
+                                                                    }
+                                                                    TrackerModel.overworldMapCircles[i, j] = circ;
+                                                                }
+                                                                catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not set tile ({i},{j}): {ex.Message}"); }
+                                                            }
+                                                    }
                                                 }
+                                                finally
+                                                {
+                                                    CoopSync.isApplyingOverworldFromSync = false;
+                                                }
+                                                if (keptLocalTile)
+                                                    CoopSync.resendOverworld(TrackerModelOptions.CoopSyncOptions.MyConsoleId);   // (they built this before our edit: make sure they get it)
+                                                else
+                                                    CoopSync.rebaseline("Overworld");
                                                 TrackerModelOptions.DebugConfig.Log($"[Sync] Applied Overworld update from {senderId}");
-                                            });
+                                            }));
                                         }
                                         catch (Exception ex)
                                         {
@@ -887,7 +949,7 @@ public static class Program
                                     try
                                     {
                                         var data = JsonConvert.DeserializeObject<SaveAndLoad.Hints>(payloadJson);
-                                        Dispatcher.UIThread.Invoke(() =>
+                                        Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                         {
                                             for (int i = 0; i <= 10; i++)
                                                 TrackerModel.SetLevelHint.Invoke(Tuple.Create(i, TrackerModel.HintZone.FromIndex(data.LocationHints[i])));
@@ -899,7 +961,7 @@ public static class Program
                                             TrackerModel.FireArrowsHintWasGiven = data.FireArrowsHint;
 
                                             TrackerModelOptions.DebugConfig.Log($"[Sync] Applied Hints update from {senderId}");
-                                        });
+                                        }));
                                     }
                                     catch (Exception ex)
                                     {
@@ -914,26 +976,37 @@ public static class Program
                                         try
                                         {
                                             var data = JsonConvert.DeserializeObject<SaveAndLoad.Blocker[][]>(payloadJson);
-                                            Dispatcher.UIThread.Invoke(() =>
+                                            Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
+                                                CoopSync.isApplyingBlockersFromSync = true;   // (FinishIgnoreChangesDuringLoad fires the change event: do not send it back)
                                                 TrackerModel.DungeonBlockersContainer.StartIgnoreChangesDuringLoad();
-                                                for (int i = 0; i <= data.Length - 1; i++)
-                                                    for (int j = 0; j <= data[i].Length - 1; j++)
-                                                    {
-                                                        var b = data[i][j];
-                                                        if (b != null)
+                                                try
+                                                {
+                                                    for (int i = 0; i <= data.Length - 1; i++)
+                                                        for (int j = 0; j <= data[i].Length - 1; j++)
                                                         {
-                                                            var blockerKind = TrackerModel.DungeonBlocker.FromHotKeyName(b.Kind);
-                                                            TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(i, j, blockerKind);
-                                                            for (int k = 0; k <= b.AppliesTo.Length - 1; k++)
-                                                                TrackerModel.DungeonBlockersContainer.SetDungeonBlockerAppliesTo(i, j, k, b.AppliesTo[k]);
-                                                            var actualKind = TrackerModel.DungeonBlockersContainer.GetDungeonBlocker(i, j);
-                                                            TrackerModelOptions.DebugConfig.Log($"[Sync][Blockers] Applied blocker [{i},{j}]: {actualKind}");
+                                                            var b = data[i][j];
+                                                            if (b != null)
+                                                            {
+                                                                var blockerKind = TrackerModel.DungeonBlocker.FromHotKeyName(b.Kind);
+                                                                TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(i, j, blockerKind);
+                                                                if (b.AppliesTo != null)
+                                                                    for (int k = 0; k <= b.AppliesTo.Length - 1; k++)
+                                                                        TrackerModel.DungeonBlockersContainer.SetDungeonBlockerAppliesTo(i, j, k, b.AppliesTo[k]);
+                                                                var actualKind = TrackerModel.DungeonBlockersContainer.GetDungeonBlocker(i, j);
+                                                                TrackerModelOptions.DebugConfig.Log($"[Sync][Blockers] Applied blocker [{i},{j}]: {actualKind}");
+                                                            }
                                                         }
-                                                    }
-                                                TrackerModel.DungeonBlockersContainer.FinishIgnoreChangesDuringLoad();
+                                                }
+                                                finally
+                                                {
+                                                    // (in a finally: a bad payload used to leave the container ignoring changes, so blockers never synced again)
+                                                    try { TrackerModel.DungeonBlockersContainer.FinishIgnoreChangesDuringLoad(); }
+                                                    finally { CoopSync.isApplyingBlockersFromSync = false; }
+                                                }
+                                                CoopSync.rebaseline("Blockers");
                                                 TrackerModelOptions.DebugConfig.Log($"[Sync] Applied Blockers update from {senderId}");
-                                            });
+                                            }));
                                         }
                                         catch (Exception ex)
                                         {
@@ -950,7 +1023,7 @@ public static class Program
                                         try
                                         {
                                             var data = JsonConvert.DeserializeObject<CoopSync.DungeonsTriforceState>(payloadJson);
-                                            Dispatcher.UIThread.Invoke(() =>
+                                            Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
                                                 CoopSync.isApplyingTriforceFromSync = true;
                                                 try
@@ -971,8 +1044,9 @@ public static class Program
                                                 {
                                                     CoopSync.isApplyingTriforceFromSync = false;
                                                 }
+                                                CoopSync.rebaseline("DungeonTriforce");
                                                 TrackerModel.TimelineItemModel.TriggerTimelineChanged();
-                                            });
+                                            }));
                                         }
                                         catch (Exception ex)
                                         {
@@ -981,31 +1055,60 @@ public static class Program
                                     }
                                     break;
                                 case "DungeonMaps":
-                                    if (!(CoopSync.shouldApplyUpdate("DungeonMaps", payloadJson, timestamp)))
-                                        TrackerModelOptions.DebugConfig.Log("[Sync] Skipped DungeonMaps update — no change");
-                                    else if (!trackerIsInitialized())
+                                    // (initialized is checked first: shouldApplyUpdate records the payload as applied)
+                                    if (!trackerIsInitialized())
                                         TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped DungeonMaps update from {senderId} — TrackerModel not initialized");
-                                    else if (payloadJson == lastDungeonMapsJson)
+                                    else if (!(CoopSync.shouldApplyUpdate("DungeonMaps", payloadJson, timestamp)))
+                                        TrackerModelOptions.DebugConfig.Log("[Sync] Skipped DungeonMaps update — no change");
+                                    else if (payloadJson == CoopSync.lastReceivedDungeonMapsJson)
                                         TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped DungeonMaps update from {senderId} — duplicate payload");
                                     else if (senderId == TrackerModelOptions.CoopSyncOptions.MyConsoleId)
                                         TrackerModelOptions.DebugConfig.Log("[Sync] Skipped DungeonMaps update — echo from self");
                                     else
                                     {
-                                        lastDungeonMapsJson = payloadJson;
+                                        CoopSync.lastReceivedDungeonMapsJson = payloadJson;
                                         CoopSync.dungeonMapsSyncOrigin.MarkSyncedNow();
-                                        // Record that we've "sent" this payload so our own poller won't re-broadcast it
-                                        CoopSync.lastSentDungeonMapsPayload = payloadJson;
                                         try
                                         {
                                             var dungeonModels = JsonConvert.DeserializeObject<DungeonSaveAndLoad.DungeonModel[]>(payloadJson);
-                                            Dispatcher.UIThread.Invoke(() =>
+                                            Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
+                                                // Record that we've "sent" this payload so our own poller won't re-broadcast it
+                                                // (if a room or door of ours is kept below, our state differs and our next DungeonMaps goes out)
+                                                CoopSync.lastSentDungeonMapsPayload = payloadJson;
                                                 CoopSync.isApplyingRoomFromSync = true;
                                                 CoopSync.dungeonMapsSyncOrigin.MarkSyncStart();
+                                                var keptLocal = false;
                                                 try
                                                 {
                                                     for (int level = 0; level <= 8; level++)
                                                     {
+                                                        // A whole map from the partner replaced every room and door, so an edit we made after they built it was lost
+                                                        // here while they got it by RoomChange, and the maps ended up different. Keep our rooms and doors that are newer.
+                                                        try
+                                                        {
+                                                            var dmIn = dungeonModels[level];
+                                                            if (dmIn != null && dmIn.RoomStates != null && dmIn.HorizontalDoors != null && dmIn.VerticalDoors != null)
+                                                            {
+                                                                DungeonSaveAndLoad.DungeonModel mine = null;
+                                                                DungeonSaveAndLoad.DungeonModel getMine() => mine ??= CoopSync.cloneAndFixDungeonModel(DungeonUI.exportFunctionsLarge[level]());
+                                                                var L = level + 1;   // (the RoomChange and DoorChange keys use levels 1-9)
+                                                                for (int x = 0; x <= 7; x++)
+                                                                    for (int y = 0; y <= 7; y++)
+                                                                    {
+                                                                        if (CoopSync.localEditNewer($"DungeonRoom_{L}_{x}_{y}", timestamp))
+                                                                        { dmIn.RoomStates[y][x] = getMine().RoomStates[y][x]; keptLocal = true; }
+                                                                        if (x <= 6 && CoopSync.localEditNewer($"DoorChange_{L}_{x}_{y}_true", timestamp))
+                                                                        { dmIn.HorizontalDoors[y][x] = getMine().HorizontalDoors[y][x]; keptLocal = true; }
+                                                                        if (y <= 6 && CoopSync.localEditNewer($"DoorChange_{L}_{x}_{y}_false", timestamp))
+                                                                        { dmIn.VerticalDoors[y][x] = getMine().VerticalDoors[y][x]; keptLocal = true; }
+                                                                    }
+                                                            }
+                                                        }
+                                                        catch (Exception ex)
+                                                        {
+                                                            TrackerModelOptions.DebugConfig.Log($"[Sync] Could not keep newer local rooms in level {level}: {ex.Message}");
+                                                        }
                                                         var dm = dungeonModels[level];
                                                         // Skip if null or if RoomIsCircled/RoomStates are not fully populated (e.g. sender had uninitialized dungeon)
                                                         var isValid =
@@ -1026,20 +1129,23 @@ public static class Program
                                                             }
                                                         }
                                                     }
-                                                    // Update lastSentTime AFTER import so that SetNow() calls during import
-                                                    // don't produce a timestamp newer than lastSentTime (which would cause re-broadcast)
-                                                    CoopSync.lastSentTime = DateTime.Now;
+                                                    // (lastSentTime is no longer reset here: the import runs with currentSyncSource set, so it does not stamp
+                                                    // dungeonRoomModelChanged, and a reset would cancel the send of a local change made just before)
                                                     CoopSync.dungeonMapsSyncOrigin.MarkSyncedNow();
                                                     var hash = CoopSync.computeHash(payloadJson);
                                                     CoopSync.lastAppliedHashes["DungeonMaps"] = hash;
                                                     CoopSync.lastSentHashes["DungeonMaps"] = hash;
+                                                    CoopSync.remoteRoomApplied();
+                                                    CoopSync.remoteDoorApplied();
+                                                    if (keptLocal)
+                                                        CoopSync.lastSentTime = DateTime.MinValue;   // our map now differs from theirs: send it on the next poll
                                                 }
                                                 finally
                                                 {
                                                     CoopSync.dungeonMapsSyncOrigin.MarkSyncEnd();
                                                     CoopSync.isApplyingRoomFromSync = false;
                                                 }
-                                            });
+                                            }));
                                         }
                                         catch (Exception ex)
                                         {
@@ -1057,13 +1163,14 @@ public static class Program
                                            var i = data["Index"].ToObject<int>();
                                            var color = data["Color"].ToObject<int>();
                                            var labelChar = data["LabelChar"].ToObject<string>();
-                                           Dispatcher.UIThread.Invoke(() =>
+                                           Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                            {
                                                var dungeon = TrackerModel.GetDungeon(i);
                                                dungeon.Color = color;
                                                dungeon.LabelChar = !(string.IsNullOrEmpty(labelChar)) ? labelChar[0] : '?';
+                                               CoopSync.lastSentHashes.TryRemove("HiddenDungeonColorLabel", out _);   // (our next relabel is sent even if it matches our last one)
                                                TrackerModelOptions.DebugConfig.Log($"[Sync] Applied HiddenDungeonColorLabel update to dungeon {i} from {senderId}");
-                                           });
+                                           }));
                                        }
                                    }
                                    catch (Exception ex)
@@ -1076,11 +1183,13 @@ public static class Program
                                     {
                                         var data = JsonConvert.DeserializeObject<CoopSync.DoorChangePayload>(payloadJson);
                                         var key = $"DoorChange_{data.Level}_{data.X}_{data.Y}_{(data.IsHorizontal ? "true" : "false")}";
-                                        if (trackerIsInitialized() && CoopSync.shouldApplyUpdate("DoorChange", payloadJson, timestamp) && !(SyncManager.ShouldSuppressDoorChange(payloadJson)) && (CoopSync.isDoorChangeFresh(data.Level, data.X, data.Y, data.IsHorizontal, timestamp)) && !(CoopSync.isRecentlySentByUs(key, 5000)))
+                                        // (the echo check comes first: shouldApplyUpdate records the payload as applied, so a payload skipped here must not reach it)
+                                        if (!(CoopSync.localEditWins(key, 5000, timestamp, senderId)) && trackerIsInitialized() && CoopSync.shouldApplyUpdate("DoorChange", payloadJson, timestamp) && !(SyncManager.ShouldSuppressDoorChange(payloadJson)) && (CoopSync.isDoorChangeFresh(data.Level, data.X, data.Y, data.IsHorizontal, timestamp)))
                                         {
                                             CoopSync.recordDoorTimestamp(data.Level, data.X, data.Y, data.IsHorizontal, timestamp);
-                                            Dispatcher.UIThread.Invoke(() =>
+                                            Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
+                                                CoopSync.remoteDoorApplied();   // (setting it back to what we last sent must send again)
                                                 try
                                                 {
                                                     var newState = Dungeon.DoorInterop.fromString(data.NewState.Case);
@@ -1114,7 +1223,7 @@ public static class Program
                                                 {
                                                     TrackerModelOptions.DebugConfig.Log($"[Sync] DoorChange internal error: {ex2.Message}");
                                                 }
-                                            });
+                                            }));
                                         }
                                     }
                                     catch (Exception ex)
@@ -1129,12 +1238,14 @@ public static class Program
                                         TrackerModelOptions.DebugConfig.Log($"[Sync] Raw RoomChange payload: {payloadJson}");
                                         var data = JsonConvert.DeserializeObject<CoopSync.RoomChangePayload>(payloadJson);
                                         var key = $"DungeonRoom_{data.Level}_{data.X}_{data.Y}";
-                                        if (CoopSync.shouldApplyUpdate("RoomChange", payloadJson, timestamp) && (CoopSync.isRoomChangeFresh(data.Level, data.X, data.Y, timestamp)) && !(CoopSync.isRecentlySentByUs(key, 5000)))
+                                        // (echo check first, see DoorChange)
+                                        if (!(CoopSync.localEditWins(key, 5000, timestamp, senderId)) && CoopSync.shouldApplyUpdate("RoomChange", payloadJson, timestamp) && (CoopSync.isRoomChangeFresh(data.Level, data.X, data.Y, timestamp)))
                                         {
                                             CoopSync.recordRoomTimestamp(data.Level, data.X, data.Y, timestamp);
-                                            Dispatcher.UIThread.Invoke(() =>
+                                            Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
                                                 CoopSync.isApplyingRoomFromSync = true;
+                                                CoopSync.remoteRoomApplied();   // (setting it back to what we last sent must send again)
                                                 try
                                                 {
                                                     Z1R_Tracker.Models.RoomSyncBridge.ApplyRoomChangeFromSync(
@@ -1163,7 +1274,7 @@ public static class Program
                                                 {
                                                     CoopSync.isApplyingRoomFromSync = false;
                                                 }
-                                            });
+                                            }));
                                         }
                                     }
                                     catch (Exception ex)
@@ -1175,25 +1286,61 @@ public static class Program
                                     try
                                     {
                                         var data = JsonConvert.DeserializeObject<CoopSync.OverworldTileUpdate>(payloadJson);
-                                        if (CoopSync.shouldApplyUpdate("OverworldTile", payloadJson, timestamp))
+                                        if (trackerIsInitialized() && CoopSync.shouldApplyUpdate("OverworldTile", payloadJson, timestamp))
                                         {
-                                            Dispatcher.UIThread.Invoke(() =>
+                                            Dispatcher.UIThread.Invoke(() => CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
-                                                TrackerModel.overworldMapMarks[data.X, data.Y].Set(data.MapTileValue);
-                                                if (data.MapTileValue != -1)
+                                                // a tile from another overworld quest means something else here (a message without Quest, from an older tracker, still applies)
+                                                if (data.Quest != null && data.Quest != CoopSync.currentOverworldQuest())
                                                 {
-                                                    // Shop tiles store extra data under SHOP key; use the same key the sender used
-                                                    var edKey = TrackerModel.MapSquareChoiceDomainHelper.IsItem(data.MapTileValue) ? TrackerModel.MapSquareChoiceDomainHelper.SHOP : data.MapTileValue;
-                                                    TrackerModel.setOverworldMapExtraData(data.X, data.Y, edKey, data.ExtraData);
+                                                    Console.WriteLine($"[Sync] Skipped OverworldTile ({data.X},{data.Y}) from {senderId}: they are on overworld quest {data.Quest}, this tracker is on {CoopSync.currentOverworldQuest()}");
+                                                    return;
                                                 }
-                                                TrackerModel.overworldMapCircles[data.X, data.Y] = data.CircleValue;
+                                                if (CoopSync.tileEditWins(data.X, data.Y, timestamp, senderId))
+                                                {
+                                                    // we changed this tile too, later (or at the same time, and our console ID is lower): ours wins on both sides, so send it again
+                                                    CoopSync.lastSentHashes.TryRemove("OverworldTile", out _);
+                                                    CoopSync.sendTile(data.X, data.Y);
+                                                    return;
+                                                }
+                                                CoopSync.isApplyingOverworldFromSync = true;   // (the tile's change event must not send this back)
+                                                try
+                                                {
+                                                    TrackerModel.overworldMapMarks[data.X, data.Y].Set(data.MapTileValue);
+                                                    CoopSync.clearTileEdit(data.X, data.Y);   // (their value taken: our edit of this tile is settled)
+                                                    if (data.MapTileValue != -1)
+                                                    {
+                                                        // Shop tiles store extra data under SHOP key; use the same key the sender used
+                                                        var edKey = TrackerModel.MapSquareChoiceDomainHelper.IsItem(data.MapTileValue) ? TrackerModel.MapSquareChoiceDomainHelper.SHOP : data.MapTileValue;
+                                                        TrackerModel.setOverworldMapExtraData(data.X, data.Y, edKey, data.ExtraData);
+                                                    }
+                                                    TrackerModel.overworldMapCircles[data.X, data.Y] = data.CircleValue;
+                                                }
+                                                finally
+                                                {
+                                                    CoopSync.isApplyingOverworldFromSync = false;
+                                                }
+                                                CoopSync.lastSentHashes.TryRemove("OverworldTile", out _);   // (our next change to a tile is sent even if it matches our last one)
+                                                CoopSync.rebaseline("Overworld");
                                                 TrackerModelOptions.DebugConfig.Log($"[Sync] Applied OverworldTile ({data.X},{data.Y}) update from {senderId}");
-                                            });
+                                            }));
                                         }
                                     }
                                     catch (Exception ex)
                                     {
                                         TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to apply OverworldTile update: {ex.Message}");
+                                    }
+                                    break;
+
+                                case "StateHello":
+                                    try
+                                    {
+                                        var hello = JsonConvert.DeserializeObject<CoopSync.StateHello>(payloadJson);
+                                        Dispatcher.UIThread.Post(() => CoopSync.handleStateHello(hello, senderId));
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to read StateHello: {ex.Message}");
                                     }
                                     break;
 
@@ -1216,10 +1363,7 @@ public static class Program
                 {
                     try
                     {
-                        await SyncManager.StartAsync(TrackerModelOptions.CoopSyncOptions.NegotiateUrl());
-                        //CoopSync.subscribeToPlayerProgressChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId)
-                        //CoopSync.subscribeToStartingItemsAndExtrasChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId)
-                        //CoopSync.subscribeToItemsChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId)
+                        // (the handlers are set before connecting, so nothing that arrives right after the connect is missed)
                         // Tile-specific handler
                         var tileHandlerDelegate = new Action<string, string, string>((tileId, iconId, senderId) =>
                             handleRemoteTileChange(tileId, iconId, senderId)
@@ -1231,7 +1375,11 @@ public static class Program
                             handleIncomingMessage(messageType, payloadJson, senderId, timestamp)
                         );
                         SyncManager.SetSyncMessageHandler(messageHandlerDelegate);
+                        // after every connect or reconnect, the hello handshake brings the two trackers back in step
+                        // (joining: this tracker may have missed messages while it was not connected)
+                        SyncManager.OnConnected = () => Dispatcher.UIThread.Post(() => CoopSync.sendStateHello(true));
 
+                        await SyncManager.StartAsync(TrackerModelOptions.CoopSyncOptions.NegotiateUrl());
 
                         Console.WriteLine("[Sync] Connected to Azure SignalR via negotiate");
                     }
@@ -1251,21 +1399,32 @@ public static class Program
                 }
                 CustomComboBoxes.StartImmediate(go());
             }
+            // The negotiate URL of the live connection, or null while co-op is off. Saving the co-op settings turns co-op on again each time;
+            // a working connection is only replaced when co-op was off or the URL changed (a needless reconnect lost the messages sent meanwhile).
+            string connectedNegotiateUrl = null;
             if ((TrackerModelOptions.CoopSyncOptions.GetEnableCoop()))
+            {
+                connectedNegotiateUrl = TrackerModelOptions.CoopSyncOptions.NegotiateUrl();
                 tryStartSignalRConnection();
+            }
             else
                 Console.WriteLine("[Sync] Co-op disabled — not starting SignalR connection");
             TrackerModelOptions.CoopSyncOptions.EnableCoopChanged.Publish.AddHandler(new FSharpHandler<bool>((_, isEnabled) =>
             {
                 if (isEnabled)
                 {
+                    var url = TrackerModelOptions.CoopSyncOptions.NegotiateUrl();
+                    if (url == connectedNegotiateUrl)
+                        return;   // already connected (or reconnecting) to this host
+                    connectedNegotiateUrl = url;
                     Console.WriteLine("[Sync] Co-op enabled at runtime — connecting to Azure SignalR");
                     tryStartSignalRConnection();
                 }
                 else
                 {
+                    connectedNegotiateUrl = null;
                     Console.WriteLine("[Sync] Co-op disabled at runtime — not connecting");
-                    // Optional: implement disconnect logic here
+                    _ = SyncManager.StopAsync();   // (also stops the reconnect attempts)
                 }
             }));
 
@@ -1813,8 +1972,8 @@ public static class Program
             extrasHeader.Children.Add(extrasHeaderText);
             var extrasSP = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = WIDTH, Margin = new Thickness(0.0, 4.0, 0.0, 0.0) };
             extrasSP.Children.Add(fsArea);
-            // 'Boots Replace Boomerangs' (what it does is still to be worked out; for now it just records the choice)
-            var brcb = new CheckBox { Content = new TextBox { Text = "Boots Replace Boomerangs", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0, 0.0, 2.0, 0.0) };
+            // 'Pegasus Boots' (what it does is still to be worked out; for now it just records the choice)
+            var brcb = new CheckBox { Content = new TextBox { Text = "Pegasus Boots", IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0, 0.0, 2.0, 0.0) };
             Graphics.scaleUpCheckBoxBox(brcb, 1.66);
             brcb.IsChecked = false;
             brcb.IsThreeState = true;   // Off, On, or Random (a dash): the flags can leave boots to chance
@@ -2005,7 +2164,7 @@ public static class Program
                     if (keys.Contains("4th") && fourthSwordLevel == 9) keys.Add("4th9");
                     switch (heartModeSelected()) { case 2: keys.Add("full"); break; case 1: keys.Add("hsintra"); break; default: break; }
                     TrackerModelOptions.SavedStartupSelection = string.Join(",", keys);
-                    TrackerModelOptions.SavedCustomLevelName = clnTextBox.Text.Trim().ToUpperInvariant();
+                    TrackerModelOptions.SavedCustomLevelName = (clnTextBox.Text ?? "").Trim().ToUpperInvariant();
                     TrackerModelOptions.writeSettings();
                 }
                 // loadData takes precedence over user selections
@@ -2070,7 +2229,7 @@ public static class Program
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
                 foreach (var (id, maxUse) in new[] { (TrackerModel.ITEMS.PROGRESSIVESWORD, (TrackerModel.ProgressiveItems ? 4 : 3)), (TrackerModel.ITEMS.BLUERING, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.BLUECANDLE, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.WOODARROW, (TrackerModel.ProgressiveItems ? 2 : 1)), (TrackerModel.ITEMS.BOOMERANG, (TrackerModel.ProgressiveItems ? 2 : 1)) }) TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, maxUse);
                 TrackerModel.CustomLevelName =
-                    clncb.IsChecked == true ? clnTextBox.Text.Trim().ToUpperInvariant() : "";
+                    clncb.IsChecked == true ? (clnTextBox.Text ?? "").Trim().ToUpperInvariant() : "";
                 SpeechRecognition.SpeechRecognitionInstance speechRecognitionInstance = null;
                 if (TrackerModelOptions.ListenForSpeech.Value)
                 {
@@ -2149,6 +2308,8 @@ public static class Program
                     noticeTimer.Start();
                 }
                 gotThruStartup = true;
+                // co-op: record the run's state as already sent (a fresh tracker no longer pushes its blank state over a partner), then say hello
+                CoopSync.startupFinished(loadData != null, loadedSaveTicks);
                 if (promptedCrashRecovery)
                     finishCrashInfoImpl("prompted for crash recovery, user chose not to, successfully started");
             }
@@ -2156,6 +2317,7 @@ public static class Program
             this.Closed += (_, _) =>  // still does not handle 'rude' shutdown, like if they close the console window
             {
                 Popouts.theMainWindowHasClosed = true;
+                ShowRunCustom.cancelSettingsSoon();   // (a pending window-position write is covered by the write below)
                 if (settingsWereSuccessfullyRead)      // don't overwrite an unreadable file, the user may have been intentionally hand-editing it and needs feedback
                     TrackerModelOptions.writeSettings();  // save any settings changes they made before closing the startup window
             };
@@ -2239,6 +2401,7 @@ public static class Program
                                     _ = r;
                                 }
                                 loadData = DungeonSaveAndLoad.LoadAll(json);
+                                try { loadedSaveTicks = File.GetLastWriteTimeUtc(pickedFile).Ticks; } catch (Exception) { loadedSaveTicks = 0; }
                                 recordRecentLoad(pickedFile);
                             }
                             catch (Exception e)
@@ -2273,7 +2436,33 @@ public static class Program
                     {
                         // (an extra left on Random, the dash, is decided by the seed: point at the Overworld + Extras button once the overworld is up)
                         var anyRandomExtra = loadData == null && new[] { brcb, epbcb, erbcb, dwcb, lhcb }.Any(cb => !cb.IsChecked.HasValue);
-                        await doStartup(n, loadData);
+                        try
+                        {
+                            await doStartup(n, loadData);
+                        }
+                        catch (Exception e)
+                        {
+                            // (without this the start screen stayed on 'Loading UI...' with no word on what went wrong)
+                            // (the full error goes to the crash log too, so the user has something to send along)
+                            logCrashInfo("Starting the run failed:");
+                            logCrashInfo(e.ToString());
+                            finishCrashInfo();
+                            if (LoadDump.isActive || SelfTest.isSelfTest)
+                            {
+                                LoadDump.Fail(e.Message);   // (a headless run has nobody to click Ok)
+                                return;
+                            }
+                            foreach (var tb in startupOptionsCanvas.Children.OfType<TextBox>().Where(t => t.Text != null && t.Text.StartsWith("Loading UI")).ToList())
+                                startupOptionsCanvas.Children.Remove(tb);
+                            mainDock.ZIndex = 0;
+                            pendingLoadPath = null;
+                            // (the Start buttons stay off: a half-built tracker cannot be started a second time, because the first attempt leaves static controls and handlers behind)
+                            popupIsActive = true;
+                            var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORATracker could not start the run.\nError:\n{e.Message}\n\nPlease restart the app.", new[] { "Ok" });
+                            popupIsActive = false;
+                            _ = r;
+                            return;
+                        }
                         if (anyRandomExtra)
                             // the reminder (voice and/or on-screen, as set in Reminders): some extras are Random, so check Overworld + Extras
                             Dispatcher.UIThread.Post(() =>
@@ -2408,6 +2597,8 @@ public static class Program
                                         var r = await ofd.ShowDialog(this);
                                         if (r.HasValue && r.Value)
                                             Graphics.alternativeOverworldMapFilename = ofd.FileName;
+                                        else
+                                            break;   // they cancelled the file dialog: back to the start screen, not a run on a blank grid
                                     }
                                     Graphics.shouldInitiallyHideOverworldMap = (c == 0 || c == 2);
                                     var text = (c == 0 ? "You have chosen a blank map grid.\n\n" : "You have chosen to load a map file.\n\n") +
@@ -2600,9 +2791,9 @@ public static class Program
                             if (z.BootsReplaceBoomerangs == FlagPaste.Tri.Random)
                             {
                                 brcb.IsChecked = null;
-                                lines.Add("Random (?, counts as Off until you set it in Overworld + Extras): Boots Replace Boomerangs");
+                                lines.Add("Random (?, counts as Off until you set it in Overworld + Extras): Pegasus Boots");
                             }
-                            else setTri(brcb, z.BootsReplaceBoomerangs, "Boots Replace Boomerangs");
+                            else setTri(brcb, z.BootsReplaceBoomerangs, "Pegasus Boots");
                             // the four block/hint options can be Random: shown as a ?, which the tracker treats as On
                             void setTri3(CheckBox cb, FlagPaste.Tri t, string name)
                             {
@@ -2627,8 +2818,25 @@ public static class Program
                 applyBtn.Click += (_, _) => { if (doApply()) wh.Set(); };
                 // pasting into either box applies straight away
                 // (WPF: DataObject.AddPastingHandler, then doApply at Background priority once the text is in; Avalonia: PastingFromClipboard)
+                // (applied when the pasted text arrives, not at a fixed time after the paste: on Linux X11 the clipboard is read
+                // asynchronously, so a Background post could run before the text was in the box)
                 foreach (var box in new[] { z1rBox, zoraBox })
-                    box.PastingFromClipboard += (_, _) => Dispatcher.UIThread.Post(() => doApply(), DispatcherPriority.Background);
+                {
+                    var pastePending = false;
+                    box.PastingFromClipboard += (_, _) =>
+                    {
+                        pastePending = true;
+                        // a paste that changes nothing fires no TextChanged: clear the flag later, or the next typed key would apply.
+                        // (a timer, not a Background post: on X11 the pasted text can arrive after a Background post has already run)
+                        DispatcherTimer.RunOnce(() => pastePending = false, TimeSpan.FromSeconds(1.0));
+                    };
+                    box.TextChanged += (_, _) =>
+                    {
+                        if (!pastePending) return;
+                        pastePending = false;
+                        Dispatcher.UIThread.Post(() => doApply(), DispatcherPriority.Background);
+                    };
+                }
                 async Task show()
                 {
                     var dialogBorder = new Border { Child = dialog, BorderThickness = new Thickness(3.0), BorderBrush = Brushes.Orange, Background = Brushes.Black, Padding = new Thickness(8.0) };
@@ -2808,6 +3016,27 @@ public static class Program
             }
             optionsToggle.Click += (_, _) => setOptionsShown(!optionsShown, true);
             closeBar.Click += (_, _) => setOptionsShown(false, true);
+            // Escape lowers the start screen settings panel, as it closes the in-app Options popup. The panel is not a popup, so the popup Escape handler
+            // never saw it. The handler is on the top level (the window on desktop, the page in the browser), so the key arrives wherever focus is.
+            // (not while a popup such as Paste Flags or the guided tour is up: Escape belongs to that)
+            {
+                TopLevel escTop = null;
+                EventHandler<KeyEventArgs> onEsc = (_, ea) =>
+                {
+                    if (ea.Key == Key.Escape && !ea.Handled && optionsShown && !CustomComboBoxes.GlobalFlag.popupIsActive)
+                    {
+                        ea.Handled = true;
+                        setOptionsShown(false, true);
+                    }
+                };
+                optionsPanel.AttachedToVisualTree += (_, _) =>
+                {
+                    escTop?.RemoveHandler(InputElement.KeyDownEvent, onEsc);
+                    escTop = TopLevel.GetTopLevel(optionsPanel);
+                    escTop?.AddHandler(InputElement.KeyDownEvent, onEsc, RoutingStrategies.Tunnel);
+                };
+                optionsPanel.DetachedFromVisualTree += (_, _) => { escTop?.RemoveHandler(InputElement.KeyDownEvent, onEsc); escTop = null; };   // (the start screen is removed when a run starts)
+            }
             // the block of cards and buttons sits in the middle of the window: the same margin above and below (once, after the first layout)
             var centerBlockOnce = false;
             void centerBlock()
@@ -2879,13 +3108,31 @@ public static class Program
                                                                                          "There is an auto-save from shortly before the crash.\n"+
                                                                                          "Would you like to try loading it?", new[] { "Yes, load auto-save", "No" });
                                         popupIsActive = false;
-                                        if (r != "No")
+                                        if (r != null && r != "No")   // (a dismissed dialog counts as No)
                                         {
-                                            var json = File.ReadAllText(SaveAndLoad.AutoSaveFilename);
-                                            var loadData = DungeonSaveAndLoad.LoadAll(json);
-                                            await doStartup(999, loadData);
-                                            // successful reload of autosave, call this so next startup won't also trigger recovery dialog
-                                            finishCrashInfoImpl("successful reload of autosave");
+                                            var startupBegan = false;
+                                            try
+                                            {
+                                                var json = File.ReadAllText(SaveAndLoad.AutoSaveFilename);
+                                                var loadData = DungeonSaveAndLoad.LoadAll(json);
+                                                try { loadedSaveTicks = File.GetLastWriteTimeUtc(SaveAndLoad.AutoSaveFilename).Ticks; } catch (Exception) { loadedSaveTicks = 0; }
+                                                startupBegan = true;
+                                                startButtonHasBeenClicked = true;   // (a Start click while the autosave loads would run a second startup)
+                                                await doStartup(999, loadData);
+                                                // successful reload of autosave, call this so next startup won't also trigger recovery dialog
+                                                finishCrashInfoImpl("successful reload of autosave");
+                                            }
+                                            catch (Exception e)
+                                            {
+                                                // (a corrupt autosave used to fail silently, so recovery quietly did not happen)
+                                                popupIsActive = true;
+                                                var m = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error,
+                                                    $"The auto-save could not be loaded.\nError:\n{e.Message}" + (startupBegan ? "\n\nPlease restart the app." : ""), new[] { "Ok" });
+                                                popupIsActive = false;
+                                                if (!startupBegan) startButtonHasBeenClicked = false;   // (the file never reached the tracker: the start screen is still usable)
+                                                _ = m;
+                                                promptedCrashRecovery = true;
+                                            }
                                         }
                                         else
                                             promptedCrashRecovery = true;
@@ -2912,8 +3159,24 @@ public static class Program
                     popupIsActive = false;
                     if (r == "Yes, load auto-save")
                     {
-                        var json = File.ReadAllText(SaveAndLoad.AutoSaveFilename);
-                        await doStartup(999, DungeonSaveAndLoad.LoadAll(json));
+                        var startupBegan = false;
+                        try
+                        {
+                            var json = File.ReadAllText(SaveAndLoad.AutoSaveFilename);
+                            var data = DungeonSaveAndLoad.LoadAll(json);
+                            loadedSaveTicks = autoSavedAt.Ticks;   // (UTC, as WrittenAt is compared with UtcNow above)
+                            startupBegan = true;
+                            startButtonHasBeenClicked = true;   // (so Start can't run a second startup while the save loads)
+                            await doStartup(999, data);
+                        }
+                        catch (Exception e)
+                        {
+                            popupIsActive = true;
+                            await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error,
+                                $"The auto-save could not be loaded.\nError:\n{e.Message}" + (startupBegan ? "\n\nPlease restart the app." : ""), new[] { "Ok" });
+                            popupIsActive = false;
+                            if (!startupBegan) startButtonHasBeenClicked = false;
+                        }
                     }
                 }
                 CustomComboBoxes.StartImmediate(resume());
@@ -3031,10 +3294,17 @@ public static class Program
         void killAnyZombieHosts()
         {
             if (SelfTest.isSelfTest || LoadDump.isActive) return;   // (a test run must not kill the host of someone's real co-op session)
+            // (only hosts started from this app's folder: another ZORATracker install may be running a live co-op session with its own host)
             var procs = Process.GetProcessesByName("Z1R_SignalRHost");
             foreach (var p in procs)
             {
-                try { p.Kill(); } catch (Exception) { }
+                try
+                {
+                    var dir = Path.GetDirectoryName(p.MainModule.FileName);
+                    if (string.Equals(Path.GetFullPath(dir), Path.GetFullPath(cwd), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                        p.Kill();
+                }
+                catch (Exception) { }   // (a process we cannot inspect is not ours)
             }
         }
 
@@ -3109,7 +3379,7 @@ public class ZoraTrackerApp : Application
 {
     public override void Initialize()
     {
-        Name = "ZORA Tracker";   // (macOS shows it as the app menu's title; Avalonia's default is "Avalonia Application")
+        Name = "ZORATracker";   // (macOS shows it as the app menu's title; Avalonia's default is "Avalonia Application")
         Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
         RequestedThemeVariant = ThemeVariant.Light;
     }
@@ -3131,7 +3401,12 @@ public class ZoraTrackerApp : Application
             Dispatcher.UIThread.UnhandledException += (_, e) => Console.WriteLine($"UNHANDLED (UI thread): {e.Exception}");   // (the page's console, in place of a crash log)
             BrowserStorage.StartSaving();   // (keeps settings and saves in the browser's storage)
             // (black behind it, so the space around the tracker matches the page instead of the Light theme's white)
-            sv.MainView = new Border { Background = Brushes.Black, Child = new Viewbox { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.Both, Child = new Program.MyWindow() } };
+            // (the main window's frame offsets cancel out here: applyWindowScale adds 16x39 back through ActualWidth/ActualHeight, so the scale is right.
+            // The Viewbox scales exactly the window's box, though, so anything drawn a few pixels past its bottom edge, such as the timeline's time
+            // labels, ran off the page. A small bottom margin keeps that strip inside what the Viewbox shows.)
+            var mainView = new Program.MyWindow();
+            mainView.Margin = new Thickness(0.0, 0.0, 0.0, 10.0);
+            sv.MainView = new Border { Background = Brushes.Black, Child = new Viewbox { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.Both, Child = mainView } };
         }
 #endif
         base.OnFrameworkInitializationCompleted();

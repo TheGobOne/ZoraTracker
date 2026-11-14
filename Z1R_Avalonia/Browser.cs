@@ -201,6 +201,33 @@ public static partial class BrowserStorage
     }
 }
 
+/// <summary>Text the page's keyboard sends as one insert (phone keyboards, IME, autocomplete). Avalonia.Browser 11.3 takes typed text only from
+/// keydown, and its beforeinput handler drops the inserted text, so main.js passes that text here. It goes to the focused TextBox as a normal
+/// TextInput event, so the box's own rules (caret, selection, MaxLength) and any TextInput handlers (such as upper-casing) still apply.</summary>
+[SupportedOSPlatform("browser")]
+public static partial class BrowserTextInput
+{
+    /// <summary>Types text into the focused, editable TextBox; false if there is none (main.js then leaves the browser's input alone).</summary>
+    [JSExport]
+    public static bool InsertText(string text)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            if (Application.Current?.ApplicationLifetime is not Avalonia.Controls.ApplicationLifetimes.ISingleViewApplicationLifetime sv || sv.MainView == null) return false;
+            var top = TopLevel.GetTopLevel(sv.MainView);
+            if (top?.FocusManager?.GetFocusedElement() is not TextBox tb || tb.IsReadOnly || !tb.IsEffectivelyEnabled) return false;
+            tb.RaiseEvent(new Avalonia.Input.TextInputEventArgs { RoutedEvent = Avalonia.Input.InputElement.TextInputEvent, Source = tb, Text = text });
+            return true;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"text input failed: {e.Message}");
+            return false;
+        }
+    }
+}
+
 /// <summary>JavaScript helpers in wwwroot/main.js (sound, the system beep, opening links in a new tab, downloads, localStorage).</summary>
 [SupportedOSPlatform("browser")]
 internal static partial class BrowserJs

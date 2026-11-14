@@ -58,16 +58,21 @@ public static class FlagPaste
         l.Add(("swordlish_highest", 8, 16));
         l.Add(("item_shuffle_no_vanilla", 2, 17));
         l.Add(("compass_chime", 3, 18));
+        l.Add(("universal_drops_v2", 3, 19));
+        l.Add(("detailed_spoiler_log", 2, 20));
+        l.Add(("wizzrobes_shoot_wallmasters", 3, 21));
+        l.Add(("item_counter", 3, 22));
         return l;
     }
-    private const int zoraCurrentVersion = 18;
+    private const int zoraCurrentVersion = 22;   // (zora-flags.json 'current_version'; the tracker only needs these fields' radixes to read past them)
 
     private static BigInteger? parseBase63(string s)   // (null for None)
     {
         var n = BigInteger.Zero;
         var ok = s.Length > 0;
-        foreach (var c in s)
+        foreach (var c0 in s)
         {
+            var c = c0 == '_' ? '!' : c0;   // ('_' is an alias for '!': flags copied from a seed file name paste as they are)
             var i = alphabet.IndexOf(c);
             if (i < 0) ok = false;
             else n = n * new BigInteger(63) + new BigInteger(i);
@@ -103,6 +108,7 @@ public static class FlagPaste
             n = BigInteger.Divide(n, new BigInteger(3));
         }
         var notes = new List<string>();
+        // (whatever is left of n is ignored, as the spec says: the tracker reads B01..B91 and the spec has B01..B94, so a current string leaves digits here)
         int? quest;
         if (options[0] <= 3) quest = options[0];
         else

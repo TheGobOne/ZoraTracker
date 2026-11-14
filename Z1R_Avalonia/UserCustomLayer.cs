@@ -16,6 +16,22 @@ namespace Z1R_Avalonia;
 
 public static class UserCustomLayer
 {
+    private static bool extrasOpening = false;
+    // a bitmap from a user file, or null when it is missing or unreadable (read into memory, so the file is not locked)
+    private static System.Drawing.Bitmap LoadImageOrNull(string path)
+    {
+        try
+        {
+            using (var ms = new System.IO.MemoryStream(System.IO.File.ReadAllBytes(path)))
+            using (var loaded = new System.Drawing.Bitmap(ms))
+                return new System.Drawing.Bitmap(loaded);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /*
     let rawDataMetroid =
         [|
@@ -132,19 +148,24 @@ public static class UserCustomLayer
         if (SaveAndLoad.theUserCustomChecklist != null && thePanel == null)
         {
             var backgroundImageFilename = System.IO.Path.Combine(extraIconsDirectory, SaveAndLoad.theUserCustomChecklist.BackgroundImageFilename);
-            var backgroundImageBmp = (System.Drawing.Bitmap)System.Drawing.Bitmap.FromFile(backgroundImageFilename);
+            // (a missing or unreadable image used to throw here and crash the app: the checklist then shows without its background)
+            var backgroundImageBmp = LoadImageOrNull(backgroundImageFilename);
 
             var (W, H) = (cm.AppMainCanvas.Width, OverworldItemGridUI.THRU_BLOCKERS_H);
-            var hRatio = H / (double)backgroundImageBmp.Height;
-            var wRatio = W / (double)backgroundImageBmp.Width;
-            var scale = Math.Min(hRatio, wRatio);
-
-            var img = Graphics.BMPtoImage(backgroundImageBmp);
-            img.Stretch = Stretch.Uniform;
-            img.Width = (double)backgroundImageBmp.Width * scale;
-            img.Height = (double)backgroundImageBmp.Height * scale;
             var c = new Canvas { Width = W, Height = H, Background = Brushes.Black };
-            Graphics.canvasAdd(c, img, 0.0, 0.0);
+            double scale = 1.0;
+            if (backgroundImageBmp != null)
+            {
+                var hRatio = H / (double)backgroundImageBmp.Height;
+                var wRatio = W / (double)backgroundImageBmp.Width;
+                scale = Math.Min(hRatio, wRatio);
+
+                var img = Graphics.BMPtoImage(backgroundImageBmp);
+                img.Stretch = Stretch.Uniform;
+                img.Width = (double)backgroundImageBmp.Width * scale;
+                img.Height = (double)backgroundImageBmp.Height * scale;
+                Graphics.canvasAdd(c, img, 0.0, 0.0);
+            }
 
             TextBox mkTxt(string text) => new TextBox { Text = text, BorderThickness = new Thickness(0.0), Foreground = Brushes.White, Background = Brushes.Black, IsHitTestVisible = false, IsReadOnly = true };
             var T = 3.0;
@@ -162,9 +183,10 @@ public static class UserCustomLayer
                     if (!TrackerModel.TimelineItemModel.All.ContainsKey(tid.Identifier))
                     {
                         var bmpFile = System.IO.Path.Combine(extraIconsDirectory, ti);
-                        var orig = (System.Drawing.Bitmap)System.Drawing.Bitmap.FromFile(bmpFile);
-                        System.Drawing.Bitmap bmp;
-                        if (orig.Width == 16 && orig.Height == 16)
+                        var orig = LoadImageOrNull(bmpFile);
+                        System.Drawing.Bitmap bmp = null;   // (stays null for a missing icon: the item then gets no timeline entry)
+                        if (orig == null) { }
+                        else if (orig.Width == 16 && orig.Height == 16)
                         {
                             bmp = new System.Drawing.Bitmap(21, 21);
                             for (int i = 0; i <= 20; i++)
@@ -179,12 +201,15 @@ public static class UserCustomLayer
                         }
                         else
                             bmp = orig;
-                        var ev1 = new FSharpEvent<bool>();
-                        var tim = new TrackerModel.TimelineItemModel(TrackerModel.TimelineItemDescription.NewUserCustom(tid.Identifier, ev1));
-                        TrackerModel.TimelineItemModel.All.Add(tid.Identifier, tim);
-                        var ti2 = new TimelineItem(tid, () => bmp);
-                        timelineItems.Add(ti2);
-                        ev = ev1;
+                        if (bmp != null)
+                        {
+                            var ev1 = new FSharpEvent<bool>();
+                            var tim = new TrackerModel.TimelineItemModel(TrackerModel.TimelineItemDescription.NewUserCustom(tid.Identifier, ev1));
+                            TrackerModel.TimelineItemModel.All.Add(tid.Identifier, tim);
+                            var ti2 = new TimelineItem(tid, () => bmp);
+                            timelineItems.Add(ti2);
+                            ev = ev1;
+                        }
                     }
                 }
                 // canvas interaction
@@ -227,12 +252,12 @@ public static class UserCustomLayer
             extrasImage.PointerPressed += (_, _) =>   // (WPF: MouseDown)
                 CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
                 {
-                    if (!popupIsActive)
-                    {
-                        popupIsActive = true;
-                        await invokeExtras();
-                        popupIsActive = false;
-                    }
+                    // (this runs inside the checklist's own popup, which already holds the popup flag, so the extras window opens directly.
+                    // The old check, 'if not already a popup', never passed here and the icon did nothing.)
+                    if (extrasOpening) return;   // (a second click while the extras window is opening would open another)
+                    extrasOpening = true;
+                    try { await invokeExtras(); }
+                    finally { extrasOpening = false; }
                 }))());
             hp.Children.Add(extrasImage);
             sp.Children.Add(new DockPanel { Height = 3.0, Background = Brushes.Gray });

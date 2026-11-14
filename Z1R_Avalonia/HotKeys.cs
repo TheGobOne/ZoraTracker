@@ -172,7 +172,10 @@ public static class HotKeys
         w.AddHandler(InputElement.KeyDownEvent, new EventHandler<KeyEventArgs>((_, ea) =>
         {
             var x = mouseDirectlyOver(w) as Interactive;
-            if (x != null && !suspendHotKeys && !(notesTextBox.IsFocused))
+            // (any text box the user is typing in keeps its keys: only the notes box was exempt, so a bound arrow or Backspace did not work in e.g. the co-op settings)
+            var typingInTextBox = w.FocusManager?.GetFocusedElement() is TextBox ftb && !ftb.IsReadOnly && ftb.IsEffectivelyVisible
+                                  && Avalonia.VisualTree.VisualExtensions.GetVisualRoot(ftb) != null;   // (a box no longer in the window never blocks hotkeys)
+            if (x != null && !suspendHotKeys && !(notesTextBox.IsFocused) && !typingInTextBox)
             {
                 switch (SingleKeyboardModifierExtensions.GetCurrent(ea.KeyModifiers))
                 {
@@ -441,7 +444,8 @@ public static class HotKeys
         var lines = System.IO.File.ReadAllLines(filename);
         var commentRegex = new System.Text.RegularExpressions.Regex("^#.*$", System.Text.RegularExpressions.RegexOptions.None);
         var emptyLineRegex = new System.Text.RegularExpressions.Regex(@"^\s*$", System.Text.RegularExpressions.RegexOptions.None);
-        var dataRegex = new System.Text.RegularExpressions.Regex(@"^\s*(\w+)\s*=\s*(SHIFT|CTRL|ALT|)\s*(\w)?\s*$", System.Text.RegularExpressions.RegexOptions.None);
+        // (the key is ASCII only: .NET's \w also matches letters like 'é', which convertAlpha_NumToKey can't turn into a key, and that was a crash instead of this file's error message)
+        var dataRegex = new System.Text.RegularExpressions.Regex(@"^\s*(\w+)\s*=\s*(SHIFT|CTRL|ALT|)\s*([0-9A-Za-z_])?\s*$", System.Text.RegularExpressions.RegexOptions.None);
         var data2Regex = new System.Text.RegularExpressions.Regex(@"^\s*(\w+)\s*=\s*(SHIFT|CTRL|ALT|)\s*\\(\d+)\s*$", System.Text.RegularExpressions.RegexOptions.None);
         var data = new List<(string, (SingleKeyboardModifier, Key)?, (int, string))>();
         var lineNumber = 1;
@@ -462,8 +466,10 @@ public static class HotKeys
                     else
                     {
                         var name = m2.Groups[1].Value;
-                        // (\nnn is a WPF Key number, which is the same Avalonia Key number)
-                        (SingleKeyboardModifier, Key)? value = m2.Groups.Count > 2 ? (SingleKeyboardModifierExtensions.FromHotKeyTxt(m2.Groups[2].Value), (Key)int.Parse(m2.Groups[3].Value, CultureInfo.InvariantCulture)) : null;
+                        // (\nnn is a WPF Key number, which is the same Avalonia Key number. A number too big for an int used to crash with no hint about this file.)
+                        if (!int.TryParse(m2.Groups[3].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var keyNumber))
+                            throw new UserError($"Error parsing '{filename}', line {lineNumber}:\n    {line.Trim()}\nThe number after \\ should be a key number, such as \\75 for NumPad1");
+                        (SingleKeyboardModifier, Key)? value = (SingleKeyboardModifierExtensions.FromHotKeyTxt(m2.Groups[2].Value), (Key)keyNumber);
                         data.Add((name, value, (lineNumber, filename)));
                     }
 

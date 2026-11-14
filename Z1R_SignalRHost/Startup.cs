@@ -15,6 +15,16 @@ namespace Z1RSignalRHost
         {
             services.AddSignalR();
             services.AddControllers();
+            // The web tracker runs on another origin, so the browser needs CORS to reach this relay. Desktop trackers send no Origin and are not affected.
+            services.AddCors(o => o.AddPolicy("webTracker", p => p
+                .SetIsOriginAllowed(origin =>
+                {
+                    if (!System.Uri.TryCreate(origin, System.UriKind.Absolute, out var u)) return false;
+                    return u.Host == "zoratracker.gg" || u.Host.EndsWith(".zoratracker.gg") || u.Host == "localhost" || u.Host == "127.0.0.1";
+                })
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials()));
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -28,6 +38,7 @@ namespace Z1RSignalRHost
             });
 
             app.UseRouting();
+            app.UseCors("webTracker");
 
             app.UseEndpoints(endpoints =>
             {

@@ -59,8 +59,13 @@ namespace Z1R_Sync
             }
         }
 
+        // Test seam: when set, outgoing messages go here instead of the network (the self-test uses it to see what would be sent). Null in normal use.
+        public static Action<string, string, string> TestSendHook = null;
+
         public static void EnqueueSync(string msgType, string payload, string senderId)
         {
+            var hook = TestSendHook;
+            if (hook != null) { hook(msgType, payload, senderId); return; }
             var message = new SyncMessage
             {
                 messageType = msgType,
@@ -83,14 +88,22 @@ namespace Z1R_Sync
             }
         }
 
+        // Most messages carry a whole state, so when the host is down for long, the oldest are dropped rather than kept without limit.
+        private const int MaxOutbox = 1000;
+
         private static async Task ProcessQueueAsync()
         {
-            while (_outbox.TryPeek(out SyncMessage msg))
+            while (true)
             {
-                bool sent = await TrySendMessageAsync(msg);
-                if (sent)
+                // (only this loop dequeues, so dropping here cannot remove a message that is being sent)
+                while (_outbox.Count > MaxOutbox && _outbox.TryDequeue(out SyncMessage dropped))
+                    Console.WriteLine($"[Sync] Outbox full, dropped an old {dropped.messageType} message");
+                if (!_outbox.TryPeek(out SyncMessage msg))
+                    break;
+                var result = await TrySendMessageAsync(msg);
+                if (result != SendResult.Retry)
                 {
-                    _outbox.TryDequeue(out _);  // remove the successfully sent message
+                    _outbox.TryDequeue(out _);  // sent, or refused for good: either way it is done
                     _retryDelayMs = 1000;       // reset delay after success
                 }
                 else
@@ -101,10 +114,21 @@ namespace Z1R_Sync
                 }
             }
             // Queue is empty, stop the loop
-            lock (_sendLock) { _sending = false; }
+            lock (_sendLock)
+            {
+                _sending = false;
+                // (a message queued after the last peek but before _sending was cleared would wait for the next one: start again for it)
+                if (!_outbox.IsEmpty)
+                {
+                    _sending = true;
+                    Task.Run(async () => await ProcessQueueAsync());
+                }
+            }
         }
 
-        private static async Task<bool> TrySendMessageAsync(SyncMessage message)
+        private enum SendResult { Sent, Retry, Drop }
+
+        private static async Task<SendResult> TrySendMessageAsync(SyncMessage message)
         {
             try
             {
@@ -131,23 +155,25 @@ namespace Z1R_Sync
                         {
                             Console.WriteLine("[Sync] Throttled with 429, no Retry-After header.");
                         }
-                        return false; // will trigger a retry with backoff
+                        return SendResult.Retry; // will trigger a retry with backoff
                     }
                     if (!resp.IsSuccessStatusCode)
                     {
                         string err = await resp.Content.ReadAsStringAsync();
                         Console.WriteLine($"[Sync] Send failed: HTTP {resp.StatusCode} - {err}");
-                        return false;
+                        // A 4xx (other than 429) will fail the same way every time: drop it, or it blocks every later message.
+                        int code = (int)resp.StatusCode;
+                        return (code >= 400 && code < 500) ? SendResult.Drop : SendResult.Retry;
                     }
                 }
                 // If we reach here, the HTTP post was successful
                 Debug.WriteLine($"[Sync] Sent message {message.messageType} (id={message.timeStamp})");
-                return true;
+                return SendResult.Sent;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Sync] Exception during send: {ex.Message}");
-                return false;
+                return SendResult.Retry;
             }
         }
 
@@ -332,7 +358,84 @@ namespace Z1R_Sync
 
 
 
+        // one connection start at a time: two overlapping starts (co-op switched on twice quickly) would dispose each other's connection
+        private static readonly System.Threading.SemaphoreSlim _startLock = new System.Threading.SemaphoreSlim(1, 1);
+        // Reconnecting. WithAutomaticReconnect gives up after about 40 seconds, and a failed first connect was never retried,
+        // so after a longer outage this tracker stopped receiving while its sends still went out. Now it keeps trying until co-op is turned off.
+        private static volatile bool _wantConnected = false;
+        private static string _negotiateUrl;
+        private static int _reconnectLoopRunning = 0;
+
+        /// Called (on a pool thread) after each successful connect or reconnect, so the app can resync with the partner.
+        public static Action OnConnected;
+
         public static async Task StartAsync(string negotiateUrl)
+        {
+            _wantConnected = true;
+            _negotiateUrl = negotiateUrl;
+            await _startLock.WaitAsync();
+            try { await StartAsyncCore(negotiateUrl); }
+            catch
+            {
+                StartReconnectLoop();
+                throw;
+            }
+            finally { _startLock.Release(); }
+            RaiseConnected();
+        }
+
+        /// Co-op turned off: close the connection and stop reconnecting.
+        public static async Task StopAsync()
+        {
+            _wantConnected = false;
+            await _startLock.WaitAsync();
+            try
+            {
+                var old = _connection;
+                _connection = null;
+                if (old != null)
+                {
+                    try { await old.DisposeAsync(); } catch (Exception) { }
+                }
+            }
+            finally { _startLock.Release(); }
+        }
+
+        private static void RaiseConnected()
+        {
+            try { OnConnected?.Invoke(); }
+            catch (Exception ex) { Console.WriteLine($"[SyncManager] OnConnected failed: {ex.Message}"); }
+        }
+
+        private static void StartReconnectLoop()
+        {
+            if (!_wantConnected) return;
+            if (System.Threading.Interlocked.Exchange(ref _reconnectLoopRunning, 1) == 1) return;   // one loop at a time
+            Task.Run(async () =>
+            {
+                try
+                {
+                    int delayMs = 2000;
+                    while (_wantConnected && (_connection == null || _connection.State != HubConnectionState.Connected))
+                    {
+                        await Task.Delay(delayMs);
+                        if (!_wantConnected) break;
+                        try
+                        {
+                            await StartAsync(_negotiateUrl);
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[SyncManager] Reconnect failed: {ex.Message}");
+                        }
+                        delayMs = Math.Min(delayMs * 2, 30000);
+                    }
+                }
+                finally { System.Threading.Interlocked.Exchange(ref _reconnectLoopRunning, 0); }
+            });
+        }
+        private static async Task StartAsyncCore(string negotiateUrl)
         {
             const int maxAttempts = 2;
             const int retryDelayMs = 5000;
@@ -353,14 +456,37 @@ namespace Z1R_Sync
                     var json = await response.Content.ReadAsStringAsync();
                     var info = JsonConvert.DeserializeObject<SignalRNegotiation>(json);
 
-                    // Step 2: Build connection
-                    _connection = new HubConnectionBuilder()
+                    // Step 2: Build connection. Close any earlier one first: re-enabling co-op used to leave it live, so every message arrived twice.
+                    // (cleared before the dispose, so the old connection's Closed handler sees it is no longer current and does not reconnect)
+                    var old = _connection;
+                    _connection = null;
+                    if (old != null)
+                    {
+                        try { await old.DisposeAsync(); } catch (Exception) { }
+                    }
+                    var conn = new HubConnectionBuilder()
                         .WithUrl(info.url, options =>
                         {
                             options.AccessTokenProvider = () => Task.FromResult(info.accessToken);
                         })
                         .WithAutomaticReconnect()
                         .Build();
+                    _connection = conn;
+                    conn.Closed += ex =>
+                    {
+                        // automatic reconnect gave up (or the host went away): keep trying while co-op is on
+                        if (ReferenceEquals(conn, _connection) && _wantConnected)
+                        {
+                            Console.WriteLine($"[SyncManager] Connection closed: {ex?.Message}");
+                            StartReconnectLoop();
+                        }
+                        return Task.CompletedTask;
+                    };
+                    conn.Reconnected += _ =>
+                    {
+                        RaiseConnected();   // messages sent while we were away were missed: resync
+                        return Task.CompletedTask;
+                    };
 
                     // Step 3: Register handlers
                     _connection.On<object>("ReceiveMapUpdate", payload =>

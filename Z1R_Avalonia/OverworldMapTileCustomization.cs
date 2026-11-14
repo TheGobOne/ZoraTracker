@@ -152,6 +152,9 @@ public static class OverworldMapTileCustomization
         TrackerModel.recomputePlayerStateSummary();
         if (ex == sw1 && TrackerModel.ProgressiveItems)
             pp.PlayerHasWoodSword.Set(false);   // (Progressive Items: the cave only ever gave the first sword; any other swords are separate)
+        else if (ex == sw1 && allTiles().Any(t => (TrackerModel.overworldMapMarks[t.Item1, t.Item2].Current() == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 && TrackerModel.getOverworldMapExtraData(t.Item1, t.Item2, TrackerModel.MapSquareChoiceDomainHelper.SWORD2) == TrackerModel.MapSquareChoiceDomainHelper.SWORD2)
+                                               || (TrackerModel.overworldMapMarks[t.Item1, t.Item2].Current() == TrackerModel.MapSquareChoiceDomainHelper.SWORD3 && TrackerModel.getOverworldMapExtraData(t.Item1, t.Item2, TrackerModel.MapSquareChoiceDomainHelper.SWORD3) == TrackerModel.MapSquareChoiceDomainHelper.SWORD3)))
+            pp.PlayerHasWoodSword.Set(false);   // the higher swords were taken at their own caves (which still show their checks): only this cave's wood sword is given back
         else if (ex == sw1)
         {
             var n = Math.Max(0, TrackerModel.playerComputedStateSummary.SwordLevel - 1);
@@ -190,6 +193,8 @@ public static class OverworldMapTileCustomization
             TrackerModel.forceUpdate();
         }
     }
+    // per take any heart slot: true when cycling that slot to the candle is what gave the player the blue candle (so cycling away takes back only that)
+    public static readonly bool[] takeAnySlotGaveCandle = new bool[4];
     // the take any hearts on the main screen were clicked: kind 0 = empty, 1 = heart, 2 = blue candle, 3 = potion. Keeps the take any cave tile(s) tied to that slot in sync
     public static void setTakeAnySlotKind(int slot, int kind)
     {
@@ -208,19 +213,36 @@ public static class OverworldMapTileCustomization
         else
         {
             pp.SetTakeAnyKind(slot, kind);
+            // the blue candle is only taken back when this slot is what gave it (a candle bought in a shop, or found elsewhere, stays)
             if (caves.Count == 0)
             {
-                if (kind == 2 && prevKind != 2) pp.PlayerHasBlueCandle.Set(true);
-                else if (kind != 2 && prevKind == 2) pp.PlayerHasBlueCandle.Set(false);
+                if (kind == 2 && prevKind != 2)
+                {
+                    takeAnySlotGaveCandle[slot] = !pp.PlayerHasBlueCandle.Value();
+                    pp.PlayerHasBlueCandle.Set(true);
+                }
+                else if (kind != 2 && prevKind == 2)
+                {
+                    if (takeAnySlotGaveCandle[slot]) pp.PlayerHasBlueCandle.Set(false);
+                    takeAnySlotGaveCandle[slot] = false;
+                }
             }
             else
             {
                 foreach (var (i, j) in caves)
                 {
                     var (s, candle, _) = takeAnyTaken[(i, j)];
-                    var candle2 = kind == 2 ? true : prevKind == 2 ? false : candle;
-                    if (kind == 2 && prevKind != 2) pp.PlayerHasBlueCandle.Set(true);
-                    else if (kind != 2 && prevKind == 2) pp.PlayerHasBlueCandle.Set(false);
+                    var candle2 = candle;
+                    if (kind == 2 && prevKind != 2)
+                    {
+                        candle2 = !pp.PlayerHasBlueCandle.Value();
+                        pp.PlayerHasBlueCandle.Set(true);
+                    }
+                    else if (kind != 2 && prevKind == 2)
+                    {
+                        if (candle) pp.PlayerHasBlueCandle.Set(false);
+                        candle2 = false;
+                    }
                     takeAnyTaken[(i, j)] = (s, candle2, kind);
                 }
             }
@@ -275,10 +297,12 @@ public static class OverworldMapTileCustomization
     // (state -> accelerator(cm, tileCanvas, i, j))
     public static readonly Dictionary<int, Func<CustomComboBoxes.CanvasManager, Canvas, int, int, Task>> overworldAcceleratorTable = new Dictionary<int, Func<CustomComboBoxes.CanvasManager, Canvas, int, int, Task>>();
     // put back what was taken at a take any cave (after its chooser was opened again and dismissed without choosing)
-    public static void restoreTakeAny(int i, int j, int slot, bool candle, int kind, int extra)
+    // (heart: the slot's heart value before it was cleared. With no kind recorded, SetTakeAnyKind(slot, 0) would empty the heart, so the value is put back directly)
+    public static void restoreTakeAny(int i, int j, int slot, bool candle, int kind, int extra, int heart)
     {
         var pp = TrackerModel.playerProgressAndTakeAnyHearts;
-        pp.SetTakeAnyKind(slot, kind);
+        if (kind != 0) pp.SetTakeAnyKind(slot, kind);
+        else pp.SetTakeAnyHeart(slot, heart);
         if (candle) pp.PlayerHasBlueCandle.Set(true);
         takeAnyTaken[(i, j)] = (slot, candle, kind);
         TrackerModel.setOverworldMapExtraData(i, j, TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY, extra);
@@ -297,6 +321,7 @@ public static class OverworldMapTileCustomization
             // a left click on a take any cave that already has something taken does nothing (right click changes or clears it)
             if (!(hadTaken && prevKind != 0))
             {
+                var prevHeart = hadTaken ? pp.GetTakeAnyHeart(prevSlot) : 0;   // (read before clearTakeAnyItems empties it, so a dismissed chooser can put it back)
                 clearTakeAnyItems(i, j);   // choosing again replaces what was taken here before
                 PieMenus.lastTakeAnyKind = 0;
                 PieMenus.lastTakeAnyDismissed = false;
@@ -305,10 +330,11 @@ public static class OverworldMapTileCustomization
                 var shouldMarkTakeAnyAsComplete =
                     TrackerModelOptions.Overworld.UseOldPopups.Value ? await PieMenus.TakeAnyPieMenuAsync(cm, 666.0)   // the old picture popup
                     : await PieMenus.TakeAnyButtonBoxAsync(cm);
-                if (PieMenus.lastTakeAnyDismissed && hadTaken && prevKind != 0 && !(TrackerModelOptions.Overworld.UseOldPopups.Value))
+                // (only a take any with something taken but no kind recorded gets here with hadTaken; dismissing its chooser puts back what was there, heart value included)
+                if (PieMenus.lastTakeAnyDismissed && hadTaken && !(TrackerModelOptions.Overworld.UseOldPopups.Value))
                 {
                     // the chooser was opened again and dismissed without choosing: what was taken here stays taken
-                    restoreTakeAny(i, j, prevSlot, prevCandle, prevKind, prevExtra);
+                    restoreTakeAny(i, j, prevSlot, prevCandle, prevKind, prevExtra, prevHeart);
                 }
                 else
                 {
@@ -529,6 +555,24 @@ public static class OverworldMapTileCustomization
             swordCaveAccelerator(TrackerModel.MapSquareChoiceDomainHelper.SWORD2, TrackerModel.sword2Box, sword2x, sword2y, TrackerModel.ITEMS.WHITESWORD, () => TrackerModel.startingItemsAndExtras.PlayerHasWhiteSword.Set(true)));
         overworldAcceleratorTable.Add(TrackerModel.MapSquareChoiceDomainHelper.SWORD3,
             swordCaveAccelerator(TrackerModel.MapSquareChoiceDomainHelper.SWORD3, TrackerModel.sword3Box, sword3x, sword3y, TrackerModel.ITEMS.MAGICALSWORD, () => TrackerModel.startingItemsAndExtras.PlayerHasMagicalSword.Set(true)));
+        return true;
+    }
+    // a change of overworld template can drop marks that do not fit the new quest: whatever was taken at a dropped cave (sword, candle, take any heart, letter, shuffled item) is given back
+    private static readonly bool _initDropped = initDropped();
+    private static bool initDropped()
+    {
+        TrackerModel.overworldMarksDropped.Publish.AddHandler(new Microsoft.FSharp.Control.FSharpHandler<Tuple<int, int, int>[]>((_, dropped) =>
+        {
+            foreach (var d in dropped)
+                if (isSwordCaveState(d.Item3))
+                {
+                    clearSwordCaveItemsForState(d.Item1, d.Item2, d.Item3);
+                    // (clearing a take any does not reset its 'done' data, so a take any marked here again would start out done)
+                    if (d.Item3 == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY)
+                        TrackerModel.setOverworldMapExtraData(d.Item1, d.Item2, d.Item3, 0);
+                }
+            UIComponents.itemProgressChanged();
+        }));
         return true;
     }
 
@@ -1262,6 +1306,14 @@ public static class OverworldMapTileCustomization
             {
                 // the candle was taken here: left click does nothing (clear the tile to take it back)
             }
+            else if (state == TrackerModel.MapSquareChoiceDomainHelper.SWORD1 && TrackerModel.shuffledWoodSwordTiles.Contains(Tuple.Create(i, j)))
+            {
+                // the cave holds a shuffled item: left click does nothing (its item box marks it collected). Toggling here used to erase the item and take a sword away on the second click
+            }
+            else if (state == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY && takeAnyTaken.ContainsKey((i, j)))
+            {
+                // something was taken here: left click does nothing (right click changes or clears it). Toggling here left the take any heart marked while the tile showed nothing taken
+            }
             else if (ex != 0 && ex == state)
             {
                 if (state == TrackerModel.MapSquareChoiceDomainHelper.SWORD1) clearWoodSwordCaveItems(i, j);   // un-collecting the cave's sword takes it back (item progress goes with it)
@@ -1575,7 +1627,8 @@ public static class OverworldMapTileCustomization
             i.Opacity = OPA;
             return i;
         }
-        var (large, medium, small) = TrackerModel.owInstance.Quest.IsFirstQuestOW ? (3, 7, 4) : (1, 7, 6);
+        // (the counts come from the current map choice domain, so they follow the overworld template, mixed quests included)
+        var (large, medium, small) = (TrackerModel.mapSquareChoiceDomain.MaxUses(LARGE), TrackerModel.mapSquareChoiceDomain.MaxUses(MEDIUM), TrackerModel.mapSquareChoiceDomain.MaxUses(SMALL));
         var (userLargeIcons, userMediumIcons, userSmallIcons) = (new List<Image>(), new List<Image>(), new List<Image>());
         while (userLarge > 0 && userLargeIcons.Count < large)
         {
@@ -2010,5 +2063,28 @@ public static class OverworldMapTileCustomization
             all.Children.Add(openBtn);
         }
         return (total == 0, new Border { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0.0), Background = Brushes.Black, Child = all });   // (only shown in the hotkeys popout: no grey border there)
+    }
+    // saves include which take any caves were taken: "i,j,slot,candle01,kind;..."
+    private static readonly Func<string> _takeAnyTakenText = SaveAndLoad.TakeAnyTakenText =
+        () => string.Join(";", takeAnyTaken.Select(kv => $"{kv.Key.Item1},{kv.Key.Item2},{kv.Value.Item1},{(kv.Value.Item2 ? 1 : 0)},{kv.Value.Item3}"));
+    // a loaded save puts back its shop prices, level 9 entry rule and taken take any caves (older saves keep the startup values)
+    public static void applyLoadedItemExtras(SaveAndLoad.Items items)
+    {
+        SaveAndLoad.ApplyLoadedItemExtras(items);
+        if (items?.TakeAnyTaken == null) return;
+        takeAnyTaken.Clear();
+        foreach (var t in items.TakeAnyTaken.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var p = t.Split(',');
+            if (p.Length == 5 && int.TryParse(p[0], out var i) && int.TryParse(p[1], out var j) && int.TryParse(p[2], out var slot) && int.TryParse(p[4], out var kind)
+                && i >= 0 && i <= 15 && j >= 0 && j <= 7 && slot >= 0 && slot <= 3)
+            {
+                takeAnyTaken[(i, j)] = (slot, p[3] == "1", kind);
+                // the slot kinds are not saved: put back what this cave gave, so the heart row shows the candle / potion and not a crossed-out heart
+                // (the player progress applied after this keeps a kind of 2 or more, and sets 1 for a heart)
+                if (kind != 0) TrackerModel.playerProgressAndTakeAnyHearts.SetTakeAnyKind(slot, kind);
+            }
+        }
+        OptionsMenu.triggerRequestRedrawOverworldEvent();   // (the tiles were drawn before these were restored)
     }
 }

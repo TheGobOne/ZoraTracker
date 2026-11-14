@@ -75,7 +75,38 @@ public static class OverworldItemGridUI
     {
         var tb = new TextBox { Width = 148.0, Height = 56.0, Text = "timer", FontSize = 42.0, Background = Brushes.Transparent, Foreground = Brushes.LightGreen, BorderThickness = new Thickness(0.0), IsReadOnly = true, IsHitTestVisible = false };
         Graphics.matchWpfTextTop(tb);
+        fitTimerText(tb);
         return tb;
+    }
+    // the timer box has a fixed width. A font wider than Segoe UI (Inter in the web build, other fonts on macOS / Linux) clipped its last digit,
+    // so the font size shrinks just enough for the text to fit. Where it already fits (Segoe UI on Windows) it stays at the size it was given.
+    // (the size it was given: whatever FontSize other code sets, e.g. the control panel layout sets 32; only this function's own shrinking is not counted)
+    private static void fitTimerText(TextBox tb)
+    {
+        var wanted = tb.FontSize;
+        var fitting = false;
+        void fit()
+        {
+            var text = tb.Text ?? "";
+            if (text.Length == 0 || double.IsNaN(tb.Width)) return;
+            // every digit is measured as a 0, so the size does not jump around as the seconds tick in a font whose digits differ in width
+            var probe = new string(text.Select(ch => char.IsDigit(ch) ? '0' : ch).ToArray());
+            var ft = new FormattedText(probe, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                                       new Typeface(tb.FontFamily, tb.FontStyle, tb.FontWeight), wanted, null);
+            var avail = tb.Width - tb.Padding.Left - tb.Padding.Right;
+            var fs = (ft.Width > avail && ft.Width > 0.0 && avail > 0.0) ? Math.Floor(wanted * avail / ft.Width * 10.0) / 10.0 : wanted;
+            if (Math.Abs(tb.FontSize - fs) > 0.05)
+            {
+                fitting = true;
+                try { tb.FontSize = fs; } finally { fitting = false; }
+            }
+        }
+        fit();
+        tb.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == TextBox.FontSizeProperty) { if (!fitting) { wanted = tb.FontSize; fit(); } }
+            else if (e.Property == TextBox.TextProperty || e.Property == TextBox.FontFamilyProperty || e.Property == TextBox.WidthProperty || e.Property == TextBox.PaddingProperty) fit();
+        };
     }
     public static readonly TextBox hmsTimeTextBox = make_hmsTimeTextBox();
     // shown in the timer's spot (same font, scaled down to fit) while the timer is hidden
@@ -391,7 +422,7 @@ public static class OverworldItemGridUI
         armos.PointerEntered += (_, _) =>
         {
             var loc = TrackerModel.mapStateSummary.ArmosLocation;
-            if (!loc.Equals(TrackerModel.NOTFOUND)) showLocatorExactLocation(loc.Item1, loc.Item2); else showLocatorInstanceFunc(owInstance.HasArmos);
+            if (!loc.Equals(TrackerModel.NOTFOUND)) showLocatorExactLocation(loc.Item1, loc.Item2); else showLocatorInstanceFunc(TrackerModel.owInstance.HasArmos);   // (the current overworld template, read when used)
         };
         armos.PointerExited += (_, _) => hideLocator();
         gridAddTuple(owItemGrid, rerouteClick(armos, armosBoxImpl), OW_ITEM_GRID_LOCATIONS.ARMOS_ICON);
@@ -424,7 +455,7 @@ public static class OverworldItemGridUI
                     !TrackerModel.GetLevelHint.Invoke(9).Equals(TrackerModel.HintZone.UNKNOWN))        // have a hint
                 canvasAdd(c, makeHintHighlight(21.0), 4.0, 4.0);
             canvasAdd(c, Graphics.BMPtoImage(Graphics.ow_sword2_item_bmp), 4.0, 4.0);
-            Views.drawTinyIconIfLocationIsOverworldBlock(c, owInstance, TrackerModel.mapStateSummary.Sword2Location);
+            Views.drawTinyIconIfLocationIsOverworldBlock(c, TrackerModel.owInstance, TrackerModel.mapStateSummary.Sword2Location);
         }
         redrawWhiteSwordCanvas(white_sword_canvas);
         {   // (also with Hide Dungeon Numbers: the numbered triforce row that used to occupy this space is gone)
@@ -566,7 +597,7 @@ public static class OverworldItemGridUI
         var yellowCandleLogic = synthetic((() => TrackerModel.playerCandleLevel.Value == 0 && TrackerModel.foundCandleShop.Value), TrackerModel.foundCandleShop.Changed, TrackerModel.playerCandleLevel.Changed);
         var blueCandleSuperseded = synthetic((() => TrackerModel.playerCandleLevel.Value >= 2), TrackerModel.playerCandleLevel.Changed);
         var blue_candle_box = basicBoxImpl("Acquired blue candle (mark timeline, affects gettables and routing)", TimelineID.BlueCandle, Graphics.blue_candle_bmp, TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueCandle, yellowCandleLogic, blueCandleSuperseded);
-        blue_candle_box.PointerEntered += (_, _) => { if (TrackerModel.playerComputedStateSummary.CandleLevel == 0) showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BLUE_CANDLE); else showLocatorInstanceFunc(owInstance.Burnable); };
+        blue_candle_box.PointerEntered += (_, _) => { if (TrackerModel.playerComputedStateSummary.CandleLevel == 0) showShopLocatorInstanceFunc(TrackerModel.MapSquareChoiceDomainHelper.BLUE_CANDLE); else showLocatorInstanceFunc(TrackerModel.owInstance.Burnable); };
         blue_candle_box.PointerExited += (_, _) => hideLocator();
         // (removed from the grid: blue_candle_box)
         var yellowRingLogic = synthetic((() => TrackerModel.playerRingLevel.Value == 0 && TrackerModel.foundBlueRingShop.Value), TrackerModel.foundBlueRingShop.Changed, TrackerModel.playerRingLevel.Changed);
@@ -670,8 +701,10 @@ public static class OverworldItemGridUI
                                             toggleBookShieldCheckBox.IsChecked.Value, bookIsAtlasCheckBox.IsChecked.Value, SaveAndLoad.SaveType.FinishedSave);
                         Platform.OfferDownload(filename);   // (port: the browser build also downloads it)
                     }
-                    catch (Exception)
+                    catch (Exception e)
                     {
+                        // (the save failing used to go unnoticed: the user believed the finished run was saved)
+                        Graphics.ErrorBeepWithReminderLogText("The finished run could not be saved automatically: " + e.Message);
                     }
                 }
             }
@@ -758,7 +791,7 @@ public static class OverworldItemGridUI
                     "after that, highlights just the armos locations until you mark armos item.");
                 ToolTip.SetPlacement(cb, PlacementMode.Top);
                 setToolTipShowDuration(cb, 15000);
-                cb.PointerEntered += (_, _) => showLocatorInstanceFunc(owInstance.Nothingable);
+                cb.PointerEntered += (_, _) => showLocatorInstanceFunc(TrackerModel.owInstance.Nothingable);
                 cb.PointerExited += (_, _) => hideLocator();
                 Graphics.onChecked(cb, () => { TrackerModelOptions.Overworld.OpenCaves.Value = true; TrackerModelOptions.writeSettings(); });
                 Graphics.onUnchecked(cb, () => { TrackerModelOptions.Overworld.OpenCaves.Value = false; TrackerModelOptions.writeSettings(); });
@@ -927,7 +960,7 @@ public static class OverworldItemGridUI
                 var resumeButton = Graphics.makeButton("Timer has been Paused.\nClick here to Resume.\n(Look below for Reset info.)", 16.0, Brushes.Orange);
                 var restartTimerButton = Graphics.makeButton("Timer has been Paused.\nClick here to confirm you want to\nReset the TIMER to 0:00:00.", 16.0, Brushes.Orange);
                 var resetTrackerButton = Graphics.makeButton("Click here to Reset the TRACKER,\n(remove inventory but preserve maps)\nfor groundhog/routers/4+4 purposes.", 16.0, Brushes.Orange);
-                var shutdownAndRestartButton = Graphics.makeButton("Click here to close ZORA Tracker,\nand restart the app. All your\ncurrent work will be discarded!", 16.0, Brushes.Orange);
+                var shutdownAndRestartButton = Graphics.makeButton("Click here to close ZORATracker,\nand restart the app. All your\ncurrent work will be discarded!", 16.0, Brushes.Orange);
                 var userPressedReset = false;
                 var sp = new StackPanel { Orientation = Orientation.Vertical };
                 var hsp1 = new StackPanel { Orientation = Orientation.Horizontal };
@@ -985,7 +1018,7 @@ public static class OverworldItemGridUI
                             // make hard save
                             var filename = makeManualSave();
                             filename = System.IO.Path.GetFileName(filename);  // remove directory info (could have username in path, don't display PII on-screen)
-                            var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORA Tracker data saved to file\n{filename}\nThe tracker will now be reset.", new[] { "Ok" });
+                            var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORATracker data saved to file\n{filename}\nThe tracker will now be reset.", new[] { "Ok" });
                             _ = r;
                             // remove triforces
                             for (var i = 0; i <= 7; i++)
@@ -995,13 +1028,18 @@ public static class OverworldItemGridUI
                                     dung.ToggleTriforce();
                             }
                             // remove (red-ify) all items (keep skipped as marked)
-                            foreach (var b in TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes())
+                            // (the overworld cave boxes too: the coast, armos, letter, white sword, magical sword and shuffled wood sword cave items)
+                            foreach (var b in TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
+                                              .Concat(new[] { TrackerModel.ladderBox, TrackerModel.armosBox, TrackerModel.letterBox, TrackerModel.sword1Box, TrackerModel.sword2Box, TrackerModel.sword3Box }))
                             {
                                 if (!b.PlayerHas().Equals(TrackerModel.PlayerHas.SKIPPED))
                                     b.SetPlayerHas(TrackerModel.PlayerHas.NO);
                             }
                             // clear mags/shop items and the take-any heart boxes
                             TrackerModel.playerProgressAndTakeAnyHearts.ResetAll();
+                            // forget which take-any caves were taken, or the take-any click ignores them after the reset
+                            OverworldMapTileCustomization.takeAnyTaken.Clear();
+                            Array.Clear(OverworldMapTileCustomization.takeAnySlotGaveCandle, 0, 4);
                             // secrets reset to bright green, take-anys to bright red heart, letter bright, wood sword bright
                             var toBrighten = new[] {
                                 TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY,
@@ -1016,7 +1054,13 @@ public static class OverworldItemGridUI
                                 for (var j = 0; j <= 7; j++)
                                 {
                                     var cur = TrackerModel.overworldMapMarks[i, j].Current();
-                                    if (toBrighten.Any(x => x == cur))
+                                    if (cur == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER)
+                                    {
+                                        // for the letter cave, extra data equal to the letter means 'took the letter': back to not taken (a cave holding a shuffled item keeps it)
+                                        if (TrackerModel.getOverworldMapExtraData(i, j, cur) == cur)
+                                            TrackerModel.setOverworldMapExtraData(i, j, cur, 0);
+                                    }
+                                    else if (toBrighten.Any(x => x == cur))
                                     {
                                         var bright = cur == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY || cur == TrackerModel.MapSquareChoiceDomainHelper.SWORD1 ? 0 : cur;
                                         TrackerModel.setOverworldMapExtraData(i, j, cur, bright);
@@ -1035,7 +1079,7 @@ public static class OverworldItemGridUI
                         }
                         catch (Exception e)
                         {
-                            var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORA Tracker was unable to save the\ntracker state to a file\nError:\n{e.Message}", new[] { "Ok" });
+                            var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORATracker was unable to save the\ntracker state to a file\nError:\n{e.Message}", new[] { "Ok" });
                             _ = r;
                         }
                     }
@@ -1107,6 +1151,41 @@ public static class OverworldItemGridUI
 
         return (white_sword_canvas, mags_canvas, redrawWhiteSwordCanvas, redrawMagicalSwordCanvas, spotSummaryCanvas, invokeExtras,
                 owItemGrid, toggleBookShieldCheckBox, bookIsAtlasCheckBox, highlightOpenCavesCB, timerResetButton, spotSummaryTB, ws_ms_bu_toggleButton);
+    }
+
+    // where the 4th sword's extra item check lives: 0 = nowhere (no 4th sword), 1 = the level 2 staircase, 2 = the level 9 floor. Moves whatever is marked in the old slot
+    // (or clears it for 0). The new slot is switched on before the item is set, so its box has its change handlers (grid links, timeline) when the item arrives.
+    private static int fourthSwordStashItem = -1;
+    private static TrackerModel.PlayerHas fourthSwordStashHas = TrackerModel.PlayerHas.NO;
+    public static void SetFourthSwordLocation(int target)
+    {
+        var l2 = TrackerModel.level2StairBox;
+        var l9 = TrackerModel.GetDungeon(8).ExtraFloorBox;
+        TrackerModelOptions.FourthSwordEnabled = target != 0;   // (before the slot events, which the level 2 placeholder reads)
+        if (target != 0) TrackerModel.ProgressiveItems = true;   // project rule: turning the 4th sword on also turns Progressive Items on (never the other way round)
+        var src = (TrackerModel.level9FloorBoxEnabled && target != 2) ? l9 : (TrackerModel.level2StairBoxEnabled && target != 1) ? l2 : null;
+        var dest = target == 2 ? l9 : target == 1 ? l2 : null;
+        if (target == 2) TrackerModel.SetLevel9FloorBoxEnabled(true);
+        if (target == 1) TrackerModel.SetLevel2StairBoxEnabled(true);
+        if (src != null)
+        {
+            var item = src.CellCurrent(); var has = src.PlayerHas();
+            // the old slot is emptied first: a unique item (the 4th sword, the bow, ...) can only be in one box at a time, so setting the new slot first would fail
+            src.Set(-1, TrackerModel.PlayerHas.NO);
+            if (dest == null || !dest.AttemptToSet(item, has))
+            {
+                fourthSwordStashItem = item; fourthSwordStashHas = has;   // (turned off: kept, so the checkbox's dash does not lose the item on the way from level 9 back to level 2)
+            }
+        }
+        else if (dest != null && fourthSwordStashItem != -1)
+        {
+            // (AttemptToSet: the stashed item may have been marked in another box since; then it stays where the user put it)
+            dest.AttemptToSet(fourthSwordStashItem, fourthSwordStashHas);
+            fourthSwordStashItem = -1;
+        }
+        if (target != 2) TrackerModel.SetLevel9FloorBoxEnabled(false);
+        if (target != 1) TrackerModel.SetLevel2StairBoxEnabled(false);
+        TrackerModel.recomputePlayerStateSummary();
     }
 
     public static Action<bool> hideFirstQuestFromMixed = _b => { };
@@ -1321,6 +1400,10 @@ public static class OverworldItemGridUI
                         ToolTip.SetTip(btn, "Switch to this overworld template.\nOW marks on compatible tiles are preserved; AlwaysEmpty tile marks are cleared.\nNote: tile interactivity and background image reflect startup choice.");
                         btn.Click += (_, _) =>
                         {
+                            // (uncheck the Hide 1st/2nd Quest boxes first: the shading they put on the mixed overworld would otherwise stay on, with no way to turn it off, on a single quest)
+                            // (unchecking a box that was checked already un-hides its tiles; calling the hide functions with false would hide them instead)
+                            hideFirstQuestCheckBox.IsChecked = false;
+                            hideSecondQuestCheckBox.IsChecked = false;
                             TrackerModel.reinitializeOverworld(newInstance);
                             OptionsMenu.triggerRequestRedrawOverworldEvent();
                             refreshUIAfterOverworldTemplateChange();   // refresh OW Spots Left / per-type counts for the new quest now
@@ -1341,7 +1424,7 @@ public static class OverworldItemGridUI
                         t.FontSize = 14.0;
                         var isRnd = rnd.HasValue && rnd.Value.Item1();
                         var cb = new CheckBox { Content = t, IsChecked = (isRnd ? null : getV()), Margin = new Thickness(6.0, 2.0, 14.0, 2.0), IsThreeState = rnd.HasValue };
-                        ToolTip.SetTip(cb, label.StartsWith("Boots") ? tip + "\n\nClicks cycle Off, On, Random (?). Random counts as Off (boomerangs) until you confirm it." : rnd.HasValue ? tip + "\n\nClicks cycle Off, On, Random (?). Random counts as On, with yellow outlines on the tiles that might be blocked." : tip);
+                        ToolTip.SetTip(cb, label.StartsWith("Pegasus Boots") ? tip + "\n\nClicks cycle Off, On, Random (?). Random counts as Off (boomerangs) until you confirm it." : rnd.HasValue ? tip + "\n\nClicks cycle Off, On, Random (?). Random counts as On, with yellow outlines on the tiles that might be blocked." : tip);
                         cb.Click += (_, _) =>
                         {
                             if (rnd.HasValue && !cb.IsChecked.HasValue) { setV(true); rnd.Value.Item2(true); }
@@ -1392,9 +1475,34 @@ public static class OverworldItemGridUI
                     blocksCol.Children.Add(hintsRow);
                     // boots: on or off any time too (for when the flags left Boots on Random). The boomerang pickers use it at once; the boomerang icons already drawn in the item boxes update the next time the tracker starts
                     var bootsRow = new StackPanel { Orientation = Orientation.Horizontal };
-                    bootsRow.Children.Add(mkBlocksCB("Boots Replace Boomerangs", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (() => TrackerModel.BootsReplaceBoomerangs), (v => { TrackerModel.BootsReplaceBoomerangs = v; TrackerModel.BootsRandom = false; }), ((() => TrackerModel.BootsRandom), (r => { TrackerModel.BootsRandom = r; if (r) TrackerModel.BootsReplaceBoomerangs = false; }))));   // (Random, the ?: the boomerangs stay until boots are confirmed)
+                    bootsRow.Children.Add(mkBlocksCB("Pegasus Boots", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (() => TrackerModel.BootsReplaceBoomerangs), (v => { TrackerModel.BootsReplaceBoomerangs = v; TrackerModel.BootsRandom = false; }), ((() => TrackerModel.BootsRandom), (r => { TrackerModel.BootsRandom = r; if (r) TrackerModel.BootsReplaceBoomerangs = false; }))));   // (Random, the ?: the boomerangs stay until boots are confirmed)
                     bootsRow.Children.Add(mkBlocksCB("Mirrored Overworld", "Flip the overworld map East<->West (same as the mirror icon at the top left).", (() => TrackerModel.MirrorOverworld), (v => setMirroredOverworld(v)), null));
                     blocksCol.Children.Add(bootsRow);
+                    // 4th sword location: checked = the extra item check is in level 9, unchecked = on the level 2 staircase; switching moves whatever is marked in the slot
+                    {
+                        // checked = level 9, unchecked = level 2 staircase, dash = no 4th sword (with hidden dungeon numbers there is no level 2 slot: checked = level 9, unchecked = no 4th sword)
+                        var hiddenNumbers = TrackerModel.IsHiddenDungeonNumbers.Invoke(null);
+                        var swordTxt = mkTxt("4th sword in L9");
+                        swordTxt.FontSize = 14.0;
+                        bool? current = TrackerModel.level9FloorBoxEnabled ? true
+                                      : hiddenNumbers ? false
+                                      : (TrackerModel.level2StairBoxEnabled || TrackerModelOptions.FourthSwordEnabled) ? false
+                                      : (bool?)null;
+                        var swordCb = new CheckBox { Content = swordTxt, IsChecked = current, IsThreeState = !hiddenNumbers, Margin = new Thickness(6.0, 2.0, 14.0, 2.0) };
+                        ToolTip.SetTip(swordCb, hiddenNumbers
+                            ? "Checked: the 4th sword's item check is on the level 9 floor.\nUnchecked: there is no 4th sword.\nSwitching moves the item you marked there along with it."
+                            : "Checked: the 4th sword's item check is on the level 9 floor.\nUnchecked: it is on the level 2 staircase.\nDash: there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it.");
+                        swordCb.Click += (_, _) =>
+                        {
+                            SetFourthSwordLocation(swordCb.IsChecked == true ? 2 : swordCb.IsChecked == false && !hiddenNumbers ? 1 : 0);
+                            TrackerModel.recomputeMapStateSummary();
+                            TrackerModel.forceUpdate();
+                            refreshUIAfterOverworldTemplateChange();
+                        };
+                        var swordRow = new StackPanel { Orientation = Orientation.Horizontal };
+                        swordRow.Children.Add(swordCb);
+                        blocksCol.Children.Add(swordRow);
+                    }
                     // the Hide 1st / 2nd Quest checkboxes (mixed overworlds only) sit in a third column, level with the four checkboxes
                     var blocksArea = new DockPanel { LastChildFill = true };
                     blocksArea.Children.Add(hideQuestPanel);

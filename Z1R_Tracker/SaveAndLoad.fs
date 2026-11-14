@@ -67,6 +67,14 @@ type Items() =
     member val CustomLevelName : string = null with get,set   // (older saves do not have this)
     member val ShuffledWoodSwordTiles : string = null with get,set   // "i,j;i,j" overworld tiles whose wood sword cave holds a shuffled item
     member val HintShopColors : string = null with get,set   // "i,j,color;..." background colors chosen for hint shop tiles (older saves do not have this)
+    member val ProgressiveTileTiers : string = null with get,set   // "i,j,item,tier;..." the progressive tier each collected overworld item icon was collected at (older saves do not have this)
+    member val ProgressiveBoxTiers : string = null with get,set   // "boxname,tier;..." the same for item boxes; box names come from namedBoxes (older saves do not have this)
+    member val DupLinks : string = null with get,set   // "si,sj,di,dj;..." overworld tiles whose items were duplicated onto other tiles (older saves do not have this)
+    member val ShopPrices : string = null with get,set   // "i,j,price;..." rupee prices noted for shop tiles (older saves do not have this)
+    member val TakeAnyTaken : string = null with get,set   // "i,j,slot,candle01,kind;..." take any caves and what was taken there (older saves do not have this)
+    member val Level9TriforceCount = 8 with get,set   // triforces the level 9 entry rule needs (older saves: 8)
+    member val Level9TriggerSwordTier = 1 with get,set   // progressive sword tier shown by a sword entry item (older saves: 1)
+    member val Level9TriggerBox : Box = null with get,set   // the item that opens level 9 instead of triforces (older saves: null, none)
     member val Level2StairBoxEnabled = false with get,set
     member val Level2StairBox : Box = null with get,set
     member val Level9FloorBoxEnabled = false with get,set
@@ -145,6 +153,7 @@ type StartingItemsAndExtrasModel() =
     member val PlayerHasBook = false with get,set
     member val PlayerHasMeat = false with get,set
     member val PlayerHasLetter = false with get,set
+    member val PlayerHasSword4 = false with get,set   // (older saves do not have this: false)
     member val MaxHeartsDifferential = 0 with get,set
     static member Create() =
         let r = new StartingItemsAndExtrasModel()
@@ -166,6 +175,7 @@ type StartingItemsAndExtrasModel() =
         r.PlayerHasBook <- TrackerModel.startingItemsAndExtras.PlayerHasBook.Value()
         r.PlayerHasMeat <- TrackerModel.startingItemsAndExtras.PlayerHasMeat.Value()
         r.PlayerHasLetter <- TrackerModel.startingItemsAndExtras.PlayerHasLetter.Value()
+        r.PlayerHasSword4 <- TrackerModel.startingItemsAndExtras.PlayerHasSword4.Value()
         r.MaxHeartsDifferential <- TrackerModel.startingItemsAndExtras.MaxHeartsDifferential
         r
     member this.Apply() =
@@ -188,6 +198,7 @@ type StartingItemsAndExtrasModel() =
         TrackerModel.startingItemsAndExtras.PlayerHasBook.Set(this.PlayerHasBook)
         TrackerModel.startingItemsAndExtras.PlayerHasMeat.Set(this.PlayerHasMeat)
         TrackerModel.startingItemsAndExtras.PlayerHasLetter.Set(this.PlayerHasLetter)
+        TrackerModel.startingItemsAndExtras.PlayerHasSword4.Set(this.PlayerHasSword4)
         TrackerModel.startingItemsAndExtras.MaxHeartsDifferential <- this.MaxHeartsDifferential
 
 [<AllowNullLiteral>]
@@ -253,6 +264,52 @@ let SaveOverworld(prefix) =
     lines.Add(sprintf """},""")
     lines |> Seq.map (fun s -> prefix+s) |> Seq.toArray
 
+// every item box with a name that stays the same between saving and loading (progressiveBoxTier is keyed by the box object itself)
+let namedBoxes() : (string * TrackerModel.Box)[] =
+    let inst = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance
+    let finalBox = if inst.Kind = TrackerModel.DungeonTrackerInstanceKind.DEFAULT then Some(inst.FinalBoxOf1Or4) else None
+    let isFinal (b:TrackerModel.Box) = match finalBox with Some f -> obj.ReferenceEquals(b, f) | None -> false
+    [|
+        for i = 0 to 8 do
+            let d = TrackerModel.GetDungeon(i)
+            let own = d.Boxes |> Array.filter (fun b -> not(isFinal b))   // (the shared level 1/4 box moves between dungeons 1 and 4: it gets its own name)
+            for k = 0 to own.Length-1 do
+                yield (sprintf "d%d.%d" i k, own.[k])
+            yield (sprintf "x%d" i, d.ExtraFloorBox)
+        match finalBox with
+        | Some f -> yield ("F", f)
+        | None -> ()
+        yield ("L2", TrackerModel.level2StairBox)
+        yield ("Ladder", TrackerModel.ladderBox)
+        yield ("Armos", TrackerModel.armosBox)
+        yield ("Sword2", TrackerModel.sword2Box)
+        yield ("Sword3", TrackerModel.sword3Box)
+        yield ("Letter", TrackerModel.letterBox)
+        yield ("Sword1", TrackerModel.sword1Box)
+    |]
+// the UI keeps the duplicate links; it sets this so a save includes them (null: none)
+let mutable DupLinksText : System.Func<string> = null
+// the UI keeps which take any caves were taken; it sets this so a save includes them (null: none)
+let mutable TakeAnyTakenText : System.Func<string> = null
+
+/// Puts the saved shop prices and level 9 entry rule back into the model (older saves keep the startup values).
+let ApplyLoadedItemExtras(items:Items) =
+    if not (isNull items) then
+        if not (isNull items.ShopPrices) then
+            for i = 0 to 15 do
+                for j = 0 to 7 do
+                    TrackerModel.overworldShopPrices.[i,j] <- 0
+            for t in items.ShopPrices.Split([|';'|], System.StringSplitOptions.RemoveEmptyEntries) do
+                let p = t.Split(',')
+                if p.Length = 3 then
+                    match System.Int32.TryParse(p.[0]), System.Int32.TryParse(p.[1]), System.Int32.TryParse(p.[2]) with
+                    | (true, i), (true, j), (true, v) when i >= 0 && i <= 15 && j >= 0 && j <= 7 && v > 0 -> TrackerModel.setShopPrice(i, j, v)
+                    | _ -> ()
+        TrackerModel.level9TriforceCount <- max 0 (min 8 items.Level9TriforceCount)
+        TrackerModel.level9TriggerSwordTier <- max 1 (min 4 items.Level9TriggerSwordTier)
+        if not (isNull items.Level9TriggerBox) then
+            items.Level9TriggerBox.TryApply(TrackerModel.level9TriggerBox) |> ignore   // (its Changed event redraws the level 9 entry picture and count)
+
 let SaveItems(prefix) =
     let lines = ResizeArray()
     let SaveBox(pre, box:TrackerModel.Box) =
@@ -275,7 +332,18 @@ let SaveItems(prefix) =
     let shuffledTiles = TrackerModel.shuffledWoodSwordTiles |> Seq.map (fun (i,j) -> sprintf "%d,%d" i j) |> String.concat ";"
     let customName = TrackerModel.CustomLevelName.Replace("\\", "").Replace("\"", "")
     let hintColors = TrackerModel.hintShopColors |> Seq.filter (fun kv -> kv.Value <> 0) |> Seq.map (fun kv -> sprintf "%d,%d,%d" (fst kv.Key) (snd kv.Key) kv.Value) |> String.concat ";"
-    lines.Add(sprintf """    }, "ShuffledWoodSwordTiles": "%s", "HintShopColors": "%s", "CustomLevelName": "%s", "Level2StairBoxEnabled": %b, "Level2StairBox": {""" shuffledTiles hintColors customName TrackerModel.level2StairBoxEnabled)
+    let progressiveTiers = TrackerModel.progressiveTileTier |> Seq.map (fun kv -> let (i,j,item) = kv.Key in sprintf "%d,%d,%d,%d" i j item kv.Value) |> String.concat ";"
+    let boxTiers =
+        try
+            namedBoxes() |> Array.choose (fun (name, b) -> match TrackerModel.progressiveBoxTier.TryGetValue(b) with | true, t -> Some(sprintf "%s,%d" name t) | _ -> None) |> String.concat ";"
+        with _ -> ""
+    let dupLinks = if isNull DupLinksText then "" else (try DupLinksText.Invoke() with _ -> "")
+    let takeAnyTaken = if isNull TakeAnyTakenText then "" else (try TakeAnyTakenText.Invoke() with _ -> "")
+    let shopPrices = [| for i = 0 to 15 do for j = 0 to 7 do if TrackerModel.overworldShopPrices.[i,j] > 0 then yield sprintf "%d,%d,%d" i j TrackerModel.overworldShopPrices.[i,j] |] |> String.concat ";"
+    lines.Add(sprintf """    }, "ShuffledWoodSwordTiles": "%s", "HintShopColors": "%s", "ProgressiveTileTiers": "%s", "ProgressiveBoxTiers": "%s", "DupLinks": "%s", "ShopPrices": "%s", "TakeAnyTaken": "%s", "CustomLevelName": "%s",""" shuffledTiles hintColors progressiveTiers boxTiers dupLinks shopPrices takeAnyTaken customName)
+    lines.Add(sprintf """    "Level9TriforceCount": %d, "Level9TriggerSwordTier": %d, "Level9TriggerBox": {""" TrackerModel.level9TriforceCount TrackerModel.level9TriggerSwordTier)
+    SaveBox("    ", TrackerModel.level9TriggerBox)
+    lines.Add(sprintf """    }, "Level2StairBoxEnabled": %b, "Level2StairBox": {""" TrackerModel.level2StairBoxEnabled)
     SaveBox("    ", TrackerModel.level2StairBox)
     lines.Add(sprintf """    }, "Level9FloorBoxEnabled": %b, "Dungeons": [""" TrackerModel.level9FloorBoxEnabled)
     for i = 0 to 8 do
@@ -317,6 +385,8 @@ let SaveStartingItemsAndExtras(prefix) =
     lines.Add(sprintf """    "HDNStartingTriforcePieces": [ %b, %b, %b, %b, %b, %b, %b, %b ],""" m.HDNStartingTriforcePieces.[0] m.HDNStartingTriforcePieces.[1] m.HDNStartingTriforcePieces.[2]
                         m.HDNStartingTriforcePieces.[3] m.HDNStartingTriforcePieces.[4] m.HDNStartingTriforcePieces.[5] m.HDNStartingTriforcePieces.[6] m.HDNStartingTriforcePieces.[7])
     lines.Add(sprintf """    "PlayerHasWhiteSword": %b,""" m.PlayerHasWhiteSword)
+    lines.Add(sprintf """    "PlayerHasMagicalSword": %b,""" m.PlayerHasMagicalSword)
+    lines.Add(sprintf """    "PlayerHasSword4": %b,""" m.PlayerHasSword4)
     lines.Add(sprintf """    "PlayerHasSilverArrow": %b,""" m.PlayerHasSilverArrow)
     lines.Add(sprintf """    "PlayerHasBow": %b,""" m.PlayerHasBow)
     lines.Add(sprintf """    "PlayerHasWand": %b,""" m.PlayerHasWand)
