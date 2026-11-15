@@ -43,6 +43,12 @@ namespace Z1R_SignalRHost.Controllers
                 var jsonLength = JsonConvert.SerializeObject(message).Length;
                 Console.WriteLine($"[SyncUpdate] Broadcasting {payload.MessageType} from {payload.SenderId} (size: {jsonLength} chars)");
 
+                // Every message goes to every connected tracker, whatever pair it belongs to. Each tracker keeps only the messages whose senderId
+                // is its partner's console ID (the TargetConsoleId check in the app) and drops the rest. So the relay is not private: anyone
+                // connected sees every pair's messages and can send as any console ID, and a tracker must treat what arrives as untrusted
+                // (the app bounds the version numbers it takes, see CoopSync.MaxPartnerVersion).
+                // (Kept as Clients.All on purpose: the trackers already released do not join any SignalR group, so sending to groups would cut
+                // them off. Groups could be added later as an extra the old trackers ignore, once every tracker joins one.)
                 await _hubContext.Clients.All.SendAsync("ReceiveSyncMessage", message);
 
                 Console.WriteLine("[SyncUpdate] Broadcast complete.");

@@ -195,6 +195,7 @@ public static class CoopSync
     {
         // a tile extras change made here less than a poll ago must be known (edit time, send) before a partner's state can overwrite it
         detectLocalExtrasChanges(TrackerModelOptions.CoopSyncOptions.MyConsoleId);
+        checkMaxHeartsChange();   // (as for the extras: a max hearts click made less than a poll ago counts as ours)
         var saved = TrackerModelOptions.currentSyncSource;
         TrackerModelOptions.currentSyncSource = FSharpOption<string>.Some(senderId ?? "partner");
         try { apply(); }
@@ -240,7 +241,27 @@ public static class CoopSync
     private static readonly Dictionary<string, int> applyFailures = new Dictionary<string, int>();     // key -> how often the partner's value could not be applied
 
     /// The version number a new edit gets: above the counter and above the key's own version. (A pure rule, checked by the self-test.)
-    public static long stampNumber(long clock, long keyVersion) => Math.Max(clock, keyVersion) + 1;
+    /// (at long.MaxValue it stays there instead of wrapping to a negative number, which made every later edit of that key lose)
+    public static long stampNumber(long clock, long keyVersion)
+    {
+        var m = Math.Max(clock, keyVersion);
+        return m >= long.MaxValue ? long.MaxValue : m + 1;
+    }
+
+    /// The highest version number taken from a partner: 2^40, far above any real count of edits. A larger one (a damaged or hostile message)
+    /// would raise our counter so far that our own edits of that key could never win again, so it is ignored.
+    public const long MaxPartnerVersion = 1L << 40;
+    public static bool versionInBounds(long v) => v >= 0 && v <= MaxPartnerVersion;
+    /// A version number from a message: a whole number from 0 to MaxPartnerVersion, else false. (A number too big for a long is refused too.)
+    public static bool readVersionNumber(Newtonsoft.Json.Linq.JToken t, out long v)
+    {
+        v = 0;
+        if (!(t is Newtonsoft.Json.Linq.JValue jv) || jv.Type != Newtonsoft.Json.Linq.JTokenType.Integer) return false;
+        if (jv.Value is long l) v = l;
+        else if (jv.Value is int i) v = i;
+        else return false;   // (a BigInteger: far above the bound)
+        return versionInBounds(v);
+    }
 
     private static void setVersion(string key, (long v, string w) x)
     {
@@ -259,6 +280,11 @@ public static class CoopSync
     /// new numbers above it, so an edit made right after a reload is not outranked by the partner's older, higher numbers. UI thread.
     public static void notePartnerClock(long partnerMax)
     {
+        if (!versionInBounds(partnerMax))
+        {
+            TrackerModelOptions.DebugConfig.Log($"[Sync] Ignored the partner's counter {partnerMax}: above {MaxPartnerVersion}");
+            return;
+        }
         if (partnerMax > versionClock) versionClock = partnerMax;
         if (partnerClockKnown) return;
         partnerClockKnown = true;
@@ -354,24 +380,114 @@ public static class CoopSync
             case "Overworld": return buildOverworldJson();
             case "DungeonMaps":
                 if (FSharpOption<TrackerModel.DungeonTrackerInstance>.get_IsNone(TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstanceOption)) return null;
-                return buildDungeonMapsJson();
+                return buildDungeonMapsJsonCached();
             default: return null;
         }
     }
 
+    // ---- the state cache ----
+    // Every partner message stamps all 8 kinds before the merge and looks at them again after it, and the half second poll sends 6 of them,
+    // so each kind's state was serialized, parsed and split into keys many times a second (DungeonMaps alone is about 1500 keys).
+    // Now the parse and split run only when a kind's JSON text differs from the last one seen: the same text always gives the same keys.
+    // DungeonMaps is not even serialized when nothing on the 9 maps changed: a short fingerprint of the exported maps is compared first.
+    // Both are exact (no change is ever missed): the text, or the fingerprint, holds everything the state is made from.
+    private static readonly Dictionary<string, (string json, Dictionary<string, string> state)> stateCache = new Dictionary<string, (string, Dictionary<string, string>)>();
+    private static string dungeonMapsFingerprintCache = null, dungeonMapsJsonCache = null;
+    /// How often the caches saved work (for the self-test).
+    public static int stateCacheHits = 0, dungeonMapsCacheHits = 0;
+
+    /// Forgets the cached states (a new run: the item boxes may have other names). UI thread.
+    public static void clearStateCache()
+    {
+        stateCache.Clear();
+        dungeonMapsFingerprintCache = null;
+        dungeonMapsJsonCache = null;
+    }
+
+    /// This kind's state as key -> value, from our JSON of it. The same text as last time gives the same (shared, never changed) dictionary. UI thread.
+    private static Dictionary<string, string> stateOfJson(string kind, string json)
+    {
+        if (json == null) return null;
+        if (stateCache.TryGetValue(kind, out var c) && c.json == json) { stateCacheHits++; return c.state; }
+        var s = stateFromPayload(kind, Newtonsoft.Json.Linq.JToken.Parse(json));
+        if (startupBaselineDone) stateCache[kind] = (json, s);   // (before the run starts the item boxes have no names yet)
+        return s;
+    }
+
     /// Our state of this kind as key -> value. null when it cannot be built yet. UI thread.
+    /// (The dictionary may be shared with the cache: read it, never change it.)
     private static Dictionary<string, string> stateOf(string kind)
     {
         try
         {
-            var json = buildStateJson(kind);
-            return json == null ? null : stateFromPayload(kind, Newtonsoft.Json.Linq.JToken.Parse(json));
+            return stateOfJson(kind, buildStateJson(kind));
         }
         catch (Exception ex)
         {
             TrackerModelOptions.DebugConfig.Log($"[Sync] Could not read the {kind} state: {ex.Message}");
             return null;
         }
+    }
+
+    /// Test seam for the self-test: our state of this kind as stateOf has it (null when it cannot be built).
+    public static Dictionary<string, string> testStateOf(string kind) => stateOf(kind);
+
+    /// Everything buildDungeonMapsJson writes, as one short text: each level's numeral flag, overlay, doors, circles and rooms (every field of
+    /// DungeonRoomModel). The same fingerprint means the same JSON. (A field added to DungeonModel or DungeonRoomModel must be added here too.)
+    public static string dungeonMapsFingerprint(DungeonSaveAndLoad.DungeonModel[] models)
+    {
+        var sb = new StringBuilder(6000);
+        void ints(int[][] a)
+        {
+            if (a == null) { sb.Append('n'); return; }
+            foreach (var row in a)
+            {
+                if (row == null) sb.Append('n');
+                else foreach (var v in row) sb.Append(v).Append(',');
+                sb.Append(';');
+            }
+        }
+        for (int i = 0; i < models.Length; i++)
+        {
+            var m = models[i];
+            sb.Append('L').Append(i).Append(DungeonUI.isFirstTimeClickingAnyRoom[i].Value ? 'F' : 'f').Append(m.VanillaMapOverlay).Append('|');
+            ints(m.HorizontalDoors); sb.Append('|');
+            ints(m.VerticalDoors); sb.Append('|');
+            if (m.RoomIsCircled == null) sb.Append('n');
+            else foreach (var row in m.RoomIsCircled)
+                {
+                    if (row == null) sb.Append('n');
+                    else foreach (var v in row) sb.Append(v ? '1' : '0');
+                    sb.Append(';');
+                }
+            sb.Append('|');
+            if (m.RoomStates == null) sb.Append('n');
+            else foreach (var row in m.RoomStates)
+                {
+                    if (row == null) sb.Append('n');
+                    else foreach (var r in row)
+                        {
+                            if (r == null) { sb.Append("n\u0001"); continue; }
+                            sb.Append(r.IsCompleted ? '1' : '0').Append(r.RoomType).Append('\u0002').Append(r.MonsterDetail).Append('\u0002')
+                              .Append(r.FloorDropDetail).Append('\u0002').Append(r.FloorDropShouldAppearBright ? '1' : '0').Append('\u0001');
+                        }
+                    sb.Append(';');
+                }
+            sb.Append('#');
+        }
+        return sb.ToString();
+    }
+
+    /// buildDungeonMapsJson, but the 9 maps are serialized only when their fingerprint changed since the last call. UI thread.
+    public static string buildDungeonMapsJsonCached()
+    {
+        var models = Enumerable.Range(0, 9).Select(i => DungeonUI.exportFunctionsLarge[i]()).ToArray();
+        var fp = dungeonMapsFingerprint(models);
+        if (fp == dungeonMapsFingerprintCache && dungeonMapsJsonCache != null) { dungeonMapsCacheHits++; return dungeonMapsJsonCache; }
+        var json = dungeonMapsJsonFrom(models);
+        dungeonMapsFingerprintCache = fp;
+        dungeonMapsJsonCache = json;
+        return json;
     }
 
     // The flat kinds are split into their JSON leaves (a Blockers message into its blockers). Key: kind/path, e.g. "PlayerProgress/PlayerHasBombs".
@@ -433,6 +549,9 @@ public static class CoopSync
         }
         r[itemsFlagKey("HiddenDungeonNumbers")] = (t["HiddenDungeonNumbers"] ?? "").ToString();
         r[itemsFlagKey("SecondQuestDungeons")] = (t["SecondQuestDungeons"] ?? "").ToString();
+        // (the 4th Sword's place and Progressive Items: only in messages from trackers that send them, and not in Legacy Mode)
+        if (t[FourthSwordField] is Newtonsoft.Json.Linq.JValue fs && fs.Type == Newtonsoft.Json.Linq.JTokenType.Integer) r[fourthSwordKey] = fs.ToString(Formatting.None);
+        if (t[ProgressiveField] is Newtonsoft.Json.Linq.JValue pr && pr.Type == Newtonsoft.Json.Linq.JTokenType.Boolean) r[progressiveKey] = (bool)pr ? "1" : "0";
         box(t["WhiteSwordBox"], TrackerModel.sword2Box);
         box(t["LadderBox"], TrackerModel.ladderBox);
         box(t["ArmosBox"], TrackerModel.armosBox);
@@ -510,7 +629,7 @@ public static class CoopSync
         if (!startupBaselineDone) return;
         now ??= stateOf(kind);
         if (now == null) return;
-        if (versionBaselines.TryGetValue(kind, out var before))
+        if (versionBaselines.TryGetValue(kind, out var before) && !ReferenceEquals(before, now))   // (the same cached state: nothing changed)
             foreach (var kv in now)
                 if (!before.TryGetValue(kv.Key, out var old) || old != kv.Value)
                 {
@@ -582,7 +701,12 @@ public static class CoopSync
         var c = versionCarrier(t);
         if (c == null || !(c["SyncV"] is Newtonsoft.Json.Linq.JObject sv)) return (false, false, r);
         var res = takeVersionsFrom(kind, c, sv, r);
-        long max = sv["m"] != null && sv["m"].Type == Newtonsoft.Json.Linq.JTokenType.Integer ? (long)sv["m"] : 0;
+        long max = 0;
+        if (sv["m"] != null && !readVersionNumber(sv["m"], out max))
+        {
+            max = 0;   // (a counter above the bound is ignored; the keys' own numbers still count)
+            TrackerModelOptions.DebugConfig.Log($"[Sync] Ignored the partner's {kind} counter {sv["m"]}: not a number from 0 to {MaxPartnerVersion}");
+        }
         foreach (var x in r.Values) if (x.v > max) max = x.v;
         notePartnerClock(max);
         return res;
@@ -594,13 +718,17 @@ public static class CoopSync
         c.Remove("SyncV");
         c.Remove("SyncSnap");
         var writers = (sv["w"] as Newtonsoft.Json.Linq.JArray)?.Select(x => (string)x).ToList() ?? new List<string>();
+        var refused = 0;
         if (sv["k"] is Newtonsoft.Json.Linq.JObject ks)
             foreach (var p in ks.Properties())
                 if (p.Value is Newtonsoft.Json.Linq.JArray a && a.Count == 2)
                 {
+                    // (a number that is not a whole number from 0 to MaxPartnerVersion is refused: the key counts as having no version from them)
+                    if (!readVersionNumber(a[0], out var n)) { refused++; continue; }
                     var wi = intOf(a[1], -1);
-                    r[kind + "/" + p.Name] = ((long)a[0], wi >= 0 && wi < writers.Count ? writers[wi] : "");
+                    r[kind + "/" + p.Name] = (n, wi >= 0 && wi < writers.Count ? writers[wi] : "");
                 }
+        if (refused > 0) TrackerModelOptions.DebugConfig.Log($"[Sync] Ignored {refused} {kind} version(s) from the partner: not a number from 0 to {MaxPartnerVersion}");
         return (true, snap, r);
     }
 
@@ -783,7 +911,7 @@ public static class CoopSync
         {
             var json = buildStateJson(kind);
             if (json == null) return;
-            stamp(kind, stateFromPayload(kind, Newtonsoft.Json.Linq.JToken.Parse(json)));
+            stamp(kind, stateOfJson(kind, json));
             if (!unsentEdits.Contains(kind) && !mustSend.Contains(kind)) return;
             var payload = withVersions(kind, json, null, snapshotPending.Contains(kind));
             TrackerModelOptions.DebugConfig.Log($"[Sync] Sending {kind} update: {payload}");
@@ -1097,6 +1225,25 @@ public static class CoopSync
         onEvent(TrackerModel.startingItemsAndExtras.PlayerHasRecorder.Changed, _ => sendUpdate());
         onEvent(TrackerModel.startingItemsAndExtras.PlayerHasAnyKey.Changed, _ => sendUpdate());
         onEvent(TrackerModel.startingItemsAndExtras.PlayerHasBook.Changed, _ => sendUpdate());
+        // (these two had no listener: their changes went out only with the next poll, and never counted as an edit of ours in the hello)
+        onEvent(TrackerModel.startingItemsAndExtras.PlayerHasMeat.Changed, _ => sendUpdate());
+        onEvent(TrackerModel.startingItemsAndExtras.PlayerHasLetter.Changed, _ => sendUpdate());
+        // (MaxHeartsDifferential is a plain field with no event: checkMaxHeartsChange finds its changes)
+    }
+
+    // the max hearts differential (the Max Hearts clicks) as last seen: a change from it is a local edit
+    private static int maxHeartsBaseline = 0;
+
+    /// Finds a change of the max hearts differential made here and sends it. Called by the half second poll and before a partner's update
+    /// is applied (so a change made just before is known as ours). UI thread.
+    public static void checkMaxHeartsChange()
+    {
+        var now = TrackerModel.startingItemsAndExtras.MaxHeartsDifferential;
+        if (now == maxHeartsBaseline || !startupBaselineDone) return;
+        maxHeartsBaseline = now;
+        if (TrackerModelOptions.isCurrentlyApplyingRemoteUpdate()) return;   // (a partner's value: the StartingItems handler sets the baseline too)
+        noteLocalEdit();
+        sendStartingItemsAndExtrasUpdate(TrackerModelOptions.CoopSyncOptions.MyConsoleId);   // (trySend checks that co-op is on)
     }
 
     public static Task sendBlockersUpdate(string myConsoleId)
@@ -1164,6 +1311,7 @@ public static class CoopSync
                         hintsBaseline = now;
                         noteLocalEdit();   // (a partner's hints update the baseline themselves)
                     }
+                    checkMaxHeartsChange();
                     if (coopActive())
                     {
                         foreach (var k in polledKinds) sendKind(k);   // (each sends only when it has an unsent change)
@@ -1412,9 +1560,12 @@ public static class CoopSync
             }
         }
     }
-    public static string buildDungeonMapsJson()
+    public static string buildDungeonMapsJson() => dungeonMapsJsonFrom(Enumerable.Range(0, 9).Select(i => DungeonUI.exportFunctionsLarge[i]()).ToArray());
+
+    /// The DungeonMaps JSON of these exported maps (one per level, as exportFunctionsLarge gives them).
+    private static string dungeonMapsJsonFrom(DungeonSaveAndLoad.DungeonModel[] exported)
     {
-        var dungeonModels = Enumerable.Range(0, 9).Select(i => cloneAndFixDungeonModel(DungeonUI.exportFunctionsLarge[i]())).ToArray();
+        var dungeonModels = exported.Select(cloneAndFixDungeonModel).ToArray();
         var arr = Newtonsoft.Json.Linq.JArray.FromObject(dungeonModels);
         // whether each level's big numeral (and the first-click shortcut) still shows, so both trackers show the same (older trackers ignore it)
         for (int i = 0; i < arr.Count; i++)
@@ -1433,6 +1584,7 @@ public static class CoopSync
                 case "Items": case "Overworld": boxTiersBaseline = buildBoxTiers(); break;
                 case "Notes": lastSentHashes["Notes"] = computeHash(buildNotesJson()); break;
                 case "Hints": hintsBaseline = buildHintsJson(); break;
+                case "StartingItems": maxHeartsBaseline = TrackerModel.startingItemsAndExtras.MaxHeartsDifferential; break;
             }
         }
         catch (Exception ex)
@@ -1446,8 +1598,9 @@ public static class CoopSync
     /// loadedTicks: for a loaded save, the save file's last write time (UTC ticks), used as its state time in the hello.
     public static void startupFinished(bool loadedSave, long loadedTicks = 0)
     {
-        foreach (var t in new[] { "Items", "Notes", "Hints" })
+        foreach (var t in new[] { "Items", "Notes", "Hints", "StartingItems" })
             rebaseline(t);
+        clearStateCache();
         // the versions start again: every field is at version 0 until it is changed (here or by the partner)
         versions.Clear();
         versionBaselines.Clear();
@@ -1785,8 +1938,101 @@ public static class CoopSync
             // the tier each progressive item box was collected at, in the save's own format "boxname,tier;..." (older trackers send none)
             model.ProgressiveBoxTiers = buildBoxTiers();
 
-            return JsonConvert.SerializeObject(model);
+            var json = JsonConvert.SerializeObject(model);
+            if (TrackerModel.LegacyMode) return json;   // (the 4th Sword option is off and locked there: nothing of it is sent)
+            // the 4th Sword's place and Progressive Items, in fields of their own (older trackers ignore them). Not in Level2StairBoxEnabled and
+            // Level9FloorBoxEnabled: older trackers send those as false always, and that would read as "no 4th sword".
+            var jo = Newtonsoft.Json.Linq.JObject.Parse(json);
+            jo[FourthSwordField] = fourthSwordPlace();
+            jo[ProgressiveField] = TrackerModel.ProgressiveItems;
+            return jo.ToString(Formatting.None);
         }
+    }
+
+    // ---- the 4th Sword's place and Progressive Items ----
+    // Both travel in the Items message, with versions like the rest of it. The rule holds on the receiving side too:
+    // the partner's 4th Sword turned on turns Progressive Items on here (SetFourthSwordLocation does that, and remembers it, so setting none
+    // later turns it back off only if this run's 4th Sword turned it on and nothing changed since); the partner's Progressive Items turned on
+    // turns ours on but never the 4th Sword; the partner's Progressive Items off is never taken (only the turn-on is synced).
+    // In Legacy Mode none of it is sent or taken.
+    public const string FourthSwordField = "FourthSwordPlace";   // 0 none, 1 the level 2 staircase, 2 the level 9 floor
+    public const string ProgressiveField = "ProgressiveItemsOn";
+    public static string fourthSwordKey => itemsFlagKey("fourthSword");
+    public static string progressiveKey => itemsFlagKey("progressive");
+
+    /// Where the 4th Sword's item check is now, as SetFourthSwordLocation takes it.
+    public static int fourthSwordPlace() => TrackerModel.level9FloorBoxEnabled ? 2 : TrackerModel.level2StairBoxEnabled ? 1 : 0;
+
+    /// The user moved the 4th Sword (the Extras checkbox): send it now, not with the next poll. UI thread.
+    public static void noteFourthSwordChanged()
+    {
+        if (TrackerModelOptions.isCurrentlyApplyingRemoteUpdate()) return;
+        noteLocalEdit();
+        sendItemsUpdate(TrackerModelOptions.CoopSyncOptions.MyConsoleId);   // (sends only when co-op is on and the run has started)
+    }
+
+    /// A partner's 4th Sword place and Progressive Items, from an Items message whose merge is m. Call it before the boxes are applied:
+    /// a new place moves our slot's item, and the boxes then get the partner's items. Returns true when the place or Progressive Items changed
+    /// here (then call finishFourthSwordFromSync after endMerge). UI thread, inside applyRemote.
+    public static bool applyFourthSwordFromSync(Merge m, Newtonsoft.Json.Linq.JToken payload)
+    {
+        if (m == null || payload == null) return false;
+        if (TrackerModel.LegacyMode)
+        {
+            // (the option is disabled in Legacy Mode: the partner's place and Progressive Items are not taken, and no version of them is kept)
+            m.Taken.Remove(fourthSwordKey);
+            m.Taken.Remove(progressiveKey);
+            return false;
+        }
+        var changed = false;
+        if (m.Takes(fourthSwordKey))
+        {
+            var t = payload[FourthSwordField];
+            var place = t is Newtonsoft.Json.Linq.JValue v && v.Type == Newtonsoft.Json.Linq.JTokenType.Integer ? (long)v : -1;
+            if (place < 0 || place > 2) m.Fail(fourthSwordKey);
+            else if (place != fourthSwordPlace())
+            {
+                var l2 = TrackerModel.level2StairBox;
+                var l9 = TrackerModel.GetDungeon(8).ExtraFloorBox;
+                var before = new[] { (l2, l2.CellCurrent(), l2.PlayerHas()), (l9, l9.CellCurrent(), l9.PlayerHas()) };
+                OverworldItemGridUI.SetFourthSwordLocation((int)place);   // (turns Progressive Items on with the 4th Sword, as a click here does)
+                // a slot whose item the move changed, and that the message does not set: our edit, so the partner gets it
+                // (their message may not know an item we marked there a moment ago)
+                foreach (var (box, cell, has) in before)
+                {
+                    var k = boxKey(box);
+                    if (k != null && !m.Takes(k) && (box.CellCurrent() != cell || !box.PlayerHas().Equals(has))) m.Displaced.Add(k);
+                }
+                changed = true;
+                TrackerModelOptions.DebugConfig.Log($"[Sync] The partner put the 4th Sword at {(place == 2 ? "level 9" : place == 1 ? "level 2" : "none")}");
+            }
+        }
+        if (m.Takes(progressiveKey))
+        {
+            var t = payload[ProgressiveField];
+            if (!(t is Newtonsoft.Json.Linq.JValue v && v.Type == Newtonsoft.Json.Linq.JTokenType.Boolean)) m.Fail(progressiveKey);
+            else if ((bool)v)
+            {
+                if (!TrackerModel.ProgressiveItems) { OverworldItemGridUI.TurnProgressiveItemsOnFromPartner(); changed = true; }
+            }
+            else if (TrackerModel.ProgressiveItems)
+            {
+                // (their Progressive Items off is not taken: ours stays on. Their version is kept, without the check that our value now matches,
+                // so ours is not sent back to turn theirs on again)
+                m.Theirs?.Remove(progressiveKey);
+            }
+        }
+        return changed;
+    }
+
+    /// After a partner's Items message changed the 4th Sword or Progressive Items here (and endMerge ran): the screen is redrawn as after a click
+    /// on the Extras checkbox. UI thread, inside applyRemote.
+    public static void finishFourthSwordFromSync()
+    {
+        TrackerModel.recomputePlayerStateSummary();
+        TrackerModel.recomputeMapStateSummary();
+        TrackerModel.forceUpdate();
+        OverworldItemGridUI.refreshUIAfterOverworldTemplateChange();
     }
 
     public static string buildBoxTiers()
@@ -2140,8 +2386,8 @@ public static class CoopSync
 
                 try
                 {
-                    var jsonPayload = buildDungeonMapsJson();
-                    stamp("DungeonMaps", stateFromPayload("DungeonMaps", Newtonsoft.Json.Linq.JToken.Parse(jsonPayload)));
+                    var jsonPayload = buildDungeonMapsJsonCached();
+                    stamp("DungeonMaps", stateOfJson("DungeonMaps", jsonPayload));
 
                     // (sent when it has changes not sent yet, must go (a hello snapshot, or the partner lacks ours), or nothing was sent since a reset)
                     var dungeonMapsChanged = unsentEdits.Contains("DungeonMaps") || mustSend.Contains("DungeonMaps") || lastSentDungeonMapsPayload == "";

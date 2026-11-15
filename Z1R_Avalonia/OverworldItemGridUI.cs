@@ -1249,6 +1249,18 @@ public static class OverworldItemGridUI
         TrackerModel.recomputePlayerStateSummary();
     }
 
+    // a co-op partner turned Progressive Items on (CoopSync.applyFourthSwordFromSync): on here too, as the 4th sword's turn-on does it, but not
+    // remembered as this run's 4th sword turning it on, so setting the 4th sword to none later leaves it on. Never turns the 4th sword on. Not in Legacy Mode.
+    public static void TurnProgressiveItemsOnFromPartner()
+    {
+        if (TrackerModel.ProgressiveItems || TrackerModel.LegacyMode) return;
+        TrackerModel.ProgressiveItems = true;
+        ApplyProgressiveItemCaps();
+        BackfillProgressiveBoxTiers();   // (boxes and tiles collected while it was off have no tier yet)
+        for (int f = 1; f <= 5; f++) WPFUI.progressiveLastTiers[f] = Math.Max(1, TrackerModel.progressiveFamilyTier(f));   // (switching on is not an upgrade)
+        TrackerModel.recomputePlayerStateSummary();
+    }
+
     // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
     // (at startup, and again when the 4th sword turns Progressive Items on mid-run)
     public static void ApplyProgressiveItemCaps()
@@ -1643,6 +1655,7 @@ public static class OverworldItemGridUI
                             TrackerModel.recomputeMapStateSummary();
                             TrackerModel.forceUpdate();
                             refreshUIAfterOverworldTemplateChange();
+                            CoopSync.noteFourthSwordChanged();   // (a co-op partner gets the new place, and Progressive Items if it came on)
                         };
                         var swordRow = new StackPanel { Orientation = Orientation.Horizontal };
                         swordRow.Children.Add(swordCb);

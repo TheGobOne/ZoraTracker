@@ -1113,6 +1113,209 @@ public static class SelfTest
                 b3.AttemptToSet(s3.Item1, s3.Item2); b6.AttemptToSet(s6.Item1, s6.Item2);
             }
         });
+        // 6h. a partner's 4th Sword and Progressive Items (the Items message's FourthSwordPlace and ProgressiveItemsOn): their 4th Sword turns
+        // Progressive Items on here too; their Progressive Items on never turns the 4th Sword on; their 4th Sword back to none undoes Progressive
+        // Items only when this run's 4th Sword turned it on; their Progressive Items off is never taken; nothing in Legacy Mode
+        guard("co-op 4th sword sync", () =>
+        {
+            var l2 = TrackerModel.level2StairBox;
+            var l9 = TrackerModel.GetDungeon(8).ExtraFloorBox;
+            var sProg = TrackerModel.ProgressiveItems; var sFourth = TrackerModelOptions.FourthSwordEnabled; var sLegacy = TrackerModel.LegacyMode;
+            var sL2 = TrackerModel.level2StairBoxEnabled; var sL9 = TrackerModel.level9FloorBoxEnabled;
+            var sL2Cell = l2.CellCurrent(); var sL2Has = l2.PlayerHas(); var sL9Cell = l9.CellCurrent(); var sL9Has = l9.PlayerHas();
+            var sStash = OverworldItemGridUI.fourthSwordStashItem; var sStashHas = OverworldItemGridUI.fourthSwordStashHas;
+            var sLatch = OverworldItemGridUI.fourthSwordL2WithHiddenNumbers; var sTurned = OverworldItemGridUI.fourthSwordTurnedProgressiveOn;
+            var sTileTiers = TrackerModel.progressiveTileTier.ToList(); var sBoxTiers = TrackerModel.progressiveBoxTier.ToList();
+            var sLast = (int[])WPFUI.progressiveLastTiers.Clone();
+            var fk = CoopSync.fourthSwordKey; var pk = CoopSync.progressiveKey;
+            // a partner's Items message with only these two fields (null: the field is left out), and its merge (both fields newer than ours)
+            CoopSync.Merge apply(int? place, bool? prog)
+            {
+                var payload = new Newtonsoft.Json.Linq.JObject();
+                var m = new CoopSync.Merge { Kind = "Items", Versioned = true, Theirs = new Dictionary<string, string>(), CheckAll = true };
+                if (place is int p) { payload[CoopSync.FourthSwordField] = p; m.Taken[fk] = (9, "partner#1"); m.Theirs[fk] = p.ToString(); }
+                if (prog is bool g) { payload[CoopSync.ProgressiveField] = g; m.Taken[pk] = (9, "partner#1"); m.Theirs[pk] = g ? "1" : "0"; }
+                CoopSync.applyFourthSwordFromSync(m, payload);
+                return m;
+            }
+            void startOff()
+            {
+                l2.Set(-1, TrackerModel.PlayerHas.NO); l9.Set(-1, TrackerModel.PlayerHas.NO);
+                OverworldItemGridUI.fourthSwordStashItem = -1;
+                OverworldItemGridUI.SetFourthSwordLocation(0);
+                TrackerModel.ProgressiveItems = false;
+                OverworldItemGridUI.ApplyProgressiveItemCaps();
+                OverworldItemGridUI.ResetFourthSwordRunState();
+            }
+            try
+            {
+                TrackerModel.LegacyMode = false;
+                // what we send: the place and Progressive Items, in their own fields, and as keys of the Items state
+                startOff();
+                OverworldItemGridUI.SetFourthSwordLocation(2);
+                var sent = Newtonsoft.Json.Linq.JObject.Parse(CoopSync.buildItemsJson());
+                if ((int?)sent[CoopSync.FourthSwordField] != 2 || (bool?)sent[CoopSync.ProgressiveField] != true)
+                    fail($"co-op 4th sword: our Items message has place {sent[CoopSync.FourthSwordField]} and Progressive Items {sent[CoopSync.ProgressiveField]} (should be 2, true)");
+                var st = CoopSync.testStateOf("Items");
+                if (st == null || !st.TryGetValue(fk, out var stPlace) || stPlace != "2") fail("co-op 4th sword: the Items state has no 4th Sword place of 2 (it would never get a version)");
+                // 1. their 4th Sword at level 9, ours none and Progressive Items off: both come on here
+                startOff();
+                var m1 = apply(2, true);
+                if (!TrackerModel.level9FloorBoxEnabled || TrackerModel.level2StairBoxEnabled || !TrackerModelOptions.FourthSwordEnabled)
+                    fail("co-op 4th sword: the partner's 4th Sword at level 9 did not put ours at level 9");
+                if (!TrackerModel.ProgressiveItems) fail("co-op 4th sword: the partner's 4th Sword did not turn Progressive Items on here");
+                // 2. their 4th Sword back to none right after (Progressive Items off there too): ours undoes Progressive Items, as this run's 4th Sword turned it on
+                apply(0, false);
+                if (TrackerModel.level9FloorBoxEnabled || TrackerModel.level2StairBoxEnabled) fail("co-op 4th sword: the partner's none left a 4th Sword slot on here");
+                if (TrackerModel.ProgressiveItems) fail("co-op 4th sword: the partner's none did not undo Progressive Items that our 4th Sword turned on a moment ago");
+                // 3. their Progressive Items on alone: ours comes on, the 4th Sword stays none
+                startOff();
+                apply(null, true);
+                if (!TrackerModel.ProgressiveItems) fail("co-op 4th sword: the partner's Progressive Items on did not reach us");
+                if (TrackerModel.level2StairBoxEnabled || TrackerModel.level9FloorBoxEnabled || TrackerModelOptions.FourthSwordEnabled)
+                    fail("co-op 4th sword: the partner's Progressive Items on turned the 4th Sword on (it must never)");
+                // 4. then their 4th Sword at level 2 and back to none: Progressive Items stays on (it was on before the 4th Sword)
+                apply(1, true);
+                if (!TrackerModel.level2StairBoxEnabled) fail("co-op 4th sword: the partner's 4th Sword at level 2 did not put ours at level 2");
+                var m4 = apply(0, false);
+                if (!TrackerModel.ProgressiveItems) fail("co-op 4th sword: the partner's none turned off Progressive Items that was on before the 4th Sword");
+                // (their Progressive Items off is not taken, and is not checked against ours, so ours is not sent back to turn theirs on)
+                if (m4.Theirs.ContainsKey(pk)) fail("co-op 4th sword: the partner's Progressive Items off, not taken, is still checked against ours (ours would be sent back)");
+                // 5. an item in our level 2 slot that their message does not set: it moves with the place and counts as ours, so they get it
+                startOff();
+                OverworldItemGridUI.SetFourthSwordLocation(1);
+                if (!l2.AttemptToSet(TrackerModel.ITEMS.BOW, TrackerModel.PlayerHas.YES)) fail("co-op 4th sword: could not mark the Bow in the level 2 slot");
+                var m5 = apply(2, true);
+                if (l9.CellCurrent() != TrackerModel.ITEMS.BOW || !m5.Displaced.Contains(CoopSync.boxKey(l9)))
+                    fail($"co-op 4th sword: the Bow in our level 2 slot did not move to level 9 as an edit of ours (level 9 has {l9.CellCurrent()})");
+                // 6. Legacy Mode: nothing is taken, and nothing of it is sent
+                startOff();
+                TrackerModel.LegacyMode = true;
+                var m6 = apply(2, true);
+                if (TrackerModel.level9FloorBoxEnabled || TrackerModel.ProgressiveItems) fail("co-op 4th sword: in Legacy Mode the partner's 4th Sword or Progressive Items was taken");
+                if (m6.Taken.ContainsKey(fk) || m6.Taken.ContainsKey(pk)) fail("co-op 4th sword: in Legacy Mode the partner's 4th Sword version was kept");
+                var sentLegacy = Newtonsoft.Json.Linq.JObject.Parse(CoopSync.buildItemsJson());
+                if (sentLegacy[CoopSync.FourthSwordField] != null || sentLegacy[CoopSync.ProgressiveField] != null) fail("co-op 4th sword: in Legacy Mode our Items message carries the 4th Sword fields");
+                TrackerModel.LegacyMode = false;
+                // 7. an older tracker's message has neither field: nothing changes
+                startOff();
+                OverworldItemGridUI.SetFourthSwordLocation(1);
+                apply(null, null);
+                if (!TrackerModel.level2StairBoxEnabled) fail("co-op 4th sword: a message without the 4th Sword fields changed our place");
+            }
+            finally
+            {
+                TrackerModel.LegacyMode = sLegacy;
+                TrackerModel.ProgressiveItems = sProg;
+                OverworldItemGridUI.ApplyProgressiveItemCaps();
+                TrackerModelOptions.FourthSwordEnabled = sFourth;
+                l2.Set(-1, TrackerModel.PlayerHas.NO); l9.Set(-1, TrackerModel.PlayerHas.NO);
+                TrackerModel.SetLevel2StairBoxEnabled(sL2); TrackerModel.SetLevel9FloorBoxEnabled(sL9);
+                l2.AttemptToSet(sL2Cell, sL2Has); l9.AttemptToSet(sL9Cell, sL9Has);
+                OverworldItemGridUI.fourthSwordStashItem = sStash; OverworldItemGridUI.fourthSwordStashHas = sStashHas;
+                OverworldItemGridUI.fourthSwordL2WithHiddenNumbers = sLatch; OverworldItemGridUI.fourthSwordTurnedProgressiveOn = sTurned;
+                TrackerModel.progressiveTileTier.Clear(); foreach (var kv in sTileTiers) TrackerModel.progressiveTileTier[kv.Key] = kv.Value;
+                TrackerModel.progressiveBoxTier.Clear(); foreach (var kv in sBoxTiers) TrackerModel.progressiveBoxTier[kv.Key] = kv.Value;
+                Array.Copy(sLast, WPFUI.progressiveLastTiers, sLast.Length);
+                TrackerModel.recomputePlayerStateSummary();
+            }
+        });
+        // 6i. the starting meat, letter and max hearts reach the partner (they had no send of their own), with their versions
+        guard("co-op starting items send", () =>
+        {
+            var sent = new List<string>();
+            SyncManager.TestSendHook = (t, p, s) => { if (t == "StartingItems") sent.Add(p); };
+            CoopSync.testForceCoop = true;
+            var si = TrackerModel.startingItemsAndExtras;
+            var sMeat = si.PlayerHasMeat.Value(); var sHearts = si.MaxHeartsDifferential;
+            try
+            {
+                si.PlayerHasMeat.Set(!sMeat);
+                var j = sent.Count > 0 ? Newtonsoft.Json.Linq.JObject.Parse(sent[sent.Count - 1]) : null;
+                if (j == null) fail("co-op starting items: changing the meat sent no StartingItems message");
+                else
+                {
+                    if ((bool?)j["PlayerHasMeat"] != !sMeat) fail($"co-op starting items: the message has meat {j["PlayerHasMeat"]} (should be {!sMeat})");
+                    if (j["SyncV"]?["k"]?["PlayerHasMeat"] == null) fail("co-op starting items: the meat change went without its version");
+                }
+                sent.Clear();
+                si.MaxHeartsDifferential = sHearts + 1;
+                CoopSync.checkMaxHeartsChange();   // (what the half second poll calls)
+                var h = sent.Count > 0 ? Newtonsoft.Json.Linq.JObject.Parse(sent[sent.Count - 1]) : null;
+                if (h == null || (int?)h["MaxHeartsDifferential"] != sHearts + 1) fail($"co-op starting items: a max hearts click sent {(h == null ? "nothing" : "max hearts " + h["MaxHeartsDifferential"])} (should be {sHearts + 1})");
+                else if (h["SyncV"]?["k"]?["MaxHeartsDifferential"] == null) fail("co-op starting items: the max hearts change went without its version");
+            }
+            finally
+            {
+                si.PlayerHasMeat.Set(sMeat);
+                si.MaxHeartsDifferential = sHearts;
+                CoopSync.checkMaxHeartsChange();
+                SyncManager.TestSendHook = null;
+                CoopSync.testForceCoop = false;
+            }
+        });
+        // 6j. version numbers from a partner are bounded: one above 2^40 (or too big for a number) is ignored, and stamping never wraps to a negative number
+        guard("co-op version bound", () =>
+        {
+            if (CoopSync.stampNumber(long.MaxValue, 0) != long.MaxValue || CoopSync.stampNumber(0, long.MaxValue) != long.MaxValue)
+                fail("co-op bound: stamping at long.MaxValue did not stay there (it wrapped to a negative number)");
+            bool reads(string json) => CoopSync.readVersionNumber(Newtonsoft.Json.Linq.JToken.Parse(json), out _);
+            if (!reads("5") || !reads(CoopSync.MaxPartnerVersion.ToString())) fail("co-op bound: a version within the bound was refused");
+            if (reads((CoopSync.MaxPartnerVersion + 1).ToString()) || reads(long.MaxValue.ToString()) || reads("123456789012345678901234567890") || reads("-1") || reads("3.5") || reads("\"7\""))
+                fail("co-op bound: a version above the bound, negative, or not a whole number was taken");
+            // a whole message: its huge counter and huge key version change neither our counter nor the field
+            // (the first partner counter heard in a run renumbers our edits made before it, which raises our counter by one per edit:
+            // the starting items check above leaves two. Hear a counter of our own first, so only the bad message below can move it.)
+            CoopSync.notePartnerClock(CoopSync.maxVersion);
+            var before = CoopSync.maxVersion;
+            var payload = Newtonsoft.Json.Linq.JObject.Parse(CoopSync.buildHintsJson());
+            payload["SyncV"] = Newtonsoft.Json.Linq.JObject.Parse($"{{\"w\":[\"evil#1\"],\"k\":{{\"FireArrowsHint\":[{long.MaxValue},0]}},\"m\":{long.MaxValue}}}");
+            var m = CoopSync.beginMerge("Hints", payload, "evil");
+            if (CoopSync.maxVersion > CoopSync.MaxPartnerVersion) fail($"co-op bound: a counter of long.MaxValue raised ours above 2^40, to {CoopSync.maxVersion}");
+            else if (CoopSync.maxVersion != before) fail($"co-op bound: a counter of long.MaxValue raised ours from {before} to {CoopSync.maxVersion}");
+            if (m.Taken.ContainsKey("Hints/FireArrowsHint")) fail("co-op bound: a field with version long.MaxValue was taken");
+            CoopSync.notePartnerClock(long.MaxValue);
+            if (CoopSync.maxVersion > CoopSync.MaxPartnerVersion) fail($"co-op bound: a hello counter of long.MaxValue raised ours above 2^40, to {CoopSync.maxVersion}");
+            else if (CoopSync.maxVersion != before) fail($"co-op bound: a hello counter of long.MaxValue raised ours from {before} to {CoopSync.maxVersion}");
+        });
+        // 6k. the state cache: a kind's state is parsed again only when its JSON changed, and DungeonMaps is serialized again only when a map changed.
+        // It must never miss a change (here a door and a level's big numeral) and must give exactly what an uncached build gives.
+        guard("co-op state cache", () =>
+        {
+            var a = CoopSync.buildDungeonMapsJsonCached();
+            var hits = CoopSync.dungeonMapsCacheHits;
+            var b = CoopSync.buildDungeonMapsJsonCached();
+            if (CoopSync.dungeonMapsCacheHits != hits + 1 || !ReferenceEquals(a, b)) fail("co-op cache: unchanged maps were serialized again");
+            if (b != CoopSync.buildDungeonMapsJson()) fail("co-op cache: the cached DungeonMaps differs from a fresh build");
+            var door = DungeonUI.horizontalDoorsPerLevel[0][4, 4];
+            var sDoor = door.State;
+            var fresh = DungeonUI.isFirstTimeClickingAnyRoom[8];
+            var sFresh = fresh.Value;
+            var sHint = TrackerModel.FireArrowsHintWasGiven;
+            try
+            {
+                door.State = sDoor == Dungeon.DoorState.YES ? Dungeon.DoorState.NO : Dungeon.DoorState.YES;
+                var c = CoopSync.buildDungeonMapsJsonCached();
+                if (c == b || c != CoopSync.buildDungeonMapsJson()) fail("co-op cache: a door change was missed by the DungeonMaps cache");
+                fresh.Value = !sFresh;
+                var d = CoopSync.buildDungeonMapsJsonCached();
+                if (d == c || d != CoopSync.buildDungeonMapsJson()) fail("co-op cache: a level's big numeral change was missed by the DungeonMaps cache");
+                // the parsed state: the same text gives the same state, a change gives a new one with the change in it
+                var s1 = CoopSync.testStateOf("Hints"); var s2 = CoopSync.testStateOf("Hints");
+                if (s1 == null || !ReferenceEquals(s1, s2)) fail("co-op cache: unchanged hints were parsed again");
+                TrackerModel.FireArrowsHintWasGiven = !sHint;
+                var s3 = CoopSync.testStateOf("Hints");
+                if (s3 == null || ReferenceEquals(s3, s2) || !s3.TryGetValue("Hints/FireArrowsHint", out var v3) || v3 != (!sHint ? "true" : "false"))
+                    fail("co-op cache: a hint change was missed by the state cache");
+            }
+            finally
+            {
+                door.State = sDoor;
+                fresh.Value = sFresh;
+                TrackerModel.FireArrowsHintWasGiven = sHint;
+            }
+        });
+
         // 6g. duplicate links go into the save
         guard("duplicate links in the save", () =>
         {

@@ -732,6 +732,7 @@ public static class Program
                                                 var payload = Newtonsoft.Json.Linq.JToken.Parse(payloadJson);
                                                 var merge = CoopSync.beginMerge("Items", payload, senderId);   // (each box, label, map and flag: is the partner's newer?)
                                                 SaveAndLoad.Items data = null;
+                                                var fourthSwordChanged = false;
                                                 CoopSync.isApplyingItemsFromSync = true;
                                                 // a box whose version from the partner is newer takes their item; only a real change is applied (no re-timestamping in the timeline).
                                                 // The boxes are collected first and applied together (see CoopSync.applyBoxes: an item moved between two boxes must not be lost).
@@ -745,6 +746,9 @@ public static class Program
                                                         TrackerModel.IsHiddenDungeonNumbers = FuncConvert.FromFunc(() => data.HiddenDungeonNumbers);
                                                     if (merge.Takes(CoopSync.itemsFlagKey("SecondQuestDungeons")))
                                                         TrackerModel.IsSecondQuestDungeons = data.SecondQuestDungeons;
+                                                    // the 4th Sword's place and Progressive Items (before the boxes: a new place moves our slot's item first;
+                                                    // the 4th Sword turns Progressive Items on, never the other way round; nothing in Legacy Mode)
+                                                    fourthSwordChanged = CoopSync.applyFourthSwordFromSync(merge, payload);
 
                                                     // Top-level boxes, and the level 2 staircase slot (4th Sword). (An older tracker sends no MagicalSword, Letter, WoodSword or Level2Stair box: null, left alone.)
                                                     applyBox(data.WhiteSwordBox, TrackerModel.sword2Box);
@@ -791,6 +795,11 @@ public static class Program
                                                 try { CoopSync.applyBoxTiers(data?.ProgressiveBoxTiers, b => !merge.Takes(CoopSync.boxKey(b as TrackerModel.Box))); }
                                                 catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not apply the box tiers: {ex.Message}"); }
                                                 CoopSync.endMerge(merge);
+                                                if (fourthSwordChanged)
+                                                {
+                                                    try { CoopSync.finishFourthSwordFromSync(); }
+                                                    catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not redraw after the 4th Sword change: {ex.Message}"); }
+                                                }
                                                 // Force the timeline to redraw now that items have been applied
                                                 TrackerModel.TimelineItemModel.TriggerTimelineChanged();
                                             });
@@ -837,7 +846,14 @@ public static class Program
                                                     TrackerModel.startingItemsAndExtras.PlayerHasBook.Set(data.PlayerHasBook);
                                                     TrackerModel.startingItemsAndExtras.PlayerHasMeat.Set(data.PlayerHasMeat);
                                                     TrackerModel.startingItemsAndExtras.PlayerHasLetter.Set(data.PlayerHasLetter);
-                                                    TrackerModel.startingItemsAndExtras.MaxHeartsDifferential = data.MaxHeartsDifferential;
+                                                    if (TrackerModel.startingItemsAndExtras.MaxHeartsDifferential != data.MaxHeartsDifferential)
+                                                    {
+                                                        TrackerModel.startingItemsAndExtras.MaxHeartsDifferential = data.MaxHeartsDifferential;
+                                                        // (a plain field with no event: redraw the max hearts as the click does)
+                                                        TrackerModel.recomputePlayerStateSummary();
+                                                        WPFUI.decorStateChanged();
+                                                    }
+                                                    CoopSync.rebaseline("StartingItems");   // (the max hearts poll must not count the partner's value as ours)
 
                                                     TrackerModelOptions.DebugConfig.Log($"[Sync] Applied StartingItems update from {senderId}");
                                                 }

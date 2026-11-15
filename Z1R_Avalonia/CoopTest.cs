@@ -244,6 +244,20 @@ public static class CoopTest
                 TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword.Set(true);
             }));
             s.Add(("starting items: bow", () => TrackerModel.startingItemsAndExtras.PlayerHasBow.Set(true)));
+            // (the meat, the letter and the max hearts had no send of their own)
+            const string meat = "starting items: meat, letter, one more max heart";
+            s.Add((meat, () =>
+            {
+                var si = TrackerModel.startingItemsAndExtras;
+                si.PlayerHasMeat.Set(true); si.PlayerHasLetter.Set(true);
+                si.MaxHeartsDifferential = si.MaxHeartsDifferential + 1;   // (as the Max Hearts click does)
+                TrackerModel.recomputePlayerStateSummary();
+            }));
+            expects[meat] = () => TrackerModel.startingItemsAndExtras.PlayerHasMeat.Value() && TrackerModel.startingItemsAndExtras.PlayerHasLetter.Value() ? null : "the starting meat or letter is off";
+            // (as the Extras checkbox does; Progressive Items is already on from the start screen, so it stays on)
+            const string fourthOn = "4th sword at level 9";
+            s.Add((fourthOn, () => { OverworldItemGridUI.SetFourthSwordLocation(2); CoopSync.noteFourthSwordChanged(); }));
+            expects[fourthOn] = () => TrackerModel.level9FloorBoxEnabled && !TrackerModel.level2StairBoxEnabled && TrackerModel.ProgressiveItems ? null : "the 4th sword is not at level 9 with Progressive Items on";
             s.Add(("dungeon 1 triforce", () => { if (!TrackerModel.GetDungeon(0).PlayerHasTriforce()) TrackerModel.GetDungeon(0).ToggleTriforce(); }));
             s.Add(("notes", () => OverworldItemGridUI.notesTextBox.Text = "co-op test note from A"));
         }
@@ -273,6 +287,19 @@ public static class CoopTest
                 DungeonUI.horizontalDoorsPerLevel[0][1, 6].State = Dungeon.DoorState.PURPLE;
                 DungeonUI.verticalDoorsPerLevel[0][2, 5].State = Dungeon.DoorState.UNKNOWN;
             }));
+            // (Progressive Items was on before the 4th sword, so none leaves it on, on both sides)
+            const string fourthOff = "4th sword back to none";
+            s.Add((fourthOff, () => { OverworldItemGridUI.SetFourthSwordLocation(0); CoopSync.noteFourthSwordChanged(); }));
+            expects[fourthOff] = () => !TrackerModel.level9FloorBoxEnabled && !TrackerModel.level2StairBoxEnabled && TrackerModel.ProgressiveItems ? null : "a 4th sword slot is still on, or Progressive Items went off";
+            const string meatOff = "starting items: meat off, one less max heart";
+            s.Add((meatOff, () =>
+            {
+                var si = TrackerModel.startingItemsAndExtras;
+                si.PlayerHasMeat.Set(false);
+                si.MaxHeartsDifferential = si.MaxHeartsDifferential - 1;
+                TrackerModel.recomputePlayerStateSummary();
+            }));
+            expects[meatOff] = () => !TrackerModel.startingItemsAndExtras.PlayerHasMeat.Value() ? null : "the starting meat is on";
             // B's versions start again, as after a reload (its numbers are now below A's), and B changes a field A last changed, before hearing from A.
             // The edit must stay: it is numbered above A's counter once B hears it. (It used to lose to A's older, higher number and be undone.)
             const string afterReload = "after a reload of B's versions, wood sword off at once";
