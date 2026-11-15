@@ -6,13 +6,15 @@ Hotkeys let you mark items, tiles, rooms and doors from the keyboard, and even d
 
 ## Set them up
 
-1. Open `HotKeys.txt` in the tracker's folder with any text editor.
+1. Open `HotKeys.txt` with any text editor. It is in your settings folder (see [Where your files go](getting-started.md#where-your-files-go)): the tracker's own folder on Windows, `~/Library/Application Support/ZoraTracker` on macOS, `~/.config/ZoraTracker` (or `$XDG_CONFIG_HOME/ZoraTracker`) on Linux.
 2. Find the selector you want and type a key after the `=`.
 3. Save the file and restart the tracker.
 
-The **Hotkeys** button on the main screen shows the keys you have mapped, as a cheat sheet.
+The **Hotkeys** button on the main screen shows the keys you have mapped, as a cheat sheet. If you have none mapped, it has an **Open HotKeys.txt folder** button.
 
-`HotKeys_BlankSampleTemplate.txt` lists every selector available. Do not edit it; copy lines from it into `HotKeys.txt`.
+`HotKeys_BlankSampleTemplate.txt`, in the same folder, lists every selector available. The tracker rewrites it at each start, so do not edit it; copy lines from it into `HotKeys.txt`.
+
+These steps are for the desktop app. The browser version has no folder to open.
 
 ```
 Item_BlueRing   = r
@@ -20,8 +22,8 @@ Overworld_Level1 = 1
 Global_DungeonTab1 = SHIFT 1
 ```
 
-- A key is `0-9`, `a-z`, or `\nnn` where `nnn` is a [WPF key code](https://learn.microsoft.com/dotnet/api/system.windows.input.key#fields) (for example `\75` is NumPad1).
-- Add `SHIFT `, `CTRL ` or `ALT ` before the key for a modifier.
+- A key is `0-9`, `a-z`, or `\nnn` where `nnn` is a key number from [Microsoft's Key list](https://learn.microsoft.com/dotnet/api/system.windows.input.key#fields) (for example `\75` is NumPad1).
+- Add `SHIFT `, `CTRL ` or `ALT ` before the key for a modifier. On macOS, Cmd counts as Ctrl.
 - Leave a key blank to bind nothing. Lines starting with `#` are comments.
 
 ## Where each hotkey works
@@ -39,6 +41,10 @@ Menus that are open on screen also have their own contextual hotkeys.
 ## Play without the mouse
 
 Map the `Global_MoveCursor...` keys to move the mouse across grids (the overworld, dungeon rooms and more), and `Global_LeftClick`, `Global_MiddleClick`, `Global_RightClick`, `Global_ScrollUp` and `Global_ScrollDown` to click and scroll. `Global_ToggleCursorOverworldOrDungeon` jumps the cursor between the overworld and the dungeon.
+
+- **macOS:** moving and clicking the mouse needs Accessibility permission (System Settings, Privacy & Security, Accessibility). macOS asks the first time. Without it, those hotkeys do nothing.
+- **Linux:** Wayland does not let apps move the cursor, so on a Wayland desktop these hotkeys may not work.
+- **Browser:** a web page cannot move or click the cursor, so these hotkeys do nothing.
 
 ## Shop tiles
 

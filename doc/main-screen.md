@@ -13,6 +13,7 @@
 - **Triforce in the basement**: some seeds hide a triforce piece in a basement. Click a dungeon item box and choose Triforce Piece. The numbered triforce moves into that box, and you will have an extra floor item to make up for it.
 - **Items and hearts**: the items you own, your hearts and Max Hearts. Click to mark them.
 - **Counters**: how many overworld spots are left, plus counts of items and open spots.
+- **AP counter**: next to the Zelda icon, with the AP Item icon. It shows only while [Archipelago Support](start-screen.md#archipelago-support) is on. It counts the AP Items you have checked off as collected. Hover it to outline the overworld spots that hold one.
 
 ## Tools and file
 
@@ -21,7 +22,7 @@
 - **Hotkeys** shows the keyboard shortcuts you have mapped.
 - **Log** shows the reminders that have played.
 - **Draw/Custom Icons** lets you draw on the map.
-- **Overworld + Extras** sets the quest and block options, including any [Random ZORA options](start-screen.md#random-options).
+- **Overworld + Extras** changes the overworld template (1st Quest OW, 2nd Quest OW, Mixed 1Q OW, Mixed 2Q OW) and the ZORA extras you set on the start screen, at any time. It holds **Extra Power Bracelet Blocks**, **Extra Raft Blocks**, **Randomize Dead Woods**, **Randomize Lost Hills**, **Pegasus Boots**, **Mirrored Overworld** and the 4th sword place (**4th sword: L9**, **L2** or **none**). Options that were Random on the start screen cycle **Off, On, ?** here. See [Random options](start-screen.md#random-options). On a mixed overworld it also has **Hide 1st Quest** and **Hide 2nd Quest**. Changes are saved with your save file. The panel warns that some of its actions cannot be undone, so read it before you click.
 - **Pause/Reset timer** controls the run clock.
 - **Options** opens [settings](options.md).
 - **Save** writes a save file.

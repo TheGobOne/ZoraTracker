@@ -10,7 +10,7 @@ Click a room to open the room menu. Pick the room type (stairs, shop, old man, b
 
 - **Doors** sit between rooms. The red **no** wall marks a door you cannot pass.
 - **Old Man**, **Bomb Upgrade** and **Princess** rooms place their usual wall for you. Changing the room to another type takes that wall back off.
-- **OFF rooms** are rooms that are not part of the dungeon. Marking a room OFF clears any manual no-wall against it, and (with **Red Edge By OFF Tiles** on, the default) draws a red edge where the dungeon meets it.
+- **OFF rooms** are rooms that are not part of the dungeon. Marking a room OFF clears any manual no-wall against it, and (with **Red edge by OFF tiles** on, the default) draws a red edge where the dungeon meets it.
 
 ## Dungeon summary
 
@@ -26,6 +26,8 @@ To reset a single room back to a brand new one, press **mouse 4** over it. Hold 
 
 Each dungeon's item row sits at the top of the main screen. Mark what you found there, and note anything blocking a dungeon in the **Blockers** boxes.
 
+With **4th Sword** on and its item set to **Level 9**, level 9 gets an extra floor item box under its row. See [4th Sword and Progressive Items](start-screen.md#4th-sword-and-progressive-items).
+
 ## Settings
 
-Dungeon behavior (hint icons, BOARD instead of LEVEL, basement info, door inference, the red OFF edges and more) is under **Dungeon Settings** in [Options](options.md).
+Dungeon behavior (hint icons, BOARD instead of LEVEL, basement info, door inference, the red OFF edges and more) is under **Dungeon settings** in [Options](options.md).

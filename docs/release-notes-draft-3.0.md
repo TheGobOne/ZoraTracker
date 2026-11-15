@@ -31,7 +31,7 @@
 - The name is written ZORATracker everywhere.
 
 ### Mac users
-The app is now ZORATracker.app. After you upgrade, delete the old ZORA Tracker.app. Your settings and saves are kept.
+The app is now ZORATracker.app. Your saves are in a Saves folder inside the old ZORA Tracker.app (right-click it, choose Show Package Contents, then open Contents, then MacOS). Copy that Saves folder into the new app's Contents/MacOS folder before you delete the old app.
 
 ## Discord
 
@@ -61,7 +61,7 @@ The app is now ZORATracker.app. After you upgrade, delete the old ZORA Tracker.a
 • Thanks to Tetra (tetraly), who wrote the Avalonia port this release is built on.
 • "Boots Replace Boomerangs" is now "Pegasus Boots".
 
-**Mac users:** delete the old ZORA Tracker.app after upgrading. Settings and saves are kept.
+**Mac users:** your saves are inside the old ZORA Tracker.app (Show Package Contents, Contents, MacOS, Saves). Copy that Saves folder into the new app's Contents/MacOS folder before you delete the old app.
 
 Download or update via the app.
 Please report any bugs here or on Issues on Github: https://github.com/TheGobOne/ZoraTracker/issues
