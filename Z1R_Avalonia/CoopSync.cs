@@ -29,9 +29,6 @@ public static class CoopSync
 {
     private static void onEvent<T>(IEvent<FSharpHandler<T>, T> e, Action<T> f) => e.AddHandler(new FSharpHandler<T>((_, x) => f(x)));
 
-    public static string lastSentPlayerProgressJson = "";
-    public static string lastSentStartingItemsJson = "";
-    public static string lastSentOverworldJson = "";
     public static ConcurrentDictionary<string, string> lastAppliedHashes = new ConcurrentDictionary<string, string>();
     public static ConcurrentDictionary<string, string> lastSentHashes = new ConcurrentDictionary<string, string>();
     public static bool isDoorSyncReady() =>
@@ -42,31 +39,6 @@ public static class CoopSync
     private static readonly int hashRetentionLimit = 20;
     private static readonly ConcurrentDictionary<string, List<string>> recentReceivedHashes = new ConcurrentDictionary<string, List<string>>();
 
-    private static readonly int MAX_ENTRIES = 500;
-    private static readonly ConcurrentDictionary<string, string> lastAppliedRoomPayloads = new ConcurrentDictionary<string, string>();
-    private static readonly ConcurrentDictionary<string, string> lastAppliedDoorPayloads = new ConcurrentDictionary<string, string>();
-    private static readonly ConcurrentDictionary<string, long> lastTimestamps = new ConcurrentDictionary<string, long>();
-
-    private static void pruneIfNeeded<T>(ConcurrentDictionary<string, T> dict, string name)
-    {
-        if (dict.Count > MAX_ENTRIES)
-        {
-            var oldestKeys =
-                lastTimestamps
-                    .OrderBy(kvp => kvp.Value)
-                    .Select(kvp => kvp.Key)
-                    .Where(dict.ContainsKey)
-                    .Take(dict.Count - MAX_ENTRIES)
-                    .ToList();
-
-            foreach (var key in oldestKeys)
-            {
-                var removed = dict.TryRemove(key, out _);
-                if (removed)
-                    TrackerModelOptions.DebugConfig.Log($"[Sync] Pruned stale entry {key} from {name}");
-            }
-        }
-    }
 
     public static readonly ConcurrentQueue<DateTime> syncBurstTimestamps = new ConcurrentQueue<DateTime>();
     public static readonly int syncBurstWindowMs = 2000;
@@ -230,143 +202,696 @@ public static class CoopSync
         noteRemoteState(timestamp);
     }
 
-    // When the user last changed each overworld tile and each item box here (UTC ticks; UI thread only).
-    // A full Overworld or Items message built before that edit must not undo it (see tileEditedAfter / boxEditedAfter).
-    // Applying the partner's value for a tile or box clears its entry: our edit has then been settled.
-    private static readonly long[,] tileEditTicks = new long[16, 8];
-    private static readonly Dictionary<object, long> boxEditTicks = new Dictionary<object, long>();   // (keyed by the box object)
-
-    // Times from the two trackers' clocks closer than this count as the same moment (the clocks can differ by a little).
-    private static readonly long concurrentTicks = TimeSpan.FromSeconds(5.0).Ticks;
-
-    /// A full Overworld or Items message: keep our value for an entry we changed after the message was built, or up to 5 s before it
-    /// (within that time the message may have been built before our change reached the partner). Our state is then sent again.
-    /// (No console ID tie-break here: a full message also carries entries the partner never touched, and losing a tie to one of those
-    /// would undo our edit on our side only, while the partner keeps it. Edits that really conflict come as OverworldTile messages.)
-    public static bool tileEditedAfter(int x, int y, long incomingTicks)
-    {
-        var ours = tileEditTicks[x, y];
-        return ours != 0 && ours > incomingTicks - concurrentTicks;
-    }
-    public static bool boxEditedAfter(object box, long incomingTicks) =>
-        boxEditTicks.TryGetValue(box, out var t) && t > incomingTicks - concurrentTicks;
-
-    /// A partner's OverworldTile message: they changed this very tile. Does our own change of it win?
-    /// The later change wins; changes within 5 s of each other are concurrent and the lower console ID wins.
-    /// Both trackers decide by the same rule, so they end up with the same value.
-    public static bool tileEditWins(int x, int y, long incomingTicks, string senderId)
-    {
-        var ours = tileEditTicks[x, y];
-        if (ours == 0) return false;
-        if (Math.Abs(ours - incomingTicks) <= concurrentTicks)
-            return string.CompareOrdinal(TrackerModelOptions.CoopSyncOptions.MyConsoleId ?? "", senderId ?? "") < 0;
-        return ours > incomingTicks;
-    }
-
-    public static void clearTileEdit(int x, int y) => tileEditTicks[x, y] = 0;
-    public static void clearBoxEdit(object box) => boxEditTicks.Remove(box);
-
-    // The last DungeonMaps payload applied from the partner (an exact repeat is skipped).
-    public static string lastReceivedDungeonMapsJson = "";
-
     /// Forgets every record of what the partner sent, so the snapshot that follows a hello is applied in full, even parts identical to older messages.
+    /// (The versions stay: they say which edits each tracker has, and a snapshot is merged by them like any other message.)
     public static void resetReceivedState()
     {
         recentReceivedHashes.Clear();
         lastAppliedHashes.Clear();
-        lastTimestamps.Clear();
-        lastAppliedRoomPayloads.Clear();
-        lastAppliedDoorPayloads.Clear();
-        lastAppliedRoomTimestamps.Clear();
-        lastAppliedDoorTimestamps.Clear();
-        lastReceivedDungeonMapsJson = "";
-        lastReceivedState.Clear();   // (the partner's next whole state is taken as it is)
     }
 
-    // ---- whole-state messages: PlayerProgress, StartingItems, Blockers, DungeonTriforce, Hints ----
-    // Each carries all of the sender's flags. Applied as a whole, two changes made at once on the two trackers undid each other
-    // (A ticks Bombs, B ticks Wood Sword: each ended with only the other's change). Now only the fields the partner changed since
-    // its last message of that kind are applied, our other fields stay, and when our state then differs from theirs we send ours.
+    // ---- versions: how the two trackers settle changes, including changes made at the same time ----
+    // Every synced field or unit has a key (a PlayerProgress flag, a blocker, an item box, an overworld tile, a room, a door, ...) and a version:
+    // a number and the writer (console ID plus this run's start time). A change made here sets the number to the highest one seen anywhere (the counter,
+    // see versionClock), plus 1, and the writer to us. Each message carries the versions of what it holds, and our counter. The receiver takes a value
+    // only when its version is higher than its own, comparing the number first and then the writer text, so both trackers decide the same way,
+    // with no clocks involved. A stale echo (a partner's message built before our change reached them) has a lower version and changes nothing.
+    // Changes made here are found by comparing the state with what it was when last looked at (see stamp), so a change has its version before it is sent.
+    // Nothing of this is saved: after a reload the versions start again from 0, and the hello brings the trackers back in step. Edits made after the
+    // reload but before the partner's counter is heard are renumbered above it then (see notePartnerClock), so they are not lost to older edits.
+    // A value that cannot be applied (an item allowed once, still in another box) keeps ours, with a version above theirs (see endMerge).
 
-    // The last state of each kind received from the partner (UI thread only). No entry: the next one is taken whole (after a hello).
-    private static readonly Dictionary<string, string> lastReceivedState = new Dictionary<string, string>();
+    private static readonly Dictionary<string, (long v, string w)> versions = new Dictionary<string, (long v, string w)>();   // (UI thread only, as all of this section)
+    private static readonly Dictionary<string, Dictionary<string, string>> versionBaselines = new Dictionary<string, Dictionary<string, string>>();   // per kind: key -> value when last looked at
+    private static readonly HashSet<string> unsentEdits = new HashSet<string>();   // kinds with changes versioned here and not sent yet
+    private static readonly HashSet<string> mustSend = new HashSet<string>();      // kinds to send even without new changes (the partner lacks a version of ours, or a hello snapshot)
+    private static readonly HashSet<string> snapshotPending = new HashSet<string>();   // kinds whose next message is a hello snapshot
+    private static readonly Dictionary<string, Dictionary<string, string>> lastUnversioned = new Dictionary<string, Dictionary<string, string>>();   // an older partner's last whole state of each kind
+    private static string sessionNonce = "";
 
-    /// Our state of this kind, as we would send it. UI thread.
-    private static string buildWholeStateJson(string messageType)
+    // One running counter for this tracker: the highest version number made here or seen from the partner (in a message or a hello).
+    // A new edit gets max(counter, the key's version) + 1, so an edit made after hearing from the partner is above every number they had.
+    private static long versionClock = 0;
+    // Edits made in this run before the partner's counter was first heard. After a reload our numbers start at 0 again while the partner's
+    // do not, so these are given new numbers above the partner's counter once it is heard (see notePartnerClock).
+    private static bool partnerClockKnown = false;
+    private static readonly HashSet<string> preContactEdits = new HashSet<string>();
+    private static readonly Dictionary<string, long> localEditTicks = new Dictionary<string, long>();   // key -> when we last versioned an edit of it (UTC ticks)
+    private static readonly Dictionary<string, int> applyFailures = new Dictionary<string, int>();     // key -> how often the partner's value could not be applied
+
+    /// The version number a new edit gets: above the counter and above the key's own version. (A pure rule, checked by the self-test.)
+    public static long stampNumber(long clock, long keyVersion) => Math.Max(clock, keyVersion) + 1;
+
+    private static void setVersion(string key, (long v, string w) x)
     {
-        switch (messageType)
+        versions[key] = x;
+        if (x.v > versionClock) versionClock = x.v;
+    }
+
+    /// The kind of a key ("PlayerProgress/PlayerHasBombs" -> "PlayerProgress").
+    private static string kindOfKey(string key)
+    {
+        var i = key.IndexOf('/');
+        return i < 0 ? key : key.Substring(0, i);
+    }
+
+    /// The partner's counter, from its hello or a message. Raises ours to it. The first one heard in this run gives our edits made before it
+    /// new numbers above it, so an edit made right after a reload is not outranked by the partner's older, higher numbers. UI thread.
+    public static void notePartnerClock(long partnerMax)
+    {
+        if (partnerMax > versionClock) versionClock = partnerMax;
+        if (partnerClockKnown) return;
+        partnerClockKnown = true;
+        foreach (var key in preContactEdits)
+            if (versions.TryGetValue(key, out var v) && v.w == myWriter)   // (still our edit: the partner's value did not replace it)
+            {
+                setVersion(key, (stampNumber(versionClock, v.v), myWriter));
+                unsentEdits.Add(kindOfKey(key));
+            }
+        if (preContactEdits.Count > 0) TrackerModelOptions.DebugConfig.Log($"[Sync] Renumbered {preContactEdits.Count} edits made before the partner was heard (above {partnerMax})");
+        preContactEdits.Clear();
+    }
+
+    /// Our counter, for the hello.
+    public static long maxVersion => versionClock;
+
+    /// Test seam for the co-op test: the counter back to 0, as a real reload (a new process) has it. Call startupFinished after it.
+    public static void testResetCounter() => versionClock = 0;
+
+    /// Test seam for the self-test: sets (or with null removes) one key's version, without touching the counter.
+    public static void testSetVersion(string key, (long v, string w)? x)
+    {
+        if (key == null) return;
+        if (x is (long, string) xv) versions[key] = xv; else versions.Remove(key);
+    }
+
+    /// Our writer name: the console ID and this run's start time (so an edit made after a reload never has the same version as one made before it).
+    public static string myWriter => (TrackerModelOptions.CoopSyncOptions.MyConsoleId ?? "") + "#" + sessionNonce;
+
+    /// The kinds of message that carry a whole state with versions. (RoomChange, DoorChange, OverworldTile and HiddenDungeonColorLabel carry one unit of
+    /// DungeonMaps, Overworld or Items, with that unit's version.)
+    public static readonly string[] versionedKinds = { "PlayerProgress", "StartingItems", "Blockers", "DungeonTriforce", "Hints", "Items", "Overworld", "DungeonMaps" };
+
+    /// The version rule: above 0 when (v1, w1) is newer than (v2, w2). The number decides; equal numbers go by the writer text (ordinal).
+    public static int compareVersions(long v1, string w1, long v2, string w2) =>
+        v1 != v2 ? v1.CompareTo(v2) : Math.Sign(string.CompareOrdinal(w1 ?? "", w2 ?? ""));
+
+    /// Does a partner's value with this version replace ours? A newer version wins. A hello snapshot also wins a tie
+    /// (both still at version 0, e.g. two different saves loaded: the hello winner's state is taken).
+    public static bool incomingWins(long inV, string inW, long ourV, string ourW, bool snapshot)
+    {
+        var c = compareVersions(inV, inW, ourV, ourW);
+        return c > 0 || (c == 0 && snapshot);
+    }
+
+    /// A message from an older tracker has no versions. As the old rule did: a value it changed since its last message of that kind is a new edit
+    /// of theirs and is taken (when it differs from ours); a value it did not change keeps ours. Its first message is taken whole.
+    /// Except that a value we changed here in the last 5 s keeps ours (the message may have been built before our change reached them, and then
+    /// it holds our own older value: a stale echo). Our state is then sent again.
+    public static bool unversionedTakes(string theirPrevious, string theirs, string ours, bool weEditedRecently = false) =>
+        (theirPrevious == null || theirPrevious != theirs) && theirs != ours && !weEditedRecently;
+    private static readonly long recentEditTicks = TimeSpan.FromSeconds(5.0).Ticks;
+    private static bool editedRecently(string key) => localEditTicks.TryGetValue(key, out var t) && DateTime.UtcNow.Ticks - t < recentEditTicks;
+
+    public static (long v, string w) versionOf(string key) => key != null && versions.TryGetValue(key, out var x) ? x : (0L, "");
+
+    // ---- keys ----
+    public static string boxKey(string name) => "Items/box/" + name;
+    public static string boxKey(TrackerModel.Box b)
+    {
+        if (b == null) return null;
+        try
+        {
+            foreach (var nb in SaveAndLoad.namedBoxes())
+                if (ReferenceEquals(nb.Item2, b)) return boxKey(nb.Item1);
+        }
+        catch (Exception) { }   // (before the dungeon tracker exists there are no named boxes)
+        return null;
+    }
+    public static string labelKey(int dungeon) => $"Items/label/{dungeon}";
+    public static string mapKey(int dungeon) => $"Items/map/{dungeon}";
+    public static string itemsFlagKey(string name) => "Items/" + name;
+    public static string tileKey(int x, int y) => $"Overworld/tile/{x},{y}";
+    public static string overworldKey(string name) => "Overworld/" + name;
+    public static string roomKey(int level, int x, int y) => $"DungeonMaps/room/{level},{x},{y}";
+    public static string doorKey(int level, int x, int y, bool isH) => $"DungeonMaps/{(isH ? "hdoor" : "vdoor")}/{level},{x},{y}";
+    public static string circleKey(int level, int x, int y) => $"DungeonMaps/circle/{level},{x},{y}";
+    public static string overlayKey(int level) => $"DungeonMaps/overlay/{level}";
+    public static string freshKey(int level) => $"DungeonMaps/fresh/{level}";   // (the big numeral and the first-click shortcut, see DungeonUI.isFirstTimeClickingAnyRoom)
+    public static string tileValue(int cur, int ed, int circ, string extras) => $"{cur},{ed},{circ}|{extras ?? ""}";
+
+    /// Our state of this kind, as we would send it (without versions). UI thread.
+    private static string buildStateJson(string kind)
+    {
+        switch (kind)
         {
             case "PlayerProgress": return buildPlayerProgressJson();
             case "StartingItems": return buildStartingItemsJson();
             case "Blockers": return buildBlockersJson();
             case "DungeonTriforce": return buildTriforceJson();
             case "Hints": return buildHintsJson();
+            case "Items": return buildItemsJson();
+            case "Overworld": return buildOverworldJson();
+            case "DungeonMaps":
+                if (FSharpOption<TrackerModel.DungeonTrackerInstance>.get_IsNone(TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstanceOption)) return null;
+                return buildDungeonMapsJson();
             default: return null;
         }
     }
 
-    /// Records our current state of this kind as what the partner has (after the startup baseline, or after we sent them a full snapshot). UI thread.
-    private static void assumePartnerHas(string messageType)
+    /// Our state of this kind as key -> value. null when it cannot be built yet. UI thread.
+    private static Dictionary<string, string> stateOf(string kind)
     {
-        try { lastReceivedState[messageType] = buildWholeStateJson(messageType); }
-        catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not record the {messageType} state: {ex.Message}"); }
-    }
-
-    /// A partner's whole state: returns the JSON to apply (their changed fields, our other fields). resendOurs is true when the result
-    /// differs from what they sent, so ours must go back to them. UI thread, before the apply.
-    public static string mergeWholeState(string messageType, string incomingJson, out bool resendOurs)
-    {
-        resendOurs = false;
-        var incoming = Newtonsoft.Json.Linq.JToken.Parse(incomingJson);
-        var had = lastReceivedState.TryGetValue(messageType, out var lastJson) && lastJson != null;
-        lastReceivedState[messageType] = incomingJson;
-        if (!had) return incomingJson;
-        var ours = Newtonsoft.Json.Linq.JToken.Parse(buildWholeStateJson(messageType));
-        var keptOurs = false;
-        var merged = mergeToken(Newtonsoft.Json.Linq.JToken.Parse(lastJson), incoming, ours, ref keptOurs);
-        resendOurs = keptOurs;
-        return merged.ToString(Formatting.None);
-    }
-
-    // Field by field: a value the partner did not change (same as in their last message) is ours, any other is theirs.
-    // keptOurs is set when one of ours that differs from theirs was kept.
-    private static Newtonsoft.Json.Linq.JToken mergeToken(Newtonsoft.Json.Linq.JToken last, Newtonsoft.Json.Linq.JToken incoming, Newtonsoft.Json.Linq.JToken ours, ref bool keptOurs)
-    {
-        if (ours == null || last == null) return incoming.DeepClone();   // (a field we or their last message lack: theirs)
-        if (incoming is Newtonsoft.Json.Linq.JObject io && last is Newtonsoft.Json.Linq.JObject lo && ours is Newtonsoft.Json.Linq.JObject oo)
+        try
         {
-            var r = (Newtonsoft.Json.Linq.JObject)oo.DeepClone();   // (fields an older tracker does not send stay ours)
-            foreach (var p in io.Properties())
-                r[p.Name] = mergeToken(lo[p.Name], p.Value, oo[p.Name], ref keptOurs);
-            return r;
+            var json = buildStateJson(kind);
+            return json == null ? null : stateFromPayload(kind, Newtonsoft.Json.Linq.JToken.Parse(json));
         }
-        if (incoming is Newtonsoft.Json.Linq.JArray ia && last is Newtonsoft.Json.Linq.JArray la && ours is Newtonsoft.Json.Linq.JArray oa && ia.Count == la.Count && ia.Count == oa.Count)
+        catch (Exception ex)
         {
-            var r = new Newtonsoft.Json.Linq.JArray();
-            for (int k = 0; k < ia.Count; k++)
-                r.Add(mergeToken(la[k], ia[k], oa[k], ref keptOurs));
-            return r;
+            TrackerModelOptions.DebugConfig.Log($"[Sync] Could not read the {kind} state: {ex.Message}");
+            return null;
         }
-        if (!Newtonsoft.Json.Linq.JToken.DeepEquals(incoming, last)) return incoming.DeepClone();   // (the partner changed it)
-        if (!Newtonsoft.Json.Linq.JToken.DeepEquals(incoming, ours)) keptOurs = true;
-        return ours.DeepClone();
     }
 
-    /// After a merged whole state was applied: ours differs from what the partner sent, so send ours (else record it as sent). UI thread.
-    public static void finishWholeState(string messageType, bool resendOurs)
+    // The flat kinds are split into their JSON leaves (a Blockers message into its blockers). Key: kind/path, e.g. "PlayerProgress/PlayerHasBombs".
+    private static int unitDepth(string kind) => kind == "Blockers" ? 2 : int.MaxValue;
+    private static void flattenTokens(Newtonsoft.Json.Linq.JToken t, string path, int unitDepth, int depth, Dictionary<string, Newtonsoft.Json.Linq.JToken> r)
     {
-        if (!resendOurs) { rebaseline(messageType); return; }
+        if (depth >= unitDepth || !(t is Newtonsoft.Json.Linq.JContainer))
+            r[path] = t;
+        else if (t is Newtonsoft.Json.Linq.JObject o)
+        {
+            foreach (var p in o.Properties())
+                if (p.Name != "SyncV" && p.Name != "SyncSnap")
+                    flattenTokens(p.Value, path + "/" + p.Name, unitDepth, depth + 1, r);
+        }
+        else if (t is Newtonsoft.Json.Linq.JArray a)
+            for (int k = 0; k < a.Count; k++)
+                flattenTokens(a[k], path + "/" + k, unitDepth, depth + 1, r);
+    }
+
+    /// A message of this kind (ours or the partner's, without its versions) as key -> value.
+    public static Dictionary<string, string> stateFromPayload(string kind, Newtonsoft.Json.Linq.JToken t)
+    {
+        var r = new Dictionary<string, string>();
+        switch (kind)
+        {
+            case "Items": itemsState(t, r); break;
+            case "Overworld": overworldState(t, r); break;
+            case "DungeonMaps": dungeonMapsState(t, r); break;
+            default:
+                var toks = new Dictionary<string, Newtonsoft.Json.Linq.JToken>();
+                flattenTokens(t, kind, unitDepth(kind), 0, toks);
+                foreach (var kv in toks) r[kv.Key] = kv.Value.ToString(Formatting.None);
+                break;
+        }
+        return r;
+    }
+
+    private static int intOf(Newtonsoft.Json.Linq.JToken t, int d) => t != null && (t.Type == Newtonsoft.Json.Linq.JTokenType.Integer || t.Type == Newtonsoft.Json.Linq.JTokenType.Float) ? (int)t : d;
+
+    // Items: each box is one unit (item, got, progressive tier), plus each dungeon's color and label, its map, and the two dungeon flags.
+    private static void itemsState(Newtonsoft.Json.Linq.JToken t, Dictionary<string, string> r)
+    {
+        if (!(t is Newtonsoft.Json.Linq.JObject)) return;
+        var tierText = t["ProgressiveBoxTiers"];
+        var tiers = new Dictionary<string, string>();
+        var tiersKnown = tierText != null && tierText.Type == Newtonsoft.Json.Linq.JTokenType.String;   // (older trackers send none)
+        if (tiersKnown)
+            foreach (var e in ((string)tierText).Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var q = e.Split(',');
+                if (q.Length == 2) tiers[q[0]] = q[1];
+            }
+        Dictionary<TrackerModel.Box, string> names = null;
+        try { names = SaveAndLoad.namedBoxes().ToDictionary(nb => nb.Item2, nb => nb.Item1); } catch (Exception) { return; }
+        void box(Newtonsoft.Json.Linq.JToken b, TrackerModel.Box model)
+        {
+            if (b == null || b.Type != Newtonsoft.Json.Linq.JTokenType.Object || model == null || !names.TryGetValue(model, out var name)) return;
+            r[boxKey(name)] = $"{intOf(b["CellCurrent"], -1)},{intOf(b["PlayerHas"], 0)},{(tiersKnown ? (tiers.TryGetValue(name, out var tier) ? tier : "-") : "?")}";
+        }
+        r[itemsFlagKey("HiddenDungeonNumbers")] = (t["HiddenDungeonNumbers"] ?? "").ToString();
+        r[itemsFlagKey("SecondQuestDungeons")] = (t["SecondQuestDungeons"] ?? "").ToString();
+        box(t["WhiteSwordBox"], TrackerModel.sword2Box);
+        box(t["LadderBox"], TrackerModel.ladderBox);
+        box(t["ArmosBox"], TrackerModel.armosBox);
+        box(t["MagicalSwordBox"], TrackerModel.sword3Box);
+        box(t["LetterBox"], TrackerModel.letterBox);
+        box(t["WoodSwordBox"], TrackerModel.sword1Box);
+        box(t["Level2StairBox"], TrackerModel.level2StairBox);
+        if (t["Dungeons"] is Newtonsoft.Json.Linq.JArray ds)
+            for (int i = 0; i < ds.Count && i <= 8; i++)
+            {
+                if (!(ds[i] is Newtonsoft.Json.Linq.JObject d)) continue;
+                var model = TrackerModel.GetDungeon(i);
+                r[labelKey(i)] = $"{intOf(d["Color"], 0)},{(d["LabelChar"] ?? "").ToString()}";
+                r[mapKey(i)] = (d["PlayerHasMap"] ?? "").ToString();
+                if (d["Boxes"] is Newtonsoft.Json.Linq.JArray bs)
+                    for (int j = 0; j < bs.Count && j < model.Boxes.Length; j++)
+                        box(bs[j], model.Boxes[j]);
+                box(d["ExtraBox"], model.ExtraFloorBox);
+            }
+    }
+
+    // Overworld: each tile is one unit (icon, extra data, circle and the extras), plus the start spot, the waypoint, mirroring and the shop globals.
+    private static void overworldState(Newtonsoft.Json.Linq.JToken t, Dictionary<string, string> r)
+    {
+        if (!(t is Newtonsoft.Json.Linq.JObject)) return;
+        r[overworldKey("Mirror")] = (t["MirrorOverworld"] ?? "").ToString();
+        r[overworldKey("Start")] = $"{intOf(t["StartIconX"], -1)},{intOf(t["StartIconY"], -1)}";
+        r[overworldKey("Waypoint")] = $"{intOf(t["CustomWaypointX"], -1)},{intOf(t["CustomWaypointY"], -1)}";
+        if (t["ShopStash"] is Newtonsoft.Json.Linq.JArray stash) r[overworldKey("ShopStash")] = stash.ToString(Formatting.None);
+        if (t["CheapKeyShops"] is Newtonsoft.Json.Linq.JArray cheap) r[overworldKey("CheapKeyShops")] = cheap.ToString(Formatting.None);
+        var map = t["Map"] as Newtonsoft.Json.Linq.JArray;
+        if (map == null || map.Count != 384) return;
+        var extras = t["TileExtras"] as Newtonsoft.Json.Linq.JArray;
+        if (extras != null && extras.Count != 128) extras = null;
+        for (int j = 0; j <= 7; j++)
+            for (int i = 0; i <= 15; i++)
+            {
+                var idx = (j * 16 + i) * 3;
+                r[tileKey(i, j)] = tileValue(intOf(map[idx], -1), intOf(map[idx + 1], 0), intOf(map[idx + 2], 0), extras == null ? null : (string)extras[j * 16 + i]);
+            }
+    }
+
+    // DungeonMaps: each room, door and circle is one unit, plus each level's vanilla map overlay and whether its big numeral still shows.
+    // (the arrays are [row][column] as sent, see cloneAndFixDungeonModel)
+    private static void dungeonMapsState(Newtonsoft.Json.Linq.JToken t, Dictionary<string, string> r)
+    {
+        if (!(t is Newtonsoft.Json.Linq.JArray levels)) return;
+        Newtonsoft.Json.Linq.JToken at(Newtonsoft.Json.Linq.JToken a, int row, int col) =>
+            a is Newtonsoft.Json.Linq.JArray ra && row < ra.Count && ra[row] is Newtonsoft.Json.Linq.JArray rc && col < rc.Count ? rc[col] : null;
+        for (int level = 0; level < levels.Count && level <= 8; level++)
+        {
+            if (!(levels[level] is Newtonsoft.Json.Linq.JObject m)) continue;
+            var L = level + 1;
+            for (int x = 0; x <= 7; x++)
+                for (int y = 0; y <= 7; y++)
+                {
+                    var room = at(m["RoomStates"], y, x);
+                    if (room != null) r[roomKey(L, x, y)] = room.ToString(Formatting.None);
+                    var circle = at(m["RoomIsCircled"], y, x);
+                    if (circle != null) r[circleKey(L, x, y)] = circle.ToString(Formatting.None);
+                    var h = x <= 6 ? at(m["HorizontalDoors"], y, x) : null;
+                    if (h != null) r[doorKey(L, x, y, true)] = h.ToString(Formatting.None);
+                    var v = y <= 6 ? at(m["VerticalDoors"], y, x) : null;
+                    if (v != null) r[doorKey(L, x, y, false)] = v.ToString(Formatting.None);
+                }
+            if (m["VanillaMapOverlay"] != null) r[overlayKey(L)] = m["VanillaMapOverlay"].ToString(Formatting.None);
+            if (m["Fresh"] != null) r[freshKey(L)] = m["Fresh"].ToString(Formatting.None);   // (older trackers send none)
+        }
+    }
+
+    /// Looks at our state of this kind and gives every key that changed since the last look a new version from us. UI thread.
+    /// now: the state, when the caller has it already.
+    private static void stamp(string kind, Dictionary<string, string> now = null)
+    {
+        if (!startupBaselineDone) return;
+        now ??= stateOf(kind);
+        if (now == null) return;
+        if (versionBaselines.TryGetValue(kind, out var before))
+            foreach (var kv in now)
+                if (!before.TryGetValue(kv.Key, out var old) || old != kv.Value)
+                {
+                    setVersion(kv.Key, (stampNumber(versionClock, versionOf(kv.Key).v), myWriter));
+                    localEditTicks[kv.Key] = DateTime.UtcNow.Ticks;
+                    if (!partnerClockKnown) preContactEdits.Add(kv.Key);
+                    unsentEdits.Add(kind);
+                }
+        versionBaselines[kind] = now;
+    }
+
+    /// Versions every change made here so far, of every kind (before a partner's message is merged, so none of ours is missed). UI thread.
+    public static void stampAll()
+    {
+        if (!startupBaselineDone || !coopActive()) return;
+        foreach (var k in versionedKinds) stamp(k);
+    }
+
+    /// Takes our current state of every kind as already versioned (after a partner's update was applied: those values are theirs). UI thread.
+    private static void rebaselineVersions()
+    {
+        foreach (var k in versionedKinds)
+        {
+            var now = stateOf(k);
+            if (now != null) versionBaselines[k] = now;
+        }
+    }
+
+    /// The versions this message carries, for these keys (all keys of the kind when null), as {"w":[writers],"k":{key:[number, writer index]}}.
+    private static Newtonsoft.Json.Linq.JObject versionsJson(string kind, IEnumerable<string> keys)
+    {
+        var prefix = kind + "/";
+        var writers = new List<string>();
+        var k = new Newtonsoft.Json.Linq.JObject();
+        foreach (var key in keys ?? versions.Keys.Where(x => x.StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            if (!key.StartsWith(prefix, StringComparison.Ordinal) || !versions.TryGetValue(key, out var v) || v.v <= 0) continue;
+            var wi = writers.IndexOf(v.w);
+            if (wi < 0) { wi = writers.Count; writers.Add(v.w); }
+            k[key.Substring(prefix.Length)] = new Newtonsoft.Json.Linq.JArray(v.v, wi);
+        }
+        // "m": our counter, so the partner hears it with every message (see notePartnerClock)
+        return new Newtonsoft.Json.Linq.JObject { ["w"] = new Newtonsoft.Json.Linq.JArray(writers), ["k"] = k, ["m"] = versionClock };
+    }
+
+    // The versions go in the message's root object or, for an array (Blockers, DungeonMaps), in its first object. Older trackers ignore the extra field.
+    private static Newtonsoft.Json.Linq.JObject versionCarrier(Newtonsoft.Json.Linq.JToken t)
+    {
+        while (t is Newtonsoft.Json.Linq.JArray a && a.Count > 0) t = a[0];
+        return t as Newtonsoft.Json.Linq.JObject;
+    }
+
+    /// Our JSON of this kind with the versions added (keys: just these, or all of the kind). UI thread.
+    private static string withVersions(string kind, string json, IEnumerable<string> keys, bool snapshot = false)
+    {
+        var t = Newtonsoft.Json.Linq.JToken.Parse(json);
+        var c = versionCarrier(t);
+        if (c == null) return json;
+        c["SyncV"] = versionsJson(kind, keys);
+        if (snapshot) c["SyncSnap"] = true;
+        return t.ToString(Formatting.None);
+    }
+
+    /// Reads the versions of a partner's message and removes them from it. present is false for a message from an older tracker.
+    /// Their counter is noted (a message without one counts its highest version).
+    private static (bool present, bool snapshot, Dictionary<string, (long v, string w)> v) takeVersions(string kind, Newtonsoft.Json.Linq.JToken t)
+    {
+        var r = new Dictionary<string, (long v, string w)>();
+        var c = versionCarrier(t);
+        if (c == null || !(c["SyncV"] is Newtonsoft.Json.Linq.JObject sv)) return (false, false, r);
+        var res = takeVersionsFrom(kind, c, sv, r);
+        long max = sv["m"] != null && sv["m"].Type == Newtonsoft.Json.Linq.JTokenType.Integer ? (long)sv["m"] : 0;
+        foreach (var x in r.Values) if (x.v > max) max = x.v;
+        notePartnerClock(max);
+        return res;
+    }
+
+    private static (bool present, bool snapshot, Dictionary<string, (long v, string w)> v) takeVersionsFrom(string kind, Newtonsoft.Json.Linq.JObject c, Newtonsoft.Json.Linq.JObject sv, Dictionary<string, (long v, string w)> r)
+    {
+        var snap = c["SyncSnap"] != null && c["SyncSnap"].Type == Newtonsoft.Json.Linq.JTokenType.Boolean && (bool)c["SyncSnap"];
+        c.Remove("SyncV");
+        c.Remove("SyncSnap");
+        var writers = (sv["w"] as Newtonsoft.Json.Linq.JArray)?.Select(x => (string)x).ToList() ?? new List<string>();
+        if (sv["k"] is Newtonsoft.Json.Linq.JObject ks)
+            foreach (var p in ks.Properties())
+                if (p.Value is Newtonsoft.Json.Linq.JArray a && a.Count == 2)
+                {
+                    var wi = intOf(a[1], -1);
+                    r[kind + "/" + p.Name] = ((long)a[0], wi >= 0 && wi < writers.Count ? writers[wi] : "");
+                }
+        return (true, snap, r);
+    }
+
+    /// What a partner's message changes here: the keys whose value is taken, with their versions.
+    /// The versions are recorded by endMerge, after the apply, and only for the keys that really took the partner's value.
+    public sealed class Merge
+    {
+        public string Kind;
+        public bool Versioned, Snapshot;
+        public readonly Dictionary<string, (long v, string w)> Taken = new Dictionary<string, (long v, string w)>();
+        /// The partner's value of each key, as stateOf writes it (null when not known: a one-unit message other than OverworldTile, or DungeonTriforce,
+        /// whose value here can rightly differ). endMerge compares it with ours after the apply when CheckAll is set.
+        public Dictionary<string, string> Theirs;
+        /// Compare every taken key with Theirs after the apply (Items and Overworld, where an item or icon allowed once can refuse to move; any kind
+        /// whose apply threw).
+        public bool CheckAll;
+        /// Keys whose apply failed (the handler says so). They keep our value.
+        public readonly HashSet<string> Failed = new HashSet<string>();
+        /// Our keys cleared to make room for the partner's value (an item or icon allowed once moved to another box or tile). They count as edits of ours.
+        public readonly HashSet<string> Displaced = new HashSet<string>();
+        /// The partner's message lacks a version of ours that is higher than theirs (a lost or crossing message): ours goes to them again.
+        public bool Resend;
+        public bool Takes(string key) => key != null && Taken.ContainsKey(key) && !Failed.Contains(key);
+        public void Fail(string key) { if (key != null && Taken.ContainsKey(key)) Failed.Add(key); }
+        /// The apply threw part way: every taken key is checked against the partner's value (or, with none known, counts as failed).
+        public void ApplyThrew(Exception ex)
+        {
+            TrackerModelOptions.DebugConfig.Log($"[Sync] Applying the partner's {Kind} failed part way: {ex.Message}");
+            CheckAll = true;
+            if (Theirs == null) foreach (var k in Taken.Keys) Failed.Add(k);
+        }
+    }
+
+    private static void decide(Merge m, string key, (long v, string w) theirs)
+    {
+        var ours = versionOf(key);
+        if (incomingWins(theirs.v, theirs.w, ours.v, ours.w, m.Snapshot)) m.Taken[key] = theirs;
+        else if (compareVersions(theirs.v, theirs.w, ours.v, ours.w) < 0) m.Resend = true;
+    }
+
+    /// A partner's whole state of this kind (its versions are removed from payload). Decides key by key what is taken.
+    /// UI thread, inside applyRemote, before the apply; call endMerge after it (also when the apply throws).
+    public static Merge beginMerge(string kind, Newtonsoft.Json.Linq.JToken payload, string senderId)
+    {
+        stampAll();
+        var (present, snap, inV) = takeVersions(kind, payload);
+        var m = new Merge { Kind = kind, Versioned = present, Snapshot = snap };
+        var theirs = stateFromPayload(kind, payload);
+        if (present)
+        {
+            foreach (var key in theirs.Keys)
+                decide(m, key, inV.TryGetValue(key, out var v) ? v : (0L, ""));
+            if (kind != "DungeonTriforce") m.Theirs = theirs;
+            m.CheckAll = kind == "Items" || kind == "Overworld";
+        }
+        else
+        {
+            var ours = stateOf(kind) ?? new Dictionary<string, string>();
+            lastUnversioned.TryGetValue(kind, out var prev);
+            foreach (var kv in theirs)
+            {
+                string p = null;
+                if (prev != null && !prev.TryGetValue(kv.Key, out p)) p = null;
+                var o = ours.TryGetValue(kv.Key, out var ov) ? ov : null;
+                var recent = editedRecently(kv.Key);
+                if (unversionedTakes(prev == null ? null : p, kv.Value, o, recent))
+                    m.Taken[kv.Key] = (stampNumber(versionClock, versionOf(kv.Key).v), senderId ?? "partner");   // (their change counts as newer than anything we have)
+                else if (recent && kv.Value != o && (prev == null || p != kv.Value))
+                    m.Resend = true;   // (our recent change was kept: make sure they get it)
+            }
+            lastUnversioned[kind] = theirs;
+        }
+        return m;
+    }
+
+    /// As beginMerge, for a message that carries one unit (RoomChange, DoorChange, OverworldTile, HiddenDungeonColorLabel).
+    /// From an older tracker such a message is always a new edit of theirs, so it is taken.
+    /// theirValue: the unit's value as stateOf writes it, when the handler knows it (checked after the apply).
+    public static Merge beginMergeUnit(string kind, string key, Newtonsoft.Json.Linq.JToken payload, string senderId, string theirValue = null)
+    {
+        stampAll();
+        var (present, snap, inV) = takeVersions(kind, payload);
+        var m = new Merge { Kind = kind, Versioned = present, Snapshot = snap };
+        if (present)
+        {
+            decide(m, key, inV.TryGetValue(key, out var v) ? v : (0L, ""));
+            if (theirValue != null) { m.Theirs = new Dictionary<string, string> { [key] = theirValue }; m.CheckAll = true; }
+        }
+        else m.Taken[key] = (stampNumber(versionClock, versionOf(key).v), senderId ?? "partner");
+        return m;
+    }
+
+    /// After a partner's update was applied: records the partner's versions of the keys that took their value. A key that did not (its apply failed,
+    /// or our value still differs from theirs) keeps our value, and that value gets a version above theirs, so the partner takes ours and both
+    /// end with one value. (Keeping our lower version made the partner send theirs again, which failed here again, without end.)
+    /// Then our state counts as known (it is theirs, not an edit of ours), and if their message lacked a version of ours, or a key kept ours,
+    /// ours goes back to them (resendUnit for a one-unit message, else our whole state of that kind). Never sent just because ours was kept:
+    /// they take ours when our own message, with its higher version, arrives. UI thread, inside applyRemote.
+    public static void endMerge(Merge m, Action resendUnit = null)
+    {
+        if (m != null)
+        {
+            Dictionary<string, string> now = null;
+            if (m.Versioned && m.CheckAll && m.Theirs != null) now = stateOf(m.Kind);
+            foreach (var kv in m.Taken)
+            {
+                var key = kv.Key;
+                var failed = m.Failed.Contains(key);
+                if (!failed && now != null && m.Theirs.TryGetValue(key, out var t) && now.TryGetValue(key, out var o) && o != t) failed = true;
+                if (!failed) { setVersion(key, kv.Value); applyFailures.Remove(key); continue; }
+                applyFailures.TryGetValue(key, out var n);
+                applyFailures[key] = n + 1;
+                if (n >= 3)
+                {
+                    // (two trackers that each cannot take the other's value would trade it forever: after a few tries the versions are let be)
+                    setVersion(key, kv.Value);
+                    TrackerModelOptions.DebugConfig.Log($"[Sync] {key}: the partner's value could not be applied again; giving up on it");
+                    continue;
+                }
+                setVersion(key, (stampNumber(versionClock, kv.Value.v), myWriter));
+                unsentEdits.Add(kindOfKey(key));
+                m.Resend = true;
+                TrackerModelOptions.DebugConfig.Log($"[Sync] {key}: the partner's value could not be applied; ours stays and goes back to them");
+            }
+            foreach (var key in m.Displaced)
+            {
+                // (cleared here to make room for the partner's value: our edit, so the partner clears it too)
+                setVersion(key, (stampNumber(versionClock, versionOf(key).v), myWriter));
+                localEditTicks[key] = DateTime.UtcNow.Ticks;
+                unsentEdits.Add(kindOfKey(key));
+            }
+        }
+        rebaselineVersions();
+        rebaseline("Hints");   // (the poll must not count a partner's hints as ours)
+        boxTiersBaseline = buildBoxTiers();   // (nor a partner's box tiers)
+        if (m == null || !m.Resend) return;
+        TrackerModelOptions.DebugConfig.Log($"[Sync] The partner's {m.Kind} lacks newer versions of ours: sending ours again");
+        if (resendUnit != null) Dispatcher.UIThread.Post(resendUnit);
+        else resendKind(m.Kind);
+    }
+
+    /// Sends our whole state of this kind even without new changes. UI thread.
+    public static void resendKind(string kind)
+    {
+        mustSend.Add(kind);
+        lastSentHashes.TryRemove(kind, out _);   // (an identical earlier message was lost: send it again)
+        sendKind(kind);
+    }
+
+    private static void sendKind(string kind)
+    {
         var me = TrackerModelOptions.CoopSyncOptions.MyConsoleId;
-        switch (messageType)
+        switch (kind)
         {
-            case "PlayerProgress": lastSentPlayerProgressJson = ""; sendPlayerProgressUpdate(me); break;
-            case "StartingItems": lastSentStartingItemsJson = ""; sendStartingItemsAndExtrasUpdate(me); break;
-            case "Blockers": lastSentHashes.TryRemove("Blockers", out _); sendBlockersUpdate(me); break;
-            case "DungeonTriforce": lastSentHashes.TryRemove("DungeonTriforce", out _); sendDungeonTriforceUpdate(me); break;
-            case "Hints": lastSentHashes.TryRemove("Hints", out _); sendHintsUpdate(); break;
+            case "PlayerProgress": sendPlayerProgressUpdate(me); break;
+            case "StartingItems": sendStartingItemsAndExtrasUpdate(me); break;
+            case "Blockers": sendBlockersUpdate(me); break;
+            case "DungeonTriforce": sendDungeonTriforceUpdate(me); break;
+            case "Hints": sendHintsUpdate(); break;
+            case "Items": sendItemsUpdate(me); break;
+            case "Overworld": sendOverworldUpdateDebounced(me); break;
+            case "DungeonMaps": sendDungeonMapsUpdate(me); break;
         }
-        if (messageType == "Hints") hintsBaseline = buildHintsJson();   // (the merged hints are not a local edit)
     }
+
+    /// Sends the kinds that have changes versioned here and not sent (a change found when a partner's message was merged may have no send of its own
+    /// on the way, such as a triforce counted from a box). Called by the hints poll. UI thread.
+    private static void flushUnsent()
+    {
+        foreach (var k in versionedKinds)
+            if (unsentEdits.Contains(k) || mustSend.Contains(k)) sendKind(k);
+    }
+
+    /// Stamps, then sends our whole state of this kind with its versions, if it has changes not sent yet (or must go anyway). UI thread.
+    /// (Overworld and DungeonMaps come here after their debounce.)
+    private static void sendWholeState(string kind)
+    {
+        if (!startupBaselineDone || !coopActive()) return;
+        try
+        {
+            var json = buildStateJson(kind);
+            if (json == null) return;
+            stamp(kind, stateFromPayload(kind, Newtonsoft.Json.Linq.JToken.Parse(json)));
+            if (!unsentEdits.Contains(kind) && !mustSend.Contains(kind)) return;
+            var payload = withVersions(kind, json, null, snapshotPending.Contains(kind));
+            TrackerModelOptions.DebugConfig.Log($"[Sync] Sending {kind} update: {payload}");
+            if (trySend(kind, payload)) { unsentEdits.Remove(kind); mustSend.Remove(kind); snapshotPending.Remove(kind); }
+        }
+        catch (Exception ex)
+        {
+            TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send {kind} update: {ex.Message}");
+        }
+    }
+
+    /// A partner's whole state of a flat kind (PlayerProgress, StartingItems, Blockers, DungeonTriforce, Hints): returns the JSON to apply,
+    /// our state with the partner's value only where theirs won. UI thread, inside applyRemote; call endMerge after the apply.
+    public static string mergeWholeState(string kind, string incomingJson, string senderId, out Merge m)
+    {
+        var incoming = Newtonsoft.Json.Linq.JToken.Parse(incomingJson);
+        m = beginMerge(kind, incoming, senderId);
+        var ours = Newtonsoft.Json.Linq.JToken.Parse(buildStateJson(kind));
+        var inTok = new Dictionary<string, Newtonsoft.Json.Linq.JToken>();
+        var ourTok = new Dictionary<string, Newtonsoft.Json.Linq.JToken>();
+        flattenTokens(incoming, kind, unitDepth(kind), 0, inTok);
+        flattenTokens(ours, kind, unitDepth(kind), 0, ourTok);
+        foreach (var key in m.Taken.Keys)
+            if (inTok.TryGetValue(key, out var t) && ourTok.TryGetValue(key, out var o) && o.Parent != null)
+                o.Replace(t.DeepClone());
+        return ours.ToString(Formatting.None);
+    }
+
+    /// Applies a partner's item boxes (pairs of their box and ours; only the taken ones whose item or got state changes). Two passes, as for the
+    /// overworld tiles: first every box whose item changes is cleared, then each gets its new item. Setting in place lost an item moved between
+    /// two boxes in one message (Bow from level 6 to level 3: level 3 refused it while level 6 still held it, then level 6 was cleared).
+    /// A box that still cannot take its item gets its old one back and is marked failed (see endMerge). UI thread, inside applyRemote.
+    public static void applyBoxes(Merge m, List<(SaveAndLoad.Box src, TrackerModel.Box dest)> pairs)
+    {
+        var todo = pairs.Where(p => p.src != null && p.dest != null && m.Takes(boxKey(p.dest))
+                                    && (p.src.CellCurrent != p.dest.CellCurrent() || p.src.PlayerHas != p.dest.PlayerHas().AsInt())).ToList();
+        var old = todo.Select(p => (cell: p.dest.CellCurrent(), has: p.dest.PlayerHas())).ToList();
+        for (int k = 0; k < todo.Count; k++)
+            if (todo[k].src.CellCurrent != old[k].cell && todo[k].dest.LockedItem == -1)
+                todo[k].dest.AttemptToSet(-1, old[k].has);
+        for (int k = 0; k < todo.Count; k++)
+            if (!applyBoxFromSync(m, todo[k].src, todo[k].dest))
+                todo[k].dest.AttemptToSet(old[k].cell, old[k].has);   // (ours stays as it was, if it still can)
+    }
+
+    /// Puts a partner's item in one of our boxes. When the item is allowed once and another box of ours holds it, the newer version keeps it:
+    /// our box is cleared if theirs is newer, else theirs is not taken (both trackers decide the same way). Returns false, and marks the key failed,
+    /// when the box did not get it. UI thread, inside applyRemote.
+    public static bool applyBoxFromSync(Merge m, SaveAndLoad.Box src, TrackerModel.Box dest)
+    {
+        var key = boxKey(dest);
+        TrackerModel.PlayerHas ph;
+        try { ph = TrackerModel.PlayerHas.FromInt(src.PlayerHas); } catch (Exception) { m.Fail(key); return false; }
+        if (dest.AttemptToSet(src.CellCurrent, ph)) return true;
+        if (src.CellCurrent >= 0 && dest.LockedItem == -1 && key != null && m.Taken.TryGetValue(key, out var theirs))
+        {
+            foreach (var nb in SaveAndLoad.namedBoxes())
+            {
+                var h = nb.Item2;
+                if (ReferenceEquals(h, dest) || !ReferenceEquals(h.Domain, dest.Domain) || h.CellCurrent() != src.CellCurrent || h.LockedItem != -1) continue;
+                var hk = boxKey(nb.Item1);
+                if (m.Takes(hk)) continue;   // (a box the message sets too: not ours to give up)
+                var ours = versionOf(hk);
+                if (!incomingWins(theirs.v, theirs.w, ours.v, ours.w, m.Snapshot)) continue;   // (our box's version is newer: it keeps the item)
+                if (h.AttemptToSet(-1, TrackerModel.PlayerHas.NO))
+                {
+                    m.Displaced.Add(hk);
+                    if (dest.AttemptToSet(src.CellCurrent, ph)) return true;
+                }
+            }
+        }
+        m.Fail(key);
+        TrackerModelOptions.DebugConfig.Log($"[Sync] Could not put item {src.CellCurrent} in box {key}: ours stays");
+        return false;
+    }
+
+    /// As applyBoxFromSync, for an overworld tile's icon (a dungeon number, say, allowed on one tile). UI thread, inside applyRemote.
+    public static bool applyTileFromSync(Merge m, int x, int y, int value)
+    {
+        var cells = TrackerModel.overworldMapMarks;
+        var key = tileKey(x, y);
+        if (cells[x, y].AttemptToSet(value)) return true;
+        if (value >= 0 && m.Taken.TryGetValue(key, out var theirs))
+        {
+            for (int j = 0; j <= 7; j++)
+                for (int i = 0; i <= 15; i++)
+                {
+                    if ((i == x && j == y) || cells[i, j].Current() != value) continue;
+                    var hk = tileKey(i, j);
+                    if (m.Takes(hk)) continue;
+                    var ours = versionOf(hk);
+                    if (!incomingWins(theirs.v, theirs.w, ours.v, ours.w, m.Snapshot)) continue;
+                    if (cells[i, j].AttemptToSet(-1))
+                    {
+                        m.Displaced.Add(hk);
+                        if (cells[x, y].AttemptToSet(value)) return true;
+                    }
+                }
+        }
+        m.Fail(key);
+        TrackerModelOptions.DebugConfig.Log($"[Sync] Could not set tile ({x},{y}) to {value}: ours stays");
+        return false;
+    }
+
+    /// An OverworldTile message's tile as stateOf writes it (the extra data counts only for icons that have it, as the full Overworld message sends).
+    public static string unitTileValue(int cur, int ed, int circ, string extras) =>
+        extras == null ? null : tileValue(cur, cur >= 0 && cur <= TrackerModel.MapSquareChoiceDomainHelper.DARK_X ? ed : 0, circ, extras);
+
 
     /// Our own change: a partner message identical to one we got before is a real change again, so forget what we received of this kind.
     private static void forgetReceived(string messageType)
@@ -394,48 +919,7 @@ public static class CoopSync
         return true;
     }
 
-    //let lastAppliedHashes = System.Collections.Concurrent.ConcurrentDictionary<string, string>()
-    //let lastTimestamps = System.Collections.Concurrent.ConcurrentDictionary<string, int64>()
-
-    // (concurrent: written on the SignalR thread, cleared on the UI thread by resetReceivedState)
-    private static readonly ConcurrentDictionary<string, long> lastAppliedRoomTimestamps = new ConcurrentDictionary<string, long>();
-    private static readonly ConcurrentDictionary<string, long> lastAppliedDoorTimestamps = new ConcurrentDictionary<string, long>();
-
-    // (F#'s `%b` prints true/false in lower case)
-    private static string makeRoomKey(int level, int x, int y) => $"room-{level}-{x}-{y}";
-    private static string makeDoorKey(int level, int x, int y, bool isH) => $"door-{level}-{x}-{y}-{(isH ? "true" : "false")}";
-
-    // When the user last changed each room or door here (UTC ticks), keyed by roomEditKey / doorEditKey. Applying the partner's value removes the entry.
-    private static readonly ConcurrentDictionary<string, long> lastSentTicks = new ConcurrentDictionary<string, long>();
-
-    public static string roomEditKey(int level, int x, int y) => $"DungeonRoom_{level}_{x}_{y}";
-    public static string doorEditKey(int level, int x, int y, bool isH) => $"DoorChange_{level}_{x}_{y}_{(isH ? "true" : "false")}";
-
-    /// Our own edit of this room or door, now
-    public static void recordSend(string key) => lastSentTicks[key] = DateTime.UtcNow.Ticks;
-
-    /// The partner's value of this room or door was taken: our edit of it is settled.
-    public static void clearEdit(string key) => lastSentTicks.TryRemove(key, out _);
-
-    /// A partner's RoomChange or DoorChange for a room or door we changed too: does ours win?
-    /// As tileEditWins: the later change wins; changes within 5 s of each other are concurrent (the two clocks can differ a little)
-    /// and the lower console ID wins. Both trackers decide by the same rule; the winner sends its value again (resendRoom / resendDoor).
-    /// (maxAgeMs is not used: the window is concurrentTicks.)
-    public static bool localEditWins(string key, int maxAgeMs, long incomingTicks, string senderId)
-    {
-        if (!lastSentTicks.TryGetValue(key, out var ours))
-            return false;
-        if (Math.Abs(ours - incomingTicks) <= concurrentTicks)
-            return string.CompareOrdinal(TrackerModelOptions.CoopSyncOptions.MyConsoleId ?? "", senderId ?? "") < 0;
-        return ours > incomingTicks;
-    }
-
-    /// A whole DungeonMaps arrived: keep our value of this room or door when we changed it after the message was built, or up to 5 s before
-    /// (as tileEditedAfter). The kept ones are sent again as RoomChange / DoorChange, so the per-room rule settles them on both sides.
-    public static bool localEditNewer(string key, long incomingTicks) =>
-        lastSentTicks.TryGetValue(key, out var ours) && ours > incomingTicks - concurrentTicks;
-
-    /// Sends our room as it is now, after it won a conflict (not a new edit: its edit time stays). UI thread.
+    /// Sends our room as it is now, with its version (the partner's message lacked it). UI thread.
     public static void resendRoom(int level, int x, int y)
     {
         if (level < 1 || level > 9 || x < 0 || x > 7 || y < 0 || y > 7) return;
@@ -455,6 +939,13 @@ public static class CoopSync
         sendDoorChangeUpdate(new DungeonUI.DoorChangeInfo { Level = level, X = x, Y = y, IsHorizontal = isH, NewState = door.State }, TrackerModelOptions.CoopSyncOptions.MyConsoleId, true);
     }
 
+    /// As resendRoom, for an overworld tile. UI thread.
+    public static void resendTile(int x, int y)
+    {
+        lastSentHashes.TryRemove("OverworldTile", out _);
+        sendTile(x, y);
+    }
+
     /// A partner's room change was applied: our last sent RoomChange no longer describes our state, so the same change must be sendable again.
     public static void remoteRoomApplied() => lastSentHashes.TryRemove("RoomChange", out _);
 
@@ -465,130 +956,15 @@ public static class CoopSync
         SyncManager.MarkLastSentDoorChange(null);
     }
 
-
-    public static void recordRoomTimestamp(int level, int x, int y, long timestamp) =>
-        lastAppliedRoomTimestamps[makeRoomKey(level, x, y)] = timestamp;
-
-    public static void recordDoorTimestamp(int level, int x, int y, bool isH, long timestamp) =>
-        lastAppliedDoorTimestamps[makeDoorKey(level, x, y, isH)] = timestamp;
-
-    public static bool isRoomChangeFresh(int level, int x, int y, long incomingTs)
+    /// Is a got triforce in one of this dungeon's item slots (PlayerHasTriforce counts it)? Then the dungeon's own triforce flag cannot be read
+    /// from PlayerHasTriforce, and a partner's "no triforce" must not toggle it (that set the flag, and the triforce stayed on after the box was cleared).
+    public static bool triforceInBox(int i)
     {
-        if (lastAppliedRoomTimestamps.TryGetValue(makeRoomKey(level, x, y), out var ts))
-            return incomingTs > ts;
-        else
-            return true;
+        var d = TrackerModel.GetDungeon(i);
+        bool got(TrackerModel.Box b) => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE && b.PlayerHas() == TrackerModel.PlayerHas.YES;
+        return d.Boxes.Any(got) || (i == 1 && TrackerModel.level2StairBoxEnabled && got(TrackerModel.level2StairBox));
     }
 
-    public static bool isDoorChangeFresh(int level, int x, int y, bool isH, long incomingTs)
-    {
-        if (lastAppliedDoorTimestamps.TryGetValue(makeDoorKey(level, x, y, isH), out var ts))
-            return incomingTs > ts;
-        else
-            return true;
-    }
-
-    public static bool shouldApplyUpdate(string messageType, string payloadJson, long timestamp)
-    {
-        var newHash = computeHash(payloadJson);
-
-        void updateHashAndTimestamp(string key)
-        {
-            lastAppliedHashes[messageType] = newHash;
-            lastTimestamps[key] = timestamp;
-        }
-
-        switch (messageType)
-        {
-            case "RoomChange":
-                try
-                {
-                    var r = JsonConvert.DeserializeObject<RoomChangePayload>(payloadJson);
-                    var key = $"room-{r.Level}-{r.X}-{r.Y}";
-                    if (lastAppliedRoomPayloads.TryGetValue(key, out var oldPayload) && oldPayload == payloadJson)
-                    {
-                        TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped RoomChange — same payload for {key}");
-                        return false;
-                    }
-                    else
-                    {
-                        if (lastTimestamps.TryGetValue(key, out var prevTs) && timestamp <= prevTs)
-                        {
-                            TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped RoomChange — stale timestamp ({timestamp} <= {prevTs})");
-                            return false;
-                        }
-                        else
-                        {
-                            lastAppliedRoomPayloads[key] = payloadJson;
-                            updateHashAndTimestamp(key);
-                            pruneIfNeeded(lastAppliedRoomPayloads, "RoomPayloads");
-                            return true;
-                        }
-                    }
-                }
-                catch
-                {
-                    TrackerModelOptions.DebugConfig.Log("[Sync] RoomChange payload malformed — applying anyway");
-                    return true;
-                }
-
-            case "DoorChange":
-                try
-                {
-                    var d = JsonConvert.DeserializeObject<DoorChangePayload>(payloadJson);
-                    var key = $"door-{d.Level}-{d.X}-{d.Y}-{(d.IsHorizontal ? "true" : "false")}";
-                    if (lastAppliedDoorPayloads.TryGetValue(key, out var oldPayload) && oldPayload == payloadJson)
-                    {
-                        TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped DoorChange — same payload for {key}");
-                        return false;
-                    }
-                    else
-                    {
-                        if (lastTimestamps.TryGetValue(key, out var prevTs) && timestamp <= prevTs)
-                        {
-                            TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped DoorChange — stale timestamp ({timestamp} <= {prevTs})");
-                            return false;
-                        }
-                        else
-                        {
-                            lastAppliedDoorPayloads[key] = payloadJson;
-                            updateHashAndTimestamp(key);
-                            pruneIfNeeded(lastAppliedDoorPayloads, "DoorPayloads");
-                            return true;
-                        }
-                    }
-                }
-                catch
-                {
-                    TrackerModelOptions.DebugConfig.Log("[Sync] DoorChange payload malformed — applying anyway");
-                    return true;
-                }
-
-            default:
-            {
-                var key = messageType;
-                if (lastAppliedHashes.TryGetValue(messageType, out var oldHash) && oldHash == newHash)
-                {
-                    TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped {messageType} update — duplicate hash");
-                    return false;
-                }
-                else
-                {
-                    if (lastTimestamps.TryGetValue(key, out var prevTs) && timestamp <= prevTs)
-                    {
-                        TrackerModelOptions.DebugConfig.Log($"[Sync] Skipped {messageType} — stale timestamp ({timestamp} <= {prevTs})");
-                        return false;
-                    }
-                    else
-                    {
-                        updateHashAndTimestamp(key);
-                        pruneIfNeeded(lastAppliedHashes, "Hashes");
-                        return true;
-                    }
-                }
-            }
-        }
-    }
 
     public static bool shouldSendUpdate(string messageType, string payloadJson)
     {
@@ -612,6 +988,9 @@ public static class CoopSync
             if (syncBurstTimestamps.Count >= syncBurstLimit)
             {
                 autoMutedUntil = now.AddMilliseconds((double)syncPauseDurationMs);
+                // (the pause is the whole penalty: the burst that tripped it no longer counts. Kept in the window, it tripped the mute again
+                // on the first send after the pause, so an update dropped by the mute was dropped a second time and went out a second late)
+                syncBurstTimestamps.Clear();
                 TrackerModelOptions.DebugConfig.Log("[Sync] Auto-muted due to excessive chatter");
                 return false;
             }
@@ -627,22 +1006,10 @@ public static class CoopSync
     }
 
 
+    // (the senders below are called on the UI thread: from change handlers, the polling loops and the merge)
     public static Task sendPlayerProgressUpdate(string myConsoleId)
     {
-        try
-        {
-            var jsonPayload = buildPlayerProgressJson();
-            if (jsonPayload != lastSentPlayerProgressJson)
-            {
-                TrackerModelOptions.DebugConfig.Log($"[Sync] Sending PlayerProgress update: {jsonPayload}");
-                if (trySend("PlayerProgress", jsonPayload))
-                    lastSentPlayerProgressJson = jsonPayload;
-            }
-        }
-        catch (Exception ex)
-        {
-            TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send PlayerProgress update: {ex.Message}");
-        }
+        sendWholeState("PlayerProgress");
         return Task.CompletedTask;
     }
 
@@ -696,20 +1063,7 @@ public static class CoopSync
 
     public static Task sendStartingItemsAndExtrasUpdate(string myConsoleId)
     {
-        try
-        {
-            var jsonPayload = buildStartingItemsJson();
-            if (jsonPayload != lastSentStartingItemsJson)
-            {
-                TrackerModelOptions.DebugConfig.Log($"[Sync] Sending StartingItemsAndExtras update: {jsonPayload}");
-                if (trySend("StartingItems", jsonPayload))
-                    lastSentStartingItemsJson = jsonPayload;
-            }
-        }
-        catch (Exception ex)
-        {
-            TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send StartingItemsAndExtras update: {ex.Message}");
-        }
+        sendWholeState("StartingItems");
         return Task.CompletedTask;
     }
 
@@ -747,21 +1101,7 @@ public static class CoopSync
 
     public static Task sendBlockersUpdate(string myConsoleId)
     {
-        try
-        {
-            var jsonPayload = buildBlockersJson();
-            if (shouldSend("Blockers", jsonPayload))
-            {
-                TrackerModelOptions.DebugConfig.Log($"[Sync] Sending Blockers update: {jsonPayload}");
-                trySend("Blockers", jsonPayload);
-            }
-            else
-                TrackerModelOptions.DebugConfig.Log("[Sync] Skipped sending Blockers update — no change");
-        }
-        catch (Exception ex)
-        {
-            TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send Blockers update: {ex.Message}");
-        }
+        sendWholeState("Blockers");
         return Task.CompletedTask;
     }
 
@@ -799,22 +1139,13 @@ public static class CoopSync
     private static string hintsBaseline = null;   // the hints as last seen by the poll (a change from it is a local edit)
 
     /// UI thread.
-    public static void sendHintsUpdate()
-    {
-        try
-        {
-            var json = buildHintsJson();
-            if (shouldSend("Hints", json))
-            {
-                TrackerModelOptions.DebugConfig.Log($"[Sync] Sending Hints update: {json}");
-                trySend("Hints", json);
-            }
-        }
-        catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send Hints update: {ex.Message}"); }
-    }
+    public static void sendHintsUpdate() => sendWholeState("Hints");
+
+    // The small kinds polled every half second, for changes that fire no event of their own (the hints, the meat and letter, the HDN starting triforces, ...)
+    private static readonly string[] polledKinds = { "PlayerProgress", "StartingItems", "Blockers", "DungeonTriforce", "Hints", "Items" };
 
     private static bool hintsLoopStarted = false;
-    /// Once, after the run has started. UI thread.
+    /// Once, after the run has started. UI thread. (also the poll for the other small kinds, and the send of changes found by a merge)
     public static void subscribeToHintsChanges()
     {
         if (hintsLoopStarted) return;
@@ -833,7 +1164,11 @@ public static class CoopSync
                         hintsBaseline = now;
                         noteLocalEdit();   // (a partner's hints update the baseline themselves)
                     }
-                    if (coopActive()) sendHintsUpdate();
+                    if (coopActive())
+                    {
+                        foreach (var k in polledKinds) sendKind(k);   // (each sends only when it has an unsent change)
+                        flushUnsent();
+                    }
                 }
                 catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Hints poll failed: {ex.Message}"); }
             }
@@ -858,22 +1193,8 @@ public static class CoopSync
 
     public static Task sendItemsUpdate(string myConsoleId)
     {
-        try
-        {
-            var jsonPayload = buildItemsJson();
-
-            if (shouldSend("Items", jsonPayload))
-            {
-                TrackerModelOptions.DebugConfig.Log($"[Sync] Sending Items update (excluding Triforce): {jsonPayload}");
-                trySend("Items", jsonPayload);
-            }
-            else
-                TrackerModelOptions.DebugConfig.Log("[Sync] Skipped sending Items update — no change");
-        }
-        catch (Exception ex)
-        {
-            TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send Items update: {ex.Message}");
-        }
+        sendWholeState("Items");
+        sendWholeState("DungeonTriforce");   // (a triforce marked as got in a box counts as the dungeon's triforce)
         return Task.CompletedTask;
     }
 
@@ -1038,7 +1359,7 @@ public static class CoopSync
         CustomComboBoxes.StartImmediate(loop());
     }
 
-    /// Finds tile extras (and shop stash) changes made here since the last look, records their edit times and sends them. UI thread.
+    /// Finds tile extras (and shop stash) changes made here since the last look and sends them. UI thread.
     public static void detectLocalExtrasChanges(string myConsoleId)
     {
         if (!extrasLoopStarted) return;
@@ -1063,7 +1384,7 @@ public static class CoopSync
                             if (now == tileExtrasBaseline[i, j]) continue;
                             tileExtrasBaseline[i, j] = now;
                             changedAny = true;
-                            tileEditTicks[i, j] = DateTime.UtcNow.Ticks;   // (a local change: remote applies update the baseline themselves)
+                            // (a local change: remote applies update the baseline themselves; sendTile gives it its version)
                             sendTile(i, j);
                         }
                     if (!TrackerModel.shopStash.SequenceEqual(shopStashBaseline) || !TrackerModel.cheapKeyShops.SequenceEqual(cheapKeyBaseline))
@@ -1094,25 +1415,24 @@ public static class CoopSync
     public static string buildDungeonMapsJson()
     {
         var dungeonModels = Enumerable.Range(0, 9).Select(i => cloneAndFixDungeonModel(DungeonUI.exportFunctionsLarge[i]())).ToArray();
-        return JsonConvert.SerializeObject(dungeonModels, Formatting.None);
+        var arr = Newtonsoft.Json.Linq.JArray.FromObject(dungeonModels);
+        // whether each level's big numeral (and the first-click shortcut) still shows, so both trackers show the same (older trackers ignore it)
+        for (int i = 0; i < arr.Count; i++)
+            if (arr[i] is Newtonsoft.Json.Linq.JObject o) o["Fresh"] = DungeonUI.isFirstTimeClickingAnyRoom[i].Value;
+        return arr.ToString(Formatting.None);
     }
 
-    /// After a partner's update of this kind is applied: the current state counts as sent, so it is not sent back,
-    /// and the next local change (even back to what we sent before) is sent. Call it on the UI thread.
+    /// The baselines of the polls that are not versions: the hints (a change counts as ours in the hello's state time), the box tiers (their poll
+    /// sends Items), and the last notes sent. After a partner's update they must not count it as ours. UI thread.
     public static void rebaseline(string messageType)
     {
         try
         {
             switch (messageType)
             {
-                case "PlayerProgress": lastSentPlayerProgressJson = buildPlayerProgressJson(); break;
-                case "StartingItems": lastSentStartingItemsJson = buildStartingItemsJson(); break;
-                case "Items": lastSentHashes["Items"] = computeHash(buildItemsJson()); boxTiersBaseline = buildBoxTiers(); break;
-                case "Blockers": lastSentHashes["Blockers"] = computeHash(buildBlockersJson()); break;
-                case "DungeonTriforce": lastSentHashes["DungeonTriforce"] = computeHash(buildTriforceJson()); break;
-                case "Overworld": lastSentOverworldJson = buildOverworldJson(); boxTiersBaseline = buildBoxTiers(); break;
+                case "Items": case "Overworld": boxTiersBaseline = buildBoxTiers(); break;
                 case "Notes": lastSentHashes["Notes"] = computeHash(buildNotesJson()); break;
-                case "Hints": hintsBaseline = buildHintsJson(); lastSentHashes["Hints"] = computeHash(hintsBaseline); break;
+                case "Hints": hintsBaseline = buildHintsJson(); break;
             }
         }
         catch (Exception ex)
@@ -1126,10 +1446,21 @@ public static class CoopSync
     /// loadedTicks: for a loaded save, the save file's last write time (UTC ticks), used as its state time in the hello.
     public static void startupFinished(bool loadedSave, long loadedTicks = 0)
     {
-        foreach (var t in new[] { "PlayerProgress", "StartingItems", "Items", "Blockers", "DungeonTriforce", "Overworld", "Notes", "Hints" })
+        foreach (var t in new[] { "Items", "Notes", "Hints" })
             rebaseline(t);
-        foreach (var t in wholeStateTypes)
-            assumePartnerHas(t);   // (until a hello says otherwise, the partner's state is taken to be ours: their first message then merges)
+        // the versions start again: every field is at version 0 until it is changed (here or by the partner)
+        versions.Clear();
+        versionBaselines.Clear();
+        unsentEdits.Clear();
+        mustSend.Clear();
+        snapshotPending.Clear();
+        lastUnversioned.Clear();
+        localEditTicks.Clear();
+        applyFailures.Clear();
+        preContactEdits.Clear();
+        partnerClockKnown = false;   // (the counter itself is kept: a run started again in this process numbers on from it)
+        sessionNonce = DateTime.UtcNow.Ticks.ToString("x");
+        rebaselineVersions();
         try
         {
             lastSentDungeonMapsPayload = buildDungeonMapsJson();
@@ -1147,15 +1478,15 @@ public static class CoopSync
         sendStateHello(true);   // (a run that just started is joining the session)
     }
 
-    /// Sends everything this tracker has, ignoring what was sent before. Used when the hello handshake picks this tracker's state. UI thread.
+    /// Sends everything this tracker has, with its versions, marked as a hello snapshot. Used when the hello handshake picks this tracker's state.
+    /// The partner merges it by the versions like any other message, so a change of theirs made before or while it travels is kept;
+    /// only where both are still at the same version does the snapshot win (see incomingWins). UI thread.
     public static void sendFullSnapshot(string myConsoleId)
     {
         if (!startupBaselineDone) return;
-        lastSentPlayerProgressJson = "";
-        lastSentStartingItemsJson = "";
-        lastSentOverworldJson = "";
         lastSentDungeonMapsPayload = "";
         lastSentHashes.Clear();
+        foreach (var k in versionedKinds) { mustSend.Add(k); snapshotPending.Add(k); }
         sendPlayerProgressUpdate(myConsoleId);
         sendStartingItemsAndExtrasUpdate(myConsoleId);
         sendItemsUpdate(myConsoleId);
@@ -1165,11 +1496,7 @@ public static class CoopSync
         sendDungeonMapsUpdate(myConsoleId);
         sendNotesUpdate();
         sendHintsUpdate();
-        foreach (var t in wholeStateTypes)
-            assumePartnerHas(t);   // (the partner takes this snapshot whole)
     }
-
-    private static readonly string[] wholeStateTypes = { "PlayerProgress", "StartingItems", "Blockers", "DungeonTriforce", "Hints" };
 
     // The hello handshake, sent when a run starts and after every connect or reconnect (those hellos are "joining").
     // The winner sends a full snapshot and the other one takes it:
@@ -1182,6 +1509,7 @@ public static class CoopSync
         public long StateTicks { get; set; }
         public bool Joining { get; set; }
         public string Nonce { get; set; }   // (makes each hello different, so it is never dropped as a duplicate)
+        public long? MaxVersion { get; set; }   // the sender's version counter (null from trackers without one), see notePartnerClock
     }
 
     // We count as joining for a short time after our own joining hello, long enough for the handshake to finish.
@@ -1198,7 +1526,7 @@ public static class CoopSync
             resetReceivedState();   // (we will take the partner's snapshot if they win: apply all of it)
         }
         StateHello hello;
-        lock (stateLock) hello = new StateHello { HasState = hasState, StateTicks = stateTicks, Joining = meJoining(), Nonce = Guid.NewGuid().ToString() };
+        lock (stateLock) hello = new StateHello { HasState = hasState, StateTicks = stateTicks, Joining = meJoining(), Nonce = Guid.NewGuid().ToString(), MaxVersion = versionClock };
         SyncManager.EnqueueSync("StateHello", JsonConvert.SerializeObject(hello), TrackerModelOptions.CoopSyncOptions.MyConsoleId);
     }
 
@@ -1206,6 +1534,8 @@ public static class CoopSync
     public static void handleStateHello(StateHello them, string senderId)
     {
         if (!startupBaselineDone) return;   // our run has not started: we say hello ourselves once it has
+        // (before anything is sent: our edits made since a reload get numbers above the partner's, and so does any edit from now on)
+        if (them.MaxVersion is long partnerMax) notePartnerClock(partnerMax);
         bool iWin;
         var joining = meJoining();
         lock (stateLock)
@@ -1224,12 +1554,7 @@ public static class CoopSync
             resetReceivedState();
             sendStateHello();   // our hello makes them send it (they decide by the same rule, so this ends)
         }
-        else
-        {
-            // neither has any state, so no snapshot comes: both are blank, and the partner's first whole state merges with ours
-            foreach (var t in wholeStateTypes)
-                if (!lastReceivedState.ContainsKey(t)) assumePartnerHas(t);
-        }
+        // (neither has any state: no snapshot comes, both are blank)
     }
 
     // ---- notes ----
@@ -1435,6 +1760,11 @@ public static class CoopSync
             model.WhiteSwordBox = toSerializableBox(TrackerModel.sword2Box);
             model.LadderBox = toSerializableBox(TrackerModel.ladderBox);
             model.ArmosBox = toSerializableBox(TrackerModel.armosBox);
+            // (these four were never synced; older trackers ignore them)
+            model.MagicalSwordBox = toSerializableBox(TrackerModel.sword3Box);
+            model.LetterBox = toSerializableBox(TrackerModel.letterBox);
+            model.WoodSwordBox = toSerializableBox(TrackerModel.sword1Box);
+            model.Level2StairBox = toSerializableBox(TrackerModel.level2StairBox);   // the level 2 staircase slot (4th Sword)
 
             model.Dungeons =
                 Enumerable.Range(0, 9).Select(i =>
@@ -1448,6 +1778,7 @@ public static class CoopSync
                     d.PlayerHasMap = trackerDungeon.PlayerHasMapOfThisDungeon;
                     d.Boxes =
                         trackerDungeon.Boxes.Select(box => toSerializableBox(box)).ToArray();
+                    d.ExtraBox = toSerializableBox(trackerDungeon.ExtraFloorBox);   // the dungeon's extra floor item slot (4th Sword)
                     return d;
                 }).ToArray();
 
@@ -1510,8 +1841,7 @@ public static class CoopSync
             if (!isApplyingItemsFromSync && !TrackerModelOptions.isCurrentlyApplyingRemoteUpdate())
             {
                 lastChanged.SetNow();
-                noteLocalEdit();
-                if (startupBaselineDone) boxEditTicks[box] = DateTime.UtcNow.Ticks;   // (UI thread: box events come from clicks)
+                noteLocalEdit();   // (the box gets its version when the Items message is built, see stamp)
             }
         }
 
@@ -1519,12 +1849,16 @@ public static class CoopSync
         onEvent(TrackerModel.sword2Box.Changed, _ => markChanged(TrackerModel.sword2Box));
         onEvent(TrackerModel.ladderBox.Changed, _ => markChanged(TrackerModel.ladderBox));
         onEvent(TrackerModel.armosBox.Changed, _ => markChanged(TrackerModel.armosBox));
+        onEvent(TrackerModel.sword3Box.Changed, _ => markChanged(TrackerModel.sword3Box));
+        onEvent(TrackerModel.letterBox.Changed, _ => markChanged(TrackerModel.letterBox));
+        onEvent(TrackerModel.sword1Box.Changed, _ => markChanged(TrackerModel.sword1Box));
+        onEvent(TrackerModel.level2StairBox.Changed, _ => markChanged(TrackerModel.level2StairBox));   // (the 4th Sword's level 2 staircase slot)
 
-        // Dungeon boxes
+        // Dungeon boxes, and each dungeon's extra floor item slot (4th Sword)
         for (int i = 0; i <= 8; i++)
         {
             var dungeon = TrackerModel.GetDungeon(i);
-            foreach (var box in dungeon.Boxes)
+            foreach (var box in dungeon.Boxes.Concat(new[] { dungeon.ExtraFloorBox }))
             {
                 var b = box;
                 onEvent(box.Changed, _ => markChanged(b));
@@ -1603,20 +1937,7 @@ public static class CoopSync
             // as a partner's update and its rebaseline do, so a snapshot taken before that update is never sent or recorded after it)
             Dispatcher.UIThread.Post(() =>
             {
-                try
-                {
-                    var jsonPayload = buildOverworldJson();
-                    if (jsonPayload != lastSentOverworldJson)
-                    {
-                        TrackerModelOptions.DebugConfig.Log($"[Sync] Sending Overworld update: {jsonPayload}");
-                        if (trySend("Overworld", jsonPayload))
-                            lastSentOverworldJson = jsonPayload;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send Overworld update: {ex.Message}");
-                }
+                sendWholeState("Overworld");
             });
         });
     }
@@ -1673,7 +1994,6 @@ public static class CoopSync
                     if (isApplyingOverworldFromSync || TrackerModelOptions.isCurrentlyApplyingRemoteUpdate())
                         return;   // a partner's update being applied: do not send it back
                     noteLocalEdit();
-                    if (startupBaselineDone) tileEditTicks[x, y] = DateTime.UtcNow.Ticks;
                     // (F#: Async.Start on the thread pool, which read the model off the UI thread, and two quick edits could be sent out of order.
                     // Posted to the UI thread instead: it runs after the current click handler is done (so a shop's second item, set after this
                     // event, is included, as with the pool), and posts run in order.)
@@ -1685,13 +2005,14 @@ public static class CoopSync
         }
     }
 
-    /// Sends one overworld tile as it is now. UI thread.
+    /// Sends one overworld tile as it is now, with its version. UI thread.
     public static void sendTile(int x, int y)
     {
         try
         {
-            if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop())
+            if (TrackerModelOptions.CoopSyncOptions.GetEnableCoop() && startupBaselineDone)
             {
+                stamp("Overworld");   // (a change of this tile gets its version here)
                 var cur = TrackerModel.overworldMapMarks[x, y].Current();
                 // Shop tiles store extra data (item2, item3) under SHOP key regardless of which item is first
                 var edKey = TrackerModel.MapSquareChoiceDomainHelper.IsItem(cur) ? TrackerModel.MapSquareChoiceDomainHelper.SHOP : cur;
@@ -1709,7 +2030,7 @@ public static class CoopSync
                     Extras = tileExtrasOf(x, y)
                 };
 
-                var jsonPayload = JsonConvert.SerializeObject(update);
+                var jsonPayload = withVersions("Overworld", JsonConvert.SerializeObject(update), new[] { tileKey(x, y) });
                 if (shouldSend("OverworldTile", jsonPayload))
                 {
                     TrackerModelOptions.DebugConfig.Log($"[Sync] Sending OverworldTile ({x},{y}): {jsonPayload}");
@@ -1723,40 +2044,13 @@ public static class CoopSync
         }
     }
 
-    /// A partner's full Overworld or Items message skipped some of our newer edits: send our state again so they get them. UI thread.
-    public static void resendOverworld(string myConsoleId)
-    {
-        lastSentOverworldJson = "";
-        sendOverworldUpdateDebounced(myConsoleId);
-    }
-
-    public static void resendItems(string myConsoleId)
-    {
-        lastSentHashes.TryRemove("Items", out _);
-        sendItemsUpdate(myConsoleId);
-        boxTiersBaseline = buildBoxTiers();
-    }
 
 
 
 
     public static Task sendDungeonTriforceUpdate(string myConsoleId)
     {
-        try
-        {
-            var json = buildTriforceJson();
-            if (shouldSend("DungeonTriforce", json))
-            {
-                TrackerModelOptions.DebugConfig.Log($"[Sync] Sending DungeonTriforce update: {json}");
-                trySend("DungeonTriforce", json);
-            }
-            else
-                TrackerModelOptions.DebugConfig.Log("[Sync] Skipped sending DungeonTriforce update — no change");
-        }
-        catch (Exception ex)
-        {
-            Console.Write($"[Sync] Failed to send DungeonTriforce update: {ex.Message}");   // (F#: printf, no newline)
-        }
+        sendWholeState("DungeonTriforce");
         return Task.CompletedTask;
     }
 
@@ -1842,12 +2136,17 @@ public static class CoopSync
                 }
                 if (!coopActive()) return;   // (co-op off: the 9 maps are not serialized at all)
 
+                if (!startupBaselineDone) return;
+
                 try
                 {
                     var jsonPayload = buildDungeonMapsJson();
+                    stamp("DungeonMaps", stateFromPayload("DungeonMaps", Newtonsoft.Json.Linq.JToken.Parse(jsonPayload)));
 
-                    var dungeonMapsChanged = jsonPayload != lastSentDungeonMapsPayload;
-                    var dungeonMapsSend = dungeonMapsChanged && shouldSendUpdate("DungeonMaps", jsonPayload);
+                    // (sent when it has changes not sent yet, must go (a hello snapshot, or the partner lacks ours), or nothing was sent since a reset)
+                    var dungeonMapsChanged = unsentEdits.Contains("DungeonMaps") || mustSend.Contains("DungeonMaps") || lastSentDungeonMapsPayload == "";
+                    var versioned = dungeonMapsChanged ? withVersions("DungeonMaps", jsonPayload, null, snapshotPending.Contains("DungeonMaps")) : null;
+                    var dungeonMapsSend = dungeonMapsChanged && shouldSendUpdate("DungeonMaps", versioned);
                     if (dungeonMapsChanged && !dungeonMapsSend && DateTime.UtcNow < autoMutedUntil)
                     {
                         // (an update dropped by the anti-spam mute used to be lost until the next edit: try again once the mute ends, on the UI thread
@@ -1857,9 +2156,12 @@ public static class CoopSync
                     }
                     if (dungeonMapsSend)
                     {
-                        TrackerModelOptions.DebugConfig.Log($"[Sync] DungeonMaps update: {jsonPayload}");
-                        if (trySend("DungeonMaps", jsonPayload))
+                        TrackerModelOptions.DebugConfig.Log($"[Sync] DungeonMaps update: {versioned}");
+                        if (trySend("DungeonMaps", versioned))
+                        {
                             lastSentDungeonMapsPayload = jsonPayload;
+                            unsentEdits.Remove("DungeonMaps"); mustSend.Remove("DungeonMaps"); snapshotPending.Remove("DungeonMaps");
+                        }
                     }
                     else
                         TrackerModelOptions.DebugConfig.Log("[Sync] Skipped DungeonMaps update — no change");
@@ -1909,73 +2211,73 @@ public static class CoopSync
                 var dungeon = TrackerModel.GetDungeon(i);
                 onEvent(dungeon.HiddenDungeonColorOrLabelChanged, t =>
                 {
-                    var (color, labelChar) = t;
                     if (TrackerModelOptions.isCurrentlyApplyingRemoteUpdate())
                         return;   // a partner's label being applied: do not send it back
                     noteLocalEdit();
-                    // (F#: `async { ... } |> Async.StartImmediate`; nothing in it awaits, so it runs right here)
-                    try
-                    {
-                        // (F#: `dict [...]`; Newtonsoft writes the keys in this order)
-                        var payload =
-                            new Dictionary<string, object>
-                            {
-                                ["Model"] = "HiddenDungeonColorLabel",
-                                ["Index"] = i,
-                                ["Color"] = color,
-                                ["LabelChar"] = labelChar,
-                                ["Source"] = TrackerModelOptions.CoopSyncOptions.MyConsoleId
-                            };
-
-                        var jsonPayload = JsonConvert.SerializeObject(payload);
-
-                        if (shouldSend("HiddenDungeonColorLabel", jsonPayload))
-                        {
-                            hiddenDungeonColorLabelDebouncers[i].Trigger(() =>
-                            {
-                                Task.Run(() =>   // (F#: Async.Start)
-                                {
-                                    if (jsonPayload != lastHiddenDungeonColorLabelPayloads[i] && trySend("HiddenDungeonColorLabel", jsonPayload))
-                                        lastHiddenDungeonColorLabelPayloads[i] = jsonPayload;
-                                });
-                            });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send HiddenDungeonColorLabel update: {ex.Message}");
-                    }
+                    sendHiddenDungeonColorLabel(i);
                 });
             }
         }
     }
-    // (F#: the body is an `async { }` started with Async.StartImmediate; nothing in it awaits, so it runs right here)
-    // isResend: our value sent again after it won a conflict, not a new edit (its edit time stays)
-    public static void sendDoorChangeUpdate(DungeonUI.DoorChangeInfo info, string myConsoleId, bool isResend = false)
+
+    /// Sends dungeon i's color and label as they are now, with their version. UI thread (the label is changed by clicks).
+    public static void sendHiddenDungeonColorLabel(int i)
     {
-        var key = doorEditKey(info.Level, info.X, info.Y, info.IsHorizontal);
         try
         {
-            var jsonPayload = JsonConvert.SerializeObject(info, new DoorStateAsUnionCaseConverter());
-            if (!isResend)
+            if (!startupBaselineDone || !coopActive()) return;
+            stamp("Items");   // (the label is part of the Items state: a change gets its version here)
+            var dungeon = TrackerModel.GetDungeon(i);
+            // (F#: `dict [...]`; Newtonsoft writes the keys in this order)
+            var payload =
+                new Dictionary<string, object>
+                {
+                    ["Model"] = "HiddenDungeonColorLabel",
+                    ["Index"] = i,
+                    ["Color"] = dungeon.Color,
+                    ["LabelChar"] = dungeon.LabelChar,
+                    ["Source"] = TrackerModelOptions.CoopSyncOptions.MyConsoleId
+                };
+
+            var jsonPayload = withVersions("Items", JsonConvert.SerializeObject(payload), new[] { labelKey(i) });
+
+            if (shouldSend("HiddenDungeonColorLabel", jsonPayload))
             {
-                noteLocalEdit();
-                recordSend(key);   // (our edit time for this door, used by localEditWins and the DungeonMaps merge, even if co-op is off)
+                hiddenDungeonColorLabelDebouncers[i].Trigger(() =>
+                {
+                    Task.Run(() =>   // (F#: Async.Start)
+                    {
+                        if (jsonPayload != lastHiddenDungeonColorLabelPayloads[i] && trySend("HiddenDungeonColorLabel", jsonPayload))
+                            lastHiddenDungeonColorLabelPayloads[i] = jsonPayload;
+                    });
+                });
             }
+        }
+        catch (Exception ex)
+        {
+            TrackerModelOptions.DebugConfig.Log($"[Sync] Failed to send HiddenDungeonColorLabel update: {ex.Message}");
+        }
+    }
+    // (F#: the body is an `async { }` started with Async.StartImmediate; nothing in it awaits, so it runs right here)
+    // isResend: our value sent again because the partner lacked it, not a new edit (the hello's state time stays)
+    public static void sendDoorChangeUpdate(DungeonUI.DoorChangeInfo info, string myConsoleId, bool isResend = false)
+    {
+        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(() => sendDoorChangeUpdate(info, myConsoleId, isResend)); return; }   // (the versions live on the UI thread)
+        try
+        {
+            if (!isResend) noteLocalEdit();
+            if (!isDoorSyncReady() || !startupBaselineDone)
+            {
+                TrackerModelOptions.DebugConfig.Log("[Sync] Door sync not ready, skipping DoorChange update");
+                return;
+            }
+            stamp("DungeonMaps");   // (the door's change gets its version here)
+            var jsonPayload = withVersions("DungeonMaps", JsonConvert.SerializeObject(info, new DoorStateAsUnionCaseConverter()), new[] { doorKey(info.Level, info.X, info.Y, info.IsHorizontal) });
             if (shouldSend("DoorChange", jsonPayload))
             {
                 TrackerModelOptions.DebugConfig.Log($"[Sync] Sending DoorChange update: {jsonPayload}");
-
-                var doorSyncReady = Dispatcher.UIThread.Invoke(() => isDoorSyncReady());
-
-                if (doorSyncReady && trySend("DoorChange", jsonPayload))
-                {
+                if (trySend("DoorChange", jsonPayload))
                     SyncManager.MarkLastSentDoorChange(jsonPayload);
-                    // (a partner's change to this door identical to one we applied before is new again)
-                    lastAppliedDoorPayloads.TryRemove(makeDoorKey(info.Level, info.X, info.Y, info.IsHorizontal), out _);
-                }
-                else if (!doorSyncReady)
-                    TrackerModelOptions.DebugConfig.Log("[Sync] Door sync not ready, skipping DoorChange update");
             }
             else
                 TrackerModelOptions.DebugConfig.Log("[Sync] Skipped sending DoorChange update — no change");
@@ -2006,7 +2308,7 @@ public static class CoopSync
     // isResend: as for sendDoorChangeUpdate
     public static void sendRoomChangeUpdate(int level, int x, int y, Z1R_Tracker.Models.CDungeonRoomState room, string myConsoleId, bool isResend = false)
     {
-        var key = roomEditKey(level, x, y);
+        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(() => sendRoomChangeUpdate(level, x, y, room, myConsoleId, isResend)); return; }   // (the versions live on the UI thread)
         try
         {
             //let shouldSuppress =
@@ -2017,18 +2319,13 @@ public static class CoopSync
             //if not shouldSuppress && level <> 0 then
             if (level != 0)
             {
-                var json = serializeRoomChange(level, x, y, room);
                 if (!isResend && !(DungeonPopups.suppressRoomSyncTemporarily))
-                {
                     noteLocalEdit();
-                    recordSend(key);   // (our edit time for this room, used by localEditWins and the DungeonMaps merge, even if co-op is off)
-                }
-                if (shouldSend("RoomChange", json) && !(DungeonPopups.suppressRoomSyncTemporarily) && trySend("RoomChange", json))
-                {
+                if (DungeonPopups.suppressRoomSyncTemporarily || !startupBaselineDone || !coopActive()) return;
+                stamp("DungeonMaps");   // (the room's change gets its version here)
+                var json = withVersions("DungeonMaps", serializeRoomChange(level, x, y, room), new[] { roomKey(level, x, y) });
+                if (shouldSend("RoomChange", json) && trySend("RoomChange", json))
                     TrackerModelOptions.DebugConfig.Log($"[Sync] Sent RoomChange: {json}");
-                    // (a partner's change to this room identical to one we applied before is new again)
-                    lastAppliedRoomPayloads.TryRemove(makeRoomKey(level, x, y), out _);
-                }
                 else
                     TrackerModelOptions.DebugConfig.Log("[Sync] RoomChange not sent — coop disabled or not needed");
             }

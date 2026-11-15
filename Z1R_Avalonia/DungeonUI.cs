@@ -1223,6 +1223,9 @@ public static class DungeonUI
             canvasAdd(dungeonCanvas, dungeonBodyHighlightCanvas, 0.0, (double)TH);
             var numeral = makeNumeral(labelChar);
             numeralsByLevel[level - 1] = numeral;
+            // numeralFollowsFlag: the faint number shows exactly while the first-click shortcut is on, also when a partner's map changes the flag
+            // (the local clicks set both themselves, the same way)
+            onEvent(isFirstTimeClickingAnyRoom[level - 1].Changed, _ => numeral.Opacity = isFirstTimeClickingAnyRoom[level - 1].Value ? 0.25 : 0.0);
             void showNumeral()
             {
                 numeral.Opacity = 0.7;
@@ -1947,15 +1950,10 @@ public static class DungeonUI
                         lastRemoteRoomLevel = level;   // (Program calls redrawAllRoomsPublic right after this)
                         // This will also trigger redraw for that cell
                         setNewValueFunctions[level - 1][x, y](newRoom);
-                        // (the tab now has marks: hide its big number, as a local first mark does. A partner who cleared the last room, or wiped
-                        //  the dungeon, leaves it all Unmarked: then the number and the first-click shortcut come back, as the local clear does)
-                        var rooms = masterRoomStates[level - 1];
-                        var allUnmarked = true;
-                        for (int i = 0; i <= 7 && allUnmarked; i++)
-                            for (int j = 0; j <= 7 && allUnmarked; j++)
-                                if (!RoomTypeExtensions.IsNotMarked(rooms[i, j].RoomType)) allUnmarked = false;
-                        isFirstTimeClickingAnyRoom[level - 1].Value = allUnmarked;
-                        if (numeralsByLevel[level - 1] is TextBox nb) nb.Opacity = allUnmarked ? 0.25 : 0.0;
+                        // (a partner's room change was a click on their map, and any click there hides the big number and ends the first-click
+                        //  shortcut, also one that unmarks a room, as here. Only clearing the whole map brings them back, and that comes with the
+                        //  partner's DungeonMaps, which carries the flag itself (see Program, DungeonMaps). So both trackers show the same.)
+                        isFirstTimeClickingAnyRoom[level - 1].Value = false;   // (the numeral follows the flag, see numeralFollowsFlag)
                     }
 
                 });

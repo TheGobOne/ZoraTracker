@@ -14,7 +14,7 @@ for arch in $archs; do
     out=$project/bin/macOS/$arch
     app="$out/ZORATracker.app"
     echo "== $arch: publishing"
-    rm -rf $out/publish "$app"
+    rm -rf $out/publish "$app" "$out/ZORA Tracker.app"   # (also the bundle's old name, so a local build doesn't leave both)
     dotnet publish $project -c Release -r osx-$arch --self-contained -o $out/publish -v q -nologo
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     cp -R $out/publish/. "$app/Contents/MacOS/"

@@ -140,6 +140,10 @@ runtime-test lists in the entries below.
 `macOS/AppIcon.icns`. Two apps, not one universal app: the .NET runtime's own libraries are compiled for each processor, so they can't be
 merged with `lipo`. The icon is WPF's `ztlogo64x64.ico` (its 48px image) scaled up by whole pixels onto a black rounded square.
 
+The bundle was called `ZORA Tracker.app` up to beta-23; `make-app.sh` removes that old bundle from its output folder. For the release
+notes: Mac users who upgrade should delete the old `ZORA Tracker.app` (settings and saves are in `~/Library/Application Support/ZoraTracker`,
+so they are kept).
+
 Signed ad hoc only (`codesign --sign -`), which Apple silicon needs to run anything; there's no Developer ID yet (risk 9 in PLAN.md),
 so a downloaded copy is quarantined and needs right-click > Open the first time, and macOS may move it to a read-only location (App
 Translocation) until it's moved to Applications. As a real app it gets its own Accessibility entry, for the F10 hotkeys and fake input.

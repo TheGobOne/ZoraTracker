@@ -502,6 +502,9 @@ let ApplyLoadedOptions(ow:Overworld) =
 /// Whether the 4th Sword start option was on in a loaded save: the level 2 staircase slot or the level 9 floor check is only enabled by it (older saves predate the option: nothing is restricted)
 let FourthSwordWasOn(items:Items) =
     if isNull items.Level2StairBox then true else (items.Level2StairBoxEnabled || items.Level9FloorBoxEnabled)
+/// Whether a loaded save says the 4th sword was really on (an older save without the 4th Sword fields cannot say: false, so its Progressive Items setting is not overridden)
+let FourthSwordSavedOn(items:Items) =
+    not (isNull items.Level2StairBox) && (items.Level2StairBoxEnabled || items.Level9FloorBoxEnabled)
 
 /// The save file's own format number, separate from the app version: bump it only when the meaning of saved ids or fields changes (new fields alone do not need a bump).
 /// 0 = absent: ZTracker 1.x and ZORATracker saves written before this field existed; they use the same ids.

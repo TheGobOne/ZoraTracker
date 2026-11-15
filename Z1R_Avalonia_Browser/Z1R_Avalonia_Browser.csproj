@@ -46,6 +46,23 @@
     <Content Include="..\Z1R_WPF\confirm_speech.wav" Link="wwwroot\confirm_speech.wav" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Cache-busting: the published index.html loads main.js?v=<build time>, so a browser that kept an older main.js fetches the new one
+       (an old main.js with a new .NET build can lack functions the tracker calls). main.js is hand-written, so the SDK doesn't fingerprint it.
+       The precompressed index.html.br/.gz no longer match, so they are removed; the server sends the plain file. -->
+  <Target Name="StampWebScriptVersion" AfterTargets="Publish">
+    <PropertyGroup>
+      <ZtWebVersion>$([System.DateTime]::UtcNow.ToString(yyyyMMddHHmmss))</ZtWebVersion>
+      <ZtIndexHtml>$(PublishDir)wwwroot/index.html</ZtIndexHtml>
+      <ZtIndexText>$([System.IO.File]::ReadAllText('$(ZtIndexHtml)'))</ZtIndexText>
+      <!-- (with or without an earlier ?v=: a publish without a clean keeps the index.html an earlier publish stamped, so it is stamped again) -->
+      <ZtIndexText>$([System.Text.RegularExpressions.Regex]::Replace('$(ZtIndexText)', 'src="\./main\.js(\?v=[^"]*)?"', 'src="./main.js?v=$(ZtWebVersion)"'))</ZtIndexText>
+    </PropertyGroup>
+    <Error Condition="!$(ZtIndexText.Contains('src=&quot;./main.js?v=$(ZtWebVersion)&quot;'))" Text="StampWebScriptVersion: index.html has no src=&quot;./main.js&quot; to stamp" />
+    <WriteLinesToFile File="$(ZtIndexHtml)" Lines="$([MSBuild]::Escape($(ZtIndexText)))" Overwrite="true" />
+    <Delete Files="$(ZtIndexHtml).br;$(ZtIndexHtml).gz" />
+    <Message Importance="high" Text="index.html: main.js?v=$(ZtWebVersion)" />
+  </Target>
+
   <!-- the same packages and projects as Z1R_Avalonia, except SharpHook and SDL (native desktop libraries; their code is #if !BROWSER) -->
   <ItemGroup>
     <PackageReference Include="Avalonia.Browser" Version="11.3.22" />

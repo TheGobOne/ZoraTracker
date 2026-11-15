@@ -646,6 +646,12 @@ type PlayerProgressAndTakeAnyHearts() =
             takeAnyHearts.[i] <- v
             playerProgressLastChangedTime.SetNow()
             takeAnyHeartChanged.Trigger(i)
+    // puts back a slot's heart value and kind exactly as they were (SetTakeAnyKind works the heart value out from the kind, so it cannot put back every pair)
+    member _this.RestoreTakeAnySlot(i,v,k) =
+        takeAnyKinds.[i] <- k
+        takeAnyHearts.[i] <- v
+        playerProgressLastChangedTime.SetNow()
+        takeAnyHeartChanged.Trigger(i)
     member _this.TakeAnyHeartChanged = takeAnyHeartChanged.Publish
     member _this.PlayerHasBoomBook      = playerHasBoomBook
     member _this.PlayerHasWoodSword     = playerHasWoodSword     

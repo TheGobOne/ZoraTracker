@@ -2076,7 +2076,13 @@ public static class OverworldMapTileCustomization
         SaveAndLoad.ApplyLoadedItemExtras(items);
         // (older saves, or a damaged entry: no slot gave the candle)
         var gave = items?.TakeAnySlotGaveCandle;
-        for (var k = 0; k < 4; k++) takeAnySlotGaveCandle[k] = gave != null && gave.Length == 4 && gave[k] == '1';
+        for (var k = 0; k < 4; k++)
+        {
+            takeAnySlotGaveCandle[k] = gave != null && gave.Length == 4 && gave[k] == '1';
+            // (the slot kinds are not saved: a slot that gave the candle holds the candle, so it draws as the candle and cycling it away takes the candle back.
+            // The player progress applied after this keeps a kind of 2 when the saved heart value is 2)
+            if (takeAnySlotGaveCandle[k]) TrackerModel.playerProgressAndTakeAnyHearts.SetTakeAnyKind(k, 2);
+        }
         if (items?.TakeAnyTaken == null) return;
         takeAnyTaken.Clear();
         foreach (var t in items.TakeAnyTaken.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))

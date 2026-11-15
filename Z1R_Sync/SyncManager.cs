@@ -250,7 +250,13 @@ namespace Z1R_Sync
             }
         }
 
-        /// Raised when the relay connection comes up, drops or is stopped (on whatever thread it happens; listeners marshal to the UI).
+        /// Co-op is on and the first connect (or a reconnect) is under way, with no failure since. (A failed attempt counts as not connected
+        /// until the next one succeeds.)
+        public static bool IsConnecting => _wantConnected && !IsConnected && !_lastConnectFailed;
+        private static volatile bool _lastConnectFailed = false;
+
+        /// Raised when the relay connection comes up, drops, is stopped, starts connecting or fails to connect
+        /// (on whatever thread it happens; listeners marshal to the UI).
         public static event Action ConnectionStateChanged;
         private static void NotifyConnectionState()
         {
@@ -263,6 +269,8 @@ namespace Z1R_Sync
         {
             _wantConnected = true;
             _negotiateUrl = negotiateUrl;
+            _lastConnectFailed = false;
+            NotifyConnectionState();   // (the co-op dot shows "connecting" at once, not only once the connect is done)
             await StartInternalAsync(negotiateUrl);
         }
 
@@ -276,9 +284,12 @@ namespace Z1R_Sync
                 try { await StartAsyncCore(negotiateUrl); }
                 catch
                 {
+                    _lastConnectFailed = true;
+                    NotifyConnectionState();   // (a failed connect raised no event, so the co-op dot never showed it)
                     StartReconnectLoop();
                     throw;
                 }
+                _lastConnectFailed = false;
                 // (inside the lock: a StopAsync waiting for it disposes this connection after, and no connected event follows a stop)
                 if (_wantConnected) RaiseConnected();
             }
@@ -383,6 +394,15 @@ namespace Z1R_Sync
                             Console.WriteLine($"[SyncManager] Connection closed: {ex?.Message}");
                             StartReconnectLoop();
                             NotifyConnectionState();
+                        }
+                        return Task.CompletedTask;
+                    };
+                    conn.Reconnecting += _ =>
+                    {
+                        if (ReferenceEquals(conn, _connection) && _wantConnected)
+                        {
+                            _lastConnectFailed = false;
+                            NotifyConnectionState();   // (the dot goes gray, "connecting", while the automatic reconnect runs)
                         }
                         return Task.CompletedTask;
                     };

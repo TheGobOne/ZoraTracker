@@ -3773,7 +3773,8 @@ public static class WPFUI
         var discordLink = Layout.MakeDiscordLink(discordUrl);
         var racingLink = Layout.MakeLinkText("Z1R Racing Discord", "https://discord.gg/z1rracing", Layout.RacingLinkWidth);
         layout.AddKittyAndLogo(kitty, logoBorder, ztlogo, discordLink, racingLink);
-        // the co-op dot: blue while connected to the relay, gray while connecting, hidden when co-op is off (updated from SyncManager.ConnectionStateChanged)
+        // the co-op dot: blue while connected to the relay, gray while connecting or not connected, hidden when co-op is off
+        // (updated from SyncManager.ConnectionStateChanged, which also fires when a connect starts or fails, and when co-op is turned on or off)
         var coopDot = new Ellipse { Width = 20.0, Height = 20.0, Stroke = Brushes.Black, StrokeThickness = 2.0 };   // (hit-testable, so its tooltip shows)
         (kitty.Parent as Canvas)?.Children.Add(coopDot);
         void updateCoopDot()
@@ -3784,11 +3785,14 @@ public static class WPFUI
                 var connected = SyncManager.IsConnected;
                 var partner = connected && CoopSync.PartnerPresent;
                 coopDot.Fill = partner ? Brushes.LimeGreen : connected ? Brushes.DodgerBlue : Brushes.Gray;
-                ToolTip.SetTip(coopDot, partner ? "Co-op: your partner is here" : connected ? "Co-op: on the relay, waiting for your partner" : "Co-op: not connected");
+                ToolTip.SetTip(coopDot, partner ? "Co-op: your partner is here" : connected ? "Co-op: connected, waiting for your partner"
+                                        : SyncManager.IsConnecting ? "Co-op: connecting" : "Co-op: not connected");
             });
         }
         SyncManager.ConnectionStateChanged += updateCoopDot;
         CoopSync.PartnerPresenceChanged += updateCoopDot;
+        // (co-op turned on before the connect starts, or off: show or hide the dot now)
+        TrackerModelOptions.CoopSyncOptions.EnableCoopChanged.Publish.AddHandler(new FSharpHandler<bool>((_, _) => updateCoopDot()));
         updateCoopDot();
         var zoraSiteLink = Layout.MakeLinkText("ZORA Site", "https://zora.gg/", Layout.DiscordLinkWidth);
         var racingSiteLink = Layout.MakeLinkText("Z1R Racing Site", "https://z1rracing.com/", Layout.RacingLinkWidth);
@@ -4060,7 +4064,7 @@ public static class WPFUI
                             SaveAndLoad.pendingManualSaveName = typedName;
                             var filename = MakeManualSave();
                             filename = System.IO.Path.GetFileName(filename);  // remove directory info (could have username in path, don't display PII on-screen)
-                            var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORATracker data saved to file\n{filename}", new[] { "Ok" });
+                            var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORATracker data saved to file\n{filename}", new[] { "OK" });
                             _ = r;
                             popupIsActive = false;
                         }
@@ -4073,7 +4077,7 @@ public static class WPFUI
                     {
                         HotKeys.suspendHotKeys = false;
                         SaveAndLoad.pendingManualSaveName = "";
-                        var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORATracker was unable to save the\ntracker state to a file\nError:\n{error.Message}", new[] { "Ok" });
+                        var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORATracker was unable to save the\ntracker state to a file\nError:\n{error.Message}", new[] { "OK" });
                         _ = r;
                         popupIsActive = false;
                     }
@@ -5793,8 +5797,8 @@ public static class WPFUI
                 foreach (var t in data.Items.ShuffledWoodSwordTiles.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
                 {
                     var p = t.Split(',');
-                    if (p.Length == 2)
-                        TrackerModel.shuffledWoodSwordTiles.Add(Tuple.Create(parseInt(p[0]), parseInt(p[1])));
+                    if (p.Length == 2 && int.TryParse(p[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var wi) && int.TryParse(p[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var wj))   // (a damaged entry is skipped)
+                        TrackerModel.shuffledWoodSwordTiles.Add(Tuple.Create(wi, wj));
                 }
             }
             OptionsMenu.triggerRequestRedrawOverworldEvent();   // redraw the tiles now that the cave items are back
@@ -5803,13 +5807,8 @@ public static class WPFUI
                 TrackerModel.CustomLevelName = data.Items.CustomLevelName;
                 DungeonUI.triggerCustomLevelNameChanged();   // the custom LEVEL name that was in use when this was saved
             }
-            if (data.Items.Level2StairBox != null)   // (older saves do not have the optional level 2 staircase slot)
-            {
-                if (!(data.Items.Level2StairBox.TryApply(TrackerModel.level2StairBox))) anySetProblems = true;
-                TrackerModel.SetLevel2StairBoxEnabled(data.Items.Level2StairBoxEnabled);
-                TrackerModel.SetLevel9FloorBoxEnabled(data.Items.Level9FloorBoxEnabled);   // (older saves: false)
-            }
-            TrackerModelOptions.FourthSwordEnabled = SaveAndLoad.FourthSwordWasOn(data.Items);   // (older saves predate the 4th Sword option: nothing is restricted)
+            // the 4th Sword slots, and Progressive Items on if the save had the 4th sword on (before the dungeon boxes, so the caps fit them)
+            if (!(OverworldItemGridUI.ApplyLoadedFourthSword(data.Items))) anySetProblems = true;
             for (int i = 0; i <= 8; i++)
             {
                 var ds = data.Items.Dungeons[i];
@@ -5842,12 +5841,9 @@ public static class WPFUI
                         linkDuplicate((si, sj), (di, dj));
                 }
             }
-            OverworldMapTileCustomization.applyLoadedItemExtras(data.Items);   // shop prices, level 9 entry rule, taken take any caves (older saves keep the startup values)
+            // shop prices, level 9 entry rule, taken take any caves, then PlayerProgressAndTakeAnyHearts and StartingItemsAndExtras (in that order)
+            OverworldItemGridUI.ApplyLoadedItemExtrasAndProgress(data);
             await showProgress("finished loading items");
-            // PlayerProgressAndTakeAnyHearts
-            data.PlayerProgressAndTakeAnyHearts.Apply();
-            // StartingItemsAndExtras
-            data.StartingItemsAndExtras.Apply();
             // Blockers
             TrackerModel.DungeonBlockersContainer.StartIgnoreChangesDuringLoad();
             for (int i = 0; i <= 7; i++)

@@ -118,12 +118,12 @@ public static class OptionsMenu
     {
         var r = new List<(string, string, TrackerModelOptions.Bool, bool, Action, Thickness?)>();
         // These features are disabled by the app when not(isStandardHyrule)
-        if (isStandardHyrule) r.Add(("Draw Routes", "Constantly display routing lines when mousing over overworld tiles", TrackerModelOptions.Overworld.DrawRoutes, true, () => { }, null));
-        if (isStandardHyrule) r.Add(("Show Screen Scrolls", "Routing lines assume the player can screen scroll\nScreen scrolls appear as curved lines", TrackerModelOptions.Overworld.RoutesCanScreenScroll, true, () => { }, new Thickness(20.0, 0.0, 0.0, 0.0)));
-        if (isStandardHyrule) r.Add(("Highlight Nearby", "Highlight nearest unmarked gettable overworld tiles when mousing", TrackerModelOptions.Overworld.HighlightNearby, false, () => { }, null));
-        if (isStandardHyrule) r.Add(("Hover On Zones/Coords", "Hovering the Zones or Coords checkbox shows that overlay while the mouse is over it", TrackerModelOptions.Overworld.HoverZonesCoords, false, () => { }, null));
-        if (isStandardHyrule) r.Add(("Show Magnifier", "Display magnified view of overworld tiles when mousing", TrackerModelOptions.Overworld.ShowMagnifier, false, () => { }, null));
-        r.Add(("Use Old Popups", "Check this to show the old picture popups (instead of the button boxes)\nwhen marking the wood sword cave and the take-any caves", TrackerModelOptions.Overworld.UseOldPopups, false, () => { }, null));
+        if (isStandardHyrule) r.Add(("Draw routes", "Constantly display routing lines when mousing over overworld tiles", TrackerModelOptions.Overworld.DrawRoutes, true, () => { }, null));
+        if (isStandardHyrule) r.Add(("Show screen scrolls", "Routing lines assume the player can screen scroll\nScreen scrolls appear as curved lines", TrackerModelOptions.Overworld.RoutesCanScreenScroll, true, () => { }, new Thickness(20.0, 0.0, 0.0, 0.0)));
+        if (isStandardHyrule) r.Add(("Highlight nearby", "Highlight nearest unmarked gettable overworld tiles when mousing", TrackerModelOptions.Overworld.HighlightNearby, false, () => { }, null));
+        if (isStandardHyrule) r.Add(("Hover on Zones/Coords", "Hovering the Zones or Coords checkbox shows that overlay while the mouse is over it", TrackerModelOptions.Overworld.HoverZonesCoords, false, () => { }, null));
+        if (isStandardHyrule) r.Add(("Show magnifier", "Display magnified view of overworld tiles when mousing", TrackerModelOptions.Overworld.ShowMagnifier, false, () => { }, null));
+        r.Add(("Use old popups", "Check this to show the old picture popups (instead of the button boxes)\nwhen marking the wood sword cave and the take-any caves", TrackerModelOptions.Overworld.UseOldPopups, false, () => { }, null));
         // Mirror overworld is not useful when not(isStandardHyrule), but if the user has it checked, we want them to be able to uncheck it
 // now a clickable feature of top tracker area
 //    yield "Mirror overworld", "Flip the overworld map East<->West", TrackerModelOptions.Overworld.MirrorOverworld, true, (fun()->()), None
@@ -131,21 +131,21 @@ public static class OptionsMenu
     }
 
     public static readonly (string text, string tip, TrackerModelOptions.Bool b, bool needFU, Action otherEffect)[] data1d = new (string, string, TrackerModelOptions.Bool, bool, Action)[] {
-        ("Dungeon Map Hint", "Check this box to add a transparent icon to the dungeon map rooms in order to better guess where that room is", TrackerModelOptions.DisplayIconsInDungeonMap, false, triggerDisplayIconsInDungeonMapOptionChanged),
+        ("Dungeon map hint", "Check this box to add a transparent icon to the dungeon map rooms in order to better guess where that room is", TrackerModelOptions.DisplayIconsInDungeonMap, false, triggerDisplayIconsInDungeonMapOptionChanged),
 // now a clickable feature of top tracker area
 //    "Second quest dungeons", "Check this if dungeon 4, rather than dungeon 1, has 3 items (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.IsSecondQuestDungeons, false, secondQuestDungeonsOptionChanged.Trigger
-        ("Show Dungeon Hint Icons", "Uncheck to hide the dim question-mark icons above the dungeons and other items\n(where you click to pick a location hint)", TrackerModelOptions.ShowDungeonHintIcons, false, triggerShowDungeonHintIconsOptionChanged),
-        ("BOARD Instead Of LEVEL", "Check this to label the dungeon tabs and headers BOARD-1 ... BOARD-9\ninstead of LEVEL-1 ... LEVEL-9", TrackerModelOptions.BOARDInsteadOfLEVEL, false, triggerBOARDInsteadOfLEVELOptionChanged),
-        ("Show Basement Info", "Check this if empty dungeon item boxes should suggest whether they are found as\nbasement items rather than floor drops (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.ShowBasementInfo, false, triggerShowBasementInfoOptionChanged),
-        ("Do Door Inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, () => { }),
-        ("Book For Helpful Hints", "Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, triggerBookForHelpfulHintsOptionChanged),
-        ("Alphabetize Hint Zone List", "When checked, the hint zone dropdown (where you mark which zone a dungeon/sword is in)\nshows zones in alphabetical order instead of geographic order.", TrackerModelOptions.AlphabetizeHintZones, false, () => { }),
-        ("Red Edge By OFF Tiles", "Uncheck to stop drawing a red 'no bomb' edge on the side of a dungeon room\nthat touches an OFF tile", TrackerModelOptions.ShowOffTileEdges, false, triggerDungeonOffTileEdgesChanged),
-        ("Left-Drag Auto-Inverts", "Painting maps: When checked, If your first drag is with left-click,\nand you've not yet inverted OffTheMap with Unmarked, then\nauto-invert when left-click-dragging, to immediately start painting a map.", TrackerModelOptions.LeftClickDragAutoInverts, false, () => { }),
-        ("Default To NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, () => { }),
+        ("Show dungeon hint icons", "Uncheck to hide the dim question-mark icons above the dungeons and other items\n(where you click to pick a location hint)", TrackerModelOptions.ShowDungeonHintIcons, false, triggerShowDungeonHintIconsOptionChanged),
+        ("BOARD instead of LEVEL", "Check this to label the dungeon tabs and headers BOARD-1 ... BOARD-9\ninstead of LEVEL-1 ... LEVEL-9", TrackerModelOptions.BOARDInsteadOfLEVEL, false, triggerBOARDInsteadOfLEVELOptionChanged),
+        ("Show basement info", "Check this if empty dungeon item boxes should suggest whether they are found as\nbasement items rather than floor drops (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.ShowBasementInfo, false, triggerShowBasementInfoOptionChanged),
+        ("Do door inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, () => { }),
+        ("Book for helpful hints", "Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, triggerBookForHelpfulHintsOptionChanged),
+        ("Alphabetize hint zone list", "When checked, the hint zone dropdown (where you mark which zone a dungeon/sword is in)\nshows zones in alphabetical order instead of geographic order.", TrackerModelOptions.AlphabetizeHintZones, false, () => { }),
+        ("Red edge by OFF tiles", "Uncheck to stop drawing a red 'no bomb' edge on the side of a dungeon room\nthat touches an OFF tile", TrackerModelOptions.ShowOffTileEdges, false, triggerDungeonOffTileEdgesChanged),
+        ("Left-drag auto-inverts", "Painting maps: When checked, If your first drag is with left-click,\nand you've not yet inverted OffTheMap with Unmarked, then\nauto-invert when left-click-dragging, to immediately start painting a map.", TrackerModelOptions.LeftClickDragAutoInverts, false, () => { }),
+        ("Default to NonDescript", "Room default: When checked, clicking an Unmarked room will mark it as\nNonDescript (empty box) rather than MaybePushBlock (box with two dots)", TrackerModelOptions.DefaultRoomPreferNonDescriptToMaybePushBlock, false, () => { }),
         ("Dungeon 'Sunglasses'", "The dungeon tracker has high contrast (bright colors against black);\nTurn this on to darken the colors somewhat to reduce bright contrast", TrackerModelOptions.GiveDungeonTrackerSunglasses, false, triggerDungeonSunglassesChanged),
-        ("Reverse Scroll Wheel", "When unchecked: scroll up = monster popup, scroll down = floor-drop/item popup.\nWhen checked: scroll up = floor-drop/item popup, scroll down = monster popup.\n(Dungeon rooms)", TrackerModelOptions.ReverseScrollWheelDirection, false, () => { }),
-        ("Hide Lock And Hints", "Check this to hide the tip box and the lock bar on the item, tile, dungeon room type,\nmonster and floor drop menus", TrackerModelOptions.HidePopupHintAndLock, false, () => { }),
+        ("Reverse scroll wheel", "When unchecked: scroll up = monster popup, scroll down = floor-drop/item popup.\nWhen checked: scroll up = floor-drop/item popup, scroll down = monster popup.\n(Dungeon rooms)", TrackerModelOptions.ReverseScrollWheelDirection, false, () => { }),
+        ("Hide lock and hints", "Check this to hide the tip box and the lock bar on the item, tile, dungeon room type,\nmonster and floor drop menus", TrackerModelOptions.HidePopupHintAndLock, false, () => { }),
         };
 
     public static readonly (string text, string tip, TrackerModelOptions.Bool bVoice, TrackerModelOptions.Bool bVisual)[] data2 = new (string, string, TrackerModelOptions.Bool, TrackerModelOptions.Bool)[] {
@@ -179,7 +179,7 @@ public static class OptionsMenu
     {
         var wh = new ManualResetEvent(false);
         // (as in WPF, this Window is never shown; Launch/Stop just Close() it)
-        var window = new Window { Title = "Co-Op Host Settings", Width = 400.0, Height = 300.0 };
+        var window = new Window { Title = "Co-op host settings", Width = 400.0, Height = 300.0 };
         var sp = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(10.0) };
 
         // Apply modal style
@@ -205,13 +205,13 @@ public static class OptionsMenu
 
         var isSessionEnabled = TrackerModelOptions.CoopHostSession;
 
-        var enableCheck = new CheckBox { Content = new TextBox { Text = "Enable Hosting", IsReadOnly = true } };
+        var enableCheck = new CheckBox { Content = new TextBox { Text = "Enable hosting", IsReadOnly = true } };
         enableCheck.IsChecked = isSessionEnabled;
         Graphics.onChecked(enableCheck, () => isSessionEnabled = true);
         Graphics.onUnchecked(enableCheck, () => isSessionEnabled = false);
         sp.Children.Add(enableCheck);
 
-        var portLabel = new TextBox { Text = "Port Number:", IsReadOnly = true };
+        var portLabel = new TextBox { Text = "Port number:", IsReadOnly = true };
         sp.Children.Add(portLabel);
 
         var portBox = new TextBox { Text = TrackerModelOptions.PortNumber };
@@ -659,7 +659,7 @@ public static class OptionsMenu
         (new[] { "@0.0,0.063,0.358,0.154" }, "Dungeon item boxes",
             "One row of boxes for each dungeon, holding what you found there. Click a box to set its item; a green border means collected."),
         (new[] { "@0.2,0.2,0.8,0.62" }, "Moving and resizing menus",
-            "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered. If you don't see the LOCKED strip, uncheck Hide Lock And Hints in Options, Dungeon Settings."),
+            "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered. If you don't see the LOCKED strip, uncheck Hide lock and hints in Options, Dungeon settings."),
         (new[] { "@0.0,0.0,0.358,0.154" }, "Triforce in the basement",
             "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it."),
         (new[] { "@0.363,0.03,0.67,0.175" }, "Items and hearts",
@@ -687,7 +687,7 @@ public static class OptionsMenu
         (new[] { "Notes", "Aa" }, "Notes",
             "Free text notes for the run. The Aa button changes the text size."),
         (new[] { "@0.0,0.873,1.0,1.0" }, "Timeline",
-            "The Overworld and Collection Timeline: when you found each item and how the overworld filled in over the run, with the seed and flags along the top (when Display Seed + Flags is on).") };
+            "The Overworld and Collection Timeline: when you found each item and how the overworld filled in over the run, with the seed and flags along the top (when Display seed + flags is on).") };
 
     // the start screen tour: (labels that mark the section, title, description)
     public static readonly List<(string[] labels, string title, string body)> startScreenTourSteps = new List<(string[], string, string)> {
@@ -705,18 +705,18 @@ public static class OptionsMenu
             "Your three most recently loaded save files, newest first. Click one to resume that run."),
         (new[] { "Load Save" }, "Load a save",
             "Resume an earlier run from any save file on your computer."),
-        (new[] { "Overworld Settings", "Use Old Popups" }, "Overworld settings",
+        (new[] { "Overworld settings", "Use old popups" }, "Overworld settings",
             "How the map behaves: route drawing, highlighting nearby tiles, the magnifier and popups. Most of these can be changed later from the Options button."),
-        (new[] { "Dungeon Settings", "Hide Lock And Hints" }, "Dungeon settings",
+        (new[] { "Dungeon settings", "Hide lock and hints" }, "Dungeon settings",
             "How the dungeon screens behave and look: hint icons, BOARD instead of LEVEL, basement info, door inference and more."),
-        (new[] { "Reminders", "Change Voice" }, "Reminders",
+        (new[] { "Reminders", "Change voice" }, "Reminders",
             "Volume, which voice and visual reminders you get (dungeon feedback, sword hearts, coast item, a check of Overworld + Extras when an option is Random, and more), how often they repeat, and which voice speaks them."),
         (new[] { "@0.31,0.905,0.67,0.99" }, "Auto-save",
             "How often the tracker saves your run by itself, in minutes."),
         (new[] { "Other", "Race Mode" }, "Other options",
-            "General settings: animations, remembering your startup choices, update checks, Display Seed + Flags, listening for speech, the broadcast window, the timer and Race Mode."),
-        (new[] { "Co-Op Client Settings", "Show Crash Log..." }, "Co-Op and crash log",
-            "Co-Op Client and Host settings are for tracking together with a partner. Show Crash Log opens the log file to send along when reporting a problem."),
+            "General settings: animations, remembering your startup choices, update checks, Display seed + flags, listening for speech, the broadcast window, the timer and Race Mode."),
+        (new[] { "Co-op client settings", "Show crash log..." }, "Co-Op and crash log",
+            "Co-op client settings and Co-op host settings are for tracking together with a partner. Show crash log opens the log file to send along when reporting a problem."),
         (new[] { "Guided Tour", "v2." }, "Tour, options and version",
             "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows the version, with Check for updates, Open folder and Go to website, and glows green when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen.") };
 
@@ -792,7 +792,7 @@ public static class OptionsMenu
         var width = cm.AppMainCanvas.Width;
         var all = new Border { BorderThickness = new Thickness(2.0), BorderBrush = Brushes.DarkGray, Background = Brushes.Black };
         // (no fixed width: the three columns take the width their labels need, and the Viewbox below shrinks them to fit the window if they need more.
-        // A fixed width clipped the last column's labels where text is wider, e.g. "Remember Startup Selection" in the browser build.)
+        // A fixed width clipped the last column's labels where text is wider, e.g. "Remember startup selection" in the browser build.)
         var optionsAllsp = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Black };
         // (WPF: implicit styles keyed by type in e.Resources; Avalonia: styles in e.Styles, which apply to its descendants)
         void AddStyle(Control e)
@@ -826,7 +826,7 @@ public static class OptionsMenu
             return tb;
         }
         var options1sp = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(10.0, 0.0, 10.0, 0.0) };
-        var tb = header(new TextBox { Text = "Overworld Settings", IsReadOnly = true, FontWeight = FontWeight.Bold });
+        var tb = header(new TextBox { Text = "Overworld settings", IsReadOnly = true, FontWeight = FontWeight.Bold });
         options1sp.Children.Add(tb);
         // Options marked as "advanced" only appear in the main-app options popup (not the startup screen),
         // to keep the startup screen compact and avoid layout overflow.
@@ -847,10 +847,10 @@ public static class OptionsMenu
             options1sp.Children.Add(cb);
         }
         options1sp.Children.Add(new DockPanel { Height = 17.0 });   // a blank row between the overworld settings and this header
-        tb = header(new TextBox { Text = "Dungeon Settings", IsReadOnly = true, FontWeight = FontWeight.Bold });
+        tb = header(new TextBox { Text = "Dungeon settings", IsReadOnly = true, FontWeight = FontWeight.Bold });
         options1sp.Children.Add(tb);
         // open the folder containing the crash log (with the log file selected), to make it easy to send to the developer
-        var crashLogButton = Graphics.makeButton(" Show Crash Log... ", null, null);
+        var crashLogButton = Graphics.makeButton(" Show crash log... ", null, null);
         crashLogButton.HorizontalAlignment = HorizontalAlignment.Left;
         crashLogButton.Margin = new Thickness(0.0, 10.0, 0.0, 0.0);
         ToolTip.SetTip(crashLogButton, "Open the folder containing Z1R_Tracker_crash_log.txt with the file selected,\nso you can send it along when reporting a problem");
@@ -879,7 +879,7 @@ public static class OptionsMenu
             setToolTipShowDuration(cb, 10000);
             link(cb, b, needFU, oe);
             options1sp.Children.Add(cb);
-            if (text == "Dungeon Map Hint")
+            if (text == "Dungeon map hint")
             {
                 var sliderSp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4.0, 0.0, 0.0, 4.0) };
                 var opacityLabel = new TextBox { Text = "Opacity", IsReadOnly = true };
@@ -933,7 +933,7 @@ public static class OptionsMenu
         options2Topsp.Children.Add(dp);
         options2sp.Children.Add(options2Topsp);
         // stop
-        var muteCB = new CheckBox { Content = new TextBox { Text = "Disable All", IsReadOnly = true } };
+        var muteCB = new CheckBox { Content = new TextBox { Text = "Disable all", IsReadOnly = true } };
         ToolTip.SetTip(muteCB, "Turn off all reminders (but you can still view them by\nclicking the reminder log in the upper-right of the timeline)");
         muteCB.IsChecked = TrackerModelOptions.IsMuted;
         Graphics.onChecked(muteCB, () => { TrackerModelOptions.IsMuted = true; voice.Volume = 0; });
@@ -976,7 +976,7 @@ public static class OptionsMenu
 
         options2sp.Children.Add(options2Grid);
         // Reminder interval slider (label row then slider row for compact layout)
-        var reminderIntervalLabel = new TextBox { Text = $"Reminder Interval (Minutes): {TrackerModelOptions.ReminderIntervalMinutes}", IsReadOnly = true, Margin = new Thickness(0.0, 4.0, 0.0, 0.0), Background = Brushes.Transparent };
+        var reminderIntervalLabel = new TextBox { Text = $"Reminder interval (minutes): {TrackerModelOptions.ReminderIntervalMinutes}", IsReadOnly = true, Margin = new Thickness(0.0, 4.0, 0.0, 0.0), Background = Brushes.Transparent };
         options2sp.Children.Add(reminderIntervalLabel);
         var reminderIntervalSlider = new Slider { Minimum = 1.0, Maximum = 60.0, TickFrequency = 1.0, IsSnapToTickEnabled = true, Value = (double)TrackerModelOptions.ReminderIntervalMinutes, Width = 200.0, Margin = new Thickness(0.0, 0.0, 0.0, 2.0) };
         ToolTip.SetTip(reminderIntervalSlider, "How often periodic reminders fire (recorder/power-bracelet spots, boomstick, white sword)");
@@ -984,13 +984,13 @@ public static class OptionsMenu
         {
             var v = (int)reminderIntervalSlider.Value;
             TrackerModelOptions.ReminderIntervalMinutes = v;
-            reminderIntervalLabel.Text = $"Reminder Interval (Minutes): {v}";
+            reminderIntervalLabel.Text = $"Reminder interval (minutes): {v}";
         };
         options2sp.Children.Add(reminderIntervalSlider);
         // (macOS/Linux: the speech stub lists no voices, so this button doesn't appear there yet; see Platform.SpeechSynthesizer)
         if (voice.GetInstalledVoices().Where(v => v.Enabled).Count() > 1)
         {
-            var changeVoiceButton = Graphics.makeButton("Change Voice", null, null);
+            var changeVoiceButton = Graphics.makeButton("Change voice", null, null);
             changeVoiceButton.HorizontalAlignment = HorizontalAlignment.Left;
             {  // scope local mutable popupIsActive variable to this one button
                 var popupIsActive = false;  // second level of popup, need local copy
@@ -1064,7 +1064,7 @@ public static class OptionsMenu
         var autoSaveHeader = header(new TextBox { Text = "Auto-save", IsReadOnly = true, FontWeight = FontWeight.Bold, Margin = new Thickness(0.0, 12.0, 0.0, 0.0) });
         options2sp.Children.Add(new DockPanel { Height = 6.0 });   // extra space ABOVE the Auto-save heading (a spacer, so this and everything below it moves down 2px)
         options2sp.Children.Add(autoSaveHeader);
-        var autoSaveLabel = new TextBox { Text = $"Auto-save Interval (Minutes): {TrackerModelOptions.AutoSaveMinutes}", IsReadOnly = true, Margin = new Thickness(0.0, 4.0, 0.0, 0.0), Background = Brushes.Transparent };
+        var autoSaveLabel = new TextBox { Text = $"Auto-save interval (minutes): {TrackerModelOptions.AutoSaveMinutes}", IsReadOnly = true, Margin = new Thickness(0.0, 4.0, 0.0, 0.0), Background = Brushes.Transparent };
         options2sp.Children.Add(autoSaveLabel);
         var autoSaveSlider = new Slider { Minimum = 1.0, Maximum = 10.0, TickFrequency = 1.0, IsSnapToTickEnabled = true, Value = (double)TrackerModelOptions.AutoSaveMinutes, Width = 200.0, Margin = new Thickness(0.0, 0.0, 0.0, 2.0) };
         ToolTip.SetTip(autoSaveSlider, "How often the tracker automatically saves your run (used to restore after a crash)");
@@ -1072,11 +1072,11 @@ public static class OptionsMenu
         {
             var v = (int)autoSaveSlider.Value;
             TrackerModelOptions.AutoSaveMinutes = v;
-            autoSaveLabel.Text = $"Auto-save Interval (Minutes): {v}";
+            autoSaveLabel.Text = $"Auto-save interval (minutes): {v}";
         };
         options2sp.Children.Add(autoSaveSlider);
 
-        var coopSettingsButton = Graphics.makeButton("Co-Op Client Settings", null, null);
+        var coopSettingsButton = Graphics.makeButton("Co-op client settings", null, null);
         coopSettingsButton.HorizontalAlignment = HorizontalAlignment.Left;
         {
             var popupIsActive = false;
@@ -1114,7 +1114,7 @@ public static class OptionsMenu
                     enableCoopCheckbox.IsEnabled = false;
                     var enableCoopText = new TextBox
                     {
-                        Text = "Enable Co-op Sync",
+                        Text = "Enable co-op sync",
                         IsReadOnly = true,
                         BorderThickness = new Thickness(0.0),
                         FontSize = 16.0,
@@ -1138,7 +1138,7 @@ public static class OptionsMenu
 
                     sp.Children.Add(coopCheckStack);
                     // Checkbox for Debug Mode
-                    var debugModeCheckbox = new CheckBox { Content = new TextBlock { Text = "Enable Debug Logging", Foreground = Brushes.Orange } };
+                    var debugModeCheckbox = new CheckBox { Content = new TextBlock { Text = "Enable debug logging", Foreground = Brushes.Orange } };
                     debugModeCheckbox.IsChecked = TrackerModelOptions.DebugConfig.DebugMode;
                     ToolTip.SetTip(debugModeCheckbox, "Enables debug logging for co-op sync operations.\nThis is useful for troubleshooting issues with co-op sync.");
                     setToolTipShowDuration(debugModeCheckbox, 10000);
@@ -1176,6 +1176,7 @@ public static class OptionsMenu
                             Margin = new Thickness(0.0, 0.0, 0.0, 6.0)
                         };
 
+                    var urlEdited = false;   // (the red border and "must be a valid URL" wait until the box is edited: the saved default, "unspecified", isn't the player's mistake)
                     void validateFunctionAppBaseUrl()
                     {
                         var isValid = Uri.IsWellFormedUriString(functionAppBaseBox.Text, UriKind.Absolute);
@@ -1187,17 +1188,18 @@ public static class OptionsMenu
                             enableCoopCheckbox.IsChecked = false;
 
                         // Border visual feedback
-                        functionAppBaseBorder.BorderBrush = isValid ? Brushes.Orange : Brushes.Red;
+                        var showError = urlEdited && !isValid;
+                        functionAppBaseBorder.BorderBrush = showError ? Brushes.Red : Brushes.Orange;
 
                         // Error message visibility
-                        functionAppBaseValidationMessage.IsVisible = !isValid;
+                        functionAppBaseValidationMessage.IsVisible = showError;
                     }
 
                     // Initial validation on open
                     validateFunctionAppBaseUrl();
 
                     // Dynamic validation on text change
-                    functionAppBaseBox.TextChanged += (_, _) => validateFunctionAppBaseUrl();
+                    functionAppBaseBox.TextChanged += (_, _) => { urlEdited = true; validateFunctionAppBaseUrl(); };
 
 
                     functionAppBaseBox.TextChanged += (_, _) =>
@@ -1226,7 +1228,7 @@ public static class OptionsMenu
                     sp.Children.Add(functionAppBaseValidationMessage);
 
 
-                    sp.Children.Add(urlLabel("Negotiate Suffix:"));
+                    sp.Children.Add(urlLabel("Negotiate suffix:"));
                     var negotiateUrlBox = new TextBox { Text = TrackerModelOptions.CoopSyncOptions.baseNegotiateUrl }; negotiateUrlBox.Foreground = Brushes.Orange; negotiateUrlBox.Background = Brushes.Black; negotiateUrlBox.CaretBrush = Brushes.Orange;
                     negotiateUrlBox.HorizontalAlignment = HorizontalAlignment.Stretch;
                     negotiateUrlBox.TextAlignment = TextAlignment.Left;
@@ -1241,7 +1243,7 @@ public static class OptionsMenu
                     setToolTipShowDuration(negotiateUrlBorder, 10000);
                     sp.Children.Add(negotiateUrlBorder);
 
-                    sp.Children.Add(urlLabel("SyncUpdate Suffix:"));
+                    sp.Children.Add(urlLabel("SyncUpdate suffix:"));
                     var syncUpdateUrlBox = new TextBox { Text = TrackerModelOptions.CoopSyncOptions.baseSyncUpdateUrl }; syncUpdateUrlBox.Foreground = Brushes.Orange; syncUpdateUrlBox.Background = Brushes.Black; syncUpdateUrlBox.CaretBrush = Brushes.Orange;
                     syncUpdateUrlBox.HorizontalAlignment = HorizontalAlignment.Stretch;
                     syncUpdateUrlBox.TextAlignment = TextAlignment.Left;
@@ -1259,7 +1261,7 @@ public static class OptionsMenu
                     sp.Children.Add(new DockPanel { Height = 10.0 });  // spacer before ID fields
 
 
-                    sp.Children.Add(new TextBox { Text = "Console ID (This instance):", IsReadOnly = true });
+                    sp.Children.Add(new TextBox { Text = "Console ID (this instance):", IsReadOnly = true });
                     var myIdBox = new TextBox(); myIdBox.Foreground = Brushes.Orange; myIdBox.Background = Brushes.Black; myIdBox.CaretBrush = Brushes.Orange;
                     myIdBox.Text = TrackerModelOptions.CoopSyncOptions.MyConsoleId;
                     myIdBox.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -1288,7 +1290,7 @@ public static class OptionsMenu
 
                     sp.Children.Add(new DockPanel { Height = 10.0 });
 
-                    sp.Children.Add(new TextBox { Text = "Target Console ID (to sync with):", IsReadOnly = true });
+                    sp.Children.Add(new TextBox { Text = "Target console ID (to sync with):", IsReadOnly = true });
                     var targetIdBox = new TextBox(); targetIdBox.Foreground = Brushes.Orange; targetIdBox.Background = Brushes.Black; targetIdBox.CaretBrush = Brushes.Orange;
                     targetIdBox.Text = TrackerModelOptions.CoopSyncOptions.TargetConsoleId;
                     targetIdBox.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -1361,7 +1363,7 @@ public static class OptionsMenu
         tb = header(new TextBox { Text = "Other", IsReadOnly = true, FontWeight = FontWeight.Bold });
         options3sp.Children.Add(tb);
 
-        var cb3 = new CheckBox { Content = new TextBox { Text = "Animate Tile Changes", IsReadOnly = true } };
+        var cb3 = new CheckBox { Content = new TextBox { Text = "Animate tile changes", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.AnimateTileChanges.Value;
         Graphics.onChecked(cb3, () => TrackerModelOptions.AnimateTileChanges.Value = true);
         Graphics.onUnchecked(cb3, () => TrackerModelOptions.AnimateTileChanges.Value = false);
@@ -1369,7 +1371,7 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Animate Shop Highlights", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Animate shop highlights", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.AnimateShopHighlights.Value;
         Graphics.onChecked(cb3, () => TrackerModelOptions.AnimateShopHighlights.Value = true);
         Graphics.onUnchecked(cb3, () => TrackerModelOptions.AnimateShopHighlights.Value = false);
@@ -1377,7 +1379,7 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Remember Startup Selection", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Remember startup selection", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.RememberStartupSelection.Value;
         Graphics.onChecked(cb3, () => TrackerModelOptions.RememberStartupSelection.Value = true);
         Graphics.onUnchecked(cb3, () => TrackerModelOptions.RememberStartupSelection.Value = false);
@@ -1385,7 +1387,7 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Save On Completion", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Save on completion", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.SaveOnCompletion.Value;
         Graphics.onChecked(cb3, () => TrackerModelOptions.SaveOnCompletion.Value = true);
         Graphics.onUnchecked(cb3, () => TrackerModelOptions.SaveOnCompletion.Value = false);
@@ -1395,7 +1397,7 @@ public static class OptionsMenu
 
         if (!Platform.isBrowser)   // (the web version is always the latest, and never checks for updates)
         {
-            cb3 = new CheckBox { Content = new TextBox { Text = "Check For Updates On Startup", IsReadOnly = true } };
+            cb3 = new CheckBox { Content = new TextBox { Text = "Check for updates on startup", IsReadOnly = true } };
             cb3.IsChecked = TrackerModelOptions.CheckForUpdates.Value;
             Graphics.onChecked(cb3, () => TrackerModelOptions.CheckForUpdates.Value = true);
             Graphics.onUnchecked(cb3, () => TrackerModelOptions.CheckForUpdates.Value = false);
@@ -1404,7 +1406,7 @@ public static class OptionsMenu
             options3sp.Children.Add(cb3);
         }
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Archipelago Support", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Archipelago support", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.ArchipelagoSupport.Value;
         Graphics.onChecked(cb3, () => { TrackerModelOptions.ArchipelagoSupport.Value = true; DrawingLayer.applyArchipelagoSupport(); });
         Graphics.onUnchecked(cb3, () => { TrackerModelOptions.ArchipelagoSupport.Value = false; DrawingLayer.applyArchipelagoSupport(); });
@@ -1424,7 +1426,7 @@ public static class OptionsMenu
 
         // one checkbox does both jobs: look for the seed and flags in other windows' titles (e.g. fceux), and show them in the bottom corner of the Notes box
         TrackerModelOptions.DisplaySeedAndFlags.Value = TrackerModelOptions.SnoopSeedAndFlags.Value;   // (older settings had these two apart: the one checkbox now sets both)
-        cb3 = new CheckBox { Content = new TextBox { Text = "Display Seed + Flags", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Display seed + flags", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.SnoopSeedAndFlags.Value;
         Graphics.onChecked(cb3, () =>
         {
@@ -1443,7 +1445,7 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Listen For Speech", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Listen for speech", IsReadOnly = true } };
         if (microphoneFailedToInitialize)
         {
             cb3.IsEnabled = false;
@@ -1460,7 +1462,7 @@ public static class OptionsMenu
         }
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Confirmation Sound", IsReadOnly = true }, Margin = new Thickness(20.0, 0.0, 0.0, 0.0) };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Confirmation sound", IsReadOnly = true }, Margin = new Thickness(20.0, 0.0, 0.0, 0.0) };
         if (microphoneFailedToInitialize)
         {
             cb3.IsEnabled = false;
@@ -1498,7 +1500,7 @@ public static class OptionsMenu
     options3sp.Children.Add(cb) |> ignore
 */
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Broadcast Window", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Broadcast window", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.ShowBroadcastWindow.Value;
         Graphics.onChecked(cb3, () => { TrackerModelOptions.ShowBroadcastWindow.Value = true; triggerBroadcastWindowOptionChanged(); });
         Graphics.onUnchecked(cb3, () => { TrackerModelOptions.ShowBroadcastWindow.Value = false; triggerBroadcastWindowOptionChanged(); });
@@ -1507,7 +1509,7 @@ public static class OptionsMenu
         options3sp.Children.Add(cb3);
 
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Include Overworld Magnifier", IsReadOnly = true }, Margin = new Thickness(14.0, 0.0, 0.0, 0.0) };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Include overworld magnifier", IsReadOnly = true }, Margin = new Thickness(14.0, 0.0, 0.0, 0.0) };
         cb3.IsChecked = TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value;
         Graphics.onChecked(cb3, () => { TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value = true; triggerBroadcastWindowOptionChanged(); });
         Graphics.onUnchecked(cb3, () => { TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value = false; triggerBroadcastWindowOptionChanged(); });
@@ -1515,7 +1517,7 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Mouse Magnifier Window", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Mouse magnifier window", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.ShowMouseMagnifierWindow.Value;
         Graphics.onChecked(cb3, () => { TrackerModelOptions.ShowMouseMagnifierWindow.Value = true; triggerMouseMagnifierWindowOptionChanged(); });
         Graphics.onUnchecked(cb3, () => { TrackerModelOptions.ShowMouseMagnifierWindow.Value = false; triggerMouseMagnifierWindowOptionChanged(); });
@@ -1526,7 +1528,7 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Hide Timer", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Hide timer", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.HideTimer.Value;
         Graphics.onChecked(cb3, () => { TrackerModelOptions.HideTimer.Value = true; triggerHideTimerChanged(); });
         Graphics.onUnchecked(cb3, () => { TrackerModelOptions.HideTimer.Value = false; triggerHideTimerChanged(); });
@@ -1548,7 +1550,7 @@ public static class OptionsMenu
         coopSettingsButton.Width = 182.0;
         coopSettingsButton.Margin = new Thickness(0.0, 0.0, 0.0, 3.0);
         options3sp.Children.Add(coopSettingsButton);
-        var coopHostSettingsButton = Graphics.makeButton("Co-Op Host Settings", null, null);
+        var coopHostSettingsButton = Graphics.makeButton("Co-op host settings", null, null);
         coopHostSettingsButton.HorizontalAlignment = HorizontalAlignment.Left;
         coopHostSettingsButton.Width = 182.0;
         coopHostSettingsButton.Click += (_, _) => showCoopHostSettingsWindow(cm);
@@ -1561,7 +1563,7 @@ public static class OptionsMenu
         var total = new StackPanel { Orientation = Orientation.Vertical, Width = width, Background = Brushes.Black };
         if (includePopupExplainer)
         {
-            var tb1 = new TextBox { Text = "Options Menu", IsReadOnly = true, FontWeight = FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center };
+            var tb1 = new TextBox { Text = "Options menu", IsReadOnly = true, FontWeight = FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center };
             total.Children.Add(tb1);
             total.Children.Add(new DockPanel { Height = 2.0, Background = Brushes.Gray });
         }

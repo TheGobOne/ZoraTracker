@@ -5,7 +5,8 @@
 // Each side starts a run, turns co-op on in code (not in the settings file), and waits for the other. Then A makes a scripted list of changes,
 // one step at a time, through the same model calls the click handlers use, and after each step writes its normalized save state to
 // step-N-A.json. B polls its own state until it matches or 15 s pass, and appends PASS or FAIL (with a line diff) to cooptest_report.txt.
-// Then B makes a second list of changes (mostly undoing and changing A's) and A checks. Failures do not stop the run.
+// Then B makes a second list of changes (mostly undoing and changing A's) and A checks. Last, both change the same fields at the same moment,
+// and both check that they end up the same (see concurrentStep). Failures do not stop the run.
 // Exit code: 0 every check this side made passed, 1 a check failed, 2 the harness itself failed (no connection, the other side never answered, the 10 minute limit).
 // Each side keeps its settings in <dir>/settings-A or <dir>/settings-B, so the two never write the same settings file.
 // The step files and the report go in <dir>/run-<run id>; use a new run id for each run. --cooptest-relay=<url> (or the environment variable
@@ -43,7 +44,7 @@ public static class CoopTest
     public static string settingsDir => Path.Combine(dir, "settings-" + role);
 
     // The files the two sides exchange go in a folder of their own for each run id, so files from an earlier run cannot pass as this run's.
-    // (Each side also deletes the files it writes itself when it starts, in case a run id is used again; it never deletes the other side's.)
+    // (A run refuses to start when that folder has files of an earlier run with the same id, see staleRunFiles.)
     private static string runDir => Path.Combine(dir, "run-" + string.Concat(runId.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)));
 
     // The relay: --cooptest-relay=<url>, else the ZORATRACKER_COOPTEST_RELAY environment variable, else the public relay.
@@ -179,6 +180,10 @@ public static class CoopTest
         DungeonUI.setNewValueFunctions[level - 1][x, y](rs);
     }
 
+    // A step can also say what the state must be: the checking side runs it once both states match (null: as expected, else what is wrong).
+    // (Two states that match can both be wrong, when an edit was undone on both sides.)
+    private static readonly Dictionary<string, Func<string>> expects = new Dictionary<string, Func<string>>();
+
     private static List<(string name, Action act)> steps(int phase)
     {
         const int ARROW_SHOP = 16, HINT_SHOP = 32;
@@ -218,6 +223,10 @@ public static class CoopTest
                 TrackerModel.sword2Box.Set(TrackerModel.ITEMS.HEARTCONTAINER, YES);
             }));
             s.Add(("progressive sword in a box (tier)", () => TrackerModel.GetDungeon(2).Boxes[0].Set(TrackerModel.ITEMS.PROGRESSIVESWORD, YES)));
+            // (the ladder box is applied before the dungeon boxes, so the receiver sets the Bow there while level 1 still holds it)
+            const string bowMove = "bow moved from level 1 to the ladder box in one change";
+            s.Add((bowMove, () => { TrackerModel.GetDungeon(0).Boxes[0].Set(-1, NO); TrackerModel.ladderBox.Set(TrackerModel.ITEMS.BOW, YES); }));
+            expects[bowMove] = () => TrackerModel.ladderBox.CellCurrent() == TrackerModel.ITEMS.BOW ? null : "the Bow is not in the ladder box (an item moved between two boxes was lost)";
             s.Add(("dungeon 1 rooms", () =>
             {
                 room(1, 1, 6, r => { r.RoomType = RoomType.NonDescript; r.IsComplete = true; });
@@ -253,6 +262,7 @@ public static class CoopTest
             s.Add(("item boxes changed", () =>
             {
                 TrackerModel.GetDungeon(0).Boxes[0].Set(-1, NO);
+                TrackerModel.ladderBox.Set(-1, NO);   // (frees the Bow for the both-at-once step)
                 TrackerModel.GetDungeon(1).Boxes[0].Set(TrackerModel.ITEMS.HEARTCONTAINER, YES);
                 TrackerModel.sword2Box.Set(TrackerModel.ITEMS.LADDER, NO);
             }));
@@ -263,6 +273,11 @@ public static class CoopTest
                 DungeonUI.horizontalDoorsPerLevel[0][1, 6].State = Dungeon.DoorState.PURPLE;
                 DungeonUI.verticalDoorsPerLevel[0][2, 5].State = Dungeon.DoorState.UNKNOWN;
             }));
+            // B's versions start again, as after a reload (its numbers are now below A's), and B changes a field A last changed, before hearing from A.
+            // The edit must stay: it is numbered above A's counter once B hears it. (It used to lose to A's older, higher number and be undone.)
+            const string afterReload = "after a reload of B's versions, wood sword off at once";
+            s.Add((afterReload, () => { CoopSync.testResetCounter(); CoopSync.startupFinished(true, DateTime.UtcNow.Ticks); TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword.Set(false); }));
+            expects[afterReload] = () => !TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword.Value() ? null : "the wood sword is on (B's edit made right after the reload was undone)";
             s.Add(("player progress off", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBombs.Set(false)));
             s.Add(("starting items: bow off", () => TrackerModel.startingItemsAndExtras.PlayerHasBow.Set(false)));
             s.Add(("dungeon 1 triforce off", () => { if (TrackerModel.GetDungeon(0).PlayerHasTriforce()) TrackerModel.GetDungeon(0).ToggleTriforce(); }));
@@ -350,7 +365,10 @@ public static class CoopTest
                         await Task.Delay(500);
                         ours = snapshot();
                     }
-                    if (ours == expected) { passes++; report($"PASS step {n} ({actor} -> {role}): {name}"); }
+                    string wrong = null;
+                    if (ours == expected && expects.TryGetValue(name, out var expect)) wrong = expect();
+                    if (ours == expected && wrong == null) { passes++; report($"PASS step {n} ({actor} -> {role}): {name}"); }
+                    else if (ours == expected) { failures++; report($"FAIL step {n} ({actor} -> {role}): {name}: the same on both sides, but {wrong}"); }
                     else { failures++; report($"FAIL step {n} ({actor} -> {role}): {name}\n{diff(expected, ours)}"); }
                     if (expectedNotes != null && expectedNotes != notesLine())
                         report($"INFO step {n} ({actor} -> {role}): notes differ (not compared until notes sync is decided): {other} {expectedNotes}, {role} {notesLine()}");
@@ -358,14 +376,107 @@ public static class CoopTest
                 }
             }
         }
+        // 5. both sides change the same things at the same moment, and must end up the same
+        await concurrentStep(n + 1);
         exit(failures == 0 ? 0 : 1, "done");
+    }
+
+    // ---- both at once ----
+    // The two sides start together (A picks the moment, 3 s ahead; both run on this machine's clock) and make changes on a timeline.
+    // Some change the same field to different values (one value must win on both sides), some change different fields of the same message
+    // (both must stay), and one is the stale echo case: A ticks Bombs, B ticks the wood arrow (B's message then carries A's Bombs), A unticks Bombs.
+    private static List<(int atMs, string who, string name, Action act)> concurrentChanges()
+    {
+        var tile = T(41);
+        return new List<(int, string, string, Action)>
+        {
+            (0, "A", "blue ring", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueRing.Set(true)),
+            (0, "B", "blue candle", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueCandle.Set(true)),
+            (0, "A", "level 6 box: bow", () => TrackerModel.GetDungeon(5).Boxes[0].Set(TrackerModel.ITEMS.BOW, YES)),
+            (0, "B", "level 6 box: raft", () => TrackerModel.GetDungeon(5).Boxes[0].Set(TrackerModel.ITEMS.RAFT, NO)),
+            (0, "A", "tile: item shop", () => setTile(tile, 16)),
+            (0, "B", "tile: other item shop", () => setTile(tile, 17)),
+            (0, "A", "level 2 room", () => room(2, 3, 3, r => r.RoomType = RoomType.NonDescript)),
+            (0, "B", "level 2 room", () => room(2, 3, 3, r => r.RoomType = RoomType.ItemBasement)),
+            (0, "A", "level 2 door open", () => DungeonUI.horizontalDoorsPerLevel[1][3, 3].State = Dungeon.DoorState.YES),
+            (0, "B", "level 2 door shut", () => DungeonUI.horizontalDoorsPerLevel[1][3, 3].State = Dungeon.DoorState.NO),
+            (0, "A", "starting items: wand", () => TrackerModel.startingItemsAndExtras.PlayerHasWand.Set(true)),
+            (0, "B", "starting items: raft", () => TrackerModel.startingItemsAndExtras.PlayerHasRaft.Set(true)),
+            (1500, "A", "bombs on", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBombs.Set(true)),
+            (2300, "B", "wood arrow on", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodArrow.Set(true)),
+            (2700, "A", "bombs off", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBombs.Set(false)),
+        };
+    }
+
+    private static async Task concurrentStep(int n)
+    {
+        const string name = "both change the same fields at once";
+        writeFile($"conc-ready-{role}.txt", DateTime.UtcNow.ToString("o"));
+        await waitFor(() => exists($"conc-ready-{other}.txt"), TimeSpan.FromSeconds(90), 250);
+        if (!exists($"conc-ready-{other}.txt")) { exit(2, $"{other} never got to step {n}"); return; }
+        if (role == "A") writeFile("conc-go.txt", (DateTime.UtcNow + TimeSpan.FromSeconds(3)).Ticks.ToString());
+        await waitFor(() => exists("conc-go.txt"), TimeSpan.FromSeconds(30), 100);
+        if (!long.TryParse(readFile("conc-go.txt"), out var go)) { exit(2, "no start time for the both-at-once step"); return; }
+        var start = new DateTime(go, DateTimeKind.Utc);
+        foreach (var (atMs, who, what, act) in concurrentChanges())
+        {
+            var when = start + TimeSpan.FromMilliseconds(atMs);
+            while (DateTime.UtcNow < when) await Task.Delay(5);
+            if (who != role) continue;
+            try { act(); }
+            catch (Exception e) { report($"  (note: step {n} change '{what}' threw: {e.GetType().Name}: {e.Message})"); }
+        }
+        // both write their state each round until the two are the same (each side compares the same two files, so both decide the same)
+        const int rounds = 6;
+        for (int r = 1; r <= rounds; r++)
+        {
+            await Task.Delay(3000);
+            var mine = snapshot();
+            writeFile($"conc-{r}-{role}.json", mine);
+            await waitFor(() => exists($"conc-{r}-{other}.json"), TimeSpan.FromSeconds(60), 250);
+            var theirs = readFile($"conc-{r}-{other}.json");
+            if (theirs == null) { exit(2, $"{other} never wrote round {r} of step {n}"); return; }
+            if (theirs == mine)
+            {
+                // the same on both sides; the stale echo case also has a known answer
+                var p = TrackerModel.playerProgressAndTakeAnyHearts;
+                var wrong = new List<string>();
+                if (p.PlayerHasBombs.Value()) wrong.Add("bombs are on (A unticked them last: a stale echo put them back)");
+                if (!p.PlayerHasWoodArrow.Value()) wrong.Add("the wood arrow is off");
+                if (!p.PlayerHasBlueRing.Value() || !p.PlayerHasBlueCandle.Value()) wrong.Add("the blue ring or blue candle is off (two changes to one message: both must stay)");
+                if (!TrackerModel.startingItemsAndExtras.PlayerHasWand.Value() || !TrackerModel.startingItemsAndExtras.PlayerHasRaft.Value()) wrong.Add("the starting wand or raft is off");
+                if (wrong.Count == 0) { passes++; report($"PASS step {n} (both): {name} (the same after round {r})"); }
+                else { failures++; report($"FAIL step {n} (both): {name}: the same on both sides, but {string.Join("; ", wrong)}"); }
+                return;
+            }
+            if (r == rounds) { failures++; report($"FAIL step {n} (both): {name}: still different after {rounds} rounds\n{diff(theirs, mine)}"); }
+        }
+    }
+
+    /// A run id used before leaves files that pass as this run's (a stale ready file from the other side, steps, checks), so the run refuses to start
+    /// on them. Only what the other side may already have written in this same run is allowed: its ready file and its report lines, both from
+    /// the last 10 minutes (the time limit of a run). Returns the reason to refuse, or null.
+    private static string staleRunFiles()
+    {
+        var since = DateTime.UtcNow - overallLimit;
+        foreach (var f in Directory.GetFiles(runDir))
+        {
+            var name = Path.GetFileName(f);
+            if (name.EndsWith(".tmp")) continue;   // (a half-written file of the other side's)
+            var fresh = File.GetLastWriteTimeUtc(f) >= since;
+            if ((name == $"ready-{other}.txt" || name == "cooptest_report.txt") && fresh) continue;
+            return $"the run folder {runDir} already has {name} from an earlier run with id {runId}: use a new --cooptest-id";
+        }
+        return null;
     }
 
     public static void arm()
     {
         if (string.IsNullOrEmpty(dir)) { Console.WriteLine("--cooptest needs --cooptest-dir=<shared folder>"); Environment.Exit(2); }
         Directory.CreateDirectory(runDir);
-        clearOwnFiles();   // (stale files from an earlier run with this id gave false passes)
+        var stale = staleRunFiles();
+        if (stale != null) { Console.WriteLine("[cooptest] " + stale); Environment.Exit(2); }
+        clearOwnFiles();   // (only temp files can be left now; see staleRunFiles)
         // the 10 minute limit for this side
         DispatcherTimer.RunOnce(() => exit(2, "the 10 minute limit was reached"), overallLimit);
         var started = false;

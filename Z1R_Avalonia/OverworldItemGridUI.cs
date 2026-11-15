@@ -1018,7 +1018,7 @@ public static class OverworldItemGridUI
                             // make hard save
                             var filename = makeManualSave();
                             filename = System.IO.Path.GetFileName(filename);  // remove directory info (could have username in path, don't display PII on-screen)
-                            var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORATracker data saved to file\n{filename}\nThe tracker will now be reset.", new[] { "Ok" });
+                            var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORATracker data saved to file\n{filename}\nThe tracker will now be reset.", new[] { "OK" });
                             _ = r;
                             // remove triforces
                             for (var i = 0; i <= 7; i++)
@@ -1040,6 +1040,7 @@ public static class OverworldItemGridUI
                             // forget which take-any caves were taken, or the take-any click ignores them after the reset
                             OverworldMapTileCustomization.takeAnyTaken.Clear();
                             Array.Clear(OverworldMapTileCustomization.takeAnySlotGaveCandle, 0, 4);
+                            ClearFourthSwordStash();   // (an item kept from a 4th sword slot turned off must not come back after the reset)
                             // secrets reset to bright green, take-anys to bright red heart, letter bright, wood sword bright
                             var toBrighten = new[] {
                                 TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY,
@@ -1079,7 +1080,7 @@ public static class OverworldItemGridUI
                         }
                         catch (Exception e)
                         {
-                            var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORATracker was unable to save the\ntracker state to a file\nError:\n{e.Message}", new[] { "Ok" });
+                            var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, $"ZORATracker was unable to save the\ntracker state to a file\nError:\n{e.Message}", new[] { "OK" });
                             _ = r;
                         }
                     }
@@ -1155,21 +1156,58 @@ public static class OverworldItemGridUI
 
     // where the 4th sword's extra item check lives: 0 = nowhere (no 4th sword), 1 = the level 2 staircase, 2 = the level 9 floor. Moves whatever is marked in the old slot
     // (or clears it for 0). The new slot is switched on before the item is set, so its box has its change handlers (grid links, timeline) when the item arrives.
-    private static bool fourthSwordL2WithHiddenNumbers = false;   // (set once the level 2 slot was seen on with hidden dungeon numbers; the Extras checkbox then keeps its level 2 state)
-    private static int fourthSwordStashItem = -1;
-    private static TrackerModel.PlayerHas fourthSwordStashHas = TrackerModel.PlayerHas.NO;
+    internal static bool fourthSwordL2WithHiddenNumbers = false;   // (this run had the level 2 slot on with hidden dungeon numbers; the Extras checkbox then keeps its level 2 state. Reset each run and each load)
+    internal static int fourthSwordStashItem = -1;
+    internal static TrackerModel.PlayerHas fourthSwordStashHas = TrackerModel.PlayerHas.NO;
+    // set when the 4th sword turned Progressive Items on during this run: what the progressive items looked like then, and the tiers the turn-on filled in.
+    // Setting the 4th sword back to none with nothing changed since turns Progressive Items off again (null = Progressive Items was on already, or something changed)
+    internal static string fourthSwordTurnedProgressiveOn = null;
+    private static List<TrackerModel.Box> fourthSwordBackfilledBoxes = new List<TrackerModel.Box>();
+    private static List<Tuple<int, int, int>> fourthSwordBackfilledTiles = new List<Tuple<int, int, int>>();
+    // a new run or a load starts the 4th Sword memory again from the run's own state
+    public static void ResetFourthSwordRunState()
+    {
+        fourthSwordL2WithHiddenNumbers = TrackerModel.IsHiddenDungeonNumbers.Invoke(null) && TrackerModel.level2StairBoxEnabled;
+        fourthSwordTurnedProgressiveOn = null;
+        fourthSwordBackfilledBoxes.Clear();
+        fourthSwordBackfilledTiles.Clear();
+        ClearFourthSwordStash();
+    }
+    // (an item kept from a 4th sword slot that was turned off belongs to that run only: a reset or a load must not put it back)
+    public static void ClearFourthSwordStash()
+    {
+        fourthSwordStashItem = -1;
+        fourthSwordStashHas = TrackerModel.PlayerHas.NO;
+    }
+    // what the progressive items look like now: each family's tier and how many of each base item are marked (a change means a progressive item was marked or collected)
+    private static string progressiveFingerprint()
+    {
+        var d = TrackerModel.allItemWithHeartShuffleChoiceDomain;
+        var ids = new[] { TrackerModel.ITEMS.PROGRESSIVESWORD, TrackerModel.ITEMS.BLUERING, TrackerModel.ITEMS.BLUECANDLE, TrackerModel.ITEMS.WOODARROW, TrackerModel.ITEMS.BOOMERANG };
+        return string.Join(",", Enumerable.Range(1, 5).Select(f => TrackerModel.progressiveFamilyTier(f)).Concat(ids.Select(id => d.NumUses(id))))
+            + "|" + string.Join(",", TrackerModel.mapCollectedCount);
+    }
     public static void SetFourthSwordLocation(int target)
     {
         var l2 = TrackerModel.level2StairBox;
         var l9 = TrackerModel.GetDungeon(8).ExtraFloorBox;
+        // (back to none right after this run's 4th sword turned Progressive Items on, with nothing changed since: Progressive Items goes back off below)
+        var undoProgressive = target == 0 && fourthSwordTurnedProgressiveOn != null && TrackerModel.ProgressiveItems && fourthSwordTurnedProgressiveOn == progressiveFingerprint();
+        if (target == 0 && !undoProgressive) fourthSwordTurnedProgressiveOn = null;   // (something changed: Progressive Items stays on for the rest of the run)
         TrackerModelOptions.FourthSwordEnabled = target != 0;   // (before the slot events, which the level 2 placeholder reads)
+        var turnedOn = false;
         if (target != 0 && !TrackerModel.ProgressiveItems)
         {
             // project rule: turning the 4th sword on also turns Progressive Items on (never the other way round)
             TrackerModel.ProgressiveItems = true;
             ApplyProgressiveItemCaps();   // (the pickers allow 4 swords and 2 of each ring / candle / arrow / boomerang now)
-            BackfillProgressiveBoxTiers();   // (boxes collected while it was off have no tier yet)
+            var boxesBefore = TrackerModel.progressiveBoxTier.Keys.ToList();
+            var tilesBefore = TrackerModel.progressiveTileTier.Keys.ToList();
+            BackfillProgressiveBoxTiers();   // (boxes and tiles collected while it was off have no tier yet)
+            fourthSwordBackfilledBoxes = TrackerModel.progressiveBoxTier.Keys.Except(boxesBefore).ToList();
+            fourthSwordBackfilledTiles = TrackerModel.progressiveTileTier.Keys.Except(tilesBefore).ToList();
             for (int f = 1; f <= 5; f++) WPFUI.progressiveLastTiers[f] = Math.Max(1, TrackerModel.progressiveFamilyTier(f));   // (start from the current tiers, so switching on is not an upgrade)
+            turnedOn = true;
         }
         var src = (TrackerModel.level9FloorBoxEnabled && target != 2) ? l9 : (TrackerModel.level2StairBoxEnabled && target != 1) ? l2 : null;
         var dest = target == 2 ? l9 : target == 1 ? l2 : null;
@@ -1193,6 +1231,21 @@ public static class OverworldItemGridUI
         }
         if (target != 2) TrackerModel.SetLevel9FloorBoxEnabled(false);
         if (target != 1) TrackerModel.SetLevel2StairBoxEnabled(false);
+        if (turnedOn) fourthSwordTurnedProgressiveOn = progressiveFingerprint();   // (after the slot move, which can put back a stashed item)
+        if (undoProgressive)
+        {
+            // (Progressive Items was off before this checkbox turned it on, and no progressive item was marked or collected since: put it back off, with its caps and tiers)
+            foreach (var b in fourthSwordBackfilledBoxes) TrackerModel.progressiveBoxTier.Remove(b);
+            foreach (var t in fourthSwordBackfilledTiles) TrackerModel.progressiveTileTier.Remove(t);
+            fourthSwordBackfilledBoxes.Clear();
+            fourthSwordBackfilledTiles.Clear();
+            fourthSwordTurnedProgressiveOn = null;
+            TrackerModel.ProgressiveItems = false;
+            ApplyProgressiveItemCaps();
+            for (int f = 1; f <= 5; f++) WPFUI.progressiveLastTiers[f] = Math.Max(1, TrackerModel.progressiveFamilyTier(f));
+            TrackerModel.progressiveTierChanged.Trigger(null);   // (redraw the boxes without tiers)
+            OptionsMenu.triggerRequestRedrawOverworldEvent();
+        }
         TrackerModel.recomputePlayerStateSummary();
     }
 
@@ -1204,21 +1257,65 @@ public static class OverworldItemGridUI
         foreach (var (id, maxUse) in new[] { (TrackerModel.ITEMS.PROGRESSIVESWORD, (p ? 4 : 3)), (TrackerModel.ITEMS.BLUERING, (p ? 2 : 1)), (TrackerModel.ITEMS.BLUECANDLE, (p ? 2 : 1)), (TrackerModel.ITEMS.WOODARROW, (p ? 2 : 1)), (TrackerModel.ITEMS.BOOMERANG, (p ? 2 : 1)) })
             TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, maxUse);
     }
-    // collected family boxes with no recorded tier (an older save, or Progressive Items just turned on): give them the top tiers the family has reached, one each, in box order
+    // the load's 4th Sword step: the slots come back from the save, and a save with the 4th sword on gets Progressive Items on (project rule).
+    // Runs before the dungeon boxes, so the caps fit them. Returns false if the level 2 slot's item could not be put back. (Also run by the self-test.)
+    public static bool ApplyLoadedFourthSword(SaveAndLoad.Items items)
+    {
+        var ok = true;
+        if (items.Level2StairBox != null)   // (older saves do not have the optional level 2 staircase slot)
+        {
+            if (!(items.Level2StairBox.TryApply(TrackerModel.level2StairBox))) ok = false;
+            TrackerModel.SetLevel2StairBoxEnabled(items.Level2StairBoxEnabled);
+            TrackerModel.SetLevel9FloorBoxEnabled(items.Level9FloorBoxEnabled);   // (older saves: false)
+        }
+        TrackerModelOptions.FourthSwordEnabled = SaveAndLoad.FourthSwordWasOn(items);   // (older saves predate the 4th Sword option: nothing is restricted)
+        // (only a save that really had the 4th sword on: an older save has no 4th Sword fields, so its own Progressive Items setting stands. Legacy Mode keeps Progressive Items off)
+        if (SaveAndLoad.FourthSwordSavedOn(items) && !TrackerModel.ProgressiveItems && !TrackerModel.LegacyMode)
+        {
+            TrackerModel.ProgressiveItems = true;
+            ApplyProgressiveItemCaps();
+        }
+        ResetFourthSwordRunState();   // (this run's 4th Sword memory starts from the loaded save)
+        return ok;
+    }
+    // the load's take any / player progress step, in the order it must run (also run by the self-test)
+    public static void ApplyLoadedItemExtrasAndProgress(DungeonSaveAndLoad.AllData data)
+    {
+        applyLoadedItemExtras(data.Items);   // shop prices, level 9 entry rule, taken take any caves (older saves keep the startup values)
+        data.PlayerProgressAndTakeAnyHearts.Apply();   // (after the item extras)
+        // (a slot the save shows as anything but the candle did not give it, whatever its candle flag says)
+        for (int k = 0; k < 4; k++)
+            if (TrackerModel.playerProgressAndTakeAnyHearts.GetTakeAnyKind(k) != 2) takeAnySlotGaveCandle[k] = false;
+        data.StartingItemsAndExtras.Apply();
+    }
+    // collected family boxes and overworld tile icons with no recorded tier (an older save, or Progressive Items just turned on): give them the top tiers the family has reached, one each.
+    // (the order they were collected in is not recorded: boxes come first in box order, then the tiles in map order)
     public static void BackfillProgressiveBoxTiers()
     {
         if (!TrackerModel.ProgressiveItems) return;
         var boxesAll = TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Distinct().ToList();
         for (int fam = 1; fam <= 5; fam++)
         {
-            var famBoxes = boxesAll.Where(b => TrackerModel.progressiveFamily(b.CellCurrent()) == fam && b.PlayerHas().Equals(TrackerModel.PlayerHas.YES)
-                                                    && !TrackerModel.progressiveBoxTier.ContainsKey(b)).ToList();
+            var setters = new List<Action<int>>();
+            foreach (var b in boxesAll.Where(b => TrackerModel.progressiveFamily(b.CellCurrent()) == fam && b.PlayerHas().Equals(TrackerModel.PlayerHas.YES)
+                                                    && !TrackerModel.progressiveBoxTier.ContainsKey(b)))
+                setters.Add(v => TrackerModel.progressiveBoxTier[b] = v);
+            // (a collected icon on a tile draws at 'current tier - 1' without a recorded tier, so every one would show the latest upgrade)
+            for (int i = 0; i <= 15; i++)
+                for (int j = 0; j <= 7; j++)
+                    foreach (var id in TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons[i, j]).Where(e => e.Item2).Select(e => e.Item1).Distinct())
+                    {
+                        var key = Tuple.Create(i, j, id);
+                        if (TrackerModel.progressiveFamily(id) == fam && !TrackerModel.progressiveTileTier.ContainsKey(key))
+                            setters.Add(v => TrackerModel.progressiveTileTier[key] = v);
+                    }
             var famTop = Math.Max(1, TrackerModel.progressiveFamilyTier(fam) - 1);   // (the tier of the last item collected)
             var famCap = fam == 1 ? 4 : 2;
-            for (int k = 0; k < famBoxes.Count; k++)
-                TrackerModel.progressiveBoxTier[famBoxes[k]] = Math.Max(1, Math.Min(famCap, famTop - (famBoxes.Count - 1) + k));
+            for (int k = 0; k < setters.Count; k++)
+                setters[k](Math.Max(1, Math.Min(famCap, famTop - (setters.Count - 1) + k)));
         }
         TrackerModel.progressiveTierChanged.Trigger(null);   // (draw the boxes with their tiers)
+        OptionsMenu.triggerRequestRedrawOverworldEvent();   // (and the tiles)
     }
 
     public static Action<bool> hideFirstQuestFromMixed = _b => { };
@@ -1230,6 +1327,7 @@ public static class OverworldItemGridUI
     // (redrawOWCircle is WPFUI's F# ref cell of a function, read when used: a StrongBox, so WPFUI can set its Value later)
     public static (CheckBox, CheckBox, Button) MakeFQSQStuff(CustomComboBoxes.CanvasManager cm, bool _isMixed, Graphics.TileHighlightRectangle[,] owLocatorTilesZone, StrongBox<Action<int, int>> redrawOWCircle)
     {
+        ResetFourthSwordRunState();   // (built once per run, after the start screen set the 4th sword slots; a load sets it again from the save)
         bool thereAreMarks(string[] questOnly)
         {
             var r = false;
@@ -1513,23 +1611,34 @@ public static class OverworldItemGridUI
                     blocksCol.Children.Add(bootsRow);
                     // 4th sword location: checked = the extra item check is in level 9, unchecked = on the level 2 staircase; switching moves whatever is marked in the slot
                     {
-                        // checked = level 9, unchecked = level 2 staircase, dash = no 4th sword (with hidden dungeon numbers there is no level 2 slot: checked = level 9, unchecked = no 4th sword)
+                        // checked = level 9, unchecked = level 2 staircase, third state (blue box, label "none") = no 4th sword (with hidden dungeon numbers there is no level 2 slot: checked = level 9, unchecked = no 4th sword)
                         var hiddenNumbers = TrackerModel.IsHiddenDungeonNumbers.Invoke(null);
-                        // (the start screen can still put the 4th sword in level 2 with hidden dungeon numbers: then keep all three states, so level 2 can be picked again)
+                        // (the start screen can still put the 4th sword in level 2 with hidden dungeon numbers: then keep all three states, so level 2 can be picked again. Reset each run and each load)
                         if (hiddenNumbers && TrackerModel.level2StairBoxEnabled) fourthSwordL2WithHiddenNumbers = true;
                         var twoState = hiddenNumbers && !fourthSwordL2WithHiddenNumbers;
-                        var swordTxt = mkTxt("4th sword in L9");
+                        var swordTxt = mkTxt("");
                         swordTxt.FontSize = 14.0;
                         bool? current = TrackerModel.level9FloorBoxEnabled ? true
                                       : twoState ? false
                                       : (TrackerModel.level2StairBoxEnabled || TrackerModelOptions.FourthSwordEnabled) ? false
                                       : (bool?)null;
                         var swordCb = new CheckBox { Content = swordTxt, IsChecked = current, IsThreeState = !twoState, Margin = new Thickness(6.0, 2.0, 14.0, 2.0) };
-                        ToolTip.SetTip(swordCb, twoState
-                            ? "Checked: the 4th sword's item check is on the level 9 floor.\nUnchecked: there is no 4th sword.\nSwitching moves the item you marked there along with it."
-                            : "Checked: the 4th sword's item check is on the level 9 floor.\nUnchecked: it is on the level 2 staircase.\nDash: there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it.");
+                        // (the label names the current place, so "none" does not look like the other Extras' blue Random '?')
+                        void showSwordPlace() => swordTxt.Text = swordCb.IsChecked == true ? "4th sword: L9" : swordCb.IsChecked == false && !twoState ? "4th sword: L2" : "4th sword: none";
+                        showSwordPlace();
+                        // (hidden dungeon numbers with the 4th sword put in level 2 on the start screen: unchecked means that level 2 choice, not a staircase you can see by number)
+                        var progressiveNote = "\nTurning the 4th sword on also turns Progressive Items on.";
+                        ToolTip.SetTip(swordCb, TrackerModel.LegacyMode ? "Disabled in Legacy Mode"
+                            : twoState
+                            ? "Checked (L9): the 4th sword's item check is on the level 9 floor.\nUnchecked (none): there is no 4th sword.\nSwitching moves the item you marked there along with it." + progressiveNote
+                            : hiddenNumbers
+                            ? "Checked (L9): the 4th sword's item check is on the level 9 floor.\nUnchecked (L2): it is in level 2, where the start screen put it (with hidden dungeon numbers there is no level 2 staircase slot to show it).\nBlue box (none): there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it." + progressiveNote
+                            : "Checked (L9): the 4th sword's item check is on the level 9 floor.\nUnchecked (L2): it is on the level 2 staircase.\nBlue box (none): there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it." + progressiveNote);
+                        swordCb.IsEnabled = !TrackerModel.LegacyMode;   // (Legacy Mode locks every ZORA Extra off)
+                        ToolTip.SetShowOnDisabled(swordCb, true);   // (so the Legacy Mode tooltip still shows)
                         swordCb.Click += (_, _) =>
                         {
+                            showSwordPlace();
                             SetFourthSwordLocation(swordCb.IsChecked == true ? 2 : swordCb.IsChecked == false && !twoState ? 1 : 0);
                             TrackerModel.recomputeMapStateSummary();
                             TrackerModel.forceUpdate();
@@ -1554,7 +1663,7 @@ public static class OverworldItemGridUI
                     var closeBtn = Graphics.makeButton("Close", 16.0, Brushes.Orange);
                     closeBtn.Margin = new Thickness(0.0, 10.0, 8.0, 8.0);
                     closeBtn.HorizontalAlignment = HorizontalAlignment.Right;
-                    closeBtn.Click += (_, _) => CustomComboBoxes.DismissTopModal();
+                    closeBtn.Click += (_, _) => wh.Set();
                     sp.Children.Add(closeBtn);
                     var b = new Border { Child = sp, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(5.0), Background = Brushes.Black };
                     clearOW();

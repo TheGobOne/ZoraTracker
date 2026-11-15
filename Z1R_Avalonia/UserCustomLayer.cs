@@ -137,8 +137,8 @@ public static class UserCustomLayer
             {
                 if (errorText.Length > 600)
                     errorText = errorText.Substring(0, 600) + "...";
-                var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, errorText, new[] { "Open ExtraIcons folder", "Ok" });
-                if (r != "Ok")
+                var r = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, errorText, new[] { "Open ExtraIcons folder", "OK" });
+                if (r == "Open ExtraIcons folder")   // (null is Escape or a click outside: nothing to open)
                 {
                     var fileToSelect = checklistFilename;
                     Platform.RevealInFileManager(fileToSelect);   // (WPF: Process.Start(ProcessStartInfo("Explorer.exe", "/Select, \"file\"")))

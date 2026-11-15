@@ -395,7 +395,7 @@ public static class CustomComboBoxes
 
     // Escape closes the topmost modal popup (the same as clicking outside it)
     private static readonly Stack<ManualResetEvent> modalDismissStack = new Stack<ManualResetEvent>();
-    // popups on the stack that Escape must not close (escapeCloses false): while one is on top, Escape does nothing, so it can't close the popup beneath
+    // popups on the stack that Escape must not close (escapeCloses false): while one is on top, Escape closes nothing, so it can't close the popup beneath
     private static readonly HashSet<ManualResetEvent> notEscapable = new HashSet<ManualResetEvent>();
     private static bool escapeHandlerRegistered = false;
     private static void ensureEscapeHandler()
@@ -410,10 +410,11 @@ public static class CustomComboBoxes
                 var cmRoot = CanvasManager.TheOnlyCanvasManager?.RootCanvas;
                 var popupWindow = cmRoot == null ? null : TopLevel.GetTopLevel(cmRoot);
                 if (popupWindow is Window && !ReferenceEquals(win, popupWindow)) return;
-                if (ea.Key == Key.Escape && modalDismissStack.Count > 0)
+                // (handled only when it closed a popup: with a popup Escape doesn't close on top, a control inside that popup still gets the key)
+                if (ea.Key == Key.Escape && modalDismissStack.Count > 0 && !notEscapable.Contains(modalDismissStack.Peek()))
                 {
                     ea.Handled = true;
-                    if (!notEscapable.Contains(modalDismissStack.Peek())) modalDismissStack.Peek().Set();
+                    modalDismissStack.Peek().Set();
                 }
             }, RoutingStrategies.Tunnel);
         }
@@ -2067,10 +2068,10 @@ public static class CustomComboBoxes
                 {
                     var (bodyText, buttons) =
                         updateAvailable.HasValue
-                            ? ($"{OverworldData.AboutBody}\n*** A newer version is available: {updateAvailable.Value.Item1} (you have v{CurrentReleaseLabel}) ***\n", new[] { "Install update", "Open folder", "Go to website", "Ok" })
+                            ? ($"{OverworldData.AboutBody}\n*** A newer version is available: {updateAvailable.Value.Item1} (you have v{CurrentReleaseLabel}) ***\n", new[] { "Install update", "Open folder", "Go to website", "OK" })
                             : Platform.isBrowser
-                                ? (OverworldData.AboutBody, new[] { "Go to website", "Ok" })   // (web build: no update check, and no folder to open)
-                                : (OverworldData.AboutBody, new[] { "Check for updates", "Open folder", "Go to website", "Ok" });
+                                ? (OverworldData.AboutBody, new[] { "Go to website", "OK" })   // (web build: no update check, and no folder to open)
+                                : (OverworldData.AboutBody, new[] { "Check for updates", "Open folder", "Go to website", "OK" });
                     var r = await DoModalMessageBox(cm, null, bodyText, buttons);
                     GlobalFlag.popupIsActive = false;
                     if (r == "Go to website")
@@ -2155,7 +2156,7 @@ public static class CustomComboBoxes
                                 else
                                 {
                                     var err = result;
-                                    await DoModalMessageBox(cm, System.Drawing.SystemIcons.Warning, $"The update could not be installed automatically:\n{err}\n\nThe release page will be opened instead.", new[] { "Ok" });
+                                    await DoModalMessageBox(cm, System.Drawing.SystemIcons.Warning, $"The update could not be installed automatically:\n{err}\n\nThe release page will be opened instead.", new[] { "OK" });
                                     Platform.OpenWithShell(url != null && url.StartsWith(OverworldData.Website) ? url : OverworldData.Website);
                                 }
                             }
@@ -2184,7 +2185,7 @@ public static class CustomComboBoxes
                                 GlobalFlag.popupIsActive = true;
                                 async Task showIt()
                                 {
-                                    try { await DoModalMessageBox(cm, null, msg, new[] { "Ok" }); }
+                                    try { await DoModalMessageBox(cm, null, msg, new[] { "OK" }); }
                                     finally { GlobalFlag.popupIsActive = false; }
                                 }
                                 StartImmediate(showIt());

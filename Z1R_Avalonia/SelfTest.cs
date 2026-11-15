@@ -33,6 +33,7 @@ public static class SelfTest
     private static int clicks = 0;
     private static readonly Dictionary<string, int> hitsByType = new Dictionary<string, int>();
     private static readonly Dictionary<string, int> popupsByType = new Dictionary<string, int>();
+    private const string fourthSwordOnlyZora = "22.4a";   // (version 22, only add_l4_sword = 1: 1 * 2*2*6*2*2*3 = 288 = "4a" in base 63)
     private static void log(string s) { try { File.AppendAllText(reportPath, s + "\n"); } catch { } }
     private static void fail(string s) { failures++; log("FAIL: " + s); }
 
@@ -228,6 +229,11 @@ public static class SelfTest
                 // the same payload read as version 21 leaves item_counter over: it must be refused, not read as other flags
                 if (FlagPaste.decodeZora("21." + payload).error == null) fail($"ZORA flags: '21.{payload}' (a version 22 field set) was accepted as version 21");
             }
+            // the string the Paste Flags check below uses for "only the 4th sword": add_l4_sword On (in level 9), everything else Off, Progressive Items included
+            var (z4, err4) = FlagPaste.decodeZora(fourthSwordOnlyZora);
+            if (z4 == null) fail($"ZORA flags '{fourthSwordOnlyZora}': {err4}");
+            else if (z4.Progressive || z4.FourthSword != FlagPaste.Tri.On || z4.FourthInLevel2 || z4.BootsReplaceBoomerangs != FlagPaste.Tri.Off)
+                fail($"ZORA flags '{fourthSwordOnlyZora}' should be the 4th sword in level 9 and nothing else");
             // '_' is an alias for '!' (flags copied from a seed file name): both spellings must decode the same
             var (pa, _e1) = FlagPaste.decodeZ1R("8hq4BeR1JXo89BJ2!TFpTP02u8UJ3A");
             var (pb, _e2) = FlagPaste.decodeZ1R("8hq4BeR1JXo89BJ2_TFpTP02u8UJ3A");
@@ -259,34 +265,88 @@ public static class SelfTest
         foreach (var title in OptionsMenu.startScreenTourMissingStops(win))
             if (!tourPanelOnly.Contains(title)) fail($"Guided Tour: the start screen stop '{title}' has no anchor on screen");
         if (!OptionsMenu.startScreenTourSteps.Any(s => s.title == "Paste Flags")) fail("Guided Tour: no Paste Flags stop");
+        // the start screen's 4th Sword / Progressive Items rule, through the real checkboxes: 4th Sword checks Progressive Items and holds it on; Progressive Items never checks 4th Sword
+        var startProgressive = checkboxes(win).FirstOrDefault(c => label(c) == "Progressive Items");
+        var startFourth = checkboxes(win).FirstOrDefault(c => label(c) == "4th Sword");
+        var startLegacy = checkboxes(win).FirstOrDefault(c => label(c) == "Legacy Mode");
+        var startBoots = checkboxes(win).FirstOrDefault(c => label(c) == "Pegasus Boots");
+        var startLevel2 = checkboxes(win).FirstOrDefault(c => label(c) == "Level 2");
+        var startLevel9 = checkboxes(win).FirstOrDefault(c => label(c) == "Level 9");
+        if (startProgressive == null || startFourth == null || startLegacy == null || startBoots == null || startLevel2 == null || startLevel9 == null)
+            fail("start screen: the Progressive Items / 4th Sword / Legacy Mode / Pegasus Boots / Level 2 / Level 9 checkboxes were not all found");
+        else if (!stuck)
+        {
+            var sLegacy = startLegacy.IsChecked;
+            guard("start screen 4th Sword rule", () =>
+            {
+                startLegacy.IsChecked = false;   // (Legacy Mode locks the Extras off: the rule is only checked with it off)
+                startFourth.IsChecked = false;
+                startProgressive.IsChecked = false;
+                click(startProgressive);
+                if (startProgressive.IsChecked != true) fail("start screen: clicking Progressive Items did not check it");
+                if (startFourth.IsChecked == true) fail("start screen: checking Progressive Items checked 4th Sword");
+                startProgressive.IsChecked = false;
+                click(startFourth);
+                if (startFourth.IsChecked != true) fail("start screen: clicking 4th Sword did not check it");
+                if (startProgressive.IsChecked != true) fail("start screen: checking 4th Sword did not check Progressive Items");
+                click(startProgressive);
+                if (startProgressive.IsChecked != true) fail("start screen: Progressive Items could be unchecked while 4th Sword is checked");
+                startFourth.IsChecked = false;
+                startProgressive.IsChecked = false;
+                startLegacy.IsChecked = sLegacy;
+            });
+            await settle("start screen 4th Sword rule");
+        }
         // Paste Flags: type both strings, Apply, expect it to close and the options to be set
         var pasteButton = find("Paste Flags");
-        if (pasteButton != null && !stuck)
+        async Task pasteFlags(string z1r, string zora)
         {
             guard("Paste Flags click", () => click(pasteButton));
             await pause(400);
             var root = popupRoot();
-            if (root == null) fail("Paste Flags: the box did not open");
+            if (root == null) { fail("Paste Flags: the box did not open"); return; }
+            var boxes = descendants(root).OfType<TextBox>().Where(t => !t.IsReadOnly).ToList();
+            var apply = descendants(root).FirstOrDefault(d => isButtonLike(d) && label(d) == "Apply") as Control;
+            if (boxes.Count < 2) fail("Paste Flags: the two text boxes were not found");
+            else if (apply == null) fail("Paste Flags: no Apply button");
             else
             {
-                var boxes = descendants(root).OfType<TextBox>().Where(t => !t.IsReadOnly).ToList();
-                var apply = descendants(root).FirstOrDefault(d => isButtonLike(d) && label(d) == "Apply") as Control;
-                if (boxes.Count < 2) fail("Paste Flags: the two text boxes were not found");
-                else if (apply == null) fail("Paste Flags: no Apply button");
+                boxes[0].Text = z1r;
+                boxes[1].Text = zora;
+                guard("Paste Flags Apply", () => click(apply));
+                await pause(400);
+                // (these flags check some options, so the box stays open to show what was done, and Close is now Done)
+                var done = popupCount() > 0 ? descendants(popupRoot()).FirstOrDefault(d => isButtonLike(d) && label(d) == "Done") as Control : null;
+                if (popupCount() == 0) fail($"Paste Flags ('{zora}'): Apply closed the box before its result lines could be read");
+                else if (done == null) fail($"Paste Flags ('{zora}'): after Apply with result lines, there is no Done button");
                 else
                 {
-                    boxes[0].Text = "GmCbTYod8E8ige6igkDR1ZyxsOpshPXUUTcU5";
-                    boxes[1].Text = "10.Km67jtU";
-                    guard("Paste Flags Apply", () => click(apply));
+                    guard("Paste Flags Done", () => click(done));
                     await pause(400);
-                    if (popupCount() > 0) fail("Paste Flags: Apply did not close the box");
-                    var progressive = checkboxes(win).FirstOrDefault(c => label(c).StartsWith("Progressive"));
-                    if (progressive == null) fail("Paste Flags: no Progressive Items checkbox");
-                    else if (progressive.IsChecked != true) fail("Paste Flags: Progressive Items was not checked");
+                    if (popupCount() > 0) fail("Paste Flags: Done did not close the box");
                 }
             }
-            await settle("Paste Flags");
         }
+        if (pasteButton != null && !stuck && startProgressive != null && startFourth != null && startBoots != null && startLevel2 != null && startLevel9 != null)
+        {
+            // only the 4th sword set (Progressive Items 0 in the string): Progressive Items must still end up checked, by the 4th Sword rule
+            startFourth.IsChecked = false;
+            startProgressive.IsChecked = false;
+            await pasteFlags("", fourthSwordOnlyZora);
+            if (startFourth.IsChecked != true || startLevel9.IsChecked != true || startLevel2.IsChecked == true) fail($"Paste Flags ('{fourthSwordOnlyZora}'): 4th Sword in Level 9 was not checked");
+            if (startProgressive.IsChecked != true) fail($"Paste Flags ('{fourthSwordOnlyZora}'): the 4th sword alone did not check Progressive Items");
+            await settle("Paste Flags (4th sword only)");
+            // both strings (progressive_items 1, the 4th sword in level 2, Boots Random); this one goes last, so the run below starts with the same options as before
+            if (!stuck)
+            {
+                await pasteFlags("GmCbTYod8E8ige6igkDR1ZyxsOpshPXUUTcU5", "10.Km67jtU");
+                if (startProgressive.IsChecked != true) fail("Paste Flags: Progressive Items was not checked");
+                if (startFourth.IsChecked != true || startLevel2.IsChecked != true || startLevel9.IsChecked == true) fail("Paste Flags: 4th Sword in Level 2 was not checked");
+                if (startBoots.IsChecked != null) fail($"Paste Flags: Pegasus Boots (Random in the flags) should be the third state (Off until confirmed), not {startBoots.IsChecked}");
+                await settle("Paste Flags");
+            }
+        }
+        else if (pasteButton == null) fail("Paste Flags: no Paste Flags button");
         log($"start screen done ({failures} failures so far)");
 
         // 2. start the tracker
@@ -443,7 +503,8 @@ public static class SelfTest
                 var trig = TrackerModel.level9TriggerBox; var sTrigCell = trig.CellCurrent(); var sTrigHas = trig.PlayerHas();
                 var sTaken = OverworldMapTileCustomization.takeAnyTaken.ToList();
                 var sCandle = (bool[])OverworldMapTileCustomization.takeAnySlotGaveCandle.Clone();
-                var sKind2 = pp.GetTakeAnyKind(2);
+                var sHearts = Enumerable.Range(0, 4).Select(k => (pp.GetTakeAnyHeart(k), pp.GetTakeAnyKind(k))).ToArray();
+                var sBlueCandle = pp.PlayerHasBlueCandle.Value();
                 var sTileTiers = TrackerModel.progressiveTileTier.ToList(); var sBoxTiers = TrackerModel.progressiveBoxTier.ToList();
                 var sHint = TrackerModel.hintShopColors.ToList();
                 var sSword4 = se.PlayerHasSword4.Value(); var sMags = se.PlayerHasMagicalSword.Value();
@@ -459,6 +520,9 @@ public static class SelfTest
                     OverworldMapTileCustomization.takeAnyTaken.Clear();
                     OverworldMapTileCustomization.takeAnyTaken[(5, 6)] = (2, true, 2);
                     for (var k = 0; k < 4; k++) OverworldMapTileCustomization.takeAnySlotGaveCandle[k] = k == 1 || k == 3;
+                    // (slots 1 and 3 hold the candle they gave, the way cycling them to the candle on the main screen leaves them)
+                    pp.SetTakeAnyKind(0, 0); pp.SetTakeAnyKind(1, 2); pp.SetTakeAnyKind(3, 2);
+                    pp.PlayerHasBlueCandle.Set(true);
                     TrackerModel.progressiveTileTier[Tuple.Create(7, 2, TrackerModel.ITEMS.BLUECANDLE)] = 2;
                     TrackerModel.progressiveBoxTier[TrackerModel.sword2Box] = 3;
                     TrackerModel.hintShopColors[Tuple.Create(9, 1)] = 4;
@@ -482,9 +546,18 @@ public static class SelfTest
                     trig.AttemptToSet(-1, TrackerModel.PlayerHas.SKIPPED);
                     OverworldMapTileCustomization.takeAnyTaken.Clear();
                     Array.Clear(OverworldMapTileCustomization.takeAnySlotGaveCandle, 0, 4);
+                    for (var k = 0; k < 4; k++) pp.SetTakeAnyKind(k, 0);   // (the slot kinds are not saved: a fresh tracker starts with none)
+                    pp.PlayerHasBlueCandle.Set(false);
                     se.PlayerHasSword4.Set(sSword4); se.PlayerHasMagicalSword.Set(sMags);
-                    OverworldMapTileCustomization.applyLoadedItemExtras(it);
-                    d.StartingItemsAndExtras.Apply();
+                    OverworldItemGridUI.ApplyLoadedItemExtrasAndProgress(d);   // (the real load's step: item extras, then player progress, then starting items)
+                    // a main screen slot that gave the candle comes back as the candle (not a crossed-out heart), and cycling it away takes the candle back
+                    if (pp.GetTakeAnyKind(1) != 2 || pp.GetTakeAnyKind(3) != 2) fail($"save load: the take any slots that gave the candle came back as kinds {pp.GetTakeAnyKind(1)} / {pp.GetTakeAnyKind(3)}, not 2 (the candle)");
+                    if (!pp.PlayerHasBlueCandle.Value()) fail("save load: the blue candle given by a take any slot was not put back");
+                    OverworldMapTileCustomization.setTakeAnySlotKind(1, 1);
+                    if (pp.PlayerHasBlueCandle.Value()) fail("save load: cycling a reloaded take any slot away from the candle did not take the candle back");
+                    if (OverworldMapTileCustomization.takeAnySlotGaveCandle[1]) fail("save load: a slot cycled away from the candle still says it gave the candle");
+                    if (SaveAndLoad.TakeAnySlotGaveCandleText.Invoke() != "0001") fail($"save load: the next save would write TakeAnySlotGaveCandle '{SaveAndLoad.TakeAnySlotGaveCandleText.Invoke()}', not 0001");
+                    OverworldMapTileCustomization.takeAnySlotGaveCandle[1] = true;   // (back to what the save said, for the check below)
                     if (TrackerModel.overworldShopPrices[3, 4] != 160 || TrackerModel.level9TriforceCount != 5 || TrackerModel.level9TriggerSwordTier != 3 || trig.CellCurrent() != trigCell)
                         fail("save load: the shop price / level 9 entry rule was not put back");
                     if (!OverworldMapTileCustomization.takeAnyTaken.TryGetValue((5, 6), out var tk) || tk != (2, true, 2)) fail("save load: the taken take any cave was not put back");
@@ -504,12 +577,140 @@ public static class SelfTest
                     OverworldMapTileCustomization.takeAnyTaken.Clear();
                     foreach (var kv in sTaken) OverworldMapTileCustomization.takeAnyTaken[kv.Key] = kv.Value;
                     Array.Copy(sCandle, OverworldMapTileCustomization.takeAnySlotGaveCandle, 4);
-                    pp.SetTakeAnyKind(2, sKind2);
+                    for (var k = 0; k < 4; k++) pp.RestoreTakeAnySlot(k, sHearts[k].Item1, sHearts[k].Item2);   // (heart value and kind exactly: SetTakeAnyKind would work the heart value out again)
+                    pp.PlayerHasBlueCandle.Set(sBlueCandle);
                     TrackerModel.progressiveTileTier.Clear(); foreach (var kv in sTileTiers) TrackerModel.progressiveTileTier[kv.Key] = kv.Value;
                     TrackerModel.progressiveBoxTier.Clear(); foreach (var kv in sBoxTiers) TrackerModel.progressiveBoxTier[kv.Key] = kv.Value;
                     TrackerModel.hintShopColors.Clear(); foreach (var kv in sHint) TrackerModel.hintShopColors[kv.Key] = kv.Value;
                     se.PlayerHasSword4.Set(sSword4); se.PlayerHasMagicalSword.Set(sMags);
                     SaveAndLoad.lastKnownZoraFlags = sZf; SaveAndLoad.lastKnownZoraVersion = sZv;
+                }
+            });
+            // the 4th sword location (the Overworld + Extras checkbox): on mid-run turns Progressive Items on and raises the caps once; none right after turns it back off.
+            // Progressive Items never turns the 4th sword on
+            guard("4th sword turns progressive items on", () =>
+            {
+                var dom = TrackerModel.allItemWithHeartShuffleChoiceDomain;
+                var l2 = TrackerModel.level2StairBox; var l9 = TrackerModel.GetDungeon(8).ExtraFloorBox;
+                var sProg = TrackerModel.ProgressiveItems; var sFourth = TrackerModelOptions.FourthSwordEnabled;
+                var sL2 = TrackerModel.level2StairBoxEnabled; var sL9 = TrackerModel.level9FloorBoxEnabled;
+                var sL2Cell = l2.CellCurrent(); var sL2Has = l2.PlayerHas(); var sL9Cell = l9.CellCurrent(); var sL9Has = l9.PlayerHas();
+                var sStash = OverworldItemGridUI.fourthSwordStashItem; var sStashHas = OverworldItemGridUI.fourthSwordStashHas;
+                var sLatch = OverworldItemGridUI.fourthSwordL2WithHiddenNumbers; var sTurned = OverworldItemGridUI.fourthSwordTurnedProgressiveOn;
+                var sTileTiers = TrackerModel.progressiveTileTier.ToList(); var sBoxTiers = TrackerModel.progressiveBoxTier.ToList();
+                var sLast = (int[])WPFUI.progressiveLastTiers.Clone();
+                int swordCap() => dom.MaxUses(TrackerModel.ITEMS.PROGRESSIVESWORD);
+                int ringCap() => dom.MaxUses(TrackerModel.ITEMS.BLUERING);
+                try
+                {
+                    // start with no 4th sword and Progressive Items off, as a run started without either
+                    l2.Set(-1, TrackerModel.PlayerHas.NO); l9.Set(-1, TrackerModel.PlayerHas.NO);
+                    OverworldItemGridUI.fourthSwordStashItem = -1;
+                    OverworldItemGridUI.SetFourthSwordLocation(0);
+                    TrackerModel.ProgressiveItems = false;
+                    OverworldItemGridUI.ApplyProgressiveItemCaps();
+                    OverworldItemGridUI.ResetFourthSwordRunState();
+                    if (swordCap() != 3 || ringCap() != 1) fail($"4th sword: with Progressive Items off the caps should be 3 swords / 1 ring, not {swordCap()} / {ringCap()}");
+                    OverworldItemGridUI.SetFourthSwordLocation(1);
+                    if (!TrackerModelOptions.FourthSwordEnabled || !TrackerModel.level2StairBoxEnabled) fail("4th sword: level 2 did not turn the 4th sword on");
+                    if (!TrackerModel.ProgressiveItems) fail("4th sword: turning it on mid-run did not turn Progressive Items on");
+                    if (swordCap() != 4 || ringCap() != 2) fail($"4th sword: turning it on should raise the caps to 4 swords / 2 rings, not {swordCap()} / {ringCap()}");
+                    OverworldItemGridUI.SetFourthSwordLocation(2);   // (moving it to level 9 changes nothing else)
+                    if (!TrackerModel.ProgressiveItems || swordCap() != 4 || ringCap() != 2) fail($"4th sword: moving it to level 9 changed Progressive Items or raised the caps again ({swordCap()} / {ringCap()})");
+                    if (!TrackerModel.level9FloorBoxEnabled || TrackerModel.level2StairBoxEnabled) fail("4th sword: level 9 did not move the slot");
+                    OverworldItemGridUI.SetFourthSwordLocation(0);
+                    if (TrackerModelOptions.FourthSwordEnabled || TrackerModel.level2StairBoxEnabled || TrackerModel.level9FloorBoxEnabled) fail("4th sword: none left a 4th sword slot on");
+                    if (TrackerModel.ProgressiveItems) fail("4th sword: none right after it turned Progressive Items on (nothing collected since) should turn Progressive Items back off");
+                    if (swordCap() != 3 || ringCap() != 1) fail($"4th sword: Progressive Items back off should put the caps back to 3 swords / 1 ring, not {swordCap()} / {ringCap()}");
+                    // a progressive item marked in between: Progressive Items stays on
+                    OverworldItemGridUI.SetFourthSwordLocation(1);
+                    if (!l2.AttemptToSet(TrackerModel.ITEMS.BLUERING, TrackerModel.PlayerHas.YES)) fail("4th sword: could not mark a blue ring in the level 2 slot");
+                    OverworldItemGridUI.SetFourthSwordLocation(0);
+                    if (!TrackerModel.ProgressiveItems) fail("4th sword: none after a progressive item was collected should leave Progressive Items on");
+                    OverworldItemGridUI.fourthSwordStashItem = -1;
+                    // Progressive Items on before the 4th sword (from the start screen): none leaves it on.
+                    // (that Progressive Items never turns the 4th sword on is checked on the start screen's real checkboxes, before the run starts: the main screen has no Progressive Items control)
+                    OverworldItemGridUI.ResetFourthSwordRunState();
+                    TrackerModel.ProgressiveItems = true;
+                    OverworldItemGridUI.ApplyProgressiveItemCaps();
+                    OverworldItemGridUI.SetFourthSwordLocation(2);
+                    OverworldItemGridUI.SetFourthSwordLocation(0);
+                    if (!TrackerModel.ProgressiveItems) fail("4th sword: none turned off a Progressive Items that was on before the 4th sword");
+                }
+                finally
+                {
+                    TrackerModel.ProgressiveItems = sProg;
+                    OverworldItemGridUI.ApplyProgressiveItemCaps();
+                    TrackerModelOptions.FourthSwordEnabled = sFourth;
+                    l2.Set(-1, TrackerModel.PlayerHas.NO); l9.Set(-1, TrackerModel.PlayerHas.NO);
+                    TrackerModel.SetLevel2StairBoxEnabled(sL2); TrackerModel.SetLevel9FloorBoxEnabled(sL9);   // (the slots on first, so the boxes have their change handlers when the items go back)
+                    l2.AttemptToSet(sL2Cell, sL2Has); l9.AttemptToSet(sL9Cell, sL9Has);
+                    OverworldItemGridUI.fourthSwordStashItem = sStash; OverworldItemGridUI.fourthSwordStashHas = sStashHas;
+                    OverworldItemGridUI.fourthSwordL2WithHiddenNumbers = sLatch; OverworldItemGridUI.fourthSwordTurnedProgressiveOn = sTurned;
+                    TrackerModel.progressiveTileTier.Clear(); foreach (var kv in sTileTiers) TrackerModel.progressiveTileTier[kv.Key] = kv.Value;
+                    TrackerModel.progressiveBoxTier.Clear(); foreach (var kv in sBoxTiers) TrackerModel.progressiveBoxTier[kv.Key] = kv.Value;
+                    Array.Copy(sLast, WPFUI.progressiveLastTiers, sLast.Length);
+                    TrackerModel.recomputePlayerStateSummary();
+                }
+            });
+            // the load's 4th Sword step (the same code a real load runs): an older save without the 4th Sword fields keeps its own Progressive Items setting;
+            // a save with the 4th sword on turns Progressive Items on, but not in Legacy Mode; a load forgets an item kept from a turned-off 4th sword slot
+            guard("4th sword load step", () =>
+            {
+                var dom = TrackerModel.allItemWithHeartShuffleChoiceDomain;
+                var l2 = TrackerModel.level2StairBox;
+                var sProg = TrackerModel.ProgressiveItems; var sFourth = TrackerModelOptions.FourthSwordEnabled; var sLegacy = TrackerModel.LegacyMode;
+                var sL2 = TrackerModel.level2StairBoxEnabled; var sL9 = TrackerModel.level9FloorBoxEnabled;
+                var sL2Cell = l2.CellCurrent(); var sL2Has = l2.PlayerHas();
+                var sStash = OverworldItemGridUI.fourthSwordStashItem; var sStashHas = OverworldItemGridUI.fourthSwordStashHas;
+                var sLatch = OverworldItemGridUI.fourthSwordL2WithHiddenNumbers; var sTurned = OverworldItemGridUI.fourthSwordTurnedProgressiveOn;
+                string build() => string.Join("\n", SaveAndLoad.BuildSaveLines("", 0, new[] { "}" }, new string[0], "", false, 0, false, false));
+                try
+                {
+                    TrackerModel.LegacyMode = false;
+                    // a save with the 4th sword off and Progressive Items off, then made into an older save: no Level2StairBox (saves before 2.2 do not have it)
+                    TrackerModel.ProgressiveItems = false;
+                    TrackerModel.SetLevel2StairBoxEnabled(false); TrackerModel.SetLevel9FloorBoxEnabled(false);
+                    var d = DungeonSaveAndLoad.LoadAll(build());
+                    if (d.Items.Level2StairBox == null || d.Overworld.ProgressiveItems != 0) fail("4th sword load: the test save has no level 2 slot, or Progressive Items is not 0");
+                    d.Items.Level2StairBox = null;
+                    TrackerModel.ProgressiveItems = true;   // (the opposite of the save, so the load has to set it)
+                    OverworldItemGridUI.fourthSwordStashItem = TrackerModel.ITEMS.BOW; OverworldItemGridUI.fourthSwordStashHas = TrackerModel.PlayerHas.YES;
+                    SaveAndLoad.ApplyLoadedOptions(d.Overworld);   // (a real load applies the options first)
+                    OverworldItemGridUI.ApplyLoadedFourthSword(d.Items);
+                    if (TrackerModel.ProgressiveItems) fail("4th sword load: an older save with Progressive Items 0 and no 4th Sword fields came back with Progressive Items on");
+                    if (!TrackerModelOptions.FourthSwordEnabled) fail("4th sword load: an older save should leave the 4th sword unrestricted");
+                    if (OverworldItemGridUI.fourthSwordStashItem != -1) fail("4th sword load: an item kept from a turned-off 4th sword slot survived the load");
+                    // a save with the 4th sword in level 2 but Progressive Items 0 (a damaged or hand-edited save): Progressive Items comes on, with its caps
+                    OverworldItemGridUI.ApplyProgressiveItemCaps();
+                    TrackerModel.SetLevel2StairBoxEnabled(true);
+                    var d2 = DungeonSaveAndLoad.LoadAll(build());
+                    TrackerModel.SetLevel2StairBoxEnabled(false);
+                    SaveAndLoad.ApplyLoadedOptions(d2.Overworld);
+                    OverworldItemGridUI.ApplyLoadedFourthSword(d2.Items);
+                    if (!TrackerModel.ProgressiveItems) fail("4th sword load: a save with the 4th sword in level 2 did not turn Progressive Items on");
+                    if (dom.MaxUses(TrackerModel.ITEMS.PROGRESSIVESWORD) != 4) fail("4th sword load: Progressive Items on did not raise the sword cap to 4");
+                    if (!TrackerModel.level2StairBoxEnabled) fail("4th sword load: the level 2 slot did not come back on");
+                    // the same save in Legacy Mode: Progressive Items stays off
+                    TrackerModel.ProgressiveItems = false;
+                    OverworldItemGridUI.ApplyProgressiveItemCaps();
+                    TrackerModel.LegacyMode = true;
+                    SaveAndLoad.ApplyLoadedOptions(d2.Overworld);
+                    OverworldItemGridUI.ApplyLoadedFourthSword(d2.Items);
+                    if (TrackerModel.ProgressiveItems) fail("4th sword load: in Legacy Mode a save with the 4th sword on turned Progressive Items on");
+                }
+                finally
+                {
+                    TrackerModel.LegacyMode = sLegacy;
+                    TrackerModel.ProgressiveItems = sProg;
+                    OverworldItemGridUI.ApplyProgressiveItemCaps();
+                    TrackerModelOptions.FourthSwordEnabled = sFourth;
+                    l2.Set(-1, TrackerModel.PlayerHas.NO);
+                    TrackerModel.SetLevel2StairBoxEnabled(sL2); TrackerModel.SetLevel9FloorBoxEnabled(sL9);
+                    l2.AttemptToSet(sL2Cell, sL2Has);
+                    OverworldItemGridUI.fourthSwordStashItem = sStash; OverworldItemGridUI.fourthSwordStashHas = sStashHas;
+                    OverworldItemGridUI.fourthSwordL2WithHiddenNumbers = sLatch; OverworldItemGridUI.fourthSwordTurnedProgressiveOn = sTurned;
+                    TrackerModel.recomputePlayerStateSummary();
                 }
             });
             log($"ZORA options save round trip done ({failures} failures so far)");
@@ -838,21 +1039,79 @@ public static class SelfTest
         });
         log($"co-op checks done ({failures} failures so far)");
 
-        // 6f. both players change the same room within 5 s: the later change wins on both sides (they used to ignore each other and stay different)
+        // 6f. both players change the same field: each field has a version (number, writer), the higher one wins on both sides, with no clocks involved
         guard("co-op conflict rule", () =>
         {
-            var key = "SelfTestConflict";
-            CoopSync.recordSend(key);
-            // (outside the 5 s window the later change wins; inside it the lower console ID wins)
-            var later = DateTime.UtcNow.Ticks + 10 * TimeSpan.TicksPerSecond;
-            var earlier = DateTime.UtcNow.Ticks - 10 * TimeSpan.TicksPerSecond;
-            var close = DateTime.UtcNow.Ticks + TimeSpan.TicksPerSecond;
-            if (CoopSync.localEditWins(key, 5000, later, "partner")) fail("co-op: a partner's later change to the same room was ignored");
-            if (!CoopSync.localEditWins(key, 5000, earlier, "partner")) fail("co-op: a partner's earlier change to the same room overwrote ours");
-            if (!CoopSync.localEditWins(key, 5000, close, "￿")) fail("co-op: a concurrent change from a higher console ID overwrote ours");
-            if (!string.IsNullOrEmpty(TrackerModelOptions.CoopSyncOptions.MyConsoleId) && CoopSync.localEditWins(key, 5000, close, ""))
-                fail("co-op: a concurrent change from a lower console ID was ignored");
-            if (CoopSync.localEditWins("SelfTestNeverSent", 5000, earlier, "partner")) fail("co-op: a partner's change was ignored though we never changed that room");
+            // a higher version wins, whoever wrote it
+            if (!CoopSync.incomingWins(3, "a#1", 2, "z#1", false)) fail("co-op: a partner's change with a higher version was ignored");
+            if (CoopSync.incomingWins(2, "z#1", 3, "a#1", false)) fail("co-op: a partner's change with a lower version overwrote ours");
+            // equal numbers (both changed it at once): the writer text decides, the same way on both sides
+            if (!CoopSync.incomingWins(2, "web#1", 2, "desktop#1", false)) fail("co-op: a tie did not go to the higher writer ID");
+            if (CoopSync.incomingWins(2, "desktop#1", 2, "web#1", false)) fail("co-op: a tie went to the lower writer ID");
+            if (CoopSync.incomingWins(2, "web#1", 2, "desktop#1", false) == CoopSync.incomingWins(2, "desktop#1", 2, "web#1", false))
+                fail("co-op: the two sides of a tie did not decide the same way");
+            // a stale echo (the partner's message built before our newer change reached them) carries the older version: never taken, even in a snapshot
+            if (CoopSync.incomingWins(1, "web#1", 2, "desktop#1", false) || CoopSync.incomingWins(1, "web#1", 2, "desktop#1", true))
+                fail("co-op: a stale echo with a lower version undid our change");
+            // the same version again changes nothing, but a hello snapshot wins a tie (both at version 0: the hello winner's state is taken)
+            if (CoopSync.incomingWins(4, "web#1", 4, "web#1", false)) fail("co-op: a repeat of the same version was taken as a change");
+            if (!CoopSync.incomingWins(0, "", 0, "", true)) fail("co-op: a hello snapshot did not win a tie at version 0");
+            // a message from an older tracker has no versions: a value it changed since its last message is taken, one it did not change keeps ours
+            if (!CoopSync.unversionedTakes(null, "1", "0")) fail("co-op: an older tracker's first message was not taken");
+            if (!CoopSync.unversionedTakes("0", "1", "0")) fail("co-op: an older tracker's change was not taken");
+            if (CoopSync.unversionedTakes("1", "1", "0")) fail("co-op: an older tracker's unchanged value undid our change");
+            if (CoopSync.unversionedTakes("0", "1", "1")) fail("co-op: an older tracker's value equal to ours counted as a change");
+            // ...but a value we changed in the last 5 s keeps ours (their message can be a stale echo: ours on, then off, and their "on" arrives after)
+            if (CoopSync.unversionedTakes("0", "1", "0", true)) fail("co-op: an older tracker's stale echo undid our change of a moment ago");
+            // a new edit is numbered above the counter (the highest version seen from either side), not just above the key's own version:
+            // after a reload ours restart at 0, and an edit stamped (1, us) lost to the partner's older (4, them) and was undone
+            if (CoopSync.stampNumber(4, 0) != 5 || CoopSync.stampNumber(2, 7) != 8 || CoopSync.stampNumber(0, 0) != 1)
+                fail("co-op: a new edit's version is not max(counter, key version) + 1");
+            if (!CoopSync.incomingWins(CoopSync.stampNumber(4, 1), "desktop#2", 4, "web#1", false))
+                fail("co-op: an edit made after a reload, numbered from the partner's counter, lost to the partner's older edit");
+        });
+        // 6f (boxes). An item allowed once that moves between two boxes in one message (Bow from level 6 to level 3) must arrive, and when two boxes
+        // both want it, the newer version keeps it on both sides. (Level 3 used to refuse it while level 6 still held it; then level 6 was cleared.)
+        guard("co-op item box moves", () =>
+        {
+            var b3 = TrackerModel.GetDungeon(2).Boxes[0]; var b6 = TrackerModel.GetDungeon(5).Boxes[0];
+            var k3 = CoopSync.boxKey(b3); var k6 = CoopSync.boxKey(b6);
+            var s3 = (b3.CellCurrent(), b3.PlayerHas()); var s6 = (b6.CellCurrent(), b6.PlayerHas());
+            var YES = TrackerModel.PlayerHas.YES; var NO = TrackerModel.PlayerHas.NO; var BOW = TrackerModel.ITEMS.BOW;
+            SaveAndLoad.Box box(int cell, TrackerModel.PlayerHas ph) => new SaveAndLoad.Box { CellCurrent = cell, PlayerHas = ph.AsInt() };
+            if (k3 == null || k6 == null) { fail("co-op: the level 3 or level 6 box has no name"); return; }
+            try
+            {
+                // the move: their message has the Bow in level 3 (listed first) and level 6 empty
+                b3.AttemptToSet(-1, NO);
+                if (!b6.AttemptToSet(BOW, YES)) { fail("co-op: could not put the Bow in level 6 for the move test"); return; }
+                var m = new CoopSync.Merge { Kind = "Items", Versioned = true };
+                m.Taken[k3] = (9, "partner#1"); m.Taken[k6] = (9, "partner#1");
+                CoopSync.applyBoxes(m, new List<(SaveAndLoad.Box, TrackerModel.Box)> { (box(BOW, YES), b3), (box(-1, NO), b6) });
+                if (b3.CellCurrent() != BOW || b6.CellCurrent() != -1 || m.Failed.Count != 0)
+                    fail($"co-op: the Bow moved from level 6 to level 3 in one message ended in level 3: {b3.CellCurrent()}, level 6: {b6.CellCurrent()} (should be Bow, empty)");
+                // both want it: ours (level 3, version 5 by "a") against theirs (level 6, version 5 by "z"): theirs is newer, our level 3 gives it up
+                b6.AttemptToSet(-1, NO);
+                CoopSync.testSetVersion(k3, (5, "a#1"));
+                var m2 = new CoopSync.Merge { Kind = "Items", Versioned = true };
+                m2.Taken[k6] = (5, "z#1");
+                CoopSync.applyBoxes(m2, new List<(SaveAndLoad.Box, TrackerModel.Box)> { (box(BOW, NO), b6) });
+                if (b6.CellCurrent() != BOW || b3.CellCurrent() != -1 || !m2.Displaced.Contains(k3))
+                    fail("co-op: a newer version for the Bow in another box did not move it there");
+                // and the other way: theirs is older, so our box keeps it and theirs is marked failed (ours then goes back to them)
+                CoopSync.testSetVersion(k6, (5, "z#1"));
+                var m3 = new CoopSync.Merge { Kind = "Items", Versioned = true };
+                m3.Taken[k3] = (5, "a#1");
+                CoopSync.applyBoxes(m3, new List<(SaveAndLoad.Box, TrackerModel.Box)> { (box(BOW, YES), b3) });
+                if (b6.CellCurrent() != BOW || b3.CellCurrent() != -1 || !m3.Failed.Contains(k3))
+                    fail("co-op: an older version for the Bow in another box took it from our newer one");
+            }
+            finally
+            {
+                CoopSync.testSetVersion(k3, null); CoopSync.testSetVersion(k6, null);
+                b3.AttemptToSet(-1, NO); b6.AttemptToSet(-1, NO);
+                b3.AttemptToSet(s3.Item1, s3.Item2); b6.AttemptToSet(s6.Item1, s6.Item2);
+            }
         });
         // 6g. duplicate links go into the save
         guard("duplicate links in the save", () =>
