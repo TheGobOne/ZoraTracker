@@ -17,7 +17,7 @@ Free your head for the run: the tracker remembers where everything is.
 
 <br>
 
-<img src="images/zoratracker.png" alt="The ZORATracker main screen mid-run: dungeon item boxes and counters across the top, the overworld map with marked caves and dungeon entrances, a hand-drawn BOARD-1 dungeon map, blockers and notes panels, and a timeline along the bottom" width="640">
+<img src="images/zoratracker.png" alt="The ZORATracker main screen mid-run: dungeon item boxes and counters across the top, the overworld map with marked caves, shops and dungeon entrances, a marked-up PALACE-7 dungeon map, blockers and notes panels, and a timeline along the bottom" width="640">
 
 </div>
 
@@ -49,7 +49,7 @@ How well each one is tested:
 Stuck? Click **Guided Tour** on the start screen. The desktop app checks for new releases and tells you when one is available. The browser version updates on your next visit.
 
 <div align="center">
-<img src="images/start-screen.png" alt="The ZORATracker start screen: overworld buttons at the top, Startup Options and ZORA Extras with Paste Flags in the middle, recent saves, and Load Save, Guided Tour, Options and version buttons at the bottom" width="480">
+<img src="images/start-screen.png" alt="The ZORATracker start screen: overworld buttons at the top, Startup Options with Paste Flags and ZORA Extras with 4th Sword ticked in the middle, an empty recently loaded saves box, and Load Save, Guided Tour, Options and v3.0.0 buttons at the bottom" width="480">
 </div>
 
 ## What it tracks
