@@ -7,11 +7,11 @@
 A tracker for [ZORA](https://zora.gg) (Zelda One Randomizer App) and Z1R racers, casual and competitive.
 Free your head for the run: the tracker remembers where everything is.
 
-**[Download](https://github.com/TheGobOne/ZoraTracker/releases/latest)** · **[Guides](#guides)** · **[Report a bug](https://github.com/TheGobOne/ZoraTracker/issues)**
+**[Open in browser](https://zoratracker.gg)** · **[Download](https://github.com/TheGobOne/ZoraTracker/releases/latest)** · **[Guides](#guides)** · **[Report a bug](https://github.com/TheGobOne/ZoraTracker/issues)**
 
 [![Latest release](https://img.shields.io/github/v/release/TheGobOne/ZoraTracker?include_prereleases&label=latest&color=orange)](https://github.com/TheGobOne/ZoraTracker/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/TheGobOne/ZoraTracker/total?color=orange)](https://github.com/TheGobOne/ZoraTracker/releases)
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)](#quick-start-windows)
+[![Platforms: Windows, macOS, Linux, browser](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20browser-blue)](#install)
 [![License: MIT](https://img.shields.io/github/license/TheGobOne/ZoraTracker)](LICENSE.txt)
 [![Issues](https://img.shields.io/github/issues/TheGobOne/ZoraTracker)](https://github.com/TheGobOne/ZoraTracker/issues)
 
@@ -21,34 +21,55 @@ Free your head for the run: the tracker remembers where everything is.
 
 </div>
 
-## Quick start (Windows)
+## Install
 
-Needs Windows 10 (version 1903 or later) or Windows 11. The tracker uses .NET Framework 4.8, which those versions already include.
+Pick one.
 
-1. [Download the latest zip](https://github.com/TheGobOne/ZoraTracker/releases/latest) and unzip it somewhere you want to keep. Settings, hotkeys and saves live beside the program.
-2. Run `Z1R_WPF.exe`. If Windows warns about an unknown app, choose **More info**, then **Run anyway**.
-3. On the start screen, click **Paste Flags**, paste the Z1R and ZORA flag strings from the ZORA site, and click **Apply**.
-4. Click the overworld your seed uses (1st Quest, 2nd Quest, Mixed - 1Q, Mixed - 2Q or Randomized Quest). The tracker starts.
+| Where | How |
+|---|---|
+| Browser | Open [zoratracker.gg](https://zoratracker.gg). Nothing to install. |
+| Windows | Download the Windows zip from the [latest release](https://github.com/TheGobOne/ZoraTracker/releases/latest) (the `ZoraTracker-CrossPlatform` zip with no `macOS` or `linux` in its name). Unzip it somewhere you want to keep, then run `ZoraTracker.CrossPlatform.exe`. If Windows warns about an unknown app, choose **More info**, then **Run anyway**. Settings, hotkeys and saves live beside the program. |
+| macOS | Download `ZoraTracker-CrossPlatform-v<version>-macOS-arm64.zip` (Apple silicon) or `...-macOS-x64.zip` (Intel) from the [latest release](https://github.com/TheGobOne/ZoraTracker/releases/latest). Unzip it and move `ZORATracker.app` to Applications. The app is only ad-hoc signed, so the first time, right-click it and choose **Open**. When upgrading, delete the old `ZORA Tracker.app` first. Settings and saves are kept. They live in `~/Library/Application Support/ZoraTracker`. |
+| Linux | Download `ZoraTracker-CrossPlatform-v<version>-linux-x64.zip` from the [latest release](https://github.com/TheGobOne/ZoraTracker/releases/latest), unzip it, and run `./ZoraTracker.CrossPlatform`. Settings and saves live in `~/.config/ZoraTracker` (or `$XDG_CONFIG_HOME/ZoraTracker`). |
 
-Stuck? Click **Guided Tour** on the start screen. The app also checks for new releases and tells you when one is available.
+The desktop builds are self-contained, so you do not need to install .NET on macOS or Linux.
+
+How well each one is tested:
+
+- Windows and the browser are the main targets.
+- Linux has minimal testing.
+- Co-op has no official testing on macOS or Linux.
+
+## Quick start
+
+1. Open the tracker. You land on the start screen.
+2. Click **Paste Flags**, paste the Z1R and ZORA flag strings from the ZORA site (or a seed file name, or drop the seed file on the dialog), and click **Apply**.
+3. Click the overworld your seed uses: 1st Quest, 2nd Quest, Mixed - 1Q, Mixed - 2Q or Randomized Quest. The tracker starts.
+
+Stuck? Click **Guided Tour** on the start screen. The desktop app checks for new releases and tells you when one is available. The browser version updates on your next visit.
 
 <div align="center">
-<img src="images/start-screen.png" alt="The ZORATracker start screen: overworld buttons at the top, Startup Options (Item Shuffle, Legacy Mode, Hide Dungeon Numbers, Mirrored Overworld) and ZORA Extras with Paste Flags in the middle, recent saves, and Load Save, Guided Tour, Options and version buttons at the bottom" width="480">
+<img src="images/start-screen.png" alt="The ZORATracker start screen: overworld buttons at the top, Startup Options and ZORA Extras with Paste Flags in the middle, recent saves, and Load Save, Guided Tour, Options and version buttons at the bottom" width="480">
 </div>
 
 ## What it tracks
 
 | | |
 |---|---|
-| **Items and hearts** | Mark what you own, with live counts of overworld spots left. |
-| **Overworld map** | Caves, shops, dungeon entrances and hints, with routing lines when you hover a tile. |
-| **Every dungeon** | Room by room: types, contents, doors, OFF rooms. A summary tab shows every dungeon at once. |
-| **Hints and blockers** | A Hint Decoder, Dead Woods and Lost Hills boxes, and per-dungeon blockers. |
-| **Your run** | A timeline of what you found and when, free-text notes, and a run timer. |
-| **Reminders** | Voice and visual nudges for things worth checking, configurable in Options. |
-| **Keyboard play** | Map hotkeys to items, tiles, rooms and doors. |
-| **Streaming and co-op** | Popout windows, a broadcast window, and Co-Op host/client settings. |
-| **Saves** | Manual and auto-save, with your recent saves one click away. |
+| Items and hearts | Mark what you own, with live counts of overworld spots left. |
+| Overworld map | Caves, shops, dungeon entrances and hints, with routing lines when you hover a tile. |
+| Every dungeon | Room by room: types, contents, doors, OFF rooms. A summary tab shows every dungeon at once. |
+| Hints and blockers | A Hint Decoder, Dead Woods and Lost Hills boxes, and per-dungeon blockers. |
+| Your run | A timeline of what you found and when, free-text notes, and a run timer. |
+| Reminders | Voice and visual nudges for things worth checking, configurable in Options. |
+| Keyboard play | Map hotkeys to items, tiles, rooms and doors. |
+| Streaming | Popout windows and a broadcast window. |
+| Saves | Manual and auto-save, with your recent saves one click away. |
+| Browser version | Runs at [zoratracker.gg](https://zoratracker.gg). Saves and settings stay in your browser. If you open it in two tabs, only one tab saves, and the other says so. |
+| Hosted co-op | Enter `https://coop.zoratracker.gg` in **Co-op client settings** to track with a partner. Desktop and browser trackers can play together. Each field has its own version, so the newest change wins. The desktop app also has **Co-op host settings** if you want to host. |
+| Archipelago support | Turn on **Archipelago Support** (start screen or Options) to place the AP Item, an item that belongs to another world in a multiworld game. |
+| Paste Flags | Paste flag strings or a seed file name, or drop a seed file or a tracker save on the dialog, to fill both flag strings. Your ZORA flags are saved with the save file. |
+| 4th Sword | In ZORA Extras. Turning on 4th Sword also turns on Progressive Items. Turning on Progressive Items does not turn on 4th Sword. |
 
 ## Guides
 
@@ -61,11 +82,14 @@ Stuck? Click **Guided Tour** on the start screen. The app also checks for new re
 | [Hotkeys](doc/hotkeys.md) | Playing from the keyboard |
 | [Options](doc/options.md) | Every setting |
 
-## What it does not do (yet)
+The guides were written for the Windows build. File names and folders in them may differ on macOS, Linux and the browser.
 
-- **Windows only today.** The tracker is a native Windows (WPF) app.
-- **Mac, Linux and browser are in progress.** A cross-platform [Avalonia](https://avaloniaui.net) port exists but has not reached parity with the Windows version. See its [progress log](docs/avalonia-port/PROGRESS.md).
-- **Releases are betas.** Expect rough edges and please report them.
+## What it does not do
+
+- Speech recognition works on Windows only. It is not being ported to macOS or Linux.
+- Voice reminders on macOS use the system `say` command. On Linux they need `espeak-ng`, `espeak` or `spd-say`. Neither has been run on a real machine yet.
+- The in-app update install is Windows only. On macOS and Linux the version button opens the release page.
+- It does not track other randomizers.
 
 ## Feedback
 
@@ -75,7 +99,7 @@ Found a bug or have an idea? [Open an issue](https://github.com/TheGobOne/ZoraTr
 
 - **Lorgon (Brian McNamara)**, creator of Z-Tracker, which this project builds on ([original repo](https://github.com/brianmcn/Zelda1RandoTools)).
 - **Neonane**, whose fork of Z-Tracker this continues from.
-- **tetraly**, the cross-platform Avalonia port.
+- **tetraly**, who wrote the cross-platform Avalonia port that 3.0 is built on.
 
 Thanks to everyone who tested and reported bugs.
 
