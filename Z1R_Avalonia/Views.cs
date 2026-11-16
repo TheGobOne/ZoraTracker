@@ -887,6 +887,8 @@ public static class Views
                     canvasAdd(cm.AppMainCanvas, hoverCanvas, pos.X, pos.Y);
                 };
                 c.PointerExited += (_, _) => cm.AppMainCanvas.Children.Remove(hoverCanvas);
+                // (a box rebuilt or removed under the pointer never gets PointerExited, which left its arrow on the map for good)
+                c.DetachedFromVisualTree += (_, _) => cm.AppMainCanvas.Children.Remove(hoverCanvas);
             }
             return (c, activateComboBox);
         }
