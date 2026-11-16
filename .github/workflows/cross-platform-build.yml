@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
