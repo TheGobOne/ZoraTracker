@@ -412,6 +412,8 @@ internal static partial class BrowserJs
     internal static partial void Beep();
     [JSImport("openUrl", "main.js")]
     internal static partial void OpenUrl(string url);
+    [JSImport("reloadPage", "main.js")]
+    internal static partial void ReloadPage();
     [JSImport("downloadText", "main.js")]
     internal static partial void DownloadText(string fileName, string text);
     [JSImport("storageKeys", "main.js")]

@@ -2436,6 +2436,10 @@ public static class Graphics
     public static readonly string ExeName = System.IO.Path.GetFileName(Platform.ExecutablePath());
     public static void RestartTheApplication()
     {
+#if BROWSER
+        BrowserJs.ReloadPage();   // (a page can't start a process: reloading brings back the start screen, as a restart does)
+        return;
+#endif
         var cwd = System.IO.Path.GetDirectoryName(Platform.ExecutablePath());
         var thisExe = System.IO.Path.Combine(cwd, ExeName);
         System.Diagnostics.Process.Start(thisExe);

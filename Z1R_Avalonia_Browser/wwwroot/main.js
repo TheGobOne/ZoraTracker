@@ -27,6 +27,9 @@ function beep() {
 function openUrl(url) {
     window.open(url, "_blank", "noopener");
 }
+function reloadPage() {
+    location.reload();
+}
 function downloadText(fileName, text) {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -252,7 +255,7 @@ const dotnetRuntime = await dotnet
     .withApplicationArgumentsFromQuery()
     .create();
 
-dotnetRuntime.setModuleImports('main.js', { playSound, beep, openUrl, downloadText, storageKeys, storageGet, storageSet, storageRemove, storagePaused });
+dotnetRuntime.setModuleImports('main.js', { playSound, beep, openUrl, reloadPage, downloadText, storageKeys, storageGet, storageSet, storageRemove, storagePaused });
 
 const config = dotnetRuntime.getConfig();
 const running = dotnetRuntime.runMain(config.mainAssemblyName, [globalThis.location.href]);
