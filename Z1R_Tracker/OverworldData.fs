@@ -30,7 +30,7 @@ let hintMeanings = [|
 let hintMeaningsDecriptionTextForUI = hintMeanings |> Array.map (fun (x,y) -> y + "\n" + x)
 
 let vanilla1QDungeonLocations = [| 7,3; 12,3;  4,7;  5,4; 11,0; 2,2;  2,4; 13,6; 5,0 |]
-let vanilla2QDungeonLocations = [| 7,3;  4,3; 12,3; 11,1;  5,4; 0,3; 12,6;  8,1; 0,0 |]
+let vanilla2QDungeonLocations = [| 7,3;  4,3; 12,3; 11,1;  5,4; 0,3; 12,6;  9,1; 0,0 |]
 
 [<RequireQualifiedAccess>]
 type OWQuest = 
