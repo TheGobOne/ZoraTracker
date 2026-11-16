@@ -71,6 +71,17 @@ Stuck? Click **Guided Tour** on the start screen. The desktop app checks for new
 | Paste Flags | Paste flag strings or a seed file name, or drop a seed file or a tracker save on the dialog, to fill both flag strings. Your ZORA flags are saved with the save file. |
 | 4th Sword | In ZORA Extras. Turning on 4th Sword also turns on Progressive Items. Turning on Progressive Items does not turn on 4th Sword. |
 
+## Start a co-op game
+
+Both players do steps 1 to 5 on their own tracker.
+
+1. On the start screen, open **Options** and click **Co-op client settings**.
+2. In **Function App Base**, enter `https://coop.zoratracker.gg`. Leave the two suffix boxes as they are.
+3. In **Console ID (this instance)**, enter a name for yourself, such as `alice`. **Generate GUID** makes a random one if you prefer.
+4. In **Target console ID (to sync with)**, enter your partner's console ID. Your partner enters yours.
+5. Check **Enable co-op sync** and click **Save**. The dot next to the ZORA logo shows the status: connecting, connected, or partner here.
+6. One player picks the start screen options and starts the run. The partner, still on the start screen, gets the same options, and the quest to click is highlighted.
+
 ## Guides
 
 | Guide | Covers |
