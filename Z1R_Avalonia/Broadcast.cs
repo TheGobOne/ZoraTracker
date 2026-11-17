@@ -116,7 +116,7 @@ public static class Broadcast
                 }
             };
             broadcastWindow.Width = scaleSize + 16.0;
-            // (WPF: broadcastWindow.Owner <- Application.Current.MainWindow; Avalonia passes the owner to Show, below)
+            // (WPF: broadcastWindow.Owner <- Application.Current.MainWindow. Here it has no owner, so it can go behind the tracker: see showBroadcast below)
             broadcastWindow.Background = Brushes.Black;
 
             Rectangle makeViewRect(Point upperLeft, Point lowerRight) => makeViewRectImpl(upperLeft, lowerRight, appMainCanvas);
@@ -312,10 +312,18 @@ public static class Broadcast
             return broadcastWindow;
         }
         Window broadcastWindow_ = null;
+        // (not owned by the main window: an owned window always stays in front of its owner, so the broadcast window could not go behind the tracker.
+        // Unowned, it no longer closes with the main window by itself, so it is closed here when the main window closes)
+        void showBroadcast(Window w)
+        {
+            var main = ShowRunCustom.mainWindow();
+            w.Show();
+            if (main != null && main != w) main.Closed += (_, _) => { if (w.IsVisible) w.Close(); };   // (the broadcast option can reopen it: an older, already closed window is skipped)
+        }
         if (TrackerModelOptions.ShowBroadcastWindow.Value)
         {
             broadcastWindow_ = makeBroadcastWindow(3, TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value);
-            ShowRunCustom.showOwned(broadcastWindow_);
+            showBroadcast(broadcastWindow_);
             refocusMainWindow();
         }
         OptionsMenu.broadcastWindowOptionChanged += () =>
@@ -330,7 +338,7 @@ public static class Broadcast
             if (TrackerModelOptions.ShowBroadcastWindow.Value)
             {
                 broadcastWindow_ = makeBroadcastWindow(3, TrackerModelOptions.BroadcastWindowIncludesOverworldMagnifier.Value);
-                ShowRunCustom.showOwned(broadcastWindow_);
+                showBroadcast(broadcastWindow_);
                 refocusMainWindow();
             }
         };
