@@ -297,7 +297,7 @@ public static class SelfTest
             });
             await settle("start screen 4th Sword rule");
         }
-        // Paste Flags: type both strings, Apply, expect it to close and the options to be set
+        // Paste Flags: type both strings, Apply, expect it to close and the options to be set (a bad string keeps it open)
         var pasteButton = find("Paste Flags");
         async Task pasteFlags(string z1r, string zora)
         {
@@ -315,15 +315,12 @@ public static class SelfTest
                 boxes[1].Text = zora;
                 guard("Paste Flags Apply", () => click(apply));
                 await pause(400);
-                // (these flags check some options, so the box stays open to show what was done, and Close is now Done)
-                var done = popupCount() > 0 ? descendants(popupRoot()).FirstOrDefault(d => isButtonLike(d) && label(d) == "Done") as Control : null;
-                if (popupCount() == 0) fail($"Paste Flags ('{zora}'): Apply closed the box before its result lines could be read");
-                else if (done == null) fail($"Paste Flags ('{zora}'): after Apply with result lines, there is no Done button");
-                else
+                // (the flags are valid, so Apply closes the box)
+                if (popupCount() > 0)
                 {
-                    guard("Paste Flags Done", () => click(done));
-                    await pause(400);
-                    if (popupCount() > 0) fail("Paste Flags: Done did not close the box");
+                    fail($"Paste Flags ('{zora}'): Apply did not close the box for valid flags");
+                    var leftover = descendants(popupRoot()).FirstOrDefault(d => isButtonLike(d) && (label(d) == "Done" || label(d) == "Close")) as Control;
+                    if (leftover != null) { guard("Paste Flags Close", () => click(leftover)); await pause(400); }
                 }
             }
         }
@@ -344,6 +341,29 @@ public static class SelfTest
                 if (startFourth.IsChecked != true || startLevel2.IsChecked != true || startLevel9.IsChecked == true) fail("Paste Flags: 4th Sword in Level 2 was not checked");
                 if (startBoots.IsChecked != null) fail($"Paste Flags: Pegasus Boots (Random in the flags) should be the third state (Off until confirmed), not {startBoots.IsChecked}");
                 await settle("Paste Flags");
+            }
+            // a bad ZORA string: Apply must leave the box open with the error showing
+            if (!stuck)
+            {
+                guard("Paste Flags click (bad flags)", () => click(pasteButton));
+                await pause(400);
+                var badRoot = popupRoot();
+                var badBoxes = badRoot == null ? new List<TextBox>() : descendants(badRoot).OfType<TextBox>().Where(t => !t.IsReadOnly).ToList();
+                var badApply = badRoot == null ? null : descendants(badRoot).FirstOrDefault(d => isButtonLike(d) && label(d) == "Apply") as Control;
+                if (badBoxes.Count < 2 || badApply == null) fail("Paste Flags (bad flags): the box did not open");
+                else
+                {
+                    badBoxes[1].Text = "not-a-flag-string";
+                    guard("Paste Flags Apply (bad flags)", () => click(badApply));
+                    await pause(400);
+                    if (popupCount() == 0) fail("Paste Flags: Apply closed the box for a bad flag string");
+                    else
+                    {
+                        var closeIt = descendants(popupRoot()).FirstOrDefault(d => isButtonLike(d) && (label(d) == "Done" || label(d) == "Close")) as Control;
+                        if (closeIt != null) { guard("Paste Flags Close (bad flags)", () => click(closeIt)); await pause(400); }
+                        if (popupCount() > 0) fail("Paste Flags: could not close the box after a bad flag string");
+                    }
+                }
             }
         }
         else if (pasteButton == null) fail("Paste Flags: no Paste Flags button");

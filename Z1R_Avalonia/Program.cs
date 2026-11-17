@@ -3022,12 +3022,11 @@ public static class Program
                     lastApplied = (z1rBox.Text ?? "", zoraBox.Text ?? "");
                     return !lines.Any(l => l.StartsWith("Z1R flags:") || l.StartsWith("ZORA flags:"));
                 }
-                // (Apply closes the dialog only when there is nothing to report. A bad flag string, or result lines such as "Random (?): ...", "Unchecked: Legacy Mode"
-                // or "Checked: ...", keep it open so they can be read, and doApply turns Close into Done. Pasting only applies, so the second string can still be pasted)
+                // (Apply closes the dialog when both flag strings were read. A bad flag string keeps it open, with the error under the boxes, so it can be fixed.
+                // Pasting only applies, so the second string can still be pasted)
                 void applyAndMaybeClose()
                 {
-                    var ok = doApply();
-                    if (ok && !lastApplyHadReport) wh.Set();
+                    if (doApply()) wh.Set();
                 }
                 applyBtn.Click += (_, _) => applyAndMaybeClose();
                 // Enter in either box applies too (like Apply). Once Close is Done and the boxes are as last applied, Enter closes the dialog

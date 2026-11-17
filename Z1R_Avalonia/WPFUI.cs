@@ -787,15 +787,19 @@ public static class WPFUI
     // per-type counts of the remaining OW spots, each with its icon (burn, bomb, push, ladder, raft, whistle) plus 'open' for open caves
     public static readonly TextBlock[] owSpotTypeCountTBs =
         Enumerable.Range(0, 7).Select(_ => new TextBlock { FontSize = 14.0, Foreground = Brushes.Orange, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3.0, 0.0, 0.0, 0.0), Text = "0" }).ToArray();
-    private static WrapPanel make_owSpotTypesPanel()
+    // (a fixed 2-column grid, not a WrapPanel: at some window scales two 58px cells came out a fraction wider than 116px and the right one wrapped to its own row)
+    private static Grid make_owSpotTypesPanel()
     {
-        var wp = new WrapPanel { Width = 116.0, Orientation = Orientation.Horizontal };
+        var wp = new Grid { Width = 116.0, ColumnDefinitions = new ColumnDefinitions("*,*"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto") };
         var bmps = new[] { Graphics.red_candle_bmp, Graphics.bomb_bmp, Graphics.power_bracelet_bmp, Graphics.ladder_bmp, Graphics.raft_bmp, Graphics.recorder_bmp, Graphics.openCaveIconBmp };
         var tips = new[] { "Burn", "Bomb", "Power Bracelet", "Ladder", "Raft", "Whistle", "Open" };
         for (int k0 = 0; k0 <= 6; k0++)
         {
             var k = k0;
-            var cell = new Grid { Width = (k == 6 ? 116.0 : 58.0), Height = 18.0 };
+            var cell = new Grid { Height = 18.0 };
+            Grid.SetRow(cell, k / 2);
+            Grid.SetColumn(cell, k == 6 ? 0 : k % 2);
+            if (k == 6) Grid.SetColumnSpan(cell, 2);
             var sp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             ToolTip.SetTip(sp, tips[k]);
             sp.Background = Brushes.Transparent;   // so only the icon+number (not the whole cell) gets mouse events
@@ -853,7 +857,7 @@ public static class WPFUI
         }
         return wp;
     }
-    public static readonly WrapPanel owSpotTypesPanel = make_owSpotTypesPanel();
+    public static readonly Grid owSpotTypesPanel = make_owSpotTypesPanel();
     // the Race Mode summary box (shown at startup while Race Mode is on, and whenever the RACE MODE stamp is clicked); its checkbox is the saved "do not show at startup" setting
     // (port: WPF's blocking ShowDialog() → a nested dispatcher frame, as CustomMessageBox.ShowDialogBlocking)
     public static void showRaceModeNotice(Window owner)
