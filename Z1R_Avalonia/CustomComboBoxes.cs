@@ -1654,6 +1654,14 @@ public static class CustomComboBoxes
             18 => Graphics.ow_progressive_tier_menu_bmps[0],
             _ => null,
         };
+    // true when the Item Progress summary says the player owns this one-of-a-kind item (shop, starting item, map check-off, or another dungeon box)
+    static bool ownedUniqueItem(int ident)
+    {
+        var sm = TrackerModel.playerComputedStateSummary;
+        return (ident == TrackerModel.ITEMS.LADDER && sm.HaveLadder) || (ident == TrackerModel.ITEMS.RECORDER && sm.HaveRecorder) || (ident == TrackerModel.ITEMS.RAFT && sm.HaveRaft)
+            || (ident == TrackerModel.ITEMS.POWERBRACELET && sm.HavePowerBracelet) || (ident == TrackerModel.ITEMS.BOW && sm.HaveBow) || (ident == TrackerModel.ITEMS.WAND && sm.HaveWand)
+            || (ident == TrackerModel.ITEMS.KEY && sm.HaveAnyKey);
+    }
     public static bool allItemsSelectable = false;   // true while the level 9 entry item menu is open: that box is only a note, so every item (even a 'disabled' one) can be picked
     public static TrackerModel.ChoiceDomain itemMenuDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain;   // DoLocalItemComboBox swaps this for boxes that don't use up items
     // (returns DoModalGridSelect's (hasResult, (ident, playerHas)); callerExtraDecorations: (element, x, y)s)
@@ -1742,7 +1750,14 @@ public static class CustomComboBoxes
                 ToolTip.SetTip(fe, "Disabled Due to Progressive Items");
                 ToolTip.SetShowOnDisabled(fe, true);
             }
-            var isSelectable = (allItemsSelectable && ident != -2) || !progDisabled && (ident == -1 || (ident != -2 && ident == boxCellCurrent) || (ident != -2 && (itemMenuDomain.CanAddUse(ident) && !(ident == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled))));   // the 4th sword is disabled unless the 4th Sword start option is on
+            // a one-of-a-kind item the player already owns from somewhere other than a dungeon box (bought in a shop, a starting item, checked off on the map) can't be found again
+            var ownedElsewhere = !allItemsSelectable && ident != boxCellCurrent && ident >= 0 && itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain && ownedUniqueItem(ident);
+            if (ownedElsewhere)
+            {
+                ToolTip.SetTip(fe, "You already have this");
+                ToolTip.SetShowOnDisabled(fe, true);
+            }
+            var isSelectable = (allItemsSelectable && ident != -2) || !progDisabled && !ownedElsewhere && (ident == -1 || (ident != -2 && ident == boxCellCurrent) || (ident != -2 && (itemMenuDomain.CanAddUse(ident) && !(ident == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled))));   // the 4th sword is disabled unless the 4th Sword start option is on
             gridElementsSelectablesAndIDs.Add((fe, isSelectable, ident));
         }
         var originalStateIndex0 = Array.FindIndex(gridIdents, ident => ident == boxCellCurrent);
