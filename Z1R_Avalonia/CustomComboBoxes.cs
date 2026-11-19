@@ -1345,7 +1345,13 @@ public static class CustomComboBoxes
                 case PopupClickBehavior<TResult>.StayPoppedUp: break;
             }
         };
-        tileCanvas.PointerExited += (_, _) => snapBack();
+        tileCanvas.PointerExited += (_, ea) =>
+        {
+            // (re-centering the mouse on a wheel notch can raise a pointer-leave while the cursor is still on the tile; snapping back then undid every notch)
+            var p = ea.GetPosition(tileCanvas);
+            if (p.X >= 0.0 && p.Y >= 0.0 && p.X < tileCanvas.Width && p.Y < tileCanvas.Height) return;
+            snapBack();
+        };
         // (Avalonia's TranslatePoint returns null when the two aren't in one tree; WPF throws, as .Value does)
         Point centerOf(int x, int y) => grid.TranslatePoint(new Point(ST + (double)(x * COLW) + idealX, ST + (double)(y * ROWH) + (y > 0 ? (double)firstRowExtra : 0.0) + idealY), cm.AppMainCanvas).Value;
         tileCanvas.MyKeyAdd(ea =>

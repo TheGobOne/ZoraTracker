@@ -2498,6 +2498,8 @@ public static class DungeonUI
 
 
                     setNewValueFunctions[level - 1][i, j] = SetNewValue;
+                    // (an emptied map starts over with an entrance room, like a fresh one)
+                    bool mapHasNoRooms() { for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) if (!roomStates[x, y].RoomType.IsNotMarked()) return false; return true; }
                     async Task activatePopup(bool positionAtEntranceRoomIcons)
                     {
                         CustomComboBoxes.GlobalFlag.popupIsActive = true;
@@ -3011,7 +3013,7 @@ public static class DungeonUI
                                             // plain left click
                                             //let workingCopy = roomStates.[i,j].Clone()
 
-                                            if (!(isFirstTimeClickingAnyRoom[level - 1].Value) && roomStates[i, j].RoomType.IsNotMarked())
+                                            if (!(isFirstTimeClickingAnyRoom[level - 1].Value || mapHasNoRooms()) && roomStates[i, j].RoomType.IsNotMarked())
                                             {
                                                 var room = roomStates[i, j].Clone(); room.CSharp.IsPreview = true;   // (a scratch copy: its property sets must not go out to the co-op partner; only the real room does, after SetNewValue accepts the change)   // (change a copy: SetNewValue compares against the OLD state in roomStates and may refuse)
                                                 room.RoomType = defaultRoom();
@@ -3023,7 +3025,7 @@ public static class DungeonUI
                                             }
                                             else
                                             {
-                                                if (isFirstTimeClickingAnyRoom[level - 1].Value)
+                                                if (isFirstTimeClickingAnyRoom[level - 1].Value || mapHasNoRooms())
                                                 {
                                                     var room = roomStates[i, j].Clone(); room.CSharp.IsPreview = true;   // (a scratch copy: its property sets must not go out to the co-op partner; only the real room does, after SetNewValue accepts the change)
 #if DEBUG
@@ -3096,7 +3098,7 @@ public static class DungeonUI
                                         else
                                         {
                                             // plain right click
-                                            await activatePopup(isFirstTimeClickingAnyRoom[level - 1].Value);
+                                            await activatePopup(isFirstTimeClickingAnyRoom[level - 1].Value || mapHasNoRooms());
                                             isFirstTimeClickingAnyRoom[level - 1].Value = false;
                                             numeral.Opacity = 0.0;
                                             redraw();
