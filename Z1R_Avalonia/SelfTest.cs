@@ -1133,6 +1133,33 @@ public static class SelfTest
                 b3.AttemptToSet(s3.Item1, s3.Item2); b6.AttemptToSet(s6.Item1, s6.Item2);
             }
         });
+        // 6g. issue 35: a half-upgraded progressive item (the blue candle, two uses with Progressive Items on) can move from one slot to another slot
+        // when the first slot lets go. The candle's two uses sit in two boxes, so the stair box can take it only after the floor box gives it up.
+        guard("progressive item move within a dungeon", () =>
+        {
+            var sProg = TrackerModel.ProgressiveItems;
+            var a = TrackerModel.GetDungeon(2).Boxes[0]; var s = TrackerModel.GetDungeon(2).ExtraFloorBox; var c = TrackerModel.GetDungeon(5).Boxes[0];
+            var sA = (a.CellCurrent(), a.PlayerHas()); var sS = (s.CellCurrent(), s.PlayerHas()); var sC = (c.CellCurrent(), c.PlayerHas());
+            var CANDLE = TrackerModel.ITEMS.BLUECANDLE; var YES = TrackerModel.PlayerHas.YES; var NO = TrackerModel.PlayerHas.NO;
+            try
+            {
+                TrackerModel.ProgressiveItems = true;
+                OverworldItemGridUI.ApplyProgressiveItemCaps();
+                a.Set(-1, NO); s.Set(-1, NO); c.Set(-1, NO);
+                if (!a.AttemptToSet(CANDLE, YES) || !c.AttemptToSet(CANDLE, YES)) { fail("progressive item move: could not put the candle in two boxes for the test"); return; }
+                if (s.AttemptToSet(CANDLE, YES)) fail("progressive item move: the candle went into a third box while its two uses were already in boxes");
+                // the move: the floor slot lets go, then the stair slot takes the candle
+                a.Set(-1, NO);
+                if (!s.AttemptToSet(CANDLE, YES) || s.CellCurrent() != CANDLE)
+                    fail("progressive item move: after its floor slot let go, the stair slot could not take the candle");
+            }
+            finally
+            {
+                TrackerModel.ProgressiveItems = sProg;
+                OverworldItemGridUI.ApplyProgressiveItemCaps();
+                a.Set(sA.Item1, sA.Item2); s.Set(sS.Item1, sS.Item2); c.Set(sC.Item1, sC.Item2);
+            }
+        });
         // 6h. a partner's 4th Sword and Progressive Items (the Items message's FourthSwordPlace and ProgressiveItemsOn): their 4th Sword turns
         // Progressive Items on here too; their Progressive Items on never turns the 4th Sword on; their 4th Sword back to none undoes Progressive
         // Items only when this run's 4th Sword turned it on; their Progressive Items off is never taken; nothing in Legacy Mode
