@@ -1669,7 +1669,8 @@ public static class CustomComboBoxes
             || (ident == TrackerModel.ITEMS.KEY && sm.HaveAnyKey);
     }
     public static bool allItemsSelectable = false;   // true while the level 9 entry item menu is open: that box is only a note, so every item (even a 'disabled' one) can be picked
-    public static TrackerModel.ChoiceDomain itemMenuDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain;   // DoLocalItemComboBox swaps this for boxes that don't use up items
+    public static HashSet<int> itemMenuMovableIdents = new HashSet<int>();   // set by a dungeon box while its menu is open: used-up items held by another slot of that dungeon, which this slot may take
+    public static TrackerModel.ChoiceDomain itemMenuDomain =TrackerModel.allItemWithHeartShuffleChoiceDomain;   // DoLocalItemComboBox swaps this for boxes that don't use up items
     // (returns DoModalGridSelect's (hasResult, (ident, playerHas)); callerExtraDecorations: (element, x, y)s)
     public static async Task<(bool hasResult, (int, TrackerModel.PlayerHas) result)> DisplayItemComboBox(CanvasManager cm, double boxX, double boxY, int boxCellCurrent, int activationDelta, TrackerModel.PlayerHas originalPlayerHas,
                                                                                                           IEnumerable<(Control, double, double)> callerExtraDecorations, GridClickDismissalWarpReturn gridClickDismissalWarpReturn)
@@ -1757,13 +1758,17 @@ public static class CustomComboBoxes
                 ToolTip.SetShowOnDisabled(fe, true);
             }
             // a one-of-a-kind item the player already owns from somewhere other than a dungeon box (bought in a shop, a starting item, checked off on the map) can't be found again
-            var ownedElsewhere = !allItemsSelectable && ident != boxCellCurrent && ident >= 0 && itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain && ownedUniqueItem(ident);
+            // an item sitting in another slot of the same dungeon can be picked here even when it is used up: picking it moves it to this slot (the caller clears the other slot)
+            var movable = !allItemsSelectable && !progDisabled && ident >= 0 && ident != boxCellCurrent && itemMenuMovableIdents.Contains(ident);
+            if (movable)
+                ToolTip.SetTip(fe, "Move here from another slot in this dungeon");
+            var ownedElsewhere = !movable && !allItemsSelectable && ident != boxCellCurrent && ident >= 0 && itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain && ownedUniqueItem(ident);
             if (ownedElsewhere)
             {
                 ToolTip.SetTip(fe, "You already have this");
                 ToolTip.SetShowOnDisabled(fe, true);
             }
-            var isSelectable = (allItemsSelectable && ident != -2) || !progDisabled && !ownedElsewhere && (ident == -1 || (ident != -2 && ident == boxCellCurrent) || (ident != -2 && (itemMenuDomain.CanAddUse(ident) && !(ident == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled))));   // the 4th sword is disabled unless the 4th Sword start option is on
+            var isSelectable = (allItemsSelectable && ident != -2) || movable || !progDisabled && !ownedElsewhere && (ident == -1 || (ident != -2 && ident == boxCellCurrent) || (ident != -2 && (itemMenuDomain.CanAddUse(ident) && !(ident == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled))));   // the 4th sword is disabled unless the 4th Sword start option is on
             gridElementsSelectablesAndIDs.Add((fe, isSelectable, ident));
         }
         var originalStateIndex0 = Array.FindIndex(gridIdents, ident => ident == boxCellCurrent);

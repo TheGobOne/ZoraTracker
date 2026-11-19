@@ -744,36 +744,42 @@ public static class Views
             // a dungeon has just one triforce piece: asking for a triforce in another slot of that dungeon (its item slots or the extra floor box) moves the existing piece to this slot.
             // clears the old slot and returns Some(was it checked off), or None when there was nothing to move
             // (C#: a bool?, null for None)
-            bool? takeTriforceFromOtherSlot(int newValue)
+            // the other slots of this box's dungeon (its item slots, the extra floor box, level 2's optional staircase slot); empty when this box is not in a level 1-8 dungeon
+            TrackerModel.Box[] otherSlotsInDungeon()
             {
-                if (newValue != TrackerModel.ITEMS.TRIFORCE) return null;
+                int? dIdx;
+                if (box.Owner is TrackerModel.BoxOwner.DungeonIndexAndNth dn && dn.Item1 <= 7) dIdx = dn.Item1;
+                else if (box.Owner.IsDungeon1or4) dIdx = (TrackerModel.IsSecondQuestDungeons ? 3 : 0);
+                else if (ReferenceEquals(TrackerModel.level2StairBox, box)) dIdx = 1;   // the optional extra level 2 staircase slot belongs to level 2
                 else
                 {
-                    int? dIdx;
-                    if (box.Owner is TrackerModel.BoxOwner.DungeonIndexAndNth dn && dn.Item1 <= 7) dIdx = dn.Item1;
-                    else if (box.Owner.IsDungeon1or4) dIdx = (TrackerModel.IsSecondQuestDungeons ? 3 : 0);
-                    else if (ReferenceEquals(TrackerModel.level2StairBox, box)) dIdx = 1;   // the optional extra level 2 staircase slot belongs to level 2
-                    else
-                    {
-                        dIdx = null;
-                        for (int i = 0; i <= 7; i++)
-                            if (ReferenceEquals(TrackerModel.GetDungeon(i).ExtraFloorBox, box)) { dIdx = i; break; }
-                    }
-                    if (dIdx is int di)
-                    {
-                        var d = TrackerModel.GetDungeon(di);
-                        var candidates = d.Boxes.Concat(new[] { d.ExtraFloorBox }).Concat(di == 1 && TrackerModel.level2StairBoxEnabled ? new[] { TrackerModel.level2StairBox } : new TrackerModel.Box[0]).ToArray();
-                        var other = candidates.FirstOrDefault(b => !ReferenceEquals(b, box) && b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
-                        if (other != null)
-                        {
-                            var had = other.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
-                            other.Set(-1, TrackerModel.PlayerHas.NO);
-                            return had;
-                        }
-                        else return null;
-                    }
-                    else return null;
+                    dIdx = null;
+                    for (int i = 0; i <= 7; i++)
+                        if (ReferenceEquals(TrackerModel.GetDungeon(i).ExtraFloorBox, box)) { dIdx = i; break; }
                 }
+                if (!(dIdx is int di)) return new TrackerModel.Box[0];
+                var d = TrackerModel.GetDungeon(di);
+                var candidates = d.Boxes.Concat(new[] { d.ExtraFloorBox }).Concat(di == 1 && TrackerModel.level2StairBoxEnabled ? new[] { TrackerModel.level2StairBox } : new TrackerModel.Box[0]);
+                return candidates.Where(b => b != null && !ReferenceEquals(b, box)).ToArray();
+            }
+            // used-up items that another slot of this dungeon holds: the menu lets this slot take them (e.g. an item first marked on the floor turns out to be in the basement)
+            HashSet<int> movableIdents()
+            {
+                if (!ReferenceEquals(box.Domain, TrackerModel.allItemWithHeartShuffleChoiceDomain)) return new HashSet<int>();
+                return new HashSet<int>(otherSlotsInDungeon().Select(b => b.CellCurrent()).Where(id => id >= 0 && id != box.CellCurrent() && !box.Domain.CanAddUse(id)));
+            }
+            // asking for an item that another slot of this dungeon holds moves it to this slot: a dungeon has just one triforce piece, and a used-up item can't be added again.
+            // clears the old slot and returns Some(was it checked off), or None when there was nothing to move
+            // (C#: a bool?, null for None)
+            bool? takeFromOtherSlot(int newValue)
+            {
+                if (newValue < 0 || newValue == box.CellCurrent()) return null;
+                if (newValue != TrackerModel.ITEMS.TRIFORCE && box.Domain.CanAddUse(newValue)) return null;
+                var other = otherSlotsInDungeon().FirstOrDefault(b => b.CellCurrent() == newValue);
+                if (other == null) return null;
+                var had = other.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
+                other.Set(-1, TrackerModel.PlayerHas.NO);
+                return had;
             }
             void activateComboBox(int activationDelta, CustomComboBoxes.GridClickDismissalWarpReturn gridClickDismissalWarpReturn)
             {
@@ -784,11 +790,14 @@ public static class Views
                 var extraDecorations = computeExtraDecorationsWhenPopupActivatedOrMouseOverOpt != null ? computeExtraDecorationsWhenPopupActivatedOrMouseOverOpt(pos) : new (Control, double, double)[0];
                 CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
                 {
-                    var r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, box.CellCurrent(), activationDelta, box.PlayerHas(), extraDecorations, gridClickDismissalWarpReturn);
+                    CustomComboBoxes.itemMenuMovableIdents = movableIdents();
+                    (bool hasResult, (int, TrackerModel.PlayerHas) result) r;
+                    try { r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, box.CellCurrent(), activationDelta, box.PlayerHas(), extraDecorations, gridClickDismissalWarpReturn); }
+                    finally { CustomComboBoxes.itemMenuMovableIdents = new HashSet<int>(); }
                     if (r.hasResult)
                     {
                         var (newBoxCellValue, newPlayerHas) = r.result;
-                        var had = takeTriforceFromOtherSlot(newBoxCellValue);
+                        var had = takeFromOtherSlot(newBoxCellValue);
                         if (had.HasValue)
                             box.Set(newBoxCellValue, (had.Value ? TrackerModel.PlayerHas.YES : newPlayerHas));   // the piece moves here, keeping its checked state
                         else
@@ -857,7 +866,7 @@ public static class Views
                         else
                         {
                             // changing from empty/other-item box to this item value always NO on first hotkey press, as this is 'model harmless'
-                            var movedFrom = takeTriforceFromOtherSlot(i);
+                            var movedFrom = takeFromOtherSlot(i);
                             if (movedFrom.HasValue) box.Set(i, (movedFrom.Value ? TrackerModel.PlayerHas.YES : TrackerModel.PlayerHas.NO));
                             else if (!box.AttemptToSet(i, TrackerModel.PlayerHas.NO))
                                 // e.g. they tried to set this box to Bow when another box already has 'Bow'
