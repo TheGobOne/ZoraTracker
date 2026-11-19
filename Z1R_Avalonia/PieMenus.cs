@@ -1005,6 +1005,18 @@ public static class PieMenus
         var wh = new ManualResetEvent(false);
         string result = null;
         var col = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Black, Margin = new Thickness(16.0) };
+        // option toggle above the buttons
+        var jumpToggle = makeOrangeCheckBox("Jump mouse to Took Heart", TrackerModelOptions.JumpMouseToTakeHeart.Value);
+        jumpToggle.FontSize = 11.0;
+        jumpToggle.Margin = new Thickness(5.0, 0.0, 5.0, 6.0);
+        jumpToggle.HorizontalAlignment = HorizontalAlignment.Center;
+        jumpToggle.Click += (_, _) =>
+        {
+            TrackerModelOptions.JumpMouseToTakeHeart.Value = (jumpToggle.IsChecked == true);
+            TrackerModelOptions.writeSettings();
+        };
+        col.Children.Add(jumpToggle);
+        Button heartButton = null;
         // (hotkey indexes: 0 = nothing, 1 = potion, 2 = candle, 3 = heart)
         void addButton(string text, int hotkeyIndex)
         {
@@ -1015,6 +1027,7 @@ public static class PieMenus
             b.VerticalContentAlignment = VerticalAlignment.Stretch;
             b.Click += (_, _) => { result = text; wh.Set(); };
             col.Children.Add(b);
+            if (hotkeyIndex == 3) heartButton = b;
         }
         addButton("Took Heart", 3);
         addButton("Took Candle", 2);
@@ -1040,12 +1053,22 @@ public static class PieMenus
         var cx = areaW > 0.0 ? Math.Max(0.0, (areaW - c.Width) / 2.0) : 150.0;
         var cy = areaH > 0.0 ? Math.Max(0.0, (areaH - c.Height) / 2.0) : 200.0;
         // measured before it was in the window, so re-center it once it has its real size
+        var jumpedOnce = false;
         bord.SizeChanged += (_, _) =>
         {
             c.Width = bord.Bounds.Width;
             c.Height = bord.Bounds.Height;
-            if (areaW > 0.0) Canvas.SetLeft(c, Math.Max(0.0, (areaW - bord.Bounds.Width) / 2.0));
-            if (areaH > 0.0) Canvas.SetTop(c, Math.Max(0.0, (areaH - bord.Bounds.Height) / 2.0));
+            var left = areaW > 0.0 ? Math.Max(0.0, (areaW - bord.Bounds.Width) / 2.0) : cx;
+            var top = areaH > 0.0 ? Math.Max(0.0, (areaH - bord.Bounds.Height) / 2.0) : cy;
+            Canvas.SetLeft(c, left);
+            Canvas.SetTop(c, top);
+            // the cursor jumps onto Took Heart once the real layout is known (border 5, column margin 16, then the button's place in the column)
+            if (!jumpedOnce && TrackerModelOptions.JumpMouseToTakeHeart.Value)
+            {
+                jumpedOnce = true;
+                var hb = heartButton.Bounds;
+                Graphics.WarpMouseCursorTo(new Point(left + 5.0 + 16.0 + hb.X + hb.Width / 2.0, top + 5.0 + 16.0 + hb.Y + hb.Height / 2.0));
+            }
         };
         await CustomComboBoxes.DoModal(cm, wh, cx, cy, c);
         var choice = result;

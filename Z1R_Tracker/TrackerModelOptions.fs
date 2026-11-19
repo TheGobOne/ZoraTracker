@@ -138,6 +138,7 @@ let mutable GiveDungeonTrackerSunglasses = Bool(true)
 let mutable LeftClickDragAutoInverts = Bool(false)
 let mutable HintHoverTooltip = Bool(true)   // the Dead Woods / Lost Hills hint buttons show their hint in a big hover box
 let mutable JumpMouseToShop = Bool(true)   // the shop flyout puts the mouse on the first shop button
+let mutable JumpMouseToTakeHeart = Bool(false)   // the take any box puts the mouse on its Took Heart button
 let mutable HoverShopTooltip = Bool(false)   // hovering a shop on the overworld shows its items
 let mutable ShopsInMenu = Bool(false)   // the overworld tile menu gets a row of buttons for the 5 shops
 let mutable OldStyleGrab = Bool(false)   // the dungeon MOVE button works like the old GRAB (click a room to pick up it and every connected room); middle click on the button switches
@@ -288,6 +289,7 @@ type ReadWrite() =
     member val LeftClickDragAutoInverts = false with get,set
     member val HintHoverTooltip = true with get,set
     member val JumpMouseToShop = true with get,set
+    member val JumpMouseToTakeHeart = false with get,set
     member val HoverShopTooltip = false with get,set
     member val ShopsInMenu = false with get,set
     member val OldStyleGrab = false with get,set
@@ -444,6 +446,7 @@ let private writeImpl(filename) =
     data.LeftClickDragAutoInverts <- LeftClickDragAutoInverts.Value
     data.HintHoverTooltip <- HintHoverTooltip.Value
     data.JumpMouseToShop <- JumpMouseToShop.Value
+    data.JumpMouseToTakeHeart <- JumpMouseToTakeHeart.Value
     data.HoverShopTooltip <- HoverShopTooltip.Value
     data.ShopsInMenu <- ShopsInMenu.Value
     data.OldStyleGrab <- OldStyleGrab.Value
@@ -612,6 +615,7 @@ let private read(filename) =
         LeftClickDragAutoInverts.Value <- data.LeftClickDragAutoInverts
         HintHoverTooltip.Value <- data.HintHoverTooltip
         JumpMouseToShop.Value <- data.JumpMouseToShop
+        JumpMouseToTakeHeart.Value <- data.JumpMouseToTakeHeart
         HoverShopTooltip.Value <- data.HoverShopTooltip
         ShopsInMenu.Value <- data.ShopsInMenu
         OldStyleGrab.Value <- data.OldStyleGrab
