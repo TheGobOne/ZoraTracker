@@ -1386,6 +1386,20 @@ XXX.X...".Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         for (int x = 0; x <= 7; x++)
             for (int y = 0; y <= 7; y++)
                 if (pattern[y][x] == 'X') b(x, y);
+        // chest (the ROM's HUD shows it between the rupee and the key; the gap in the lower half is the keyhole)
+        yoff = 16;
+        pattern = @"
+........
+.XXXXXX.
+XXXXXXXX
+........
+XXXXXXXX
+XXXX.XXX
+XXXXXXXX
+........".Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        for (int x = 0; x <= 7; x++)
+            for (int y = 0; y <= 7; y++)
+                if (pattern[y][x] == 'X') b(x, y);
         // key
         yoff = 24;
         pattern = @"
