@@ -1194,22 +1194,20 @@ XXX.X..."""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmpt
     for x = 0 to 7 do
         for y = 0 to 7 do
             if pattern.[y].Chars(x)='X' then b(x,y)
-    // chest (the ROM's HUD shows it between the rupee and the key; 'o' is the red keyhole)
+    // chest (the ROM's HUD shows it between the rupee and the key; the gap in the lower half is the keyhole)
     yoff <- 16
     let pattern = """
 ........
 .XXXXXX.
 XXXXXXXX
 ........
-XXXooXXX
-XXXo.XXX
+XXXXXXXX
+XXXX.XXX
 XXXXXXXX
 ........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
-    let CHEST_RED = System.Drawing.Color.FromArgb(219, 40, 0)
     for x = 0 to 7 do
         for y = 0 to 7 do
             if pattern.[y].Chars(x)='X' then b(x,y)
-            elif pattern.[y].Chars(x)='o' then bmp.SetPixel(xoff+x,yoff+y,CHEST_RED)
     // key
     yoff <- 24
     let pattern = """
