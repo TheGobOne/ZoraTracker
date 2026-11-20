@@ -27,17 +27,29 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            type: wpf
+            project: Z1R_WPF/Z1R_WPF.fsproj
+            asset_name: ZoraTracker-WPF-win-x64
+          - os: windows-latest
+            type: avalonia
+            project: Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.csproj
             rid: win-x64
-            asset_name: ZoraTracker-win-x64
+            asset_name: ZoraTracker-CrossPlatform-win-x64
           - os: macos-latest
+            type: avalonia
+            project: Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.csproj
             rid: osx-arm64
-            asset_name: ZoraTracker-macOS-arm64
+            asset_name: ZoraTracker-CrossPlatform-macOS-arm64
           - os: macos-latest
+            type: avalonia
+            project: Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.csproj
             rid: osx-x64
-            asset_name: ZoraTracker-macOS-x64
+            asset_name: ZoraTracker-CrossPlatform-macOS-x64
           - os: ubuntu-latest
+            type: avalonia
+            project: Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.csproj
             rid: linux-x64
-            asset_name: ZoraTracker-linux-x64
+            asset_name: ZoraTracker-CrossPlatform-linux-x64
 
     runs-on: ${{ matrix.os }}
 
@@ -45,21 +57,42 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup .NET 10
+      # --- Windows WPF (.NET Framework 4.8) Steps ---
+      - name: Setup MSBuild (WPF)
+        if: matrix.type == 'wpf'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet (WPF)
+        if: matrix.type == 'wpf'
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore & Build Windows WPF (.NET 4.8)
+        if: matrix.type == 'wpf'
+        shell: pwsh
+        run: |
+          nuget restore Z1R_WPF.sln
+          msbuild ${{ matrix.project }} /p:Configuration=Release /p:Platform=AnyCPU
+          New-Item -ItemType Directory -Force -Path ./publish/${{ matrix.asset_name }}
+          Copy-Item -Path ./Z1R_WPF/bin/Release/* -Destination ./publish/${{ matrix.asset_name }}/ -Recurse
+
+      # --- Cross-Platform Avalonia (.NET 10) Steps ---
+      - name: Setup .NET 10 (Avalonia)
+        if: matrix.type == 'avalonia'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      - name: Publish self-contained binary
+      - name: Publish Avalonia Binary
+        if: matrix.type == 'avalonia'
         run: >
-          dotnet publish Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.csproj
+          dotnet publish ${{ matrix.project }}
           --configuration Release
           --runtime ${{ matrix.rid }}
           --self-contained true
           -p:PublishSingleFile=true
-          -p:UseAppHost=true
           --output ./publish/${{ matrix.asset_name }}
 
+      # --- Archive & Upload ---
       - name: Archive binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
