@@ -1386,6 +1386,24 @@ XXX.X...".Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         for (int x = 0; x <= 7; x++)
             for (int y = 0; y <= 7; y++)
                 if (pattern[y][x] == 'X') b(x, y);
+        // chest (the ROM's HUD shows it between the rupee and the key; 'o' is the red keyhole)
+        yoff = 16;
+        pattern = @"
+........
+.XXXXXX.
+XXXXXXXX
+........
+XXXooXXX
+XXXo.XXX
+XXXXXXXX
+........".Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var CHEST_RED = System.Drawing.Color.FromArgb(219, 40, 0);
+        for (int x = 0; x <= 7; x++)
+            for (int y = 0; y <= 7; y++)
+            {
+                if (pattern[y][x] == 'X') b(x, y);
+                else if (pattern[y][x] == 'o') bmp.SetPixel(xoff + x, yoff + y, CHEST_RED);
+            }
         // key
         yoff = 24;
         pattern = @"
