@@ -28,16 +28,16 @@ jobs:
         include:
           - os: windows-latest
             rid: win-x64
-            asset_name: ZoraTracker-CrossPlatform-win-x64
+            asset_name: ZoraTracker-win-x64
           - os: macos-latest
             rid: osx-arm64
-            asset_name: ZoraTracker-CrossPlatform-macOS-arm64
+            asset_name: ZoraTracker-macOS-arm64
           - os: macos-latest
             rid: osx-x64
-            asset_name: ZoraTracker-CrossPlatform-macOS-x64
+            asset_name: ZoraTracker-macOS-x64
           - os: ubuntu-latest
             rid: linux-x64
-            asset_name: ZoraTracker-CrossPlatform-linux-x64
+            asset_name: ZoraTracker-linux-x64
 
     runs-on: ${{ matrix.os }}
 
@@ -56,6 +56,8 @@ jobs:
           --configuration Release
           --runtime ${{ matrix.rid }}
           --self-contained true
+          -p:PublishSingleFile=true
+          -p:UseAppHost=true
           --output ./publish/${{ matrix.asset_name }}
 
       - name: Archive binary (Windows)
