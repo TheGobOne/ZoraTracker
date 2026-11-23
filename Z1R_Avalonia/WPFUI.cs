@@ -2471,8 +2471,8 @@ public static class WPFUI
                         // the AP Item (an Archipelago multiworld item that belongs to another world) starts a row of its own after the other icons; a tile holds up to 3 icons
                         var b1 = make_bodyCells();
                         if (!TrackerModelOptions.ArchipelagoSupport.Value) return b1;   // (the option is off: no AP Item row)
-                        var ap = swordIconCell(TrackerModel.ITEMS.APITEM);
-                        return b1.Concat(Enumerable.Repeat(hole, (GCOL - b1.Length % GCOL) % GCOL)).Append(ap).ToArray();
+                        var apCells = new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER }.Select(swordIconCell).ToArray();   // (red progression, blue useful, white filler)
+                        return b1.Concat(Enumerable.Repeat(hole, (GCOL - b1.Length % GCOL) % GCOL)).Concat(apCells).ToArray();
                     }
                     var bodyCells = make_bodyCellsWithApRow();
                     var paddedCount = ((bodyCells.Length + tailCells.Length + GCOL - 1) / GCOL) * GCOL;
@@ -2752,7 +2752,7 @@ public static class WPFUI
                                     var idents = new List<int> { TrackerModel.ITEMS.WOODSWORD, TrackerModel.ITEMS.WHITESWORD, TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.ITEMS.WHITESWORD4, TrackerModel.ITEMS.PROGRESSIVESWORD }
                                                     .Concat(markerIdentList.Where(ident => ident != SHOP_MENU))
                                                     .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k))
-                                                    .Concat(TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM } : new int[0]).ToList();
+                                                    .Concat(TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER } : new int[0]).ToList();
                                     bool isProgressiveDisabled(int ident) => TrackerModel.progressiveDisabledIdent(ident);
                                     // Legacy Mode: a shop only holds a wood arrow, blue candle, regular key, bombs, meat, book or shield (so no swords either)
                                     bool isLegacyDisabled(int ident) => TrackerModel.LegacyMode && !(PieMenus.legacyShopAllows(ident));

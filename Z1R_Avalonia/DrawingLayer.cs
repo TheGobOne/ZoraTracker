@@ -206,7 +206,8 @@ public static class DrawingLayer
     public static event Action ArchipelagoSupportChanged;   // (the startup screen and Options menu checkboxes keep each other in step)
     public static void applyArchipelagoSupport()
     {
-        TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(TrackerModel.ITEMS.APITEM, TrackerModelOptions.ArchipelagoSupport.Value ? 1000 : 0);
+        foreach (var apId in new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER })
+            TrackerModel.allItemWithHeartShuffleChoiceDomain.SetMaxUse(apId, TrackerModelOptions.ArchipelagoSupport.Value ? 1000 : 0);
         ArchipelagoSupportChanged?.Invoke();
     }
     public static void applyCustomMenuIcons()

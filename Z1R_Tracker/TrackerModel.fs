@@ -263,11 +263,17 @@ module ITEMS =
         "CustomIcon16" , 27
         // an Archipelago multiworld item (one that belongs to another world): marks a checked location, counts toward nothing, and can be placed any number of times (id 46)
         "APItem" , 1000
+        // the AP Item in two more kinds (ids 47 and 48), so players can tell what kind it is: red = progression (46), blue = useful (47), white = filler (48)
+        "APItemUseful" , 1000
+        "APItemFiller" , 1000
         |]
     let NumBuiltIn = 30
     let CUSTOM_BASE = 30
     let CUSTOM_COUNT = 16
-    let APITEM = CUSTOM_BASE + CUSTOM_COUNT   // 46
+    let APITEM = CUSTOM_BASE + CUSTOM_COUNT   // 46, the progression AP Item (red)
+    let APITEM_USEFUL = APITEM + 1   // 47 (blue)
+    let APITEM_FILLER = APITEM + 2   // 48 (white)
+    let isApItem (id:int) = id >= APITEM && id <= APITEM_FILLER
     let customNames : string[] = Array.init CUSTOM_COUNT (fun i -> sprintf "Custom icon %d" (i+1))
     let mutable customMenuCount = 0   // how many custom icons the menus currently offer (0 when the option is off)
     let BOOKSHIELD = 0
@@ -334,7 +340,9 @@ module ITEMS =
         | 28 -> "bomb upgrade"
         | 29 -> "triforce"
         | n when n >= CUSTOM_BASE && n < CUSTOM_BASE + CUSTOM_COUNT -> customNames.[n - CUSTOM_BASE]
-        | 46 -> "AP Item"
+        | 46 -> "AP Item (progression)"
+        | 47 -> "AP Item (useful)"
+        | 48 -> "AP Item (filler)"
         | _ -> failwith "bad ITEMS id"
     let AsHotKeyName(n) =
         if n>=0 && n<itemNamesAndCounts.Length then
@@ -374,7 +382,9 @@ module ITEMS =
         | 28 -> "Bomb Upgrade"
         | 29 -> "Triforce Piece"
         | n when n >= CUSTOM_BASE && n < CUSTOM_BASE + CUSTOM_COUNT -> customNames.[n - CUSTOM_BASE]
-        | 46 -> "AP Item"
+        | 46 -> "AP Item (progression)"
+        | 47 -> "AP Item (useful)"
+        | 48 -> "AP Item (filler)"
         | _ -> failwith "bad ITEMS id"
 let allItemWithHeartShuffleChoiceDomain = ChoiceDomain("allItemsWithHeartShuffle", ITEMS.itemNamesAndCounts |> Array.map snd)
 

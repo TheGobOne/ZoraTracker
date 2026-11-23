@@ -167,7 +167,9 @@ public static class CustomComboBoxes
             case 28: return Graphics.ws_ms_bomb_upgrade_bmp;
             case 29: return Graphics.triforce_item_bmp;
             case var n when n >= 30 && n < 46: return Graphics.customItemBmps[n - 30];
-            case 46: return Graphics.ap_item_bmp;   // the AP Item
+            case 46: return Graphics.ap_item_bmp;   // the AP Item: red, progression
+            case 47: return Graphics.ap_item_blue_bmp;   // blue, useful
+            case 48: return Graphics.ap_item_white_bmp;   // white, filler
             default:
                 if (timelineOrigin != null)
                 {
@@ -1715,8 +1717,8 @@ public static class CustomComboBoxes
             var offered = Enumerable.Range(0, nc).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k).Concat(stray).ToArray();
             // row 7: the AP Item (an Archipelago multiworld item that belongs to another world; it can be placed any number of times), when Archipelago Support is on
             // (or when the box already holds one); -2 pads the row with blank cells
-            var withAp = TrackerModelOptions.ArchipelagoSupport.Value || boxCellCurrent == TrackerModel.ITEMS.APITEM
-                ? gridIdents0.Concat(new[] { TrackerModel.ITEMS.APITEM, -2, -2, -2, -2 }).ToArray()
+            var withAp = TrackerModelOptions.ArchipelagoSupport.Value || TrackerModel.ITEMS.isApItem(boxCellCurrent)
+                ? gridIdents0.Concat(new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER, -2, -2 }).ToArray()
                 : gridIdents0;
             if (offered.Length == 0) return withAp;
             else

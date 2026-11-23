@@ -732,15 +732,25 @@ public static class OverworldItemGridUI
         // hovering it highlights every overworld tile that carries one. Only shown while the option is on.
         {
             var apCounter = new Canvas { Width = 30.0, Height = 30.0, Background = Brushes.Black };
-            canvasAdd(apCounter, new Rectangle { Width = 30.0, Height = 30.0, StrokeThickness = 3.0, Stroke = blueUnmarkedBrush }, 0.0, 0.0);
+            canvasAdd(apCounter, new Rectangle { Width = 30.0, Height = 30.0, StrokeThickness = 3.0, Stroke = new SolidColorBrush(Color.FromRgb(110, 180, 222)) }, 0.0, 0.0);
             var apSprite = Graphics.BMPtoImage(Graphics.ap_item_bmp);
-            apSprite.Width = 15.0;
-            apSprite.Height = 15.0;
+            apSprite.Width = 24.0;
+            apSprite.Height = 24.0;
             RenderOptions.SetBitmapInterpolationMode(apSprite, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
-            canvasAdd(apCounter, apSprite, 4.0, 8.0);
-            var apCountText = new TextBlock { Text = "0", FontSize = 12.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, IsHitTestVisible = false };
-            canvasAdd(apCounter, apCountText, 19.0, 7.0);
-            bool tileHasAp(int x, int y) => TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[x, y]).Contains(TrackerModel.ITEMS.APITEM);
+            canvasAdd(apCounter, apSprite, 3.0, 3.0);
+            // (the number sits on top of the logo, centered: two digits stay inside the box)
+            TextBlock mkApNum(IBrush brush) => new TextBlock { Text = "0", Width = 30.0, TextAlignment = TextAlignment.Center, FontSize = 14.0, FontWeight = FontWeight.Bold, Foreground = brush, IsHitTestVisible = false };
+            // (a black border: the number drawn in black one pixel out in every direction, then white on top)
+            var apCountBorder = new List<TextBlock>();
+            foreach (var (dx, dy) in new[] { (-1.0, -1.0), (0.0, -1.0), (1.0, -1.0), (-1.0, 0.0), (1.0, 0.0), (-1.0, 1.0), (0.0, 1.0), (1.0, 1.0) })
+            {
+                var o = mkApNum(Brushes.Black);
+                apCountBorder.Add(o);
+                canvasAdd(apCounter, o, dx, 5.0 + dy);
+            }
+            var apCountText = mkApNum(Brushes.White);
+            canvasAdd(apCounter, apCountText, 0.0, 5.0);
+            bool tileHasAp(int x, int y) => TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[x, y]).Any(TrackerModel.ITEMS.isApItem);
             int countPlacedApItems()
             {
                 var n = 0;
@@ -751,9 +761,9 @@ public static class OverworldItemGridUI
                         var packed = TrackerModel.owSwordIcons[x, y];
                         var label = TrackerModel.shopLabelOf(packed);
                         if (label > 0 && !shopLabelsCounted.Add(label)) continue;
-                        n += TrackerModel.decorEntriesOf(packed).Count(e => e.Item1 == TrackerModel.ITEMS.APITEM && e.Item2);   // (only the ones checked off as collected)
+                        n += TrackerModel.decorEntriesOf(packed).Count(e => TrackerModel.ITEMS.isApItem(e.Item1) && e.Item2);   // (only the ones checked off as collected)
                     }
-                bool collectedAp(TrackerModel.Box b) => b.CellCurrent() == TrackerModel.ITEMS.APITEM && b.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
+                bool collectedAp(TrackerModel.Box b) => TrackerModel.ITEMS.isApItem(b.CellCurrent()) && b.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
                 n += TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Count(collectedAp);
                 n += new[] { TrackerModel.ladderBox, TrackerModel.armosBox, TrackerModel.sword2Box, TrackerModel.sword3Box, TrackerModel.letterBox }.Count(collectedAp);
                 return n;
@@ -768,7 +778,7 @@ public static class OverworldItemGridUI
                 if (apCounter.IsVisible)
                 {
                     var n = countPlacedApItems().ToString();
-                    if (apCountText.Text != n) apCountText.Text = n;
+                    if (apCountText.Text != n) { apCountText.Text = n; foreach (var o in apCountBorder) o.Text = n; }
                 }
             }
             DrawingLayer.ArchipelagoSupportChanged += refreshApCounter;
@@ -1621,45 +1631,65 @@ public static class OverworldItemGridUI
                     bootsRow.Children.Add(mkBlocksCB("Pegasus Boots", "The wooden and magical boomerangs are boots.\nThe boomerang picks and letters use this at once; the icons already drawn in the item boxes update the next time the tracker starts.", (() => TrackerModel.BootsReplaceBoomerangs), (v => { TrackerModel.BootsReplaceBoomerangs = v; TrackerModel.BootsRandom = false; }), ((() => TrackerModel.BootsRandom), (r => { TrackerModel.BootsRandom = r; if (r) TrackerModel.BootsReplaceBoomerangs = false; }))));   // (Random, the ?: the boomerangs stay until boots are confirmed)
                     bootsRow.Children.Add(mkBlocksCB("Mirrored Overworld", "Flip the overworld map East<->West (same as the mirror icon at the top left).", (() => TrackerModel.MirrorOverworld), (v => setMirroredOverworld(v)), null));
                     blocksCol.Children.Add(bootsRow);
-                    // 4th sword location: checked = the extra item check is in level 9, unchecked = on the level 2 staircase; switching moves whatever is marked in the slot
+                    // 4th sword location: a list of None, Level 2 staircase, Level 9 floor; switching moves whatever is marked in the slot
                     {
-                        // checked = level 9, unchecked = level 2 staircase, third state (blue box, label "none") = no 4th sword (with hidden dungeon numbers there is no level 2 slot: checked = level 9, unchecked = no 4th sword)
+                        // (with hidden dungeon numbers there is no level 2 slot: the list is just None and Level 9 floor)
                         var hiddenNumbers = TrackerModel.IsHiddenDungeonNumbers.Invoke(null);
                         // (the start screen can still put the 4th sword in level 2 with hidden dungeon numbers: then keep all three states, so level 2 can be picked again. Reset each run and each load)
                         if (hiddenNumbers && TrackerModel.level2StairBoxEnabled) fourthSwordL2WithHiddenNumbers = true;
                         var twoState = hiddenNumbers && !fourthSwordL2WithHiddenNumbers;
-                        var swordTxt = mkTxt("");
+                        var swordTxt = mkTxt("4th sword:");
                         swordTxt.FontSize = 14.0;
-                        bool? current = TrackerModel.level9FloorBoxEnabled ? true
-                                      : twoState ? false
-                                      : (TrackerModel.level2StairBoxEnabled || TrackerModelOptions.FourthSwordEnabled) ? false
-                                      : (bool?)null;
-                        var swordCb = new CheckBox { Content = swordTxt, IsChecked = current, IsThreeState = !twoState, Margin = new Thickness(6.0, 2.0, 14.0, 2.0) };
-                        // (the label names the current place, so "none" does not look like the other Extras' blue Random '?')
-                        void showSwordPlace() => swordTxt.Text = swordCb.IsChecked == true ? "4th sword: L9" : swordCb.IsChecked == false && !twoState ? "4th sword: L2" : "4th sword: none";
-                        showSwordPlace();
+                        swordTxt.VerticalAlignment = VerticalAlignment.Center;
+                        // (a list of named places, not a three-state checkbox: an empty box used to mean "level 2", which read as "off")
+                        var swordPlaces = twoState ? new[] { 0, 2 } : new[] { 0, 1, 2 };   // 0 none, 1 level 2 staircase, 2 level 9 floor (as SetFourthSwordLocation takes them)
+                        var swordCb = new ComboBox { Background = Brushes.Black, Foreground = Brushes.Orange, FontSize = 14.0, Width = 190.0, Margin = new Thickness(6.0, 2.0, 14.0, 2.0) };
+                        foreach (var place in swordPlaces) swordCb.Items.Add(place == 2 ? "Level 9 floor" : place == 1 ? "Level 2 staircase" : "None");
+                        var currentPlace = TrackerModel.level9FloorBoxEnabled ? 2
+                                         : twoState ? 0
+                                         : (TrackerModel.level2StairBoxEnabled || TrackerModelOptions.FourthSwordEnabled) ? 1
+                                         : 0;
+                        swordCb.SelectedIndex = Array.IndexOf(swordPlaces, currentPlace);
                         // (hidden dungeon numbers with the 4th sword put in level 2 on the start screen: unchecked means that level 2 choice, not a staircase you can see by number)
                         var progressiveNote = "\nTurning the 4th sword on also turns Progressive Items on.";
                         ToolTip.SetTip(swordCb, TrackerModel.LegacyMode ? "Disabled in Legacy Mode"
                             : twoState
-                            ? "Checked (L9): the 4th sword's item check is on the level 9 floor.\nUnchecked (none): there is no 4th sword.\nSwitching moves the item you marked there along with it." + progressiveNote
+                            ? "Where the 4th sword's item check is.\nLevel 9 floor: on the level 9 floor.\nNone: there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it." + progressiveNote
                             : hiddenNumbers
-                            ? "Checked (L9): the 4th sword's item check is on the level 9 floor.\nUnchecked (L2): it is in level 2, where the start screen put it (with hidden dungeon numbers there is no level 2 staircase slot to show it).\nBlue box (none): there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it." + progressiveNote
-                            : "Checked (L9): the 4th sword's item check is on the level 9 floor.\nUnchecked (L2): it is on the level 2 staircase.\nBlue box (none): there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it." + progressiveNote);
+                            ? "Where the 4th sword's item check is.\nLevel 2 staircase: in level 2, where the start screen put it (with hidden dungeon numbers there is no staircase slot to show it).\nLevel 9 floor: on the level 9 floor.\nNone: there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it." + progressiveNote
+                            : "Where the 4th sword's item check is.\nLevel 2 staircase: on the level 2 staircase.\nLevel 9 floor: on the level 9 floor.\nNone: there is no 4th sword (clears the item you marked there).\nSwitching moves the item you marked there along with it." + progressiveNote);
                         swordCb.IsEnabled = !TrackerModel.LegacyMode;   // (Legacy Mode locks every ZORA Extra off)
                         ToolTip.SetShowOnDisabled(swordCb, true);   // (so the Legacy Mode tooltip still shows)
-                        swordCb.Click += (_, _) =>
+                        swordCb.SelectionChanged += (_, _) =>
                         {
-                            showSwordPlace();
-                            SetFourthSwordLocation(swordCb.IsChecked == true ? 2 : swordCb.IsChecked == false && !twoState ? 1 : 0);
+                            if (swordCb.SelectedIndex < 0) return;
+                            SetFourthSwordLocation(swordPlaces[swordCb.SelectedIndex]);
                             TrackerModel.recomputeMapStateSummary();
                             TrackerModel.forceUpdate();
                             refreshUIAfterOverworldTemplateChange();
                             CoopSync.noteFourthSwordChanged();   // (a co-op partner gets the new place, and Progressive Items if it came on)
                         };
                         var swordRow = new StackPanel { Orientation = Orientation.Horizontal };
+                        swordRow.Children.Add(swordTxt);
                         swordRow.Children.Add(swordCb);
                         blocksCol.Children.Add(swordRow);
+                    }
+                    // Archipelago support: the same setting as the Options menu and start screen checkboxes, kept in step through ArchipelagoSupportChanged
+                    {
+                        var apTxt = mkTxt("Archipelago support");
+                        apTxt.FontSize = 14.0;
+                        var apCb = new CheckBox { Content = apTxt, IsChecked = TrackerModelOptions.ArchipelagoSupport.Value, Margin = new Thickness(6.0, 2.0, 14.0, 2.0), VerticalAlignment = VerticalAlignment.Center };
+                        ToolTip.SetTip(apCb, "For Archipelago multiworld games: adds the AP Item, a gem for an item that belongs to another world,\nto the item-box menus and the overworld tile menu. Place it as many times as you need to mark checked locations.");
+                        apCb.Click += (_, _) =>
+                        {
+                            TrackerModelOptions.ArchipelagoSupport.Value = apCb.IsChecked == true;
+                            DrawingLayer.applyArchipelagoSupport();
+                        };
+                        // (the Options menu or start screen checkbox changed it while this panel is open)
+                        Action syncAp = () => { if (apCb.IsChecked != TrackerModelOptions.ArchipelagoSupport.Value) apCb.IsChecked = TrackerModelOptions.ArchipelagoSupport.Value; };
+                        DrawingLayer.ArchipelagoSupportChanged += syncAp;
+                        apCb.DetachedFromVisualTree += (_, _) => DrawingLayer.ArchipelagoSupportChanged -= syncAp;
+                        bootsRow.Children.Add(apCb);   // (next to Mirrored Overworld, where there is room)
                     }
                     // the Hide 1st / 2nd Quest checkboxes (mixed overworlds only) sit in a third column, level with the four checkboxes
                     var blocksArea = new DockPanel { LastChildFill = true };
