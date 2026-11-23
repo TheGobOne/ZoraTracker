@@ -389,8 +389,9 @@ public static class OptionsMenu
                 var d = TrackerModel.GetDungeon(i);
                 if (d.Boxes.All(bx => bx.CellCurrent() == -1))
                 {
-                    // the box that shows the basement staircase (else the last one)
-                    var b = d.Boxes.FirstOrDefault(x => x.CurrentlyHasBasementStair) ?? d.Boxes[d.Boxes.Length - 1];
+                    // the box that shows the basement staircase (a Triforce Piece only goes on a basement slot, so a dungeon without one is skipped)
+                    var b = d.Boxes.Take(3).FirstOrDefault(x => x.CurrentlyHasBasementStair);
+                    if (b == null) continue;
                     var (oldCell, oldHas) = (b.CellCurrent(), b.PlayerHas());
                     b.Set(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO);
                     return () => b.Set(oldCell, oldHas);

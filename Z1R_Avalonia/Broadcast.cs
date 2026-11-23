@@ -62,7 +62,15 @@ public static class Broadcast
         private readonly List<SnapshotView> _views = new List<SnapshotView>();
         public double MinScale = 1.0;
         private RenderTargetBitmap _bitmap;
+        private RenderTargetBitmap _older;   // (the bitmap from the refresh before the current one; disposed one refresh later)
         public CanvasSnapshot(Canvas source) { _source = source; }
+        // (window closed: views drop their bitmap, the older one is freed now and the current one is left to the GC, as the renderer may still be drawing it)
+        public void Release()
+        {
+            foreach (var v in _views) v.SetBitmap(null, 1.0);
+            _older?.Dispose(); _older = null;
+            _bitmap = null;
+        }
         public Control View(Rect crop)
         {
             var v = new SnapshotView(crop) { Width = crop.Width, Height = crop.Height };
@@ -78,11 +86,19 @@ public static class Broadcast
             var scale = Math.Max(TopLevel.GetTopLevel(_source)?.RenderScaling ?? 1.0, MinScale);   // (at least the broadcast window's on-screen scale)
             // (96 dpi, so the bitmap's size in DIPs is its pixel size; the scale is applied by hand)
             var bitmap = new RenderTargetBitmap(new PixelSize((int)Math.Ceiling(w * scale), (int)Math.Ceiling(h * scale)), new Vector(96.0, 96.0));
-            using (var ctx = bitmap.CreateDrawingContext())
-            using (ctx.PushTransform(Matrix.CreateScale(scale, scale)))
-                ctx.DrawRectangle(new VisualBrush(_source) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(0.0, 0.0, w, h));
-            _bitmap = bitmap;   // (the old one is left to the GC: the renderer may still be drawing it)
+            try
+            {
+                using (var ctx = bitmap.CreateDrawingContext())
+                using (ctx.PushTransform(Matrix.CreateScale(scale, scale)))
+                    ctx.DrawRectangle(new VisualBrush(_source) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(0.0, 0.0, w, h));
+            }
+            catch { bitmap.Dispose(); throw; }   // (a failed draw frees the new bitmap; the views keep the old one)
+            // (the renderer may still be drawing the previous bitmap, so only the one from two refreshes ago is disposed; the views no longer hold it)
+            var old = _older;
+            _older = _bitmap;
+            _bitmap = bitmap;
             foreach (var v in _views) v.SetBitmap(bitmap, scale);
+            old?.Dispose();
         }
     }
     // draws its crop of the snapshot bitmap straight onto the screen (an ImageBrush first rasterizes at the view's own size, so the Viewbox enlarged a 1x copy)
@@ -96,7 +112,10 @@ public static class Broadcast
         public override void Render(DrawingContext context)
         {
             if (_bitmap == null) return;
-            var src = new Rect(_crop.X * _scale, _crop.Y * _scale, _crop.Width * _scale, _crop.Height * _scale);   // (in bitmap pixels, which are its DIPs at 96 dpi)
+            // (in bitmap pixels, which are its DIPs at 96 dpi; edges rounded to whole pixels so a fractional edge does not blend in the neighbouring pixel)
+            var x0 = Math.Round(_crop.X * _scale); var y0 = Math.Round(_crop.Y * _scale);
+            var x1 = Math.Round(_crop.Right * _scale); var y1 = Math.Round(_crop.Bottom * _scale);
+            var src = new Rect(x0, y0, Math.Max(1.0, x1 - x0), Math.Max(1.0, y1 - y0));
             context.DrawImage(_bitmap, src, new Rect(Bounds.Size));
         }
     }
@@ -317,8 +336,10 @@ public static class Broadcast
                 }
             }
             saveSizeTimer.Tick += (_, _) => saveSize();
+            var needRefresh = true;   // (set by a resize, a pane swap or a restore from minimized: the next tick refreshes even when idle)
             broadcastWindow.SizeChanged += (_, _) =>
             {
+                needRefresh = true;
                 updateTopBar();
                 saveSizeTimer.Stop();
                 saveSizeTimer.Start();
@@ -335,6 +356,7 @@ public static class Broadcast
                         if (cm.PopupCanvasStack.Count == 0)  // don't switch panes if a popup is active
                         {
                             isUpper = true;
+                            needRefresh = true;
                             dp.Children.RemoveAt(1);
                             dp.Children.Add(topc);
                         }
@@ -349,6 +371,7 @@ public static class Broadcast
                         if (cm.PopupCanvasStack.Count == 0)  // don't switch panes if a popup is active
                         {
                             isUpper = false;
+                            needRefresh = true;
                             dp.Children.RemoveAt(1);
                             dp.Children.Add(bottomc);
                         }
@@ -358,25 +381,46 @@ public static class Broadcast
                 }
             };
             cm.RootCanvas.PointerMoved += onPointerMoved;
-            // (a resize just before the window closes is saved now, not dropped with the timer)
-            broadcastWindow.Closed += (_, _) => { cm.RootCanvas.PointerMoved -= onPointerMoved; if (saveSizeTimer.IsEnabled) saveSize(); };
-            // the shared snapshot of the main canvas: 20 refreshes a second while this window is open and not minimized
+            // the shared snapshot of the main canvas: up to 10 refreshes a second while this window is open and not minimized
             var snapshotTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100.0) };
-            // 10 refreshes a second while the mouse is active in the tracker, 2 a second when idle, which eases the load on the main window
+            // 10 refreshes a second while the mouse, keyboard or wheel is active in the tracker, 2 a second when idle, which eases the load on the main window
             long lastActivity = 0L; var idleTicks = 0;
-            cm.RootCanvas.PointerMoved += (_, _) => lastActivity = Environment.TickCount64;
-            cm.RootCanvas.PointerPressed += (_, _) => lastActivity = Environment.TickCount64;
+            var activityUnsubs = new List<Action>();
+            // (handledEventsToo: a control that handles the event would otherwise hide it from the root)
+            void watchActivity<T>(Avalonia.Interactivity.RoutedEvent<T> ev) where T : Avalonia.Interactivity.RoutedEventArgs
+            {
+                EventHandler<T> h = (_, _) => lastActivity = Environment.TickCount64;
+                cm.RootCanvas.AddHandler(ev, h, Avalonia.Interactivity.RoutingStrategies.Bubble | Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
+                activityUnsubs.Add(() => cm.RootCanvas.RemoveHandler(ev, h));
+            }
+            watchActivity(Avalonia.Input.InputElement.PointerMovedEvent);
+            watchActivity(Avalonia.Input.InputElement.PointerPressedEvent);
+            watchActivity(Avalonia.Input.InputElement.PointerWheelChangedEvent);
+            watchActivity(Avalonia.Input.InputElement.KeyDownEvent);
             snapshotTimer.Tick += (_, _) =>
             {
-                if (broadcastWindow.WindowState == WindowState.Minimized) return;
-                if (Environment.TickCount64 - lastActivity > 500L && ++idleTicks % 5 != 0) return;
-                var cs = broadcastWindow.ClientSize;
-                if (cs.Width > 0.0 && cs.Height > 0.0)
-                    snapshot.MinScale = Math.Clamp(Math.Min(cs.Width / W, cs.Height / H) * broadcastWindow.RenderScaling, 1.0, 3.0);   // (the Viewbox's scale on the screen)
-                snapshot.Refresh();
+                try
+                {
+                    if (broadcastWindow.WindowState == WindowState.Minimized) { needRefresh = true; return; }   // (refresh once on restore)
+                    if (!needRefresh && Environment.TickCount64 - lastActivity > 500L && ++idleTicks % 5 != 0) return;
+                    needRefresh = false;
+                    var cs = broadcastWindow.ClientSize;
+                    if (cs.Width > 0.0 && cs.Height > 0.0)
+                        snapshot.MinScale = Math.Clamp(Math.Min(cs.Width / W, cs.Height / H) * broadcastWindow.RenderScaling, 1.0, 3.0);   // (the Viewbox's scale on the screen)
+                    snapshot.Refresh();
+                }
+                catch (Exception) { }   // (a failed refresh keeps the old bitmap; the next tick tries again)
             };
             broadcastWindow.Loaded += (_, _) => { snapshot.Refresh(); snapshotTimer.Start(); };
-            broadcastWindow.Closed += (_, _) => snapshotTimer.Stop();
+            // (a resize just before the window closes is saved now, not dropped with the timer)
+            broadcastWindow.Closed += (_, _) =>
+            {
+                cm.RootCanvas.PointerMoved -= onPointerMoved;
+                foreach (var unsub in activityUnsubs) unsub();
+                snapshotTimer.Stop();
+                snapshot.Release();
+                if (saveSizeTimer.IsEnabled) saveSize();
+            };
             return broadcastWindow;
         }
         Window broadcastWindow_ = null;
@@ -386,7 +430,13 @@ public static class Broadcast
         {
             var main = ShowRunCustom.mainWindow();
             w.Show();
-            if (main != null && main != w) main.Closed += (_, _) => { if (w.IsVisible) w.Close(); };   // (the broadcast option can reopen it: an older, already closed window is skipped)
+            if (main != null && main != w)
+            {
+                // (the broadcast option can reopen it: an older, already closed window is skipped, and its handler is removed when it closes)
+                EventHandler onMainClosed = (_, _) => { if (w.IsVisible) w.Close(); };
+                main.Closed += onMainClosed;
+                w.Closed += (_, _) => main.Closed -= onMainClosed;
+            }
         }
         if (TrackerModelOptions.ShowBroadcastWindow.Value)
         {

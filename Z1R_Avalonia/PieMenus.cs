@@ -1015,7 +1015,8 @@ public static class PieMenus
             TrackerModelOptions.JumpMouseToTakeHeart.Value = (jumpToggle.IsChecked == true);
             TrackerModelOptions.writeSettings();
         };
-        col.Children.Add(jumpToggle);
+        if (!Platform.isBrowser)   // (the web build can't move the cursor, so the toggle would do nothing)
+            col.Children.Add(jumpToggle);
         Button heartButton = null;
         // (hotkey indexes: 0 = nothing, 1 = potion, 2 = candle, 3 = heart)
         void addButton(string text, int hotkeyIndex)
@@ -1063,7 +1064,7 @@ public static class PieMenus
             Canvas.SetLeft(c, left);
             Canvas.SetTop(c, top);
             // the cursor jumps onto Took Heart once the real layout is known (border 5, column margin 16, then the button's place in the column)
-            if (!jumpedOnce && TrackerModelOptions.JumpMouseToTakeHeart.Value)
+            if (!jumpedOnce && !Platform.isBrowser && TrackerModelOptions.JumpMouseToTakeHeart.Value)
             {
                 jumpedOnce = true;
                 var hb = heartButton.Bounds;

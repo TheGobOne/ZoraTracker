@@ -1760,10 +1760,10 @@ public static class CustomComboBoxes
             }
             // a one-of-a-kind item the player already owns from somewhere other than a dungeon box (bought in a shop, a starting item, checked off on the map) can't be found again
             // an item sitting in another slot of the same dungeon can be picked here even when it is used up: picking it moves it to this slot (the caller clears the other slot)
-            var movable = !allItemsSelectable && !progDisabled && ident >= 0 && ident != boxCellCurrent && itemMenuMovableIdents.Contains(ident);
+            var triforceBlocked = !allItemsSelectable && itemMenuTriforceBlocked && ident == TrackerModel.ITEMS.TRIFORCE && ident != boxCellCurrent;
+            var movable = !allItemsSelectable && !progDisabled && !triforceBlocked && ident >= 0 && ident != boxCellCurrent && itemMenuMovableIdents.Contains(ident);   // (a Triforce Piece never moves to a non-basement slot)
             if (movable)
                 ToolTip.SetTip(fe, "Move here from another slot in this dungeon");
-            var triforceBlocked = !allItemsSelectable && itemMenuTriforceBlocked && ident == TrackerModel.ITEMS.TRIFORCE && ident != boxCellCurrent;
             if (triforceBlocked)
             {
                 ToolTip.SetTip(fe, "A Triforce Piece can only be placed on a basement slot");

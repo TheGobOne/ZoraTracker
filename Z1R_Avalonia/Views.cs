@@ -312,6 +312,27 @@ public static class Views
     }
     public static readonly List<Action> redrawTriforces = new List<Action>();
     public static readonly bool[] triforceBlocked = new bool[9];   // middle-clicking a dungeon's triforce above it puts a red X on it, and it can't be collected until the X is removed (this session only)
+    // right click on a dungeon's numbered triforce (dungeons 1-8): puts the Triforce Piece in an empty basement item slot, or takes it back out of the slot it is in.
+    // Returns true when it did something (the click is then used up); false lets the click do its normal job (the collected toggle).
+    // (level 2: its extra staircase slot when that is on; level 8: the middle basement slot; the slot must be empty, so nothing already there is replaced)
+    public static bool TryRightClickTriforcePlacement(int dungeonIndex)
+    {
+        if (dungeonIndex < 0 || dungeonIndex > 7) return false;
+        var d = TrackerModel.GetDungeon(dungeonIndex);
+        var stairOn = dungeonIndex == 1 && TrackerModel.level2StairBoxEnabled && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null));
+        if (d.TriforceIsInItemSlot)
+        {
+            var inSlot = d.Boxes.FirstOrDefault(b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
+            if (inSlot == null && dungeonIndex == 1 && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) inSlot = TrackerModel.level2StairBox;
+            if (inSlot == null) return false;
+            inSlot.Set(-1, TrackerModel.PlayerHas.NO);   // (right click again toggles the Triforce Piece back out of the slot)
+            return true;
+        }
+        var target = stairOn ? (TrackerModel.level2StairBox.CellCurrent() == -1 ? TrackerModel.level2StairBox : null)
+                             : d.Boxes.Take(3).FirstOrDefault(b => b.CurrentlyHasBasementStair && b.CellCurrent() == -1);
+        if (target == null) return false;
+        return target.AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO);
+    }
     public static Canvas MakeTriforceDisplayView(CustomComboBoxes.CanvasManager cmo, int trackerIndex, OverworldData.OverworldInstance owInstanceOpt)    // cmo non-null means "makeInteractive" (WPF: Some(cm)); owInstanceOpt null for None
     {
         var emptyUnfoundTriImage = Graphics.BMPtoImage(emptyUnfoundTriforce_bmp(trackerIndex));
@@ -867,11 +888,16 @@ public static class Views
                         else
                         {
                             // changing from empty/other-item box to this item value always NO on first hotkey press, as this is 'model harmless'
-                            var movedFrom = takeFromOtherSlot(i);
-                            if (movedFrom.HasValue) box.Set(i, (movedFrom.Value ? TrackerModel.PlayerHas.YES : TrackerModel.PlayerHas.NO));
-                            else if (!box.AttemptToSet(i, TrackerModel.PlayerHas.NO))
-                                // e.g. they tried to set this box to Bow when another box already has 'Bow'
-                                Graphics.ErrorBeepWithReminderLogText($"Tried to mark item box as {TrackerModel.ITEMS.AsDisplayDescription(i)}, but that item is already marked in a different box");
+                            if (i == TrackerModel.ITEMS.TRIFORCE && !box.CurrentlyHasBasementStair)
+                                Graphics.ErrorBeepWithReminderLogText("A Triforce Piece can only be placed on a basement slot");
+                            else
+                            {
+                                var movedFrom = takeFromOtherSlot(i);
+                                if (movedFrom.HasValue) box.Set(i, (movedFrom.Value ? TrackerModel.PlayerHas.YES : TrackerModel.PlayerHas.NO));
+                                else if (!box.AttemptToSet(i, TrackerModel.PlayerHas.NO))
+                                    // e.g. they tried to set this box to Bow when another box already has 'Bow'
+                                    Graphics.ErrorBeepWithReminderLogText($"Tried to mark item box as {TrackerModel.ITEMS.AsDisplayDescription(i)}, but that item is already marked in a different box");
+                            }
                         }
                     }
                 }

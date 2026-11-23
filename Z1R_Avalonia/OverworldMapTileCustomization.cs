@@ -115,7 +115,10 @@ public static class OverworldMapTileCustomization
                                 double topX, double topY, Point pos)  // topX,topY,pos are relative to appMainCanvas; top is for tracker box, pos is for mouse-local box
     {
         var extraDecorations = computeExtraDecorationArrow(topX, topY, pos);
-        var r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, trackerModelBoxToUpdate.CellCurrent(), activationDelta, trackerModelBoxToUpdate.PlayerHas(), extraDecorations, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());
+        CustomComboBoxes.itemMenuTriforceBlocked = !trackerModelBoxToUpdate.CurrentlyHasBasementStair;   // (a Triforce Piece can only go on a basement slot)
+        (bool hasResult, (int, TrackerModel.PlayerHas) result) r;
+        try { r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, trackerModelBoxToUpdate.CellCurrent(), activationDelta, trackerModelBoxToUpdate.PlayerHas(), extraDecorations, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter()); }
+        finally { CustomComboBoxes.itemMenuTriforceBlocked = false; }
         if (r.hasResult)
         {
             var (newBoxCellValue, newPlayerHas) = r.result;
@@ -129,8 +132,10 @@ public static class OverworldMapTileCustomization
     {
         var extraDecorations = new (Control, double, double)[0];
         CustomComboBoxes.itemMenuDomain = trackerModelBoxToUpdate.Domain;
-        var r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, trackerModelBoxToUpdate.CellCurrent(), activationDelta, trackerModelBoxToUpdate.PlayerHas(), extraDecorations, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());
-        CustomComboBoxes.itemMenuDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain;
+        CustomComboBoxes.itemMenuTriforceBlocked = !trackerModelBoxToUpdate.CurrentlyHasBasementStair;   // (a Triforce Piece can only go on a basement slot)
+        (bool hasResult, (int, TrackerModel.PlayerHas) result) r;
+        try { r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, trackerModelBoxToUpdate.CellCurrent(), activationDelta, trackerModelBoxToUpdate.PlayerHas(), extraDecorations, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter()); }
+        finally { CustomComboBoxes.itemMenuDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain; CustomComboBoxes.itemMenuTriforceBlocked = false; }
         if (r.hasResult)
         {
             var (newBoxCellValue, newPlayerHas) = r.result;

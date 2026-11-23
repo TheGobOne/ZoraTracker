@@ -46,6 +46,7 @@ All but **Use old popups** appear only on the standard overworld, not with a map
 
 - **Volume** sets how loud voice reminders are. **Disable all** turns every reminder off. You can still read them in the **Log**.
 - Each reminder has a **Voice** box (spoken aloud) and a **Visual** box (shown as an icon at the upper right of the Timeline).
+- Voice boxes are off and Visual boxes are on by default, on new installs and for settings files that have no voice key (choices already saved in v3.0.4 are kept).
 - **Reminder interval (minutes)** sets how often the periodic reminders repeat, from 1 to 60.
 - **Change voice** picks which voice speaks. It appears only when more than one voice is installed.
 

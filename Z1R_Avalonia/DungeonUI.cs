@@ -577,6 +577,8 @@ public static class DungeonUI
         var regularBoxViewsAndActivations = make_boxViewsAndActivations();
         // mirror the main tracker: when a Triforce Piece is placed in a dungeon basement slot, the numbered triforce stays in the header with a staircase icon behind it and that slot becomes the extra floor item box
         (Canvas, Action<int, CustomComboBoxes.GridClickDismissalWarpReturn>)? extraFloorViewAndActivate = dungeonIndex < 8 ? Views.MakeBoxItem(cm, d.ExtraFloorBox) : null;
+        Canvas level2StairCell = null;   // (level 2's extra staircase slot, once it has been made below)
+        Action refreshTriforceHeaderOrSlotOuter = null;
         if (dungeonIndex < 8)
         {
             var extraFloorView = extraFloorViewAndActivate.Value.Item1;
@@ -585,12 +587,16 @@ public static class DungeonUI
             {
                 headerCell.Children.Clear();
                 foreach (var sc in slotCells) sc.Children.Remove(extraFloorView);
+                level2StairCell?.Children.Remove(extraFloorView);
                 var k = Array.FindIndex(d.Boxes, b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
-                if (k >= 0 && k < 3 && k < slotCells.Count)
+                Canvas host = null;   // (the slot that shows the floor item box; only a basement slot does)
+                if (k >= 0) { if (k < 3 && k < slotCells.Count && d.Boxes[k].CurrentlyHasBasementStair) host = slotCells[k]; }
+                else if (level2StairCell != null && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) host = level2StairCell;
+                if (host != null)
                 {
                     headerCell.Children.Add(stairBackdrop);
-                    slotCells[k].Children.Add(extraFloorView);
-                    dungeonView.Background = null;   // (transparent, so the staircase icon behind it shows)
+                    host.Children.Add(extraFloorView);
+                    dungeonView.Background = Brushes.Transparent;   // (transparent, so the staircase icon behind it shows; transparent still takes clicks)
                 }
                 else
                     dungeonView.Background = Brushes.Black;
@@ -602,17 +608,22 @@ public static class DungeonUI
                 b.Changed.AddHandler(h);
                 detachers?.Add(() => b.Changed.RemoveHandler(h));   // (the panel is rebuilt on some option changes; the old one must stop listening)
             }
+            if (dungeonIndex == 1)
+            {
+                // (a Triforce Piece in level 2's extra staircase slot moves the numbered triforce there too; turning that slot on or off rebuilds the whole panel)
+                var h2 = new FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => refreshTriforceHeaderOrSlot());
+                TrackerModel.level2StairBox.Changed.AddHandler(h2);
+                detachers?.Add(() => TrackerModel.level2StairBox.Changed.RemoveHandler(h2));
+            }
             refreshTriforceHeaderOrSlot();
-            // like the main tracker: while a basement slot holds the Triforce Piece, right click on the header triforce opens that slot's item menu (left click checks the triforce, middle click puts the X on it)
+            refreshTriforceHeaderOrSlotOuter = refreshTriforceHeaderOrSlot;
+            // like the main tracker: right click on the header triforce puts the Triforce Piece in an empty basement slot, or takes it back out (left click checks the triforce)
+            // (middle click puts the red X on it, as on the main tracker: those clicks fall through to the triforce's own handler)
             // (WPF PreviewMouseDown: a tunnelling handler; `ChangedButton = Right` is the press's PointerUpdateKind)
             dungeonView.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, ea) =>
             {
-                var slotK = Array.FindIndex(d.Boxes, b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
-                if (slotK >= 0 && slotK < 3 && ea.GetCurrentPoint(dungeonView).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed && slotK < regularBoxViewsAndActivations.Length)
-                {
-                    ea.Handled = true;
-                    if (!CustomComboBoxes.GlobalFlag.popupIsActive) regularBoxViewsAndActivations[slotK].Item2(0, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());
-                }
+                if (ea.GetCurrentPoint(dungeonView).Properties.PointerUpdateKind != PointerUpdateKind.RightButtonPressed || CustomComboBoxes.GlobalFlag.popupIsActive) return;
+                if (Views.TryRightClickTriforcePlacement(dungeonIndex)) ea.Handled = true;
             }), RoutingStrategies.Tunnel);
         }
         // the optional extra staircase item slot of level 2, as on the main tracker
@@ -625,6 +636,7 @@ public static class DungeonUI
             canvasAdd(c, l2view, 0.0, 0.0);
             sp.Children.Add(c);
             boxViewsAndActivations = regularBoxViewsAndActivations.Append((l2view, l2activate)).ToArray();
+            if (extraFloorViewAndActivate.HasValue) { level2StairCell = c; refreshTriforceHeaderOrSlotOuter(); }   // (the Triforce Piece may already be in this slot)
         }
         // the extra floor box (the header, while the triforce sits in an item slot) is activated last, so the box hotkeys can target it
         if (extraFloorViewAndActivate.HasValue)
