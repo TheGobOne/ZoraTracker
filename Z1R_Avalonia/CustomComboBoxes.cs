@@ -1669,6 +1669,7 @@ public static class CustomComboBoxes
             || (ident == TrackerModel.ITEMS.KEY && sm.HaveAnyKey);
     }
     public static bool allItemsSelectable = false;   // true while the level 9 entry item menu is open: that box is only a note, so every item (even a 'disabled' one) can be picked
+    public static bool itemMenuTriforceBlocked = false;   // set by an item box while its menu is open: a Triforce Piece can only be placed on a basement slot
     public static HashSet<int> itemMenuMovableIdents = new HashSet<int>();   // set by a dungeon box while its menu is open: used-up items held by another slot of that dungeon, which this slot may take
     public static TrackerModel.ChoiceDomain itemMenuDomain =TrackerModel.allItemWithHeartShuffleChoiceDomain;   // DoLocalItemComboBox swaps this for boxes that don't use up items
     // (returns DoModalGridSelect's (hasResult, (ident, playerHas)); callerExtraDecorations: (element, x, y)s)
@@ -1762,13 +1763,19 @@ public static class CustomComboBoxes
             var movable = !allItemsSelectable && !progDisabled && ident >= 0 && ident != boxCellCurrent && itemMenuMovableIdents.Contains(ident);
             if (movable)
                 ToolTip.SetTip(fe, "Move here from another slot in this dungeon");
+            var triforceBlocked = !allItemsSelectable && itemMenuTriforceBlocked && ident == TrackerModel.ITEMS.TRIFORCE && ident != boxCellCurrent;
+            if (triforceBlocked)
+            {
+                ToolTip.SetTip(fe, "A Triforce Piece can only be placed on a basement slot");
+                ToolTip.SetShowOnDisabled(fe, true);
+            }
             var ownedElsewhere = !movable && !allItemsSelectable && ident != boxCellCurrent && ident >= 0 && itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain && ownedUniqueItem(ident);
             if (ownedElsewhere)
             {
                 ToolTip.SetTip(fe, "You already have this");
                 ToolTip.SetShowOnDisabled(fe, true);
             }
-            var isSelectable = (allItemsSelectable && ident != -2) || movable || !progDisabled && !ownedElsewhere && (ident == -1 || (ident != -2 && ident == boxCellCurrent) || (ident != -2 && (itemMenuDomain.CanAddUse(ident) && !(ident == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled))));   // the 4th sword is disabled unless the 4th Sword start option is on
+            var isSelectable = (allItemsSelectable && ident != -2) || movable || !progDisabled && !ownedElsewhere && !triforceBlocked && (ident == -1 || (ident != -2 && ident == boxCellCurrent) || (ident != -2 && (itemMenuDomain.CanAddUse(ident) && !(ident == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled))));   // the 4th sword is disabled unless the 4th Sword start option is on
             gridElementsSelectablesAndIDs.Add((fe, isSelectable, ident));
         }
         var originalStateIndex0 = Array.FindIndex(gridIdents, ident => ident == boxCellCurrent);

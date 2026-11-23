@@ -791,9 +791,10 @@ public static class Views
                 CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
                 {
                     CustomComboBoxes.itemMenuMovableIdents = movableIdents();
+                    CustomComboBoxes.itemMenuTriforceBlocked = !box.CurrentlyHasBasementStair;
                     (bool hasResult, (int, TrackerModel.PlayerHas) result) r;
                     try { r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, box.CellCurrent(), activationDelta, box.PlayerHas(), extraDecorations, gridClickDismissalWarpReturn); }
-                    finally { CustomComboBoxes.itemMenuMovableIdents = new HashSet<int>(); }
+                    finally { CustomComboBoxes.itemMenuMovableIdents = new HashSet<int>(); CustomComboBoxes.itemMenuTriforceBlocked = false; }
                     if (r.hasResult)
                     {
                         var (newBoxCellValue, newPlayerHas) = r.result;

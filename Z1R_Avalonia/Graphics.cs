@@ -1166,6 +1166,26 @@ public static class Graphics
         return r;
     }
     public static readonly Avalonia.Media.Imaging.Bitmap zi_staircase_unborderedBI = BMPToBI(unborder(zi_staircase));
+    // the staircase drawn behind a dungeon's numbered triforce when its Triforce Piece was found in a basement: no frame or step lines, the black left transparent
+    private static System.Drawing.Bitmap make_staircase_backdrop()
+    {
+        var src = unborder(zi_staircase);
+        var r = new System.Drawing.Bitmap(src.Width, src.Height);
+        for (int i = 0; i < r.Width; i++)
+            for (int j = 0; j < r.Height; j++)
+            {
+                var p = src.GetPixel(i, j);
+                var isBlack = p.R < 8 && p.G < 8 && p.B < 8;
+                var isLine = p.B > 0x80 && p.R < 0x40 && p.G < 0x40;   // (the dark blue step lines and outline, 333e8c: they read as a square border, so they are dropped)
+                r.SetPixel(i, j, isBlack || isLine ? System.Drawing.Color.Transparent : System.Drawing.Color.FromArgb(255, 90, 130, 235));
+            }
+        return r;
+    }
+    public static readonly Avalonia.Media.Imaging.Bitmap zi_staircase_backdropBI = BMPToBI(make_staircase_backdrop());
+    public static Avalonia.Controls.Image makeStaircaseBackdropImage()
+    {
+        return new Avalonia.Controls.Image { Source = zi_staircase_backdropBI, Width = 30.0, Height = 30.0, Stretch = Avalonia.Media.Stretch.Uniform, IsHitTestVisible = false };
+    }
 
     private static System.Drawing.Bitmap[] make_icons10x10()
     {

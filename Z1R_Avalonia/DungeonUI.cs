@@ -575,23 +575,26 @@ public static class DungeonUI
             return r.ToArray();
         }
         var regularBoxViewsAndActivations = make_boxViewsAndActivations();
-        // mirror the main tracker: when a Triforce Piece is placed in a dungeon item slot, the numbered triforce moves into that slot and the header becomes an extra floor item box
+        // mirror the main tracker: when a Triforce Piece is placed in a dungeon basement slot, the numbered triforce stays in the header with a staircase icon behind it and that slot becomes the extra floor item box
         (Canvas, Action<int, CustomComboBoxes.GridClickDismissalWarpReturn>)? extraFloorViewAndActivate = dungeonIndex < 8 ? Views.MakeBoxItem(cm, d.ExtraFloorBox) : null;
         if (dungeonIndex < 8)
         {
             var extraFloorView = extraFloorViewAndActivate.Value.Item1;
+            var stairBackdrop = Graphics.makeStaircaseBackdropImage();
             void refreshTriforceHeaderOrSlot()
             {
                 headerCell.Children.Clear();
-                foreach (var sc in slotCells) sc.Children.Remove(dungeonView);
+                foreach (var sc in slotCells) sc.Children.Remove(extraFloorView);
                 var k = Array.FindIndex(d.Boxes, b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
                 if (k >= 0 && k < 3 && k < slotCells.Count)
                 {
-                    headerCell.Children.Add(extraFloorView);
-                    slotCells[k].Children.Add(dungeonView);
+                    headerCell.Children.Add(stairBackdrop);
+                    slotCells[k].Children.Add(extraFloorView);
+                    dungeonView.Background = null;   // (transparent, so the staircase icon behind it shows)
                 }
                 else
-                    headerCell.Children.Add(dungeonView);
+                    dungeonView.Background = Brushes.Black;
+                headerCell.Children.Add(dungeonView);
             }
             foreach (var b in d.Boxes)
             {
@@ -600,12 +603,12 @@ public static class DungeonUI
                 detachers?.Add(() => b.Changed.RemoveHandler(h));   // (the panel is rebuilt on some option changes; the old one must stop listening)
             }
             refreshTriforceHeaderOrSlot();
-            // like the main tracker: while the triforce sits in an item slot, right click on it opens that slot's item menu (left click checks the triforce, middle click puts the X on it)
+            // like the main tracker: while a basement slot holds the Triforce Piece, right click on the header triforce opens that slot's item menu (left click checks the triforce, middle click puts the X on it)
             // (WPF PreviewMouseDown: a tunnelling handler; `ChangedButton = Right` is the press's PointerUpdateKind)
             dungeonView.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, ea) =>
             {
-                var slotK = slotCells.FindIndex(sc => object.ReferenceEquals(dungeonView.Parent, sc));
-                if (slotK >= 0 && ea.GetCurrentPoint(dungeonView).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed && slotK < regularBoxViewsAndActivations.Length)
+                var slotK = Array.FindIndex(d.Boxes, b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
+                if (slotK >= 0 && slotK < 3 && ea.GetCurrentPoint(dungeonView).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed && slotK < regularBoxViewsAndActivations.Length)
                 {
                     ea.Handled = true;
                     if (!CustomComboBoxes.GlobalFlag.popupIsActive) regularBoxViewsAndActivations[slotK].Item2(0, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());

@@ -11,6 +11,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using static Z1R_Avalonia.OverworldItemGridUI;
 using OW_ITEM_GRID_LOCATIONS = Z1R_Avalonia.OverworldMapTileCustomization.OW_ITEM_GRID_LOCATIONS;
@@ -51,6 +52,53 @@ public static class Broadcast
             }
         }
         return ok;
+    }
+
+    // A bitmap copy of the main canvas, re-rendered on a timer, shared by all of one broadcast window's views. Each view crops it, so the tracker is drawn
+    // once per tick instead of once per view (a VisualBrush re-renders its whole source every frame).
+    private sealed class CanvasSnapshot
+    {
+        private readonly Canvas _source;
+        private readonly List<SnapshotView> _views = new List<SnapshotView>();
+        public double MinScale = 1.0;
+        private RenderTargetBitmap _bitmap;
+        public CanvasSnapshot(Canvas source) { _source = source; }
+        public Control View(Rect crop)
+        {
+            var v = new SnapshotView(crop) { Width = crop.Width, Height = crop.Height };
+            RenderOptions.SetBitmapInterpolationMode(v, BitmapInterpolationMode.HighQuality);
+            _views.Add(v);
+            return v;
+        }
+        public void Refresh()
+        {
+            var w = _source.Width;
+            var h = _source.Height;
+            if (double.IsNaN(w) || double.IsNaN(h) || w <= 0 || h <= 0) return;
+            var scale = Math.Max(TopLevel.GetTopLevel(_source)?.RenderScaling ?? 1.0, MinScale);   // (at least the broadcast window's on-screen scale)
+            // (96 dpi, so the bitmap's size in DIPs is its pixel size; the scale is applied by hand)
+            var bitmap = new RenderTargetBitmap(new PixelSize((int)Math.Ceiling(w * scale), (int)Math.Ceiling(h * scale)), new Vector(96.0, 96.0));
+            using (var ctx = bitmap.CreateDrawingContext())
+            using (ctx.PushTransform(Matrix.CreateScale(scale, scale)))
+                ctx.DrawRectangle(new VisualBrush(_source) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(0.0, 0.0, w, h));
+            _bitmap = bitmap;   // (the old one is left to the GC: the renderer may still be drawing it)
+            foreach (var v in _views) v.SetBitmap(bitmap, scale);
+        }
+    }
+    // draws its crop of the snapshot bitmap straight onto the screen (an ImageBrush first rasterizes at the view's own size, so the Viewbox enlarged a 1x copy)
+    private sealed class SnapshotView : Control
+    {
+        private readonly Rect _crop;
+        private IImage _bitmap;
+        private double _scale = 1.0;
+        public SnapshotView(Rect crop) { _crop = crop; }
+        public void SetBitmap(IImage bitmap, double scale) { _bitmap = bitmap; _scale = scale; InvalidateVisual(); }
+        public override void Render(DrawingContext context)
+        {
+            if (_bitmap == null) return;
+            var src = new Rect(_crop.X * _scale, _crop.Y * _scale, _crop.Width * _scale, _crop.Height * _scale);   // (in bitmap pixels, which are its DIPs at 96 dpi)
+            context.DrawImage(_bitmap, src, new Rect(Bounds.Size));
+        }
     }
 
     public static Rectangle makeViewRectImpl(Point upperLeft, Point lowerRight, Visual c)
@@ -119,7 +167,8 @@ public static class Broadcast
             // (WPF: broadcastWindow.Owner <- Application.Current.MainWindow. Here it has no owner, so it can go behind the tracker: see showBroadcast below)
             broadcastWindow.Background = Brushes.Black;
 
-            Rectangle makeViewRect(Point upperLeft, Point lowerRight) => makeViewRectImpl(upperLeft, lowerRight, appMainCanvas);
+            var snapshot = new CanvasSnapshot(appMainCanvas);
+            Control makeViewRect(Point upperLeft, Point lowerRight) => snapshot.View(new Rect(upperLeft, lowerRight));
             void dealWithPopups(double topViewboxRelativeToApp, double topViewboxRelativeToThisBroadcast, Canvas c)
             {
                 var popups = new Dictionary<Canvas, Rectangle>(ReferenceEqualityComparer.Instance);   // (keyed by popup layer, so closing popups out of order removes the right copy)
@@ -220,6 +269,8 @@ public static class Broadcast
                 c.Children.Add(fakeMouse);
                 return fakeMouse;
             }
+            // (a Canvas with a fixed Height taller than the room left beside the docked timeline is centered by Avalonia's DockPanel, which pushed the top row off the window; pin both to the top-left)
+            foreach (var pane in new[] { topc, bottomc }) { pane.VerticalAlignment = VerticalAlignment.Top; pane.HorizontalAlignment = HorizontalAlignment.Left; }
             var fakeTopMouse = addFakeMouse(topc);
             var fakeBottomMouse = addFakeMouse(bottomc);
 
@@ -309,6 +360,23 @@ public static class Broadcast
             cm.RootCanvas.PointerMoved += onPointerMoved;
             // (a resize just before the window closes is saved now, not dropped with the timer)
             broadcastWindow.Closed += (_, _) => { cm.RootCanvas.PointerMoved -= onPointerMoved; if (saveSizeTimer.IsEnabled) saveSize(); };
+            // the shared snapshot of the main canvas: 20 refreshes a second while this window is open and not minimized
+            var snapshotTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100.0) };
+            // 10 refreshes a second while the mouse is active in the tracker, 2 a second when idle, which eases the load on the main window
+            long lastActivity = 0L; var idleTicks = 0;
+            cm.RootCanvas.PointerMoved += (_, _) => lastActivity = Environment.TickCount64;
+            cm.RootCanvas.PointerPressed += (_, _) => lastActivity = Environment.TickCount64;
+            snapshotTimer.Tick += (_, _) =>
+            {
+                if (broadcastWindow.WindowState == WindowState.Minimized) return;
+                if (Environment.TickCount64 - lastActivity > 500L && ++idleTicks % 5 != 0) return;
+                var cs = broadcastWindow.ClientSize;
+                if (cs.Width > 0.0 && cs.Height > 0.0)
+                    snapshot.MinScale = Math.Clamp(Math.Min(cs.Width / W, cs.Height / H) * broadcastWindow.RenderScaling, 1.0, 3.0);   // (the Viewbox's scale on the screen)
+                snapshot.Refresh();
+            };
+            broadcastWindow.Loaded += (_, _) => { snapshot.Refresh(); snapshotTimer.Start(); };
+            broadcastWindow.Closed += (_, _) => snapshotTimer.Stop();
             return broadcastWindow;
         }
         Window broadcastWindow_ = null;

@@ -140,6 +140,29 @@ public static class MainTrackerTriforcesAndItems
                 c.Children.Add(view);
                 return c;
             }
+            // like the main tracker: while a Triforce Piece sits in a dungeon basement slot, the numbered triforce stays in the header with a staircase icon behind it and that slot shows the extra floor box
+            // (-1: no Triforce Piece in a slot; otherwise the index of that slot, where level 2's extra staircase slot comes after its regular boxes)
+            int triforceSlotOf(int i)
+            {
+                if (i > 7) return -1;
+                var dd = TrackerModel.GetDungeon(i);
+                var k = Array.FindIndex(dd.Boxes, b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
+                if (k >= 0) return k < 3 ? k : -1;
+                return (i == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) && TrackerModel.level2StairBoxEnabled && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) ? dd.Boxes.Length : -1;
+            }
+            Control headerOf(int i, int slotK)
+            {
+                if (i >= 8) return Views.MakeLevel9View(null);
+                var tfView = Views.MakeTriforceDisplayView(null, i, null);
+                if (slotK < 0) return tfView;
+                tfView.Background = null;   // (transparent, so the staircase icon behind it shows)
+                var hc = new Canvas { Width = 30.0, Height = 30.0 };
+                hc.Children.Add(Graphics.makeStaircaseBackdropImage());
+                hc.Children.Add(tfView);
+                return hc;
+            }
+            Control slotOf(int i, int k, int slotK, TrackerModel.Box box) => k == slotK ? box30(Views.MakeBoxItemWithExtraDecorations(null, TrackerModel.GetDungeon(i).ExtraFloorBox, false, null).Item1)
+                                                                                       : box30(Views.MakeBoxItemWithExtraDecorations(null, box, false, null).Item1);
             var layoutCB = new CheckBox { Margin = new Thickness(0.0, 6.0, 2.0, 0.0), HorizontalAlignment = HorizontalAlignment.Right, Cursor = new Cursor(StandardCursorType.Hand) };
             var layoutLabel = new TextBlock { Foreground = Brushes.Orange, FontSize = 12.0, Margin = new Thickness(2.0, 0.0, 0.0, 0.0) };
             layoutCB.Content = layoutLabel;
@@ -153,15 +176,16 @@ public static class MainTrackerTriforcesAndItems
                     var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 3.0, 0.0, 3.0) };
                     if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
                         row.Children.Add(Views.MakeColorNumberCanvasForHDN(i));
-                    var tf = (i < 8 ? Views.MakeTriforceDisplayView(null, i, null) : Views.MakeLevel9View(null));
+                    var slotK = triforceSlotOf(i);
+                    var tf = headerOf(i, slotK);
                     tf.VerticalAlignment = VerticalAlignment.Center;
                     row.Children.Add(tf);
                     // (every dungeon's boxes sit left-justified in the same fixed-width area, so the first boxes line up in a clean column whether a dungeon has 2 or 3)
                     var boxesSP = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
-                    foreach (var box in d.Boxes)
-                        boxesSP.Children.Add(box30(Views.MakeBoxItemWithExtraDecorations(null, box, false, null).Item1));
+                    for (int k = 0; k < d.Boxes.Length; k++)
+                        boxesSP.Children.Add(slotOf(i, k, slotK, d.Boxes[k]));
                     if (i == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) && TrackerModel.level2StairBoxEnabled)
-                        boxesSP.Children.Add(box30(Views.MakeBoxItemWithExtraDecorations(null, TrackerModel.level2StairBox, false, null).Item1));
+                        boxesSP.Children.Add(slotOf(i, d.Boxes.Length, slotK, TrackerModel.level2StairBox));
                     if (i == 8 && TrackerModel.level9FloorBoxEnabled)
                         boxesSP.Children.Add(box30(Views.MakeBoxItemWithExtraDecorations(null, d.ExtraFloorBox, false, null).Item1));
                     row.Children.Add(new Border { Width = 98.0, Child = boxesSP });
@@ -196,11 +220,12 @@ public static class MainTrackerTriforcesAndItems
                     var col = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(3.0, 0.0, 3.0, 0.0) };
                     if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
                         col.Children.Add(Views.MakeColorNumberCanvasForHDN(i));
-                    col.Children.Add(i < 8 ? Views.MakeTriforceDisplayView(null, i, null) : Views.MakeLevel9View(null));
-                    foreach (var box in d.Boxes)
-                        col.Children.Add(box30(Views.MakeBoxItemWithExtraDecorations(null, box, false, null).Item1));
+                    var slotK = triforceSlotOf(i);
+                    col.Children.Add(headerOf(i, slotK));
+                    for (int k = 0; k < d.Boxes.Length; k++)
+                        col.Children.Add(slotOf(i, k, slotK, d.Boxes[k]));
                     if (i == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) && TrackerModel.level2StairBoxEnabled)
-                        col.Children.Add(box30(Views.MakeBoxItemWithExtraDecorations(null, TrackerModel.level2StairBox, false, null).Item1));
+                        col.Children.Add(slotOf(i, d.Boxes.Length, slotK, TrackerModel.level2StairBox));
                     if (i == 8 && TrackerModel.level9FloorBoxEnabled)
                         col.Children.Add(box30(Views.MakeBoxItemWithExtraDecorations(null, d.ExtraFloorBox, false, null).Item1));
                     row1.Children.Add(col);
@@ -299,17 +324,37 @@ public static class MainTrackerTriforcesAndItems
             var floorHandler = new FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => { if (itemLocationsWindow == w) build(); });
             TrackerModel.level2StairBoxEnabledChanged.Publish.AddHandler(stairHandler);
             TrackerModel.level9FloorBoxEnabledChanged.Publish.AddHandler(floorHandler);
+            // a Triforce Piece placed in (or removed from) an item slot moves the numbered triforce: rebuild only when some dungeon's triforce position changed
+            string triforceSig() => string.Join(",", Enumerable.Range(0, 8).Select(triforceSlotOf));
+            var tfSig = triforceSig();
+            var tfHandler = new FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) =>
+            {
+                if (itemLocationsWindow != w) return;
+                var s = triforceSig();
+                if (s != tfSig) { tfSig = s; build(); }
+            });
+            var tfBoxes = Enumerable.Range(0, 8).SelectMany(i => TrackerModel.GetDungeon(i).Boxes)
+                .Append(TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.FinalBoxOf1Or4).Append(TrackerModel.level2StairBox).Distinct().ToArray();
+            foreach (var tb in tfBoxes) tb.Changed.AddHandler(tfHandler);
             var mainWin = ShowRunCustom.mainWindow();
             EventHandler onMainClosed = (_, _) => { mainClosing = true; try { w.Close(); } catch { } };   // (stays 'open' in the settings, so it reappears next time)
             mainWin.Closed += onMainClosed;
+            // (only a close the user asked for clears the 'open' setting: when the program shuts down, the windows can close before the main window's Closed event runs)
+            var userClosed = false;
+#if !BROWSER
+            w.Closing += (_, e) => userClosed = !e.IsProgrammatic && e.CloseReason == WindowCloseReason.WindowClosing;
+#else
+            userClosed = true;
+#endif
             w.Closed += (_, _) =>
             {
                 TrackerModel.level2StairBoxEnabledChanged.Publish.RemoveHandler(stairHandler);
                 TrackerModel.level9FloorBoxEnabledChanged.Publish.RemoveHandler(floorHandler);
+                foreach (var tb in tfBoxes) tb.Changed.RemoveHandler(tfHandler);
                 mainWin.Closed -= onMainClosed;
                 itemLocationsWindow = null;
                 saveTimer.Stop();
-                if (!mainClosing) save(false);   // the user closed it themselves: don't reopen it next time
+                if (!mainClosing && userClosed) save(false);   // the user closed it themselves: don't reopen it next time
             };
             itemLocationsWindow = w;
             w.Show();
@@ -1141,9 +1186,10 @@ public static class MainTrackerTriforcesAndItems
                 }
             }
             RedrawForSecondQuestDungeonToggle();
-            // when a Triforce Piece is placed in a dungeon item slot, the numbered triforce (and its click behavior) moves from the dungeon column header into that slot,
-            // and the header gets an empty floor item box instead. Right/middle click on the triforce in the slot opens the item menu (so it can be removed).
+            // when a Triforce Piece is placed in a dungeon basement slot, the numbered triforce stays in the column header with a staircase icon behind it,
+            // and that slot shows the dungeon's floor item box instead. Right/middle click on the triforce then opens the basement slot's item menu (so it can be removed).
             var extraFloorCanvases = new Canvas[8];
+            var stairBackdrops = new Image[8];
             void RefreshTriforceHeaderOrSlot()
             {
                 for (int i = 0; i <= 7; i++)
@@ -1158,10 +1204,11 @@ public static class MainTrackerTriforcesAndItems
                     else slotIndex = (i == 1 && TrackerModel.level2StairBoxEnabled && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) ? 2 : null;   // the extra level 2 staircase slot shares level 2's bottom cell
                     // detach from wherever it currently is
                     header.Children.Remove(innerc);
+                    if (stairBackdrops[i] != null)
+                        header.Children.Remove(stairBackdrops[i]);
                     for (int j = 2; j <= 4; j++)
-                        mainTrackerCanvases[i, j].Children.Remove(innerc);
-                    if (extraFloorCanvases[i] != null)
-                        header.Children.Remove(extraFloorCanvases[i]);
+                        if (extraFloorCanvases[i] != null)
+                            mainTrackerCanvases[i, j].Children.Remove(extraFloorCanvases[i]);
                     if (slotIndex is int k && k < 3)
                     {
                         if (extraFloorCanvases[i] == null)
@@ -1169,15 +1216,15 @@ public static class MainTrackerTriforcesAndItems
                             var (ec, _) = Views.MakeBoxItem(cm, d.ExtraFloorBox);
                             extraFloorCanvases[i] = ec;
                         }
-                        canvasAdd(header, extraFloorCanvases[i], 0.0, 0.0);
-                        innerc.Clip = null;   // triforce fully covers the item box, so no colored box outline shows around it
-                        canvasAdd(mainTrackerCanvases[i, k + 2], innerc, 0.0, 0.0);
+                        if (stairBackdrops[i] == null)
+                            stairBackdrops[i] = Graphics.makeStaircaseBackdropImage();
+                        canvasAdd(header, stairBackdrops[i], 0.0, 0.0);   // (the staircase icon behind the triforce: it is in a basement)
+                        innerc.Background = null;   // (the triforce's black backing would hide the staircase)
+                        canvasAdd(mainTrackerCanvases[i, k + 2], extraFloorCanvases[i], 0.0, 0.0);   // (the basement slot is now a floor item slot)
                     }
-                    else
-                    {
-                        innerc.Clip = null;
-                        canvasAdd(header, innerc, 0.0, 0.0);
-                    }
+                    innerc.Clip = null;
+                    if (!(slotIndex is int k2 && k2 < 3)) innerc.Background = Brushes.Black;
+                    canvasAdd(header, innerc, 0.0, 0.0);
                 }
             }
             for (int i0 = 0; i0 <= 7; i0++)
@@ -1187,8 +1234,22 @@ public static class MainTrackerTriforcesAndItems
                 innerc.AddHandler(InputElement.PointerPressedEvent, new EventHandler<PointerPressedEventArgs>((_, ea) =>   // (WPF: PreviewMouseDown)
                 {
                     var d = TrackerModel.GetDungeon(i);
-                    var isInSlot = innerc.Parent != null && !(object.ReferenceEquals(innerc.Parent, mainTrackerCanvases[i, 1]));
-                    if (isInSlot && ea.GetCurrentPoint(innerc).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
+                    var isInSlot = d.TriforceIsInItemSlot;   // (the triforce stays in the header; it is 'in a slot' when a basement slot holds the Triforce Piece)
+                    if (!isInSlot && ea.GetCurrentPoint(innerc).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
+                    {
+                        // right/middle click on a triforce that is not in a basement: put the Triforce Piece in the dungeon's basement slot (level 8: the middle one)
+                        ea.Handled = true;
+                        if (!popupIsActive)
+                        {
+                            var boxes = d.Boxes;
+                            var basement = boxes.Take(3).Where(b => b.CurrentlyHasBasementStair).ToList();
+                            var target = basement.FirstOrDefault(b => b.CellCurrent() == -1) ?? basement.FirstOrDefault();
+                            // level 2: its extra staircase slot, when it is there, is its basement
+                            if (i == 1 && TrackerModel.level2StairBoxEnabled && !TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) target = TrackerModel.level2StairBox;
+                            target?.AttemptToSet(TrackerModel.ITEMS.TRIFORCE, target.PlayerHas());
+                        }
+                    }
+                    else if (isInSlot && ea.GetCurrentPoint(innerc).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
                     {
                         ea.Handled = true;
                         if (!popupIsActive)
@@ -1197,7 +1258,7 @@ public static class MainTrackerTriforcesAndItems
                             if (bOpt == null && i == 1 && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) bOpt = TrackerModel.level2StairBox;
                             if (bOpt is TrackerModel.Box b)
                             {
-                                if (boxActivators.TryGetValue(b, out var f)) f();
+                                b.Set(-1, TrackerModel.PlayerHas.NO);   // right-click again toggles the Triforce Piece back out of the basement slot
                             }
                         }
                     }
