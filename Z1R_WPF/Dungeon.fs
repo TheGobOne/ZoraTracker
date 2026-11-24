@@ -1194,20 +1194,6 @@ XXX.X..."""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmpt
     for x = 0 to 7 do
         for y = 0 to 7 do
             if pattern.[y].Chars(x)='X' then b(x,y)
-    // chest (the ROM's HUD shows it between the rupee and the key; the gap in the lower half is the keyhole)
-    yoff <- 16
-    let pattern = """
-........
-.XXXXXX.
-XXXXXXXX
-........
-XXXXXXXX
-XXXX.XXX
-XXXXXXXX
-........"""          .Split([|'\r'; '\n'|], System.StringSplitOptions.RemoveEmptyEntries)
-    for x = 0 to 7 do
-        for y = 0 to 7 do
-            if pattern.[y].Chars(x)='X' then b(x,y)
     // key
     yoff <- 24
     let pattern = """
