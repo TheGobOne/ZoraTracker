@@ -2877,7 +2877,7 @@ public static class Program
                 dialog.Children.Add(intro);
                 dialog.Children.Add(inputs);
                 // (a long list scrolls, so Apply and Close stay on screen)
-                dialog.Children.Add(new ScrollViewer { Content = result, MaxHeight = 180.0, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto });
+                dialog.Children.Add(new ScrollViewer { Content = result, MaxHeight = 360.0, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto });
                 var wh = new ManualResetEvent(false);
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
                 var applyBtn = Graphics.makeButton(" Apply ", null, null);
@@ -2946,6 +2946,11 @@ public static class Program
                                 selectHeartMode(m);
                                 lines.Add("Item Shuffle: " + new[] { "Off", "Intra", "Full" }[m]);
                             }
+                            if (p.Level9Triforces.HasValue)
+                            {
+                                TrackerModel.level9TriforceCount = p.Level9Triforces.Value;
+                                lines.Add("Level 9 entry: " + (p.Level9Triforces.Value == 0 ? "no triforces needed" : p.Level9Triforces.Value + " triforces"));
+                            }
                             setTri(mocb, p.Mirror, "Mirrored Overworld");
                             setTri(hdcb, p.HideNumbers, "Hide Dungeon Numbers");
                             foreach (var b in new[] { startButtons[0], startButtons[1], startButtons[2], startButtons[3] }) b.Effect = null;
@@ -2966,6 +2971,14 @@ public static class Program
                         {
                             SaveAndLoad.lastKnownZoraFlags = zora;
                             if (z.Warning != null) lines.Add(z.Warning);
+                            if (z.ExpandedDungeonLocations == FlagPaste.Tri.On)
+                            {
+                                // dungeons can be at the vanilla spots of either quest: circle both sets (2Q first, so the 1Q number wins on the 3 tiles they share)
+                                foreach (var (locs, baseColor) in new[] { (OverworldData.vanilla2QDungeonLocations, 249), (OverworldData.vanilla1QDungeonLocations, 149) })
+                                    for (var i = 0; i <= 8; i++)
+                                        TrackerModel.overworldMapCircles[locs[i].Item1, locs[i].Item2] = baseColor + i;
+                                lines.Add("Expanded Dungeon Locations: marked the vanilla 1Q (white) and 2Q (orange) dungeon spots");
+                            }
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
                                         || z.Progressive;
@@ -3109,7 +3122,7 @@ public static class Program
                     var areaH = cm.AppMainCanvas.Height > 0.0 ? cm.AppMainCanvas.Height : dialogBorder.DesiredSize.Height + 60.0;
                     // the cursor starts in the top box
                     z1rBox.Loaded += (_, _) => Dispatcher.UIThread.Post(() => z1rBox.Focus(), DispatcherPriority.Background);
-                    await CustomComboBoxes.DoModalSticky(cm, wh, Math.Max(0.0, (areaW - dialogBorder.DesiredSize.Width) / 2.0), Math.Max(0.0, (areaH - dialogBorder.DesiredSize.Height) / 3.0), dialogBorder);
+                    await CustomComboBoxes.DoModalSticky(cm, wh, Math.Max(0.0, (areaW - dialogBorder.DesiredSize.Width) / 2.0), 20.0, dialogBorder);   // (near the top: the dialog grows downward when the list of what was set appears)
                     popupIsActive = false;   // (so the button works again after Cancel or Done)
                 }
                 CustomComboBoxes.StartImmediate(show());

@@ -85,7 +85,8 @@ public static class FlagPaste
                                  int? ItemShuffle,     // 0 = Off, 1 = Intra, 2 = Full
                                  Tri Mirror,
                                  Tri HideNumbers,
-                                 List<string> Notes);
+                                 List<string> Notes,
+                                 int? Level9Triforces = null);   // C08: how many triforces level 9 asks for (0 = nothing); null only if the string is not read
 
     // (F#: Result<Z1RPart, string>; error is null when it worked)
     public static (Z1RPart ok, string error) decodeZ1R(string s)
@@ -127,7 +128,14 @@ public static class FlagPaste
                 shuffle = null;
                 break;
         }
-        return (new Z1RPart(quest, shuffle, tri(toggles[5]), tri(toggles[23]), notes), null);
+        int? level9 = null;
+        switch (options[7])   // C08 Level 9 entry: 0 to 7 ask for 8 down to 1 pieces, 8 asks for none; the rest (a drawn count, specific levels, an item, random) are decided per seed and stay at 8
+        {
+            case int c when c <= 7: level9 = 8 - c; break;
+            case 8: level9 = 0; break;
+            default: level9 = 8; break;   // (drawn per seed, so the flags can't say: leave the default of 8; the user sets it)
+        }
+        return (new Z1RPart(quest, shuffle, tri(toggles[5]), tri(toggles[23]), notes, level9), null);
     }
 
     // what the ZORA string says about the ZORA extras (a three-state flag's Random can't be known from the string)
@@ -139,13 +147,14 @@ public static class FlagPaste
                                   Tri ExtraPowerBlocks,
                                   Tri RandomizeDeadWoods,
                                   Tri RandomizeLostHills,
+                                  Tri ExpandedDungeonLocations,
                                   string Warning = null);   // (set when the string is newer than this tracker: it was read anyway)
 
     // a seed file name from the ZORA page (the spec's file_name section): zora-<version>-<Z1R>-<ZORA>-<seed>[-music][.nes | .spoiler.txt | .tracker.json]
     public sealed record FileNameParts(string Version, string Z1R, string Zora, string Seed, bool Music, string Extension);
 
     // the ZORA release this tracker's flag tables are from (a seed from a newer one still reads, with a warning)
-    public const string specZoraVersion = "2.0.1";
+    public const string specZoraVersion = "2.0.2";
 
     private static readonly System.Text.RegularExpressions.Regex fileNameRegex = new System.Text.RegularExpressions.Regex(
         @"^zora-([.0-9A-Z_a-z-]+?)-([0-9A-Z_a-z]+)-((?:[1-9][0-9]*\.[0-9A-Z_a-z]+)?)-([0-9]+)(-music)?(\.nes|\.spoiler\.txt|\.tracker\.json)?$");
@@ -194,6 +203,7 @@ public static class FlagPaste
                                  ExtraPowerBlocks: tri(v("extra_power_bracelet_blocks")),
                                  RandomizeDeadWoods: tri(v("randomize_dead_woods")),
                                  RandomizeLostHills: tri(v("randomize_lost_hills")),
+                                 ExpandedDungeonLocations: tri(v("expanded_dungeon_locations")),
                                  Warning: warning), null);
         }
         if (s == "") return finish();

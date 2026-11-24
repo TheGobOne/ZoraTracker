@@ -1581,9 +1581,16 @@ public static class WPFUI
 
         // middle click overworld circles
         Ellipse makeOwCircle(IBrush brush) => new Ellipse { Width = (double)(11 * 3) - 2.0, Height = (double)(11 * 3) - 2.0, Stroke = brush, StrokeThickness = 3.0, IsHitTestVisible = false };
-        var pinkBrush = Graphics.freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x40, 0x99)));
+        var orangeBrush = Graphics.freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x90, 0x00)));
         var brightBlueBrush = Graphics.freeze(new SolidColorBrush(Color.FromRgb(0x00, 0xD0, 0xFF)));
-        IBrush owCircleColor(int data) => data >= 200 ? Brushes.Yellow : data >= 100 ? pinkBrush : brightBlueBrush;
+        IBrush owCircleColor(int data) => data >= 200 ? orangeBrush : data >= 100 ? Brushes.White : brightBlueBrush;
+        // tiles that are a dungeon spot in both vanilla quests: their circle is drawn split, 1Q (white) on the left half and 2Q (orange) on the right,
+        // with both numbers; the value is the label char of each quest's dungeon there
+        var sharedDungeonSpots = new Dictionary<(int, int), (int, int)>();
+        for (var k1 = 0; k1 <= 8; k1++)
+            for (var k2 = 0; k2 <= 8; k2++)
+                if (OverworldData.vanilla1QDungeonLocations[k1].Equals(OverworldData.vanilla2QDungeonLocations[k2]))
+                    sharedDungeonSpots[(OverworldData.vanilla1QDungeonLocations[k1].Item1, OverworldData.vanilla1QDungeonLocations[k1].Item2)] = (49 + k1, 49 + k2);
         var overworldCirclesCanvas = new Canvas { Width = 16.0 * OMTW, Height = (double)(8 * 11 * 3) };
         overworldCirclesCanvas.IsHitTestVisible = false;
         var owCircleRedraws = new Action[16, 8];
@@ -1601,7 +1608,31 @@ public static class WPFUI
                     c.Children.Clear();
                     var v = TrackerModel.overworldMapCircles[i, j];
                     var brush = owCircleColor(v);
+                    var colorBase = v - v % 100;
                     v = v % 100;
+                    if (colorBase >= 100 && colorBase <= 200 && sharedDungeonSpots.TryGetValue((i, j), out var labs) && (v == labs.Item1 || v == labs.Item2))
+                    {
+                        const double d = 11.0 * 3.0 - 2.0, r = d / 2.0;
+                        Path half(bool left) => new Path
+                        {
+                            Stroke = left ? Brushes.White : orangeBrush, StrokeThickness = 3.0, IsHitTestVisible = false,
+                            Data = new PathGeometry { Figures = new PathFigures { new PathFigure { StartPoint = new Point(r, 0.0), IsClosed = false, Segments = new PathSegments {
+                                new ArcSegment { Point = new Point(r, d), Size = new Size(r, r), SweepDirection = left ? SweepDirection.CounterClockwise : SweepDirection.Clockwise } } } } }
+                        };
+                        canvasAdd(c, half(true), 11.5 * OMTW / 48.0 - 3.0, 0.0);
+                        canvasAdd(c, half(false), 11.5 * OMTW / 48.0 - 3.0, 0.0);
+                        var tb1 = new TextBox { Text = ((char)labs.Item1).ToString(), FontSize = 12.0, FontWeight = FontWeight.Bold, Foreground = Brushes.White, Background = Brushes.Black,
+                                                IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0) };
+                        var tb2 = new TextBox { Text = ((char)labs.Item2).ToString(), FontSize = 12.0, FontWeight = FontWeight.Bold, Foreground = orangeBrush, Background = Brushes.Black,
+                                                IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0) };
+                        c.Children.Add(tb1);
+                        c.Children.Add(tb2);
+                        Canvas.SetLeft(tb1, 0.0);
+                        Canvas.SetBottom(tb1, 0.0);
+                        Canvas.SetRight(tb2, 0.0);
+                        Canvas.SetBottom(tb2, 0.0);
+                        return;
+                    }
                     if (v != 0)
                         canvasAdd(c, makeOwCircle(brush), 11.5 * OMTW / 48.0 - 3.0, 0.0);
                     if ((v >= 48 && v <= 57) || (v >= 65 && v <= 90))
@@ -1617,6 +1648,7 @@ public static class WPFUI
             }
         }
         redrawOWCircle.Value = (x, y) => owCircleRedraws[x, y]();
+        foreach (var redrawCircle in owCircleRedraws) redrawCircle();   // (circles already set before the tracker started, like the vanilla dungeon spots from the pasted flags)
 
         await showProgress("overworld magnifier");
         var (onMouseForMagnifier, dungeonTabsOverlay, dungeonTabsOverlayContent) = UIComponents.MakeMagnifier(mirrorOverworldFEs, owMapNum, owMapBMPs);
