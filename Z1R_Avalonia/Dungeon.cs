@@ -1291,7 +1291,10 @@ XXXXXXX.
         }
         return bmp;
     }
-    public static System.Drawing.Bitmap MakeLoZMinimapDisplayBmp(bool[,] rooms, char letter)
+    // the chest next to the rupee, key and bomb is drawn only with the Dungeon map hint option
+    public static System.Drawing.Bitmap MakeLoZMinimapDisplayBmp(bool[,] rooms, char letter) =>
+        MakeLoZMinimapDisplayBmp(rooms, letter, TrackerModelOptions.DisplayIconsInDungeonMap.Value);
+    public static System.Drawing.Bitmap MakeLoZMinimapDisplayBmp(bool[,] rooms, char letter, bool withChest)
     {
         var OFFWHITE = System.Drawing.Color.FromArgb(210, 210, 210);
         var YELLOW = System.Drawing.Color.FromArgb(215, 152, 42);
@@ -1386,8 +1389,8 @@ XXX.X...".Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         for (int x = 0; x <= 7; x++)
             for (int y = 0; y <= 7; y++)
                 if (pattern[y][x] == 'X') b(x, y);
-        // chest (the ROM's HUD shows it between the rupee and the key; the gap in the lower half is the keyhole); only with the Show dungeon hint icons option
-        if (TrackerModelOptions.ShowDungeonHintIcons.Value)
+        // chest (the ROM's HUD shows it between the rupee and the key; the gap in the lower half is the keyhole)
+        if (withChest)
         {
             yoff = 16;
             pattern = @"
