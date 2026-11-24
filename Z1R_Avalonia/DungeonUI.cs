@@ -165,15 +165,15 @@ public static class DungeonUI
 
     private static System.Drawing.Bitmap[] make_rowBmp()
     {
-        var full = Dungeon.MakeLoZMinimapDisplayBmp(new bool[8, 8], '?'); // dummy data
+        var full = Dungeon.MakeLoZMinimapDisplayBmp(new bool[8, 8], '?', true); // dummy data (the chest is always drawn here; the Dungeon map hint option decides whether a room shows it)
         var scale = 3;  // Scale each icon to 16x8 → 32x16 (approx. 75% of 39x27 tile)
         return new[] {
             // Rupee top/bottom (Y: 8–15)
             createSizedCenteredIcon(full, 72, 8, 4, scale, 2),
             createSizedCenteredIcon(full, 72, 12, 4, scale, 2),
-            // Empty rows
-            new System.Drawing.Bitmap(39, 27),
-            new System.Drawing.Bitmap(39, 27),
+            // Chest top/bottom (Y: 16–23)
+            createSizedCenteredIcon(full, 72, 16, 4, scale, 2),
+            createSizedCenteredIcon(full, 72, 20, 4, scale, 2),
             // Bomb top/bottom (Y: 24–31) — NOW rows 4/5
             createSizedCenteredIcon(full, 72, 24, 4, scale, 2),
             createSizedCenteredIcon(full, 72, 28, 4, scale, 2),
@@ -203,8 +203,8 @@ public static class DungeonUI
         new[] {
             Graphics.BMPtoImage(placeholder_row0_bmp),
             Graphics.BMPtoImage(placeholder_row1_bmp),
-            Graphics.BMPtoImage(placeholder_row2_bmp),  // Unused, optional dummy
-            Graphics.BMPtoImage(placeholder_row3_bmp),  // Unused, optional dummy
+            Graphics.BMPtoImage(placeholder_row2_bmp),
+            Graphics.BMPtoImage(placeholder_row3_bmp),
             Graphics.BMPtoImage(placeholder_row4_bmp),
             Graphics.BMPtoImage(placeholder_row5_bmp),
             Graphics.BMPtoImage(placeholder_row6_bmp),
@@ -2190,7 +2190,7 @@ public static class DungeonUI
                             image.IsHitTestVisible = false;
                             canvasAdd(c, image, -BUFFER, -BUFFER);
 
-                            var rowsWithPlaceholders = new HashSet<int> { 0, 1, 4, 5, 6, 7 };
+                            var rowsWithPlaceholders = new HashSet<int> { 0, 1, 2, 3, 4, 5, 6, 7 };
                             if (TrackerModelOptions.DisplayIconsInDungeonMap.Value && roomStates[i, j].IsEmpty && rowsWithPlaceholders.Contains(j))
                             {
                                 var src = placeholderIconsByRow[j].Source;   // (WPF: .Source.Clone(); an Avalonia bitmap is immutable, so it is shared)
