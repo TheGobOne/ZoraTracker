@@ -46,6 +46,9 @@ let mutable LegacyMode = false   // startup Legacy Mode: every ZORA Extra is off
 let mutable MarkBombDroppers = false   // Startup Options checkbox: middle-clicking an overworld tile marks it as a bomb dropper screen
 let mutable BootsReplaceBoomerangs = false   // ZORA Extras startup option (behavior still to be decided)
 let mutable BootsRandom = false   // the flags left Boots to chance (a ?): BootsReplaceBoomerangs stays false (boomerangs) until it is confirmed in Overworld + Extras
+let mutable ShuffleMaps = false   // ZORA Extras "Shuffle" startup option: maps can be in other dungeons
+let mutable ShuffleCompasses = false   // ZORA Extras "Shuffle" startup option: compasses can be in other dungeons
+let mutable ShuffleTriforces = false   // ZORA Extras "Shuffle" startup option: triforces can be in other dungeons
 let mutable CustomLevelName = ""   // up to 7 chars (uppercase); if non-empty, replaces 'LEVEL-n' in each dungeon map header
 let mutable MirrorOverworld = false
 
@@ -1008,7 +1011,7 @@ and Dungeon(id,numBoxes) =
         else
             currentlyReentrant <- true
             // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
-            let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE)
+            let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (TrackerModelOptions.IgnoreHeartsForDungeonDim.Value && b.CellCurrent() = ITEMS.HEARTCONTAINER)
             let r =
                 match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
                 | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
@@ -1517,6 +1520,11 @@ let recomputeMapStateSummary() =
     let secondQuestOnlyInterestingMarks = Array2D.zeroCreate 16 8
     let mutable magsCaveFound_, woodSwordCaveFound_, foundBlueRingShop_, foundBookShop_, foundCandleShop_, foundArrowShop_, foundBombShop_, havePotionLetter_ = 
                             false, false, false, false, false, false, false, false
+    // (needed before any tile is judged below)
+    OverworldData.updateAnyRoadBypass [ for i = 0 to 15 do
+                                            for j = 0 to 7 do
+                                                let m = overworldMapMarks.[i,j].Current()
+                                                if m >= 9 && m < 13 then yield i,j ]
     for i = 0 to 15 do
         for j = 0 to 7 do
             if not(owInstance.AlwaysEmpty(i,j)) then
@@ -1553,9 +1561,9 @@ let recomputeMapStateSummary() =
                     if owInstance.PowerBraceletable(i,j) then
                         owPowerBraceletSpotsRemain <- owPowerBraceletSpotsRemain + 1
                     if (owInstance.Whistleable(i,j) && not playerComputedStateSummary.HaveRecorder) ||
-                        (owInstance.PowerBraceletable(i,j) && not playerComputedStateSummary.HavePowerBracelet) ||
+                        (owInstance.NeedsPowerBracelet(i,j) && not playerComputedStateSummary.HavePowerBracelet) ||
                         (owInstance.Ladderable(i,j) && not playerComputedStateSummary.HaveLadder) ||
-                        (owInstance.Raftable(i,j) && not playerComputedStateSummary.HaveRaft) ||
+                        (owInstance.NeedsRaft(i,j) && not playerComputedStateSummary.HaveRaft) ||
                         owInstance.HintLocked(i,j) ||
                         (owInstance.Bombable(i,j) && not(playerProgressAndTakeAnyHearts.PlayerHasBombs.Value())) ||
                         (owInstance.Burnable(i,j) && playerComputedStateSummary.CandleLevel=0) then
@@ -1894,7 +1902,7 @@ let unreachablePossibleDungeonSpotCount() =
                     count <- count + 1
                 if owInstance.Burnable(x,y) && not(playerComputedStateSummary.CandleLevel>0) then
                     count <- count + 1
-                if owInstance.Raftable(x,y) && not(playerComputedStateSummary.HaveRaft) then
+                if owInstance.NeedsRaft(x,y) && not(playerComputedStateSummary.HaveRaft) then
                     count <- count + 1
                 if owInstance.Ladderable(x,y) && not(playerComputedStateSummary.HaveLadder) then
                     count <- count + 1

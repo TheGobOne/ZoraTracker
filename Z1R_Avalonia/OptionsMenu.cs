@@ -137,8 +137,9 @@ public static class OptionsMenu
         ("Show dungeon hint icons", "Uncheck to hide the dim question-mark icons above the dungeons and other items\n(where you click to pick a location hint)", TrackerModelOptions.ShowDungeonHintIcons, false, triggerShowDungeonHintIconsOptionChanged),
         ("BOARD instead of LEVEL", "Check this to label the dungeon tabs and headers BOARD-1 ... BOARD-9\ninstead of LEVEL-1 ... LEVEL-9", TrackerModelOptions.BOARDInsteadOfLEVEL, false, triggerBOARDInsteadOfLEVELOptionChanged),
         ("Show basement info", "Check this if empty dungeon item boxes should suggest whether they are found as\nbasement items rather than floor drops (no effect when Hidden Dungeon Numbers)", TrackerModelOptions.ShowBasementInfo, false, triggerShowBasementInfoOptionChanged),
-        ("Do door inference", "Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, () => { }),
-        ("Book for helpful hints", "Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, triggerBookForHelpfulHintsOptionChanged),
+        ("Door inference","Check this to mark a green door when you mark a new room, if the point of entry can be inferred", TrackerModelOptions.DoDoorInference, false, () => { }),
+        ("Enemy inference", "Check this to mark a possible recorder block when you mark a Digdogger room,\nand a possible bow and arrow block when you mark a Gohma room", TrackerModelOptions.EnemyInference, false, () => { }),
+        ("Book for helpful hints","Check this if both 'Book To Understand Old Men' flag is on, and\n'Helpful' hints are available. The tracker will let you left-click\nOld Man Hint rooms to toggle whether you have read them yet.", TrackerModelOptions.BookForHelpfulHints, false, triggerBookForHelpfulHintsOptionChanged),
         ("Alphabetize hint zone list", "When checked, the hint zone dropdown (where you mark which zone a dungeon/sword is in)\nshows zones in alphabetical order instead of geographic order.", TrackerModelOptions.AlphabetizeHintZones, false, () => { }),
         ("Red edge by OFF tiles", "Uncheck to stop drawing a red 'no bomb' edge on the side of a dungeon room\nthat touches an OFF tile", TrackerModelOptions.ShowOffTileEdges, false, triggerDungeonOffTileEdgesChanged),
         ("Left-drag auto-inverts", "Painting maps: When checked, If your first drag is with left-click,\nand you've not yet inverted OffTheMap with Unmarked, then\nauto-invert when left-click-dragging, to immediately start painting a map.", TrackerModelOptions.LeftClickDragAutoInverts, false, () => { }),
@@ -1388,6 +1389,14 @@ public static class OptionsMenu
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);
 
+        cb3 = new CheckBox { Content = new TextBox { Text = "Dim dungeon without hearts", IsReadOnly = true } };
+        cb3.IsChecked = TrackerModelOptions.IgnoreHeartsForDungeonDim.Value;
+        Graphics.onChecked(cb3, () => TrackerModelOptions.IgnoreHeartsForDungeonDim.Value = true);
+        Graphics.onUnchecked(cb3, () => TrackerModelOptions.IgnoreHeartsForDungeonDim.Value = false);
+        ToolTip.SetTip(cb3, "When checked, a dungeon dims as complete once you have its triforce and every item except the heart containers");
+        setToolTipShowDuration(cb3, 10000);
+        options3sp.Children.Add(cb3);
+
         cb3 = new CheckBox { Content = new TextBox { Text = "Save on completion", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.SaveOnCompletion.Value;
         Graphics.onChecked(cb3, () => TrackerModelOptions.SaveOnCompletion.Value = true);
@@ -1407,7 +1416,7 @@ public static class OptionsMenu
             options3sp.Children.Add(cb3);
         }
 
-        cb3 = new CheckBox { Content = new TextBox { Text = "Archipelago support", IsReadOnly = true } };
+        cb3 = new CheckBox { Content = new TextBox { Text = "Archipelago Items", IsReadOnly = true } };
         cb3.IsChecked = TrackerModelOptions.ArchipelagoSupport.Value;
         Graphics.onChecked(cb3, () => { TrackerModelOptions.ArchipelagoSupport.Value = true; DrawingLayer.applyArchipelagoSupport(); });
         Graphics.onUnchecked(cb3, () => { TrackerModelOptions.ArchipelagoSupport.Value = false; DrawingLayer.applyArchipelagoSupport(); });
@@ -1572,7 +1581,7 @@ public static class OptionsMenu
         // some spare black space at the bottom of every column (so the dividers between the columns run all the way down), for future options
         foreach (var col in new[] { options1sp, options2sp, options3sp })
             col.Children.Add(new DockPanel { Height = 8.0, Background = Brushes.Black });
-        total.Children.Add(new Viewbox { Child = optionsAllsp, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, MaxWidth = width, HorizontalAlignment = HorizontalAlignment.Left });
+        total.Children.Add(new Viewbox { Child = optionsAllsp, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, MaxWidth = width, MaxHeight = Math.Max(200.0, cm.Height - 30.0), HorizontalAlignment = HorizontalAlignment.Left });   // (the popup scales down to fit the window, so a long column is not cut off at the bottom)
 
         all.Child = total;
         if (includePopupExplainer)

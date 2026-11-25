@@ -1676,7 +1676,7 @@ public static class OverworldItemGridUI
                     }
                     // Archipelago support: the same setting as the Options menu and start screen checkboxes, kept in step through ArchipelagoSupportChanged
                     {
-                        var apTxt = mkTxt("Archipelago support");
+                        var apTxt = mkTxt("Archipelago Items");
                         apTxt.FontSize = 14.0;
                         var apCb = new CheckBox { Content = apTxt, IsChecked = TrackerModelOptions.ArchipelagoSupport.Value, Margin = new Thickness(6.0, 2.0, 14.0, 2.0), VerticalAlignment = VerticalAlignment.Center };
                         ToolTip.SetTip(apCb, "For Archipelago multiworld games: adds the AP Item, a gem for an item that belongs to another world,\nto the item-box menus and the overworld tile menu. Place it as many times as you need to mark checked locations.");

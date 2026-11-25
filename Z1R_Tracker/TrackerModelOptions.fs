@@ -10,7 +10,7 @@ type Bool(init) =
     let mutable v = init
     member this.Value with get() = v and set(x) = v <- x
 module Overworld =
-    let mutable DrawRoutes = Bool(true)
+    let mutable DrawRoutes = Bool(false)
     let mutable RoutesCanScreenScroll = Bool(false)
     let mutable HighlightNearby = Bool(true)
     let mutable ShowMagnifier = Bool(true)
@@ -127,12 +127,14 @@ let MenuLayouts = new System.Collections.Generic.Dictionary<string,string[]>()
 let mutable UseOldPotionLetterIcons = Bool(true)   // the old potion/letter icons are always used now (no longer an option)
 let mutable DisplayIconsInDungeonMap = Bool(false)
 let mutable ShowDungeonHintIcons = Bool(true)
+let mutable IgnoreHeartsForDungeonDim = Bool(false)   // a dungeon dims as complete without needing its heart containers collected
 let mutable ShowOffTileEdges = Bool(true)   // dungeon map: a red 'no bomb' edge on each side of a room that touches an OFF tile
 let mutable DungeonMapLocationHintOpacity = 0.3
 let mutable ReverseScrollWheelDirection = Bool(false)
 let mutable HidePopupHintAndLock = Bool(false)   // hide the tip box and lock bar on the dungeon room type / monster / floor drop menus
 let mutable ShowBasementInfo = Bool(true)
-let mutable DoDoorInference = Bool(false)
+let mutable DoDoorInference = Bool(true)
+let mutable EnemyInference = Bool(true)
 let mutable DefaultRoomPreferNonDescriptToMaybePushBlock = Bool(false)
 let mutable GiveDungeonTrackerSunglasses = Bool(true)
 let mutable LeftClickDragAutoInverts = Bool(false)
@@ -184,6 +186,7 @@ let mutable MouseMagnifierWindowLTWH = ""
 let mutable SpotSummaryPopout_DisplayedLT = ""
 let mutable InventoryAndHeartsPopout_DisplayedLT = ""
 let mutable RemainingItemsPoput_DisplayedLT = ""
+let mutable ShopsPopout_DisplayedLT = ""
 let mutable ItemLocationsWindow_DisplayedLT = ""
 let mutable ShowCustomOnStartup = false
 let mutable SwapMouseButtons = false   // swap the left and right mouse buttons everywhere in the tracker (Popout Windows menu)
@@ -204,7 +207,7 @@ module PerItemReminders =
 
 
 type ReadWrite() =
-    member val DrawRoutes = true with get,set
+    member val DrawRoutes = false with get,set
     member val RoutesCanScreenScroll = false with get,set
     member val HighlightNearby = true with get,set
     member val ShowMagnifier = true with get,set
@@ -277,13 +280,15 @@ type ReadWrite() =
     member val MenuLayouts : System.Collections.Generic.Dictionary<string,string[]> = new System.Collections.Generic.Dictionary<string,string[]>() with get,set
     member val DisplayIconsInDungeonMap = false with get,set
     member val ShowDungeonHintIcons = true with get,set
+    member val IgnoreHeartsForDungeonDim = false with get,set
     member val ShowOffTileEdges = true with get,set
     member val DungeonMapLocationHintOpacity = 0.3 with get,set
     member val ReverseScrollWheelDirection = false with get,set
     member val HidePopupHintAndLock = false with get,set
     member val IsSecondQuestDungeons = false with get,set
     member val ShowBasementInfo = true with get,set
-    member val DoDoorInference = false with get,set
+    member val DoDoorInference = true with get,set
+    member val EnemyInference = true with get,set
     member val DefaultRoomPreferNonDescriptToMaybePushBlock = false with get,set
     member val GiveDungeonTrackerSunglasses = true with get,set
     member val LeftClickDragAutoInverts = false with get,set
@@ -331,6 +336,7 @@ type ReadWrite() =
     member val SpotSummaryPopout_DisplayedLT = "" with get,set
     member val InventoryAndHeartsPopout_DisplayedLT = "" with get,set
     member val RemainingItemsPoput_DisplayedLT = "" with get,set
+    member val ShopsPopout_DisplayedLT = "" with get,set
     member val ItemLocationsWindow_DisplayedLT = "" with get,set
     member val ShowCustomOnStartup = false with get,set
     member val SwapMouseButtons = false with get,set
@@ -435,12 +441,14 @@ let private writeImpl(filename) =
     data.MenuLayouts <- new System.Collections.Generic.Dictionary<string,string[]>(MenuLayouts)
     data.DisplayIconsInDungeonMap <- DisplayIconsInDungeonMap.Value
     data.ShowDungeonHintIcons <- ShowDungeonHintIcons.Value
+    data.IgnoreHeartsForDungeonDim <- IgnoreHeartsForDungeonDim.Value
     data.ShowOffTileEdges <- ShowOffTileEdges.Value
     data.DungeonMapLocationHintOpacity <- DungeonMapLocationHintOpacity
     data.ReverseScrollWheelDirection <- ReverseScrollWheelDirection.Value
     data.HidePopupHintAndLock <- HidePopupHintAndLock.Value
     data.ShowBasementInfo <- ShowBasementInfo.Value
     data.DoDoorInference <- DoDoorInference.Value
+    data.EnemyInference <- EnemyInference.Value
     data.DefaultRoomPreferNonDescriptToMaybePushBlock <- DefaultRoomPreferNonDescriptToMaybePushBlock.Value
     data.GiveDungeonTrackerSunglasses <- GiveDungeonTrackerSunglasses.Value
     data.LeftClickDragAutoInverts <- LeftClickDragAutoInverts.Value
@@ -487,6 +495,7 @@ let private writeImpl(filename) =
     data.SpotSummaryPopout_DisplayedLT <- SpotSummaryPopout_DisplayedLT
     data.InventoryAndHeartsPopout_DisplayedLT <- InventoryAndHeartsPopout_DisplayedLT
     data.RemainingItemsPoput_DisplayedLT <- RemainingItemsPoput_DisplayedLT
+    data.ShopsPopout_DisplayedLT <- ShopsPopout_DisplayedLT
     data.ItemLocationsWindow_DisplayedLT <- ItemLocationsWindow_DisplayedLT
     data.ShowCustomOnStartup <- ShowCustomOnStartup
     data.SwapMouseButtons <- SwapMouseButtons
@@ -604,12 +613,14 @@ let private read(filename) =
             for kv in data.MenuLayouts do MenuLayouts.[kv.Key] <- kv.Value
         DisplayIconsInDungeonMap.Value <- data.DisplayIconsInDungeonMap
         ShowDungeonHintIcons.Value <- data.ShowDungeonHintIcons
+        IgnoreHeartsForDungeonDim.Value <- data.IgnoreHeartsForDungeonDim
         ShowOffTileEdges.Value <- data.ShowOffTileEdges
         DungeonMapLocationHintOpacity <- max 0.05 (min 1.0 data.DungeonMapLocationHintOpacity)
         ReverseScrollWheelDirection.Value <- data.ReverseScrollWheelDirection
         HidePopupHintAndLock.Value <- data.HidePopupHintAndLock
         ShowBasementInfo.Value <- data.ShowBasementInfo
         DoDoorInference.Value <- data.DoDoorInference
+        EnemyInference.Value <- data.EnemyInference
         DefaultRoomPreferNonDescriptToMaybePushBlock.Value <- data.DefaultRoomPreferNonDescriptToMaybePushBlock
         GiveDungeonTrackerSunglasses.Value <- data.GiveDungeonTrackerSunglasses
         LeftClickDragAutoInverts.Value <- data.LeftClickDragAutoInverts
@@ -657,6 +668,7 @@ let private read(filename) =
         SpotSummaryPopout_DisplayedLT <- data.SpotSummaryPopout_DisplayedLT
         InventoryAndHeartsPopout_DisplayedLT <- data.InventoryAndHeartsPopout_DisplayedLT
         RemainingItemsPoput_DisplayedLT <- data.RemainingItemsPoput_DisplayedLT
+        ShopsPopout_DisplayedLT <- data.ShopsPopout_DisplayedLT
         ItemLocationsWindow_DisplayedLT <- (if isNull data.ItemLocationsWindow_DisplayedLT then "" else data.ItemLocationsWindow_DisplayedLT)
         ShowCustomOnStartup <- data.ShowCustomOnStartup
         SwapMouseButtons <- data.SwapMouseButtons

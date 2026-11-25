@@ -588,13 +588,25 @@ public static class PieMenus
     {
         var wh = new ManualResetEvent(false);
         var result = -1;
+        var bord = makeItemPickerBox(items, cols, ident => { result = ident; wh.Set(); });
+        var c = new Canvas { Width = bord.DesiredSize.Width, Height = bord.DesiredSize.Height };
+        c.Children.Add(bord);
+        var (areaW, areaH) = (cm.AppMainCanvas.Width, cm.AppMainCanvas.Height);
+        var cx = areaW > 0.0 ? Math.Max(0.0, (areaW - c.Width) / 2.0) : 150.0;
+        var cy = areaH > 0.0 ? Math.Max(0.0, (areaH - c.Height) / 2.0) : 200.0;
+        await CustomComboBoxes.DoModal(cm, wh, cx, cy, c);
+        return result;
+    }
+    // the picker's grid of icon buttons (also shown by the Shops popout)
+    public static Border makeItemPickerBox(IEnumerable<(int, Control)> items, int cols, Action<int> picked)
+    {
         var grid = new UniformGrid { Columns = cols, Background = Brushes.Black, Margin = new Thickness(4.0) };
         foreach (var (ident, content) in items)
         {
             var b = new Button { Template = Graphics.roundedButtonTemplate, MinWidth = 36.0, MinHeight = 40.0, Margin = new Thickness(2.0), Padding = new Thickness(4.0), Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush, Content = content };
             var disabledTip = itemPickerDisabledTip(ident);
             if (disabledTip == null)
-                b.Click += (_, _) => { result = ident; wh.Set(); };
+                b.Click += (_, _) => picked(ident);
             else
             {
                 b.Opacity = 0.4;
@@ -606,13 +618,7 @@ public static class PieMenus
         }
         var bord = new Border { Child = grid, Background = Brushes.Black, BorderThickness = new Thickness(5.0), BorderBrush = Brushes.Gray };
         bord.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var c = new Canvas { Width = bord.DesiredSize.Width, Height = bord.DesiredSize.Height };
-        c.Children.Add(bord);
-        var (areaW, areaH) = (cm.AppMainCanvas.Width, cm.AppMainCanvas.Height);
-        var cx = areaW > 0.0 ? Math.Max(0.0, (areaW - c.Width) / 2.0) : 150.0;
-        var cy = areaH > 0.0 ? Math.Max(0.0, (areaH - c.Height) / 2.0) : 200.0;
-        await CustomComboBoxes.DoModal(cm, wh, cx, cy, c);
-        return result;
+        return bord;
     }
 
     // the Shop flyout (opened from the 'Shop' icon in the overworld menu): the P shop (potions) or one of the 4 numbered shops (each button also shows the items placed in that shop).
@@ -663,6 +669,45 @@ public static class PieMenus
     {
         var wh = new ManualResetEvent(false);
         var result = -1;
+        void finish(int r) { result = r; wh.Set(); }
+        var (bord, onKey, headerH, firstButton) = makeShopPanel(counts, shopItems, potionOk, addItem, pickItem, finish, ident => finish(1000 + ident),
+            "Right click to enter shops then click (or hotkey) to place on the map. You can also place the shop on the map first and enter items after.");
+        var c = new Canvas { Width = bord.DesiredSize.Width, Height = bord.DesiredSize.Height };
+        c.Children.Add(bord);
+        c.MyKeyAdd(onKey);
+        var (areaW, areaH) = (cm.AppMainCanvas.Width, cm.AppMainCanvas.Height);
+        var cx = areaW > 0.0 ? Math.Max(0.0, (areaW - c.Width) / 2.0) : 150.0;
+        var cy = areaH > 0.0 ? Math.Max(0.0, (areaH - c.Height) / 2.0) : 200.0;
+        // the cursor jumps onto the first shop button (the border is 5 wide, the row has a 2 margin, and the button a 2 margin)
+        firstButton.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        if (TrackerModelOptions.JumpMouseToShop.Value)
+            Graphics.WarpMouseCursorTo(new Point(cx + 5.0 + 2.0 + 2.0 + firstButton.DesiredSize.Width / 2.0, cy + 5.0 + headerH + 2.0 + firstButton.DesiredSize.Height / 2.0));
+        // measured before it was in the window (the buttons come out smaller then), so once it has its real size: size the click area to match what is drawn
+        // (otherwise a click on the right or lower part counts as outside the window and closes it) and re-center it
+        var resizedOnce = false;
+        bord.SizeChanged += (_, _) =>
+        {
+            c.Width = bord.Bounds.Width;
+            c.Height = bord.Bounds.Height;
+            var left = areaW > 0.0 ? Math.Max(0.0, (areaW - bord.Bounds.Width) / 2.0) : cx;
+            var top = areaH > 0.0 ? Math.Max(0.0, (areaH - bord.Bounds.Height) / 2.0) : cy;
+            Canvas.SetLeft(c, left);
+            Canvas.SetTop(c, top);
+            if (!resizedOnce)
+            {
+                resizedOnce = true;
+                if (TrackerModelOptions.JumpMouseToShop.Value)   // (the cursor jump above aimed at the first, smaller layout)
+                    Graphics.WarpMouseCursorTo(new Point(left + 5.0 + 2.0 + 2.0 + firstButton.Bounds.Width / 2.0, top + 5.0 + headerH + 2.0 + firstButton.Bounds.Height / 2.0));
+            }
+        };
+        await CustomComboBoxes.DoModal(cm, wh, cx, cy, c);
+        return result;
+    }
+    // the body of the Shop window, shared by the overworld menu's flyout and the Shops popout; it re-reads the shops while on screen, so the two mirror each other.
+    // place(shop) is a click / hotkey that puts that shop on the tile (null in the popout, which has no tile); itemOffShop(item) is an item hotkey with no shop hovered
+    public static (Border, Action<MyKeyRoutedEventArgs>, double, Button) makeShopPanel(int[] counts, List<(System.Drawing.Bitmap, bool)>[] shopItems, bool potionOk,
+                        Func<int, int, (int[], List<(System.Drawing.Bitmap, bool)>[])> addItem, Func<Task<int>> pickItem, Action<int> place, Action<int> itemOffShop, string tipText)
+    {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Black, Margin = new Thickness(2.0) };
         var hkp = HotKeys.ShopHotKeyProcessor;
         // (hotkey indexes: 0 = P shop, 1-4 = that numbered shop)
@@ -772,7 +817,7 @@ public static class PieMenus
             if (enabled)
             {
                 // ('Swap left/right click': left click adds items to the shop and right click places it)
-                void place() { result = value; wh.Set(); }
+                void placeShop() => place?.Invoke(value);
                 void addItems()
                 {
                     CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
@@ -782,14 +827,14 @@ public static class PieMenus
                     }))());
                 }
                 bool overCheap() => cheapBoxes.Any(c => c != null && c.IsPointerOver);   // (clicks on a 'cheap keys' box are not clicks on the shop)
-                b.Click += (_, _) => { if (!overCheap()) { if (TrackerModelOptions.SwapMouseButtons) addItems(); else place(); } };
+                b.Click += (_, _) => { if (!overCheap()) { if (TrackerModelOptions.SwapMouseButtons) addItems(); else placeShop(); } };
                 // right click: pick a marker icon from the overworld menu's icons to add to this shop
                 // (WPF: PreviewMouseRightButtonUp → a tunnelling PointerReleased for the right button)
                 b.AddHandler(InputElement.PointerReleasedEvent, new EventHandler<PointerReleasedEventArgs>((_, ea) =>
                 {
                     if (ea.InitialPressMouseButton != MouseButton.Right) return;
                     ea.Handled = true;
-                    if (!overCheap()) { if (TrackerModelOptions.SwapMouseButtons) place(); else addItems(); }
+                    if (!overCheap()) { if (TrackerModelOptions.SwapMouseButtons) placeShop(); else addItems(); }
                 }), RoutingStrategies.Tunnel);
             }
             else b.Opacity = 0.4;
@@ -872,9 +917,12 @@ public static class PieMenus
             return t;
         }
         var header = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0.0, 2.0, 0.0, 0.0) };
-        header.Children.Add(makeToggle("Jump mouse to shop", TrackerModelOptions.JumpMouseToShop));
-        header.Children.Add(makeToggle("Hover shop tooltip", TrackerModelOptions.HoverShopTooltip));
-        header.Children.Add(makeToggle("Shops in menu", TrackerModelOptions.ShopsInMenu));   // (applies the next time the overworld menu opens)
+        var jumpToggle = makeToggle("Jump mouse to shop", TrackerModelOptions.JumpMouseToShop);
+        var hoverToggle = makeToggle("Hover shop tooltip", TrackerModelOptions.HoverShopTooltip);
+        var inMenuToggle = makeToggle("Shops in menu", TrackerModelOptions.ShopsInMenu);   // (applies the next time the overworld menu opens)
+        header.Children.Add(jumpToggle);
+        header.Children.Add(hoverToggle);
+        header.Children.Add(inMenuToggle);
         CheckBox make_swapToggle()
         {
             var t = makeOrangeCheckBox("Swap L/R click: left adds items, right places", TrackerModelOptions.SwapMouseButtons);
@@ -891,7 +939,7 @@ public static class PieMenus
         var swapToggle = make_swapToggle();
         swapToggle.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         row.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var tip = new TextBlock { Text = "Right click to enter shops then click (or hotkey) to place on the map. You can also place the shop on the map first and enter items after.",
+        var tip = new TextBlock { Text = tipText,
                                   TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Orange, FontSize = 12.0, TextAlignment = TextAlignment.Center, Width = Math.Max(200.0, row.DesiredSize.Width - 16.0), Margin = new Thickness(6.0, 6.0, 6.0, 2.0) };
         tip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         header.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
@@ -903,9 +951,40 @@ public static class PieMenus
         stack.Children.Add(row);
         var bord = new Border { Child = stack, Background = Brushes.Black, BorderThickness = new Thickness(5.0), BorderBrush = Brushes.Gray };
         bord.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var c = new Canvas { Width = bord.DesiredSize.Width, Height = bord.DesiredSize.Height };
-        c.Children.Add(bord);
-        // an item hotkey goes into the shop under the mouse (no shop hovered: the item is returned as 1000 + item id, a plain item marker on the tile)
+        // mirroring: the shops can change under this window (the other shop window, a tile, a save load, co-op), so it re-reads them while on screen
+        // (display only: this must not write to the model)
+        string signature() => string.Join("|", Enumerable.Range(0, 5).Select(n =>
+                $"{TrackerModel.shopLabelCount(n == 0 ? 5 : n)};{string.Join(",", shopItemIdentsHook(n))};{string.Join(",", OverworldMapTileCustomization.shopItemBitmapsHook(n).Select(t => t.Item2))};{TrackerModel.cheapKeyShops[n]}"))
+            + $"|{TrackerModel.progressiveSwordTier()},{TrackerModel.progressiveFamilyTier(2)},{TrackerModel.progressiveFamilyTier(3)},{TrackerModel.progressiveFamilyTier(4)}"
+            + $"|{TrackerModelOptions.SwapMouseButtons},{TrackerModelOptions.JumpMouseToShop.Value},{TrackerModelOptions.HoverShopTooltip.Value},{TrackerModelOptions.ShopsInMenu.Value}";
+        var shown = "";
+        void refresh()
+        {
+            var now = signature();
+            if (now == shown) return;
+            shown = now;
+            for (var n = 0; n <= 4; n++)
+            {
+                latestItems[n] = OverworldMapTileCustomization.shopItemBitmapsHook(n);
+                countBlocks[n].Text = $"x{TrackerModel.shopLabelCount(n == 0 ? 5 : n)}";
+                if (cheapBoxes[n] != null)
+                {
+                    cheapBoxes[n].IsVisible = shopKeyIndexHook(n) >= 0;
+                    cheapBoxes[n].IsChecked = TrackerModel.cheapKeyShops[n];
+                }
+            }
+            foreach (var (m, panel) in itemPanels) fillItems(m, panel, latestItems[m]);
+            swapToggle.IsChecked = TrackerModelOptions.SwapMouseButtons;
+            jumpToggle.IsChecked = TrackerModelOptions.JumpMouseToShop.Value;
+            hoverToggle.IsChecked = TrackerModelOptions.HoverShopTooltip.Value;
+            inMenuToggle.IsChecked = TrackerModelOptions.ShopsInMenu.Value;
+        }
+        // shortcut: polls 4 times a second, since not every shop change raises an event; use events if it ever shows up in a profile
+        var mirrorTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250.0) };
+        mirrorTimer.Tick += (_, _) => refresh();
+        bord.AttachedToVisualTree += (_, _) => { refresh(); mirrorTimer.Start(); };
+        bord.DetachedFromVisualTree += (_, _) => mirrorTimer.Stop();
+        // an item hotkey goes into the shop under the mouse
         void itemPick(int ident)
         {
             var hovered = hoverButtons.FindIndex(t => t.Item1.IsPointerOver);
@@ -915,22 +994,15 @@ public static class PieMenus
                 applyItem(shop, ident);
             }
             else
-            {
-                result = 1000 + ident;
-                wh.Set();
-            }
+                itemOffShop?.Invoke(ident);
         }
-        c.MyKeyAdd(ea =>
+        void onKey(MyKeyRoutedEventArgs ea)
         {
             ea.Handled = true;
             if (hkp.TryGetValue(ea.Key, out var which))
             {
                 if (which != 0 || potionOk)
-                {
-                    result = which;
-                    wh.Set();
-                }
-                else { }
+                    place?.Invoke(which);
             }
             else
             {
@@ -966,34 +1038,8 @@ public static class PieMenus
                         itemPick(ident);
                 }
             }
-        });
-        var (areaW, areaH) = (cm.AppMainCanvas.Width, cm.AppMainCanvas.Height);
-        var cx = areaW > 0.0 ? Math.Max(0.0, (areaW - c.Width) / 2.0) : 150.0;
-        var cy = areaH > 0.0 ? Math.Max(0.0, (areaH - c.Height) / 2.0) : 200.0;
-        // the cursor jumps onto the first shop button (the border is 5 wide, the row has a 2 margin, and the button a 2 margin)
-        firstButton.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        if (TrackerModelOptions.JumpMouseToShop.Value)
-            Graphics.WarpMouseCursorTo(new Point(cx + 5.0 + 2.0 + 2.0 + firstButton.DesiredSize.Width / 2.0, cy + 5.0 + headerH + 2.0 + firstButton.DesiredSize.Height / 2.0));
-        // measured before it was in the window (the buttons come out smaller then), so once it has its real size: size the click area to match what is drawn
-        // (otherwise a click on the right or lower part counts as outside the window and closes it) and re-center it
-        var resizedOnce = false;
-        bord.SizeChanged += (_, _) =>
-        {
-            c.Width = bord.Bounds.Width;
-            c.Height = bord.Bounds.Height;
-            var left = areaW > 0.0 ? Math.Max(0.0, (areaW - bord.Bounds.Width) / 2.0) : cx;
-            var top = areaH > 0.0 ? Math.Max(0.0, (areaH - bord.Bounds.Height) / 2.0) : cy;
-            Canvas.SetLeft(c, left);
-            Canvas.SetTop(c, top);
-            if (!resizedOnce)
-            {
-                resizedOnce = true;
-                if (TrackerModelOptions.JumpMouseToShop.Value)   // (the cursor jump above aimed at the first, smaller layout)
-                    Graphics.WarpMouseCursorTo(new Point(left + 5.0 + 2.0 + 2.0 + firstButton.Bounds.Width / 2.0, top + 5.0 + headerH + 2.0 + firstButton.Bounds.Height / 2.0));
-            }
-        };
-        await CustomComboBoxes.DoModal(cm, wh, cx, cy, c);
-        return result;
+        }
+        return (bord, onKey, headerH, firstButton);
     }
 
     // the take-any cave's chooser, in the same style as the wood sword cave's: one box of buttons that also answers the Contextual_TakeAnyBox_* hotkeys.

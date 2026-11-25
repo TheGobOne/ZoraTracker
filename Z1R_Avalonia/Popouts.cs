@@ -300,12 +300,14 @@ public static class Popouts
     {
         SpotSummaryPopout,
         InventoryAndHeartsPopout,
-        RemainingItemsPoput
+        RemainingItemsPoput,
+        ShopsPopout
     }
 
     public static Window theSpotSummaryPopoutWindow = null;
     public static Window theInventoryAndHeartsPopoutWindow = null;
     public static Window theRemainingItemsPopoutWindow = null;
+    public static Window theShopsPopoutWindow = null;
 
     public static DockPanel spotSummaryContent(Graphics.SharedEvent doUIUpdateEvent)
     {
@@ -378,6 +380,39 @@ public static class Popouts
             }
         }), RoutingStrategies.Tunnel);
         return border;
+    }
+
+    // the Shop window of the overworld menu, in its own window. It has no tile, so nothing here places a shop on the map: it lists the shops and edits what is in them
+    public static Control shopsContent(Window w)
+    {
+        Border panel = null;
+        // the item picker, at the pointer (the main window's popup layers can't be used from another window)
+        Task<int> showPicker(List<(int, Control)> items)
+        {
+            var picked = new TaskCompletionSource<int>();
+            var fly = new Flyout();
+            fly.Content = PieMenus.makeItemPickerBox(items, 9, id => { picked.TrySetResult(id); fly.Hide(); });
+            fly.Closed += (_, _) => picked.TrySetResult(-1);
+            fly.ShowAt(panel, true);
+            return picked.Task;
+        }
+        var (counts, shopItems) = WPFUI.shopSnapshot();
+        var (bord, onKey, _, _) = PieMenus.makeShopPanel(counts, shopItems, true, WPFUI.addItemToShopGlobal, () => WPFUI.pickShopItem(showPicker), null, null,
+            "Right click to enter shops. Place a shop on the map from the overworld menu and it picks up these items.");
+        panel = bord;
+        panel.BorderThickness = new Thickness(0.0);   // no grey border in the popout window
+        panel.MyKeyAdd(onKey);
+        // item hotkeys while this window has the keyboard (with the main window focused, the tracker's own hotkey routing reaches the panel)
+        w.KeyDown += (_, ea) =>
+        {
+            var skm = SingleKeyboardModifierExtensions.GetCurrent(ea.KeyModifiers);
+            if (skm != SingleKeyboardModifier.Unsupported && panel.IsPointerOver && HotKeys.boundHotKeyUniverse.ContainsKey((skm, ea.Key)))
+            {
+                ea.Handled = true;
+                panel.RaiseEvent(new MyKeyRoutedEventArgs(skm, ea.Key));
+            }
+        };
+        return panel;
     }
 
     public static bool insideMakePopoutCall = false;
@@ -520,6 +555,31 @@ public static class Popouts
                 };
                 matches = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.RemainingItemsPoput_DisplayedLT, @"^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$");
                 break;
+            case PopoutKind.ShopsPopout:
+                if (theShopsPopoutWindow != null)
+                    theShopsPopoutWindow.Close();
+                theShopsPopoutWindow = w;
+                w.Title = "Shops";
+                w.Content = scalable(shopsContent(w));
+                save = () =>
+                {
+                    noteRestoreBounds();
+                    if (minimizedOrClosing()) // minimized or closing
+                        TrackerModelOptions.ShopsPopout_DisplayedLT = $"0,{(int)restoreLeft},{(int)restoreTop}" + sz();
+                    else
+                        TrackerModelOptions.ShopsPopout_DisplayedLT = $"1,{(int)leftOf(w)},{(int)topOf(w)}" + sz();
+                    ShowRunCustom.writeSettingsSoon();   // (called on every move event)
+                };
+                noDisplay = () =>
+                {
+                    if (TrackerModelOptions.ShopsPopout_DisplayedLT.Length != 0)
+                    {
+                        TrackerModelOptions.ShopsPopout_DisplayedLT = "0" + TrackerModelOptions.ShopsPopout_DisplayedLT.Substring(1);
+                        TrackerModelOptions.writeSettings();
+                    }
+                };
+                matches = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ShopsPopout_DisplayedLT, @"^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$");
+                break;
             default: throw new InvalidOperationException();
         }
         var (ok, disp, left, top) =
@@ -559,6 +619,7 @@ public static class Popouts
                 case PopoutKind.SpotSummaryPopout: TrackerModelOptions.SpotSummaryPopout_DisplayedLT = s; break;
                 case PopoutKind.InventoryAndHeartsPopout: TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT = s; break;
                 case PopoutKind.RemainingItemsPoput: TrackerModelOptions.RemainingItemsPoput_DisplayedLT = s; break;
+                case PopoutKind.ShopsPopout: TrackerModelOptions.ShopsPopout_DisplayedLT = s; break;
             }
         }
         w.Closed += (_, _) =>
@@ -583,6 +644,7 @@ public static class Popouts
                 case PopoutKind.SpotSummaryPopout: if (ReferenceEquals(theSpotSummaryPopoutWindow, w)) theSpotSummaryPopoutWindow = null; break;
                 case PopoutKind.InventoryAndHeartsPopout: if (ReferenceEquals(theInventoryAndHeartsPopoutWindow, w)) theInventoryAndHeartsPopoutWindow = null; break;
                 case PopoutKind.RemainingItemsPoput: if (ReferenceEquals(theRemainingItemsPopoutWindow, w)) theRemainingItemsPopoutWindow = null; break;
+                case PopoutKind.ShopsPopout: if (ReferenceEquals(theShopsPopoutWindow, w)) theShopsPopoutWindow = null; break;
             }
         };
         w.Show();
@@ -597,6 +659,7 @@ public static class Popouts
             PopoutKind.SpotSummaryPopout => theSpotSummaryPopoutWindow,
             PopoutKind.InventoryAndHeartsPopout => theInventoryAndHeartsPopoutWindow,
             PopoutKind.RemainingItemsPoput => theRemainingItemsPopoutWindow,
+            PopoutKind.ShopsPopout => theShopsPopoutWindow,
             _ => throw new InvalidOperationException()
         };
     public static bool isPopoutOpen(PopoutKind kind) => popoutWindowOf(kind) != null;
@@ -769,7 +832,8 @@ public static class Popouts
         }
         foreach (var (k, s) in new[] { (PopoutKind.SpotSummaryPopout, TrackerModelOptions.SpotSummaryPopout_DisplayedLT),
                                        (PopoutKind.InventoryAndHeartsPopout, TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT),
-                                       (PopoutKind.RemainingItemsPoput, TrackerModelOptions.RemainingItemsPoput_DisplayedLT) })
+                                       (PopoutKind.RemainingItemsPoput, TrackerModelOptions.RemainingItemsPoput_DisplayedLT),
+                                       (PopoutKind.ShopsPopout, TrackerModelOptions.ShopsPopout_DisplayedLT) })
         {
             f(k, s);
         }

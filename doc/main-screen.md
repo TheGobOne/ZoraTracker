@@ -13,11 +13,12 @@
 - **Triforce in the basement**: some seeds hide a triforce piece in a basement. Click a dungeon item box and choose Triforce Piece. The numbered triforce moves into that box, and you will have an extra floor item to make up for it.
 - **Items and hearts**: the items you own, your hearts and Max Hearts. Click to mark them.
 - **Counters**: how many overworld spots are left, plus counts of items and open spots.
-- **AP counter**: next to the Zelda icon, with the AP Item icon. It shows only while [Archipelago Support](start-screen.md#archipelago-support) is on. It counts the AP Items you have checked off as collected. Hover it to outline the overworld spots that hold one.
+- **AP counter**: next to the Zelda icon, with the AP Item icon. It shows only while [Archipelago Items](start-screen.md#archipelago-items) is on. It counts the AP Items you have checked off as collected. Hover it to outline the overworld spots that hold one.
 
 ## Tools and file
 
 - **Popout Windows** opens extra windows (such as Spot Summary and Current Equipment) you can place anywhere, including for streaming.
+- **Shops** (in Popout Windows) is the overworld menu's Shop window in its own window, and the two always show the same shops. Right click a shop (left click with swap L/R on), or hover it and press an item hotkey, to add an item. Middle click an item to remove it. A shop that is not on the map yet keeps its items until you place it. The popout does not place shops on the map.
 - **Hint Decoder** helps with hints.
 - **Hotkeys** shows the keyboard shortcuts you have mapped.
 - **Log** shows the reminders that have played.

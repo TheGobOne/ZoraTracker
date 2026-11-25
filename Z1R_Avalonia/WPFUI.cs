@@ -315,6 +315,110 @@ public static class WPFUI
             TrackerModel.shopStash[label] = TrackerModel.decorEntriesPack(es2);
         decorStateChanged();
     }
+    // what the Shop window shows: how many tiles carry each shop, and what is in it (index 0 = the P shop)
+    public static (int[], List<(System.Drawing.Bitmap, bool)>[]) shopSnapshot() =>
+        (Enumerable.Range(0, 5).Select(n => TrackerModel.shopLabelCount(n == 0 ? 5 : n)).ToArray(), Enumerable.Range(0, 5).Select(shopItemBitmapsGlobal).ToArray());
+    // Progressive Items: any sword put in a shop is just the progressive sword
+    // (except a sword already in the shop: then this is a remove (the add toggles it off), and it must stay that sword)
+    private static int shopAddIdent(int shop, int ident) =>
+        !shopItemIdentsGlobal(shop).Contains(ident) && TrackerModel.ProgressiveItems && (ident == TrackerModel.ITEMS.WOODSWORD || ident == TrackerModel.ITEMS.WHITESWORD || ident == TrackerModel.ITEMS.MAGICALSWORD || ident == TrackerModel.ITEMS.WHITESWORD4) ? TrackerModel.ITEMS.PROGRESSIVESWORD : ident;
+    // toggles an item in a shop that is not on the map yet: it waits in the shop window until a tile becomes that shop
+    private static void toggleStashItem(int lbl, int ident)
+    {
+        var before = TrackerModel.shopStash[lbl];
+        if (lbl == 5)
+        {
+            var already = TrackerModel.decorEntriesOf(before).Any(e => e.Item1 == ident);
+            TrackerModel.shopStash[lbl] = TrackerModel.decorEntriesPack(already ? FSharpList<Tuple<int, bool>>.Empty : ListModule.OfSeq(new[] { Tuple.Create(ident, false) }));
+        }
+        else
+        {
+            TrackerModel.shopStash[lbl] = TrackerModel.decorIconsToggle(before, ident);
+            if (TrackerModel.shopStash[lbl] == before)
+                Graphics.ErrorBeepWithReminderLogText($"A shop can show at most {TrackerModel.MaxDecorIcons} items");
+        }
+        decorStateChanged();
+    }
+    // toggles an item on a tile of shop `lbl` (tiles of the same shop are synced, so one tile does them all)
+    private static void toggleShopTileItem(int x, int y, int lbl, int ident)
+    {
+        var before = TrackerModel.owSwordIcons[x, y];
+        if (lbl == 5)
+        {
+            // the P shop has just the one slot: the new item replaces what was there (the same item again removes it)
+            var already = TrackerModel.decorEntriesOf(before).Any(e => e.Item1 == ident);
+            setDecorIcons(x, y, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack(already ? FSharpList<Tuple<int, bool>>.Empty : ListModule.OfSeq(new[] { Tuple.Create(ident, false) })), lbl));
+        }
+        else
+            setDecorIcons(x, y, TrackerModel.decorIconsToggle(before, ident));
+        if (TrackerModel.owSwordIcons[x, y] == before)
+            Graphics.ErrorBeepWithReminderLogText($"A tile can show at most {TrackerModel.MaxDecorIcons} marker icons; ctrl+left click one of its icons to remove it first");
+    }
+    // the Shops popout adds to a shop with no tile of its own: the first tile of that shop, or the shop window's stash if there is none
+    public static (int[], List<(System.Drawing.Bitmap, bool)>[]) addItemToShopGlobal(int shop, int ident0)
+    {
+        var lbl = shop == 0 ? 5 : shop;
+        var ident = shopAddIdent(shop, ident0);
+        var tiles = shopTilesWithItems(lbl);   // (the tile the window shows, so the add lands on what is seen)
+        for (int x = 0; x <= 15; x++)
+            for (int y = 0; y <= 7; y++)
+                if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[x, y]) == lbl) tiles.Add((x, y));
+        if (tiles.Count == 0)
+            toggleStashItem(lbl, ident);
+        else
+        {
+            var (x, y) = tiles[0];
+            toggleShopTileItem(x, y, lbl, ident);
+            redrawOwTileHook(x, y);
+            decorStateChanged();
+        }
+        return shopSnapshot();
+    }
+    // the marker icons that can be put in a shop (the overworld menu's icons, minus the Shop cell), shown with show()
+    public static Task<int> pickShopItem(Func<List<(int, Control)>, Task<int>> show)
+    {
+        var idents = new List<int> { TrackerModel.ITEMS.WOODSWORD, TrackerModel.ITEMS.WHITESWORD, TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.ITEMS.WHITESWORD4, TrackerModel.ITEMS.PROGRESSIVESWORD }
+            .Concat(markerIdents())
+            .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k))
+            .Concat(TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER } : new int[0]).ToList();
+        bool isProgressiveDisabled(int ident) => TrackerModel.progressiveDisabledIdent(ident);
+        // Legacy Mode: a shop only holds a wood arrow, blue candle, regular key, bombs, meat, book or shield (so no swords either)
+        bool isLegacyDisabled(int ident) => TrackerModel.LegacyMode && !(PieMenus.legacyShopAllows(ident));
+        var items = new List<(int, Control)>();
+        foreach (var ident in idents)
+        {
+            var (cell, enabled) = markerIconCell(ident);
+            if (enabled || isProgressiveDisabled(ident) || isLegacyDisabled(ident)) items.Add((ident, cell));
+        }
+        PieMenus.itemPickerDisabledTip = ident => isLegacyDisabled(ident) ? "Disabled In Legacy Mode" : isProgressiveDisabled(ident) ? "Disabled Due to Progressive Items" : null;
+        return show(items);
+    }
+    // the overworld menu's marker icons, in item-menu order from the ladder to the heart container (without the Shop cell)
+    private static List<int> markerIdents() => new List<int> {
+        TrackerModel.ITEMS.LADDER, TrackerModel.ITEMS.POWERBRACELET, TrackerModel.ITEMS.RECORDER, TrackerModel.ITEMS.RAFT, TrackerModel.ITEMS.BOW,
+        TrackerModel.ITEMS.BLUERING, TrackerModel.ITEMS.REDRING, TrackerModel.ITEMS.WOODARROW, TrackerModel.ITEMS.SILVERARROW, TrackerModel.ITEMS.WAND,
+        TrackerModel.ITEMS.KEY, TrackerModel.ITEMS.BLUECANDLE, TrackerModel.ITEMS.REDCANDLE, TrackerModel.ITEMS.BOOMERANG, TrackerModel.ITEMS.MAGICBOOMERANG,
+        TrackerModel.ITEMS.BOOKSHIELD, TrackerModel.ITEMS.SHIELD, TrackerModel.ITEMS.MEAT, TrackerModel.DECOR_BOMB, TrackerModel.ITEMS.OLDKEY,
+        TrackerModel.ITEMS.LETTER, TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.ITEMS.BLUEPOTION, TrackerModel.ITEMS.BOMBUPGRADE };
+    // a marker icon as the overworld menu draws it, and whether it can be picked (not disabled by the start options)
+    private static (Control, bool) markerIconCell(int ident)
+    {
+        // the swords are 15x27 cave-style icons; the dungeon items are shown at full 21x21 size (without the black outline, which is only for the map)
+        var isSword = (ident == TrackerModel.ITEMS.PROGRESSIVESWORD || ident == TrackerModel.ITEMS.WHITESWORD4);
+        var progSword = TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(ident) > 0 && !(ident == TrackerModel.ITEMS.WHITESWORD4 && TrackerModelOptions.UseOldSwordIcons.Value);   // Progressive Items: the sword cells show the current P tier sprite (21x27) (Use old sword icons: the 4th sword cell keeps its checkered sword, greyed out when disabled)
+        int tierIndex() { var t = TrackerModel.progressiveSwordBoxTier(ident); return t >= 1 && t <= 4 ? t : 0; }
+        var bmp = progSword ? Graphics.ow_progressive_tier_menu_bmps[tierIndex()] : isSword && ident == TrackerModel.ITEMS.WHITESWORD4 && TrackerModelOptions.UseOldSwordIcons.Value ? Graphics.ow_sword4_menu_bmp : isSword ? Graphics.swordMenuBmp(decorIconBmp(ident)) : TrackerModel.progressiveDisabledIdent(ident) && TrackerModel.progressiveFamily(ident) >= 2 ? CustomComboBoxes.boxCurrentBMP(ident, null) : decorSourceBmp(ident);   // (a disabled red ring / candle / silver arrow keeps its own picture)
+        var img = Graphics.BMPtoImage(bmp);
+        img.Stretch = Stretch.Uniform;
+        img.Width = (progSword ? 21.0 : isSword ? 15.0 : 21.0);
+        img.Height = (progSword || isSword ? 27.0 : 21.0);
+        var cell = new Canvas { Width = 7.0 * 3.0, Height = 9.0 * 3.0 };
+        Graphics.canvasAdd(cell, img, (isSword && !progSword ? 3.0 : 0.0), (isSword ? 0.0 : 3.0));
+        var progDisabled = TrackerModel.progressiveDisabledIdent(ident);
+        if (progDisabled)
+            cell.Background = Brushes.Transparent;
+        return (cell, !progDisabled && !(ident == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled));   // the 4th sword icon is disabled unless the 4th Sword start option is on
+    }
     // index (within the item list shopItemBitmapsGlobal gives) of the key in numbered shop n, or -1 if that shop holds no key
     public static int shopKeyIndexGlobal(int n)
     {
@@ -1221,7 +1325,7 @@ public static class WPFUI
                                 }
                             }
                         }
-                        if (!(slots.Any(isHeart)))
+                        if (!(slots.Any(isHeart)) && !isHeart(extra))   // (a heart in the extra floor box is the dungeon's heart too)
                         {
                             var empties = slots.Where(b => b.IsEmptyRedBox).ToArray();
                             if (empties.Length == 1 && othersFilled(empties[0]))
@@ -1268,9 +1372,9 @@ public static class WPFUI
                         // Second, if your armos box is still empty, highlight the armos
                         return (x, y) => owInstance.HasArmos(x, y) && !(owInstance.HintLocked(x, y)) && TrackerModel.overworldMapMarks[x, y].Current() == -1
                                       // (not an armos screen the player can't get to yet: raft / ladder / power bracelet / recorder blocked without that item)
-                                      && !(owInstance.Raftable(x, y) && !TrackerModel.playerComputedStateSummary.HaveRaft)
+                                      && !(owInstance.NeedsRaft(x, y) && !TrackerModel.playerComputedStateSummary.HaveRaft)
                                       && !(owInstance.Ladderable(x, y) && !TrackerModel.playerComputedStateSummary.HaveLadder)
-                                      && !(owInstance.PowerBraceletable(x, y) && !TrackerModel.playerComputedStateSummary.HavePowerBracelet)
+                                      && !(owInstance.NeedsPowerBracelet(x, y) && !TrackerModel.playerComputedStateSummary.HavePowerBracelet)
                                       && !(owInstance.Whistleable(x, y) && !TrackerModel.playerComputedStateSummary.HaveRecorder);
                     else
                         return NoCyan;
@@ -2411,21 +2515,8 @@ public static class WPFUI
                         }
                         else
                         {
-                            // the swords are 15x27 cave-style icons; the dungeon items are shown at full 21x21 size (without the black outline, which is only for the map)
-                            var isSword = (ident == TrackerModel.ITEMS.PROGRESSIVESWORD || ident == TrackerModel.ITEMS.WHITESWORD4);
-                            var progSword = TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(ident) > 0 && !(ident == TrackerModel.ITEMS.WHITESWORD4 && TrackerModelOptions.UseOldSwordIcons.Value);   // Progressive Items: the sword cells show the current P tier sprite (21x27) (Use old sword icons: the 4th sword cell keeps its checkered sword, greyed out when disabled)
-                            int tierIndex() { var t = TrackerModel.progressiveSwordBoxTier(ident); return t >= 1 && t <= 4 ? t : 0; }
-                            var bmp = progSword ? Graphics.ow_progressive_tier_menu_bmps[tierIndex()] : isSword && ident == TrackerModel.ITEMS.WHITESWORD4 && TrackerModelOptions.UseOldSwordIcons.Value ? Graphics.ow_sword4_menu_bmp : isSword ? Graphics.swordMenuBmp(decorIconBmp(ident)) : TrackerModel.progressiveDisabledIdent(ident) && TrackerModel.progressiveFamily(ident) >= 2 ? CustomComboBoxes.boxCurrentBMP(ident, null) : decorSourceBmp(ident);   // (a disabled red ring / candle / silver arrow keeps its own picture)
-                            var img = Graphics.BMPtoImage(bmp);
-                            img.Stretch = Stretch.Uniform;
-                            img.Width = (progSword ? 21.0 : isSword ? 15.0 : 21.0);
-                            img.Height = (progSword || isSword ? 27.0 : 21.0);
-                            var cell = new Canvas { Width = 7.0 * 3.0, Height = 9.0 * 3.0 };
-                            canvasAdd(cell, img, (isSword && !progSword ? 3.0 : 0.0), (isSword ? 0.0 : 3.0));
-                            var progDisabled = TrackerModel.progressiveDisabledIdent(ident);
-                            if (progDisabled)
-                                cell.Background = Brushes.Transparent;
-                            return (cell, (!markersBlocked && !progDisabled && !(ident == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled)), 1000 + ident);   // the 4th sword icon is disabled unless the 4th Sword start option is on
+                            var (cell, enabled) = markerIconCell(ident);
+                            return (cell, (!markersBlocked && enabled), 1000 + ident);
                         }
                     }
                     // 9 columns x 6 rows
@@ -2442,12 +2533,7 @@ public static class WPFUI
                     topRows0.Add(swordIconCell(TrackerModel.ITEMS.WHITESWORD4));
                     topRows0.Add(swordIconCell(TrackerModel.ITEMS.PROGRESSIVESWORD));
                     var topRows = topRows0.ToArray();
-                    var markerIdentList = new List<int> {
-                        TrackerModel.ITEMS.LADDER, TrackerModel.ITEMS.POWERBRACELET, TrackerModel.ITEMS.RECORDER, TrackerModel.ITEMS.RAFT, TrackerModel.ITEMS.BOW,
-                        TrackerModel.ITEMS.BLUERING, TrackerModel.ITEMS.REDRING, TrackerModel.ITEMS.WOODARROW, TrackerModel.ITEMS.SILVERARROW, TrackerModel.ITEMS.WAND,
-                        TrackerModel.ITEMS.KEY, TrackerModel.ITEMS.BLUECANDLE, TrackerModel.ITEMS.REDCANDLE, TrackerModel.ITEMS.BOOMERANG, TrackerModel.ITEMS.MAGICBOOMERANG,
-                        TrackerModel.ITEMS.BOOKSHIELD, TrackerModel.ITEMS.SHIELD, TrackerModel.ITEMS.MEAT, TrackerModel.DECOR_BOMB, TrackerModel.ITEMS.OLDKEY,
-                        SHOP_MENU, TrackerModel.ITEMS.LETTER, TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.ITEMS.BLUEPOTION, TrackerModel.ITEMS.BOMBUPGRADE };
+                    var markerIdentList = markerIdents();
                     // the bottom row of the menu is always: shop, bomb, key, letter, heart container, blue potion, bomb upgrade, clear
                     var lastRowIdents = new List<int> { SHOP_MENU, TrackerModel.DECOR_BOMB, TrackerModel.ITEMS.OLDKEY, TrackerModel.ITEMS.LETTER, TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.ITEMS.BLUEPOTION, TrackerModel.ITEMS.BOMBUPGRADE };
                     var bottomRows0 = new List<(Control, bool, int)>();
@@ -2646,7 +2732,8 @@ public static class WPFUI
                         // the 'Shop' cell opens a flyout: the potion shop (the usual blue potion marker) or one of the 4 numbered shops
                         async Task<int?> flyout()
                         {
-                            if (r0 is int sel && sel == SHOP_MENU)
+                            // (the 'Shops in menu' row buttons also open the flyout)
+                            if (r0 is int sel && (sel == SHOP_MENU || (sel > SHOP_LABEL_BASE && sel <= SHOP_LABEL_BASE + 5)))
                             {
                                 flyoutAddedItem = false;
                                 var counts = Enumerable.Range(0, 5).Select(n => TrackerModel.shopLabelCount(n == 0 ? 5 : n)).ToArray();
@@ -2705,17 +2792,7 @@ public static class WPFUI
                                         setShopLabel(tx, ty, lbl);
                                         if (others.Count > 0) setDecorIcons(tx, ty, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack(others[0]), lbl));
                                     }
-                                    var before = TrackerModel.owSwordIcons[tx, ty];
-                                    if (lbl == 5)
-                                    {
-                                        // the P shop has just the one slot: the new item replaces what was there (the same item again removes it)
-                                        var already = TrackerModel.decorEntriesOf(before).Any(e => e.Item1 == ident);
-                                        setDecorIcons(tx, ty, TrackerModel.withShopLabel(TrackerModel.decorEntriesPack(already ? FSharpList<Tuple<int, bool>>.Empty : ListModule.OfSeq(new[] { Tuple.Create(ident, false) })), lbl));
-                                    }
-                                    else
-                                        setDecorIcons(tx, ty, TrackerModel.decorIconsToggle(before, ident));
-                                    if (TrackerModel.owSwordIcons[tx, ty] == before)
-                                        Graphics.ErrorBeepWithReminderLogText($"A tile can show at most {TrackerModel.MaxDecorIcons} marker icons; ctrl+left click one of its icons to remove it first");
+                                    toggleShopTileItem(tx, ty, lbl, ident);
                                     if ((tx, ty) == (i, j) && !(TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[tx, ty]).IsEmpty) && !(owInstance.AlwaysEmpty(tx, ty)) && TrackerModel.overworldMapMarks[tx, ty].Current() == -1)
                                         CustomComboBoxes.StartImmediate(SetNewValue(TrackerModel.MapSquareChoiceDomainHelper.DARK_X, -1));
                                     redrawOwTileHook(tx, ty);
@@ -2724,10 +2801,7 @@ public static class WPFUI
                                 }
                                 (int[], List<(System.Drawing.Bitmap, bool)>[]) addItemToShop(int shop, int ident0)
                                 {
-                                    // Progressive Items: any sword put in a shop is just the progressive sword
-                                    // (except a sword already in the shop: then this is a remove (the add toggles it off), and it must stay that sword)
-                                    var alreadyInShop = shopItemIdentsGlobal(shop).Contains(ident0);
-                                    var ident = !alreadyInShop && TrackerModel.ProgressiveItems && (ident0 == TrackerModel.ITEMS.WOODSWORD || ident0 == TrackerModel.ITEMS.WHITESWORD || ident0 == TrackerModel.ITEMS.MAGICALSWORD || ident0 == TrackerModel.ITEMS.WHITESWORD4) ? TrackerModel.ITEMS.PROGRESSIVESWORD : ident0;
+                                    var ident = shopAddIdent(shop, ident0);
                                     var lbl = shop == 0 ? 5 : shop;
                                     var curLabel = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]);
                                     var targetHasTile = false;
@@ -2761,42 +2835,12 @@ public static class WPFUI
                                             }
                                         }
 #pragma warning restore CS0162
-                                        var stashBefore = TrackerModel.shopStash[lbl];
-                                        if (lbl == 5)
-                                        {
-                                            var already = TrackerModel.decorEntriesOf(stashBefore).Any(e => e.Item1 == ident);
-                                            TrackerModel.shopStash[lbl] = TrackerModel.decorEntriesPack(already ? FSharpList<Tuple<int, bool>>.Empty : ListModule.OfSeq(new[] { Tuple.Create(ident, false) }));
-                                        }
-                                        else
-                                        {
-                                            TrackerModel.shopStash[lbl] = TrackerModel.decorIconsToggle(stashBefore, ident);
-                                            if (TrackerModel.shopStash[lbl] == stashBefore)
-                                                Graphics.ErrorBeepWithReminderLogText($"A shop can show at most {TrackerModel.MaxDecorIcons} items");
-                                        }
-                                        decorStateChanged();
-                                        return (Enumerable.Range(0, 5).Select(n => TrackerModel.shopLabelCount(n == 0 ? 5 : n)).ToArray(), Enumerable.Range(0, 5).Select(shopItemBitmaps).ToArray());
+                                        toggleStashItem(lbl, ident);
+                                        return shopSnapshot();
                                     }
                                     else return addItemToShopImpl(shop, ident);
                                 }
-                                // the marker icons offered when right clicking a shop in the flyout (the same icons as the overworld menu, minus the Shop cell)
-                                Task<int> pickItemForShop()
-                                {
-                                    var idents = new List<int> { TrackerModel.ITEMS.WOODSWORD, TrackerModel.ITEMS.WHITESWORD, TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.ITEMS.WHITESWORD4, TrackerModel.ITEMS.PROGRESSIVESWORD }
-                                                    .Concat(markerIdentList.Where(ident => ident != SHOP_MENU))
-                                                    .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k))
-                                                    .Concat(TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER } : new int[0]).ToList();
-                                    bool isProgressiveDisabled(int ident) => TrackerModel.progressiveDisabledIdent(ident);
-                                    // Legacy Mode: a shop only holds a wood arrow, blue candle, regular key, bombs, meat, book or shield (so no swords either)
-                                    bool isLegacyDisabled(int ident) => TrackerModel.LegacyMode && !(PieMenus.legacyShopAllows(ident));
-                                    var items = new List<(int, Control)>();
-                                    foreach (var ident in idents)
-                                    {
-                                        var (cell, enabled, _) = swordIconCell(ident);
-                                        if (enabled || isProgressiveDisabled(ident) || isLegacyDisabled(ident)) items.Add((ident, cell));
-                                    }
-                                    PieMenus.itemPickerDisabledTip = ident => isLegacyDisabled(ident) ? "Disabled In Legacy Mode" : isProgressiveDisabled(ident) ? "Disabled Due to Progressive Items" : null;
-                                    return PieMenus.ItemPickerAsync(cm, items, 9);
-                                }
+                                Task<int> pickItemForShop() => pickShopItem(items => PieMenus.ItemPickerAsync(cm, items, 9));
                                 var pick = await PieMenus.ShopFlyoutAsync(cm, counts, TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]), shopItems, canPlacePotionShop(i, j), addItemToShop, pickItemForShop);
                                 if (pick == 0) return SHOP_LABEL_BASE + 5;   // the P shop is shop label 5
                                 else if (pick >= 1 && pick <= 4) return SHOP_LABEL_BASE + pick;
@@ -5576,6 +5620,14 @@ public static class WPFUI
                 async Task go()
                 {
                     // the options popup opens right below the overworld tiles (moved up only as far as needed to still fit in the window)
+                    // (the window height can change after the popup was built, e.g. a layout switch: fit the content to the height it has now)
+                    if (optionsCanvas.Child is StackPanel optsTotal && optsTotal.Children.OfType<Viewbox>().FirstOrDefault() is Viewbox optsBox)
+                    {
+                        // (an explicit height makes the Viewbox scale its content down to fit; a MaxHeight alone did not)
+                        optsBox.MaxHeight = double.PositiveInfinity;
+                        optsBox.Child.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                        optsBox.Height = Math.Min(optsBox.Child.DesiredSize.Height, Math.Max(200.0, cm.Height - 40.0));
+                    }
                     optionsCanvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                     double owBottom;
                     try { owBottom = overworldCanvas.TranslatePoint(new Point(0.0, overworldCanvas.Bounds.Height), cm.AppMainCanvas).Value.Y; } catch (Exception) { owBottom = 0.0; }   // (WPF: ActualHeight)

@@ -296,6 +296,9 @@ public static class DungeonUI
         var extraIdx = dungeonIndex < 8 ? boxViewsAndActivations.Length - 1 : -1;
         var hasL2Stair = dungeonIndex == 1 && !TrackerModel.IsHiddenDungeonNumbers.Invoke(null) && TrackerModel.level2StairBoxEnabled && boxViewsAndActivations.Length > boxes.Length + (extraIdx >= 0 ? 1 : 0);
         TrackerModel.Box boxAt(int i) => i < boxes.Length ? boxes[i] : TrackerModel.level2StairBox;
+        // empty, or (Intra) holding the tracker's uncollected heart guess, which a placed item replaces
+        bool slotFree(int i) => boxAt(i).CellCurrent() == -1
+            || (TrackerModel.HeartShuffleMode == 1 && boxAt(i).CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && boxAt(i).PlayerHas().Equals(TrackerModel.PlayerHas.NO));
         List<int> make_validBoxIndices()
         {
             if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
@@ -323,7 +326,7 @@ public static class DungeonUI
                     var idxs = Enumerable.Reverse(validBoxIndices).ToList();
                     var r = -1;
                     foreach (var i in idxs)
-                        if (r == -1 && boxAt(i).CurrentlyHasBasementStair && boxAt(i).CellCurrent() == -1)
+                        if (r == -1 && boxAt(i).CurrentlyHasBasementStair && slotFree(i))
                             r = i;
                     if (r == -1)
                         r = idxs[0];
@@ -366,7 +369,7 @@ public static class DungeonUI
                     var idxs = validBoxIndices;
                     var r = -1;
                     foreach (var i in idxs)
-                        if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && boxAt(i).CellCurrent() == -1)
+                        if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && slotFree(i))
                             r = i;
                     if (r == -1)
                     {
@@ -376,7 +379,7 @@ public static class DungeonUI
                         {
                             // no free floor box: as for a floor heart, the triforce piece must be in an empty stair slot, so infer that and use the extra floor box
                             // (before, the topmost box was reopened, and picking an item there replaced the floor item already in it)
-                            var emptyStair = idxs.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && boxAt(i).CellCurrent() == -1);
+                            var emptyStair = idxs.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && slotFree(i));
                             if (emptyStair >= 0 && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() == -1
                                 && boxAt(idxs[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
                                 r = extraIdx;
@@ -436,10 +439,14 @@ public static class DungeonUI
                             });
                             if (emptyStair >= 0 && extraIsUsable())
                             {
-                                if (boxAt(validBoxIndices[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
-                                    markExtra();
-                                else
+                                // (heart first: placing the piece makes the Intra logic guess a heart, which it skips once the extra box holds one)
+                                var extraWas = (extra.CellCurrent(), extra.PlayerHas());
+                                markExtra();
+                                if (!boxAt(validBoxIndices[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
+                                {
+                                    extra.Set(extraWas.Item1, extraWas.Item2);
                                     Graphics.ErrorBeepWithReminderLogText("Could not infer the triforce location; cannot mark a floor heart");
+                                }
                             }
                             else
                                 Graphics.ErrorBeepWithReminderLogText("There were no floor-drop item boxes remaining in this dungeon, to mark a floor-heart pickup");
@@ -2270,6 +2277,23 @@ public static class DungeonUI
                     //    else
                     //        false
 
+                    // Enemy inference: marking a Digdogger (recorder) or Gohma (bow and arrow) puts a "maybe" blocker in this level's blocker boxes, if the player lacks the item
+                    void inferEnemyBlocker(MonsterDetail md)
+                    {
+                        if (!TrackerModelOptions.EnemyInference.Value || level < 1 || level > 8 || TrackerModelOptions.isCurrentlyApplyingRemoteUpdate() || skipRedrawInsideCurrentImport) return;
+                        var sum = TrackerModel.playerComputedStateSummary;
+                        var maybeBlock = md == MonsterDetail.Digdogger && !sum.HaveRecorder ? TrackerModel.DungeonBlocker.MAYBE_RECORDER
+                                       : md == MonsterDetail.Bow && !(sum.HaveBow && sum.ArrowLevel > 0) ? TrackerModel.DungeonBlocker.MAYBE_BOW_AND_ARROW
+                                       : null;
+                        if (maybeBlock == null) return;
+                        var di = level - 1;
+                        var hard = maybeBlock.HardCanonical();
+                        var all = Enumerable.Range(0, TrackerModel.DungeonBlockersContainer.MAX_BLOCKERS_PER_DUNGEON).Select(k => TrackerModel.DungeonBlockersContainer.GetDungeonBlocker(di, k)).ToList();
+                        if (all.Any(x => x.Equals(maybeBlock) || x.Equals(hard))) return;
+                        var slot = all.FindIndex(x => x.Equals(TrackerModel.DungeonBlocker.NOTHING));
+                        if (slot >= 0) TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, slot, maybeBlock);
+                    }
+
                     void SetNewValue(DungeonRoomState newState)
                     {
                         var originalState = roomStates[i, j].Clone();
@@ -2647,6 +2671,7 @@ public static class DungeonUI
                                                 else
                                                 {
                                                     room.MonsterDetail = monsterDetail;
+                                                    inferEnemyBlocker(monsterDetail);
                                                     urb(choice2(monsterDetail));
                                                 }
                                                 SetNewValue(room);
@@ -2787,6 +2812,7 @@ public static class DungeonUI
                                     case (true, var md):
                                         {
                                             var room = roomStates[i, j];
+                                            if (room.MonsterDetail != md) inferEnemyBlocker(md);
                                             room.MonsterDetail = md;
                                             SetNewValue(room);
                                             break;

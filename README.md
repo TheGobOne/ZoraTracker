@@ -67,7 +67,7 @@ Stuck? Click **Guided Tour** on the start screen. The desktop app checks for new
 | Saves | Manual and auto-save, with your recent saves one click away. |
 | Browser version | Runs at [zoratracker.gg](https://zoratracker.gg). Saves and settings stay in your browser. If you open it in two tabs, only one tab saves, and the other says so. |
 | Hosted co-op | Enter `https://coop.zoratracker.gg` in **Co-op client settings** to track with a partner. Desktop and browser trackers can play together. Each field has its own version, so the newest change wins. The desktop app also has **Co-op host settings** if you want to host. |
-| Archipelago support | Turn on **Archipelago Support** (start screen or Options) to place the AP Item, an item that belongs to another world in a multiworld game. |
+| Archipelago Items | Turn on **Archipelago Items** (start screen or Options) to place the AP Item, an item that belongs to another world in a multiworld game. |
 | Paste Flags | Paste flag strings or a seed file name, or drop a seed file or a tracker save on the dialog, to fill both flag strings. Your ZORA flags are saved with the save file. |
 | 4th Sword | In ZORA Extras. Turning on 4th Sword also turns on Progressive Items. Turning on Progressive Items does not turn on 4th Sword. |
 

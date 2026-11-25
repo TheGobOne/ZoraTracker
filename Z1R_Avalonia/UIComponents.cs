@@ -509,7 +509,9 @@ public static class UIComponents
             var isFirst = TrackerModel.owInstance.Quest.IsFirstQuestOW;
             if (isFirst)
             {
-                ToolTip.SetIsOpen(recorderDestinationButtonCanvas, false);   // 1st Quest: the order is 1-8, so no hover tip
+                // 1st Quest: the order is 1-8, so no hover tip. Remove the tip itself: closing it only after it opened left its empty grey-bordered window on screen
+                ToolTip.SetIsOpen(recorderDestinationButtonCanvas, false);
+                ToolTip.SetTip(recorderDestinationButtonCanvas, null);
                 return;
             }
             var order = new[] { 1, 3, 2, 5, 4, 6, 8, 7 };

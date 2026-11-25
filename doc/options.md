@@ -32,7 +32,8 @@ All but **Use old popups** appear only on the standard overworld, not with a map
 | **Show dungeon hint icons** | Shows the dim question-mark icons above the dungeons and other items, where you click to pick a location hint. |
 | **BOARD instead of LEVEL** | Labels dungeon tabs and headers BOARD-1 to BOARD-9. |
 | **Show basement info** | Empty dungeon item boxes suggest whether the item is a basement item or a floor drop. No effect with Hide Dungeon Numbers. |
-| **Do door inference** | Marks a green door when you mark a new room, if the way in can be worked out. |
+| **Enemy inference** | Marks a possible recorder block when you mark a Digdogger room, and a possible bow and arrow block for a Gohma room. On by default. |
+| **Door inference** | Marks a green door when you mark a new room, if the way in can be worked out. |
 | **Book for helpful hints** | For seeds with the Book To Understand Old Men flag and Helpful hints. Left-click an Old Man Hint room to toggle whether you have read it. |
 | **Alphabetize hint zone list** | Lists hint zones alphabetically instead of geographically. |
 | **Red edge by OFF tiles** | Draws a red "no bomb" edge on a room side that touches an OFF tile. On by default. |
@@ -80,7 +81,7 @@ The voice uses the built-in Windows voices on Windows. On macOS it uses the `say
 | **Remember startup selection** | The boxes you tick under Startup options and ZORA Extras on the start screen come back ticked the next time the tracker starts. |
 | **Save on completion** | Saves the full tracker state to a file when you click Zelda to complete the seed. |
 | **Check for updates on startup** | Looks on GitHub for a newer release when the tracker starts. Not in the browser version. |
-| **Archipelago support** | Adds the AP Item and the AP counter for Archipelago multiworld games. Off by default. The same setting as **Archipelago Support** on the start screen. See [Archipelago Support](start-screen.md#archipelago-support). |
+| **Archipelago Items** | Adds the AP Item and the AP counter for Archipelago multiworld games. Off by default. The same setting as **Archipelago Items** on the start screen. See [Archipelago Items](start-screen.md#archipelago-items). |
 | **Use old sword icons** | Draws the plain old sword pictures instead of the numbered sword icons. Takes effect the next time the tracker starts. |
 | **Display seed + flags** | Looks for the seed and flags in the titles of other windows (for example fceux), saves them with your save, and shows them in the bottom corner of the Notes box. |
 | **Listen for speech** | Uses the microphone for spoken map commands, such as "tracker set bomb shop" while hovering an unmarked tile. Speech recognition works on Windows only. |

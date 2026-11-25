@@ -300,6 +300,12 @@ let isExtraTile(tiles:Set<int*int>, x, y) = tiles.Contains((x, y))
 let ladderBlockTilesAllQuests = set [ (15,5) ]   // F16 (the coast item) is always a ladder block
 let extraPBBlockTiles = set [ for x in 0..3 do for y in 0..1 -> (x,y) ]
 let extraRaftBlockTiles = set [ (4,3); (4,4); (14,0); (15,0); (14,1); (15,1) ]
+// tiles behind the same ZORA Extra block (the two raft areas are separate): an any road marked inside a group gets the player past that block
+let anyRoadBypassGroups = [ extraPBBlockTiles; set [ (4,3); (4,4) ]; set [ (14,0); (15,0); (14,1); (15,1) ]; deadWoodsTiles; lostHillsTiles ]
+let mutable AnyRoadBypassedTiles : Set<int*int> = Set.empty   // derived from the map marks, so it is not saved
+let updateAnyRoadBypass(anyRoads: seq<int*int>) =
+    AnyRoadBypassedTiles <- set [ for g in anyRoadBypassGroups do
+                                    if anyRoads |> Seq.exists g.Contains then yield! g ]
 // tiles that might or might not be blocked, because a Random (dash) ZORA Extra could affect them
 // (once the player has the item that would block a group of tiles, or knows the hint, they just try them, so no outline)
 let maybeBlockedTiles(havePowerBracelet, haveRaft) =
@@ -307,6 +313,7 @@ let maybeBlockedTiles(havePowerBracelet, haveRaft) =
                     (if ExtraRaftRandom && not haveRaft then extraRaftBlockTiles else Set.empty)
                     (if DeadWoodsRandom && not DeadWoodsHintKnown then deadWoodsTiles else Set.empty)
                     (if LostHillsRandom && not LostHillsHintKnown then lostHillsTiles else Set.empty) ]
+    |> fun maybe -> Set.difference maybe AnyRoadBypassedTiles
 type OverworldInstance(quest) =
     member this.Quest = quest
     member this.AlwaysEmpty(x,y) =
@@ -324,6 +331,7 @@ type OverworldInstance(quest) =
         else 0
     // true while the tile is locked by a hint that has not been entered yet
     member this.HintLocked(x,y) =
+        not(AnyRoadBypassedTiles.Contains((x,y))) &&
         match this.HintZoneOf(x,y) with
         | 1 -> not DeadWoodsHintKnown
         | 2 -> not LostHillsHintKnown
@@ -359,6 +367,11 @@ type OverworldInstance(quest) =
         | OWQuest.MIXED_FIRST ->  (PrivateInternals.owMapSquaresFirstQuestPowerBraceletable.[y].Chars(x) = 'X' || PrivateInternals.owMapSquaresSecondQuestPowerBraceletable.[y].Chars(x) = 'X')
         | OWQuest.MIXED_SECOND -> (PrivateInternals.owMapSquaresFirstQuestPowerBraceletable.[y].Chars(x) = 'X' || PrivateInternals.owMapSquaresSecondQuestPowerBraceletable.[y].Chars(x) = 'X')
         | OWQuest.BLANK ->        false
+    // is the item needed to get at this tile? (Raftable / PowerBraceletable less the extra blocks an any road gets past)
+    member this.NeedsRaft(x,y) =
+        this.Raftable(x,y) && not(AnyRoadBypassedTiles.Contains((x,y)))
+    member this.NeedsPowerBracelet(x,y) =
+        this.PowerBraceletableBase(x,y) || (this.PowerBraceletable(x,y) && not(AnyRoadBypassedTiles.Contains((x,y))))
     member this.GravePushable(x,y) =
         match quest with
         | OWQuest.FIRST ->        PrivateInternals.owMapSquaresFirstQuestGravePushable.[y].Chars(x) = 'X'

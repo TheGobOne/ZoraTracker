@@ -908,6 +908,30 @@ public static class SelfTest
                         if (TrackerModel.BootsReplaceBoomerangs || TrackerModel.BootsRandom) fail("Boots Off: the model is not Off");
                     }
                     if (!OverworldData.maybeBlockedTiles(false, false).IsEmpty) fail("everything is Off but tiles are still maybe-blocked");
+                    // an any road inside a blocked area opens that area only
+                    guard("any road bypass", () =>
+                    {
+                        var ow = new OverworldData.OverworldInstance(OverworldData.OWQuest.FIRST);
+                        var saved = (OverworldData.ExtraPBBlocks, OverworldData.ExtraRaftBlocks, OverworldData.DeadWoodsEnabled, OverworldData.LostHillsEnabled, OverworldData.DeadWoodsHintKnown, OverworldData.LostHillsHintKnown);
+                        OverworldData.ExtraPBBlocks = OverworldData.ExtraRaftBlocks = OverworldData.DeadWoodsEnabled = OverworldData.LostHillsEnabled = true;
+                        OverworldData.DeadWoodsHintKnown = OverworldData.LostHillsHintKnown = false;
+                        bool blocked(Tuple<int, int> t) => OverworldData.extraPBBlockTiles.Contains(t) ? ow.NeedsPowerBracelet(t.Item1, t.Item2)
+                            : OverworldData.deadWoodsTiles.Contains(t) || OverworldData.lostHillsTiles.Contains(t) ? ow.HintLocked(t.Item1, t.Item2)
+                            : ow.NeedsRaft(t.Item1, t.Item2);
+                        foreach (var opened in OverworldData.anyRoadBypassGroups)
+                        {
+                            OverworldData.updateAnyRoadBypass(new[] { opened.First() });
+                            foreach (var group in OverworldData.anyRoadBypassGroups)
+                                foreach (var t in group)
+                                {
+                                    // (a tile with its own bracelet rock still needs the bracelet)
+                                    var want = !group.Equals(opened) || (OverworldData.extraPBBlockTiles.Contains(t) && ow.PowerBraceletableBase(t.Item1, t.Item2));
+                                    if (blocked(t) != want) fail($"any road at {opened.First()}: tile {t} blocked should be {want}");
+                                }
+                        }
+                        (OverworldData.ExtraPBBlocks, OverworldData.ExtraRaftBlocks, OverworldData.DeadWoodsEnabled, OverworldData.LostHillsEnabled, OverworldData.DeadWoodsHintKnown, OverworldData.LostHillsHintKnown) = saved;
+                        TrackerModel.recomputeMapStateSummary();   // rebuild the opened set from the map marks
+                    });
                     // the Close button closes the window
                     var closeBtn = descendants(root).FirstOrDefault(d => isButtonLike(d) && label(d) == "Close") as Control;
                     if (closeBtn == null) fail("Overworld + Extras: no Close button");
@@ -969,6 +993,24 @@ public static class SelfTest
             if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[2, 2]) != 1) fail("shop: the SHOP 1 label was not set");
             WPFUI.clearAllTileIcons(2, 2);
             if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[2, 2]) != 0) fail("shop: clearing the tile left the shop label");
+            // Shops popout: an item added to a shop with no tile waits in the shop, and the first tile of that shop picks it up
+            var popout = Popouts.shopsContent(new Window());
+            popout.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            popout.Arrange(new Rect(popout.DesiredSize));
+            if (popout.DesiredSize.Width < 100.0) fail("shops popout: the window content did not build");
+            if (TrackerModel.shopLabelCount(2) == 0)
+            {
+                var stash = TrackerModel.shopStash[2];
+                TrackerModel.shopStash[2] = -1;
+                WPFUI.addItemToShopGlobal(2, TrackerModel.ITEMS.MEAT);
+                if (!WPFUI.shopItemIdentsGlobal(2).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: an item added to a shop with no tile did not show");
+                WPFUI.setShopLabel(2, 2, 2);
+                if (!TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[2, 2]).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: the placed shop did not pick up the item");
+                WPFUI.addItemToShopGlobal(2, TrackerModel.ITEMS.MEAT);
+                if (WPFUI.shopItemIdentsGlobal(2).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: adding the item again did not remove it from the shop's tile");
+                WPFUI.clearAllTileIcons(2, 2);
+                TrackerModel.shopStash[2] = stash;
+            }
             // put everything back
             foreach (var (x, y) in new[] { (3, 3), (4, 3), (0, 6), (2, 6), (4, 6), (6, 5) }) { try { set(x, y, unmarked); } catch { } }
             hDoor(3, 3).State = Dungeon.DoorState.UNKNOWN;

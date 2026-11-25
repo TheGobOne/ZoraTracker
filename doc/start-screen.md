@@ -12,7 +12,7 @@ Set these before you begin a run. Most can be changed later from the main screen
 - [Item Shuffle](#item-shuffle)
 - [Startup options](#startup-options)
 - [Hide Dungeon Numbers](#hide-dungeon-numbers)
-- [Archipelago Support](#archipelago-support)
+- [Archipelago Items](#archipelago-items)
 - [ZORA Extras](#zora-extras)
 - [Paste Flags](#paste-flags)
 - [Saves, tour and version](#saves-tour-and-version)
@@ -39,7 +39,7 @@ Match how the seed shuffled items and hearts: **Off**, **Intra** or **Full**.
 - **Hide Dungeon Numbers** hides the level numbers. See [below](#hide-dungeon-numbers).
 - **Mirrored Overworld** flips the map.
 - **Mark Bomb Droppers** lets you mark bomb-dropper spots.
-- **Archipelago Support** adds the AP Item. See [below](#archipelago-support).
+- **Archipelago Items** adds the AP Item. See [below](#archipelago-items).
 
 ## Hide Dungeon Numbers
 
@@ -50,11 +50,11 @@ Use this when your seed hides which dungeon is which number.
 - Optionally mark the dungeon's floor color with the rainbow letter or the button above its triforce. Colors are for your reference only.
 - When you collect the triforce, the number chooser pops up. Set the real number once you know it. Numbers affect reminders and other features, so set it as soon as you can.
 
-## Archipelago Support
+## Archipelago Items
 
 For Archipelago multiworld games. It is off by default.
 
-- Tick **Archipelago Support** here, or **Archipelago support** in [Options](options.md). They are the same setting.
+- Tick **Archipelago Items** here, or **Archipelago Items** in [Options](options.md). They are the same setting.
 - The **AP Item** appears in the item-box menus and the overworld tile menu. It stands for an item that belongs to another world. Place it as many times as you need to mark checked locations.
 - An **AP counter** appears next to the Zelda icon on the main screen. It counts the AP Items you have checked off as collected. Hover it to highlight the overworld spots that hold one.
 - With the option off, the counter is hidden and you cannot place new AP Items.
@@ -65,8 +65,9 @@ Options that only some ZORA seeds use. **Legacy Mode** turns them all off and lo
 
 - **4th Sword** adds a fourth sword level above the magical sword. Choose where its item lives: **Level 2** (the level 2 staircase slot, the default) or **Level 9** (a level 9 floor item). Those two choices are available once 4th Sword is ticked.
 - **Progressive Items** makes the blue candle, blue ring, wood arrows and swords progressive.
+- **Shuffle** has three boxes: **Maps**, **Compasses** and **Triforces**. Tick the ones your seed shuffles between dungeons. They only record your choice for now.
 - **Pegasus Boots** replaces the boomerangs with boots.
-- **Extra Power Bracelet Blocks**, **Extra Raft Blocks**, **Randomize Dead Woods** and **Randomize Lost Hills**.
+- **Extra Power Bracelet Blocks**, **Extra Raft Blocks**, **Randomize Dead Woods** and **Randomize Lost Hills**. Marking an Any Road inside one of these blocked areas makes that whole area count as reachable. The two raft areas count separately.
 - **Custom LEVEL Name** replaces `LEVEL-n` at the top of each dungeon map with up to 7 letters or numbers. It only works with ZORA seeds, so leave it off otherwise.
 
 ### 4th Sword and Progressive Items
