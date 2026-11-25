@@ -49,6 +49,8 @@ public static class WPFUI
     private static void gridAdd(Grid g, Control x, int c, int r) => OverworldItemGridUI.gridAdd(g, x, c, r);
     private static Grid makeGrid(int nc, int nr, int cw, int rh) => OverworldItemGridUI.makeGrid(nc, nr, cw, rh);
     private static readonly double OMTW = OverworldItemGridUI.OMTW;
+    // true for a box holding the uncollected heart the Intra Heart Shuffle logic guessed (set in makeAll)
+    public static Func<TrackerModel.Box, bool> IsIntraHeartGuess = _ => false;
 
     // Icons for the 4th Sword and Progressive Sword overworld markers, in the same pixel-art style as the Wood/White/Magical sword cave icons:
     // a black glyph on the brown cave floor, with a colored sword underneath (5x9 logical pixels, each drawn 3x3)
@@ -375,7 +377,8 @@ public static class WPFUI
         return shopSnapshot();
     }
     // the marker icons that can be put in a shop (the overworld menu's icons, minus the Shop cell), shown with show()
-    public static Task<int> pickShopItem(Func<List<(int, Control)>, Task<int>> show)
+    // blocked: the tile only takes the bomb dropper (an untaken letter or sword cave, take any, dungeon, any road), so no item can be picked
+    public static Task<int> pickShopItem(Func<List<(int, Control)>, Task<int>> show, bool blocked = false)
     {
         var idents = new List<int> { TrackerModel.ITEMS.WOODSWORD, TrackerModel.ITEMS.WHITESWORD, TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.ITEMS.WHITESWORD4, TrackerModel.ITEMS.PROGRESSIVESWORD }
             .Concat(markerIdents())
@@ -388,7 +391,7 @@ public static class WPFUI
         foreach (var ident in idents)
         {
             var (cell, enabled) = markerIconCell(ident);
-            if (enabled || isProgressiveDisabled(ident) || isLegacyDisabled(ident)) items.Add((ident, cell));
+            if ((enabled && !blocked) || isProgressiveDisabled(ident) || isLegacyDisabled(ident)) items.Add((ident, cell));
         }
         PieMenus.itemPickerDisabledTip = ident => isLegacyDisabled(ident) ? "Disabled In Legacy Mode" : isProgressiveDisabled(ident) ? "Disabled Due to Progressive Items" : null;
         return show(items);
@@ -833,8 +836,13 @@ public static class WPFUI
         var old = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]);
         if (label != old) unlinkDuplicateTile(i, j);
         if (old > 0 && label != old && TrackerModel.shopLabelCount(old) == 1)
-            // this was the last tile of that shop: its items stay in the shop window
-            TrackerModel.shopStash[old] = TrackerModel.decorEntriesPack(TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons[i, j]));
+        {
+            // this was the last tile of that shop: its items stay in the shop window, with the window's leftovers that did not fit on the tile
+            var (kept, lost) = mergeStash(TrackerModel.owSwordIcons[i, j], old);
+            TrackerModel.shopStash[old] = TrackerModel.decorEntriesPack(TrackerModel.decorEntriesOf(kept));
+            if (lost > 0)
+                Graphics.ErrorBeepWithReminderLogText($"Shop {(old == 5 ? "P" : old.ToString())}: the shop window is full, so {TrackerModel.decorEntriesOf(lost).Length} item(s) left over in it were dropped");
+        }
         TrackerModel.owSwordIcons[i, j] = TrackerModel.withShopLabel(TrackerModel.owSwordIcons[i, j], label);
         if (old > 0 && label > 0 && label != old)
         {
@@ -866,13 +874,52 @@ public static class WPFUI
             }
             rebuildMapCollected();
         }
-        else if (label > 0 && label != old && TrackerModel.shopLabelCount(label) == 1 && TrackerModel.shopStash[label] > 0)
+        else if (label > 0 && label != old && TrackerModel.shopStash[label] > 0)
         {
-            // the first tile of a shop picks up the items already entered in its shop window
-            TrackerModel.owSwordIcons[i, j] = TrackerModel.withShopLabel(TrackerModel.shopStash[label], label);
-            TrackerModel.shopStash[label] = -1;
+            // the first tile of a shop picks up the items already entered in its shop window, after its own icons
+            reconcileShopStash();
+            if (TrackerModel.shopStash[label] > 0)
+                Graphics.ErrorBeepWithReminderLogText($"Shop {(label == 5 ? "P" : label.ToString())}: the tile is full, so {TrackerModel.decorEntriesOf(TrackerModel.shopStash[label]).Length} item(s) from the shop window stay there");
         }
         decorStateChanged();
+    }
+    // a tile's icons with the stash of shop `label` added after them: items the tile already has are skipped, and only as many as fit are added
+    // (MaxDecorIcons, the P shop holds one). Returns the tile's new icons (with the label) and the stash items that did not fit (-1 when none).
+    private static (int, int) mergeStash(int packed, int label)
+    {
+        var own = TrackerModel.decorEntriesOf(packed).ToList();
+        var limit = label == 5 ? 1 : TrackerModel.MaxDecorIcons;
+        var rest = new List<Tuple<int, bool>>();
+        var unmatched = own.Select(o => o.Item1).ToList();   // (each tile icon stands for one stash item at most: heart containers repeat)
+        foreach (var e in TrackerModel.decorEntriesOf(TrackerModel.shopStash[label]))
+        {
+            if (unmatched.Remove(e.Item1)) continue;
+            if (own.Count < limit) own.Add(e); else rest.Add(e);
+        }
+        return (TrackerModel.withShopLabel(TrackerModel.decorEntriesPack(ListModule.OfSeq(own)), label), TrackerModel.decorEntriesPack(ListModule.OfSeq(rest)));
+    }
+    // The rule: a shop's stash is empty once a tile has that shop's label (the stash moves onto the tiles of that shop, see mergeStash;
+    // what does not fit stays in the stash, so nothing is lost). Used by setShopLabel, save load and the co-op applies, since the tile and
+    // the stash can arrive in either order. Returns the tiles it changed.
+    public static List<(int, int)> reconcileShopStash()
+    {
+        var changed = new List<(int, int)>();
+        for (int label = 1; label <= 5; label++)
+        {
+            if (TrackerModel.shopStash[label] <= 0) continue;
+            var left = (int?)null;
+            for (int x = 0; x <= 15; x++)
+                for (int y = 0; y <= 7; y++)
+                {
+                    if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[x, y]) != label) continue;
+                    var (p, rest) = mergeStash(TrackerModel.owSwordIcons[x, y], label);
+                    left ??= rest;   // (the first tile decides what stays: tiles of one shop carry the same items)
+                    if (p != TrackerModel.owSwordIcons[x, y]) { TrackerModel.owSwordIcons[x, y] = p; changed.Add((x, y)); }
+                }
+            if (left is int l) TrackerModel.shopStash[label] = l;
+        }
+        if (changed.Count > 0) rebuildMapCollected();
+        return changed;
     }
     // removes every marker icon AND the shop label from a tile
     // placing a secret / door repair / money making game on a tile replaces whatever shop (label + item icons) was there
@@ -1272,9 +1319,11 @@ public static class WPFUI
         // Heart Shuffle 'Intra': each of dungeons 1-8 holds exactly one heart, in one of its item slots (floor or basement). Once every other slot of a
         // dungeon holds a non-heart item, the last open slot is filled with an uncollected heart. A dungeon with 3 slots (1 or 4, 8, or 2 with the 4th
         // sword) only counts the other items once they are collected, so a placed but uncollected item does not give the heart away.
+        IsIntraHeartGuess = _ => false;
         if (TrackerModel.HeartShuffleMode == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)))
         {
             var autoHearts = new HashSet<TrackerModel.Box>(ReferenceEqualityComparer.Instance);
+            IsIntraHeartGuess = b => autoHearts.Contains(b) && b.CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO);
             var autoExtraHearts = new HashSet<int>();   // dungeons whose extra floor box holds a heart this code put there
             var busy = false;
             bool isHeart(TrackerModel.Box b) => b.CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER;
@@ -1695,6 +1744,15 @@ public static class WPFUI
             for (var k2 = 0; k2 <= 8; k2++)
                 if (OverworldData.vanilla1QDungeonLocations[k1].Equals(OverworldData.vanilla2QDungeonLocations[k2]))
                     sharedDungeonSpots[(OverworldData.vanilla1QDungeonLocations[k1].Item1, OverworldData.vanilla1QDungeonLocations[k1].Item2)] = (49 + k1, 49 + k2);
+        // a shared spot is split only when both quests' spots are marked: one tile holds one circle value, so this looks at the quest's
+        // spots that are not shared (the 1Q or 2Q dungeon locations buttons, or Expanded Dungeon Locations from pasted flags, circle them)
+        bool questMarked(bool first)
+        {
+            var locs = first ? OverworldData.vanilla1QDungeonLocations : OverworldData.vanilla2QDungeonLocations;
+            for (var k = 0; k <= 8; k++)
+                if (!sharedDungeonSpots.ContainsKey((locs[k].Item1, locs[k].Item2)) && TrackerModel.overworldMapCircles[locs[k].Item1, locs[k].Item2] == (first ? 149 : 249) + k) return true;
+            return false;
+        }
         var overworldCirclesCanvas = new Canvas { Width = 16.0 * OMTW, Height = (double)(8 * 11 * 3) };
         overworldCirclesCanvas.IsHitTestVisible = false;
         var owCircleRedraws = new Action[16, 8];
@@ -1714,7 +1772,7 @@ public static class WPFUI
                     var brush = owCircleColor(v);
                     var colorBase = v - v % 100;
                     v = v % 100;
-                    if (colorBase >= 100 && colorBase <= 200 && sharedDungeonSpots.TryGetValue((i, j), out var labs) && (v == labs.Item1 || v == labs.Item2))
+                    if (colorBase >= 100 && colorBase <= 200 && sharedDungeonSpots.TryGetValue((i, j), out var labs) && (v == labs.Item1 || v == labs.Item2) && questMarked(true) && questMarked(false))
                     {
                         const double d = 11.0 * 3.0 - 2.0, r = d / 2.0;
                         Path half(bool left) => new Path
@@ -1751,7 +1809,13 @@ public static class WPFUI
                 owCircleRedraws[i, j] = redraw;
             }
         }
-        redrawOWCircle.Value = (x, y) => owCircleRedraws[x, y]();
+        redrawOWCircle.Value = (x, y) =>
+        {
+            owCircleRedraws[x, y]();
+            // (a quest's other spots decide whether the shared spots are split: redraw those too)
+            if (!sharedDungeonSpots.ContainsKey((x, y)) && OverworldData.vanilla1QDungeonLocations.Concat(OverworldData.vanilla2QDungeonLocations).Any(t => t.Item1 == x && t.Item2 == y))
+                foreach (var (sx, sy) in sharedDungeonSpots.Keys) owCircleRedraws[sx, sy]();
+        };
         foreach (var redrawCircle in owCircleRedraws) redrawCircle();   // (circles already set before the tracker started, like the vanilla dungeon spots from the pasted flags)
 
         await showProgress("overworld magnifier");
@@ -2562,7 +2626,7 @@ public static class WPFUI
                     }
                     var clearIconsCell = make_clearIconsCell();
                     var tailCells = lastRowIdents.Select(swordIconCell).Append(clearIconsCell).Append(_darkXCell).ToArray();   // (Don't Care is the last cell, at the far right of the bottom row)
-                    // 'Shops in menu' (a checkbox in the shop window): a row of buttons for the 5 shops (P, 1-4), starting on a new row; they work like picking that shop in the flyout
+                    // 'Shops in menu' (a checkbox in the shop window): a row of buttons for the 5 shops (P, 1-4), starting on a new row; each opens the Shop window, where the shop is picked
                     (Control, bool, int)[] shopRowCells;
                     if (!TrackerModelOptions.ShopsInMenu.Value) shopRowCells = new (Control, bool, int)[0];
                     else
@@ -2652,7 +2716,7 @@ public static class WPFUI
                                     var s =
                                         isSwordIcon ? decorDescription(currentState - 1000) + (currentState - 1000 == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled ? "\n4th Sword Not Enabled" : "") + (TrackerModel.progressiveDisabledIdent(currentState - 1000) ? "\nDisabled Due to Progressive Items" : "")
                                         : isClearCell ? "Clear this tile\n(removes marker icons and sets it back to unmarked)"
-                                        : isShopLabelCell ? (currentState == SHOP_LABEL_BASE + 5 ? "P Shop\n(potion shop: puts its name at the top of the tile and copies any other P shop)" : string.Format("Shop {0}\n(puts the shop's name at the top of the tile and copies its items from any other Shop {1})", (currentState - SHOP_LABEL_BASE), (currentState - SHOP_LABEL_BASE)))
+                                        : isShopLabelCell ? (currentState == SHOP_LABEL_BASE + 5 ? "P Shop\n(opens the Shop window: pick P there to put the potion shop on this tile)" : string.Format("Shop {0}\n(opens the Shop window: pick {0} there to put the shop on this tile)", (currentState - SHOP_LABEL_BASE)))
                                         : isShopCell ? "Shop...\n(potion shop, or shop 1-4: puts the shop's name at the top of the tile)"
                                         : currentState == -1 ? "Unmarked"
                                         : TrackerModel.dummyOverworldTiles[currentState].Item4;
@@ -2732,7 +2796,7 @@ public static class WPFUI
                         // the 'Shop' cell opens a flyout: the potion shop (the usual blue potion marker) or one of the 4 numbered shops
                         async Task<int?> flyout()
                         {
-                            // (the 'Shops in menu' row buttons also open the flyout)
+                            // (the 'Shops in menu' row buttons also open the flyout; which button was picked does not matter)
                             if (r0 is int sel && (sel == SHOP_MENU || (sel > SHOP_LABEL_BASE && sel <= SHOP_LABEL_BASE + 5)))
                             {
                                 flyoutAddedItem = false;
@@ -2840,7 +2904,7 @@ public static class WPFUI
                                     }
                                     else return addItemToShopImpl(shop, ident);
                                 }
-                                Task<int> pickItemForShop() => pickShopItem(items => PieMenus.ItemPickerAsync(cm, items, 9));
+                                Task<int> pickItemForShop() => pickShopItem(items => PieMenus.ItemPickerAsync(cm, items, 9), markersBlocked);
                                 var pick = await PieMenus.ShopFlyoutAsync(cm, counts, TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]), shopItems, canPlacePotionShop(i, j), addItemToShop, pickItemForShop);
                                 if (pick == 0) return SHOP_LABEL_BASE + 5;   // the P shop is shop label 5
                                 else if (pick >= 1 && pick <= 4) return SHOP_LABEL_BASE + pick;
@@ -5817,6 +5881,7 @@ public static class WPFUI
                 for (int k = 0; k <= 5; k++) TrackerModel.shopStash[k] = -1;
                 if (data.Overworld.ShopStash != null && data.Overworld.ShopStash.Length == 6)
                     for (int k = 0; k <= 5; k++) TrackerModel.shopStash[k] = data.Overworld.ShopStash[k];
+                reconcileShopStash();   // (a save from before the rule can hold a stash for a shop that is on the map)
                 if (data.Overworld.BombDroppers != null && data.Overworld.BombDroppers.Length == 16 * 8)
                     for (int j = 0; j <= 7; j++)
                         for (int i = 0; i <= 15; i++)

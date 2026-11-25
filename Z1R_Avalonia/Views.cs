@@ -314,7 +314,7 @@ public static class Views
     public static readonly bool[] triforceBlocked = new bool[9];   // middle-clicking a dungeon's triforce above it puts a red X on it, and it can't be collected until the X is removed (this session only)
     // right click on a dungeon's numbered triforce (dungeons 1-8): puts the Triforce Piece in an empty basement item slot, or takes it back out of the slot it is in.
     // Returns true when it did something (the click is then used up); false lets the click do its normal job (the collected toggle).
-    // (level 2: its extra staircase slot when that is on; level 8: the middle basement slot; an empty slot is preferred, otherwise the slot's item is replaced)
+    // (level 2: its extra staircase slot when that is on; level 8: the middle basement slot; an empty slot is preferred, otherwise the slot's uncollected item is replaced)
     public static bool TryRightClickTriforcePlacement(int dungeonIndex)
     {
         if (dungeonIndex < 0 || dungeonIndex > 7) return false;
@@ -331,7 +331,10 @@ public static class Views
         var target = stairOn ? (TrackerModel.level2StairBox.CellCurrent() == -1 ? TrackerModel.level2StairBox : null)
                              : d.Boxes.Take(3).FirstOrDefault(b => b.CurrentlyHasBasementStair && b.CellCurrent() == -1);
         // no empty slot: replace the item in the basement slot (the piece is there, so that item was marked in the wrong place)
-        target ??= stairOn ? TrackerModel.level2StairBox : d.Boxes.Take(3).FirstOrDefault(b => b.CurrentlyHasBasementStair);
+        // (never a collected one: the item would leave the inventory)
+        bool uncollected(TrackerModel.Box b) => !b.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
+        target ??= stairOn ? (uncollected(TrackerModel.level2StairBox) ? TrackerModel.level2StairBox : null)
+                           : d.Boxes.Take(3).FirstOrDefault(b => b.CurrentlyHasBasementStair && uncollected(b));
         if (target == null) return false;
         return target.AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO);
     }

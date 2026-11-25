@@ -1086,7 +1086,8 @@ public static class MainTrackerTriforcesAndItems
                         entry("Current Equipment", () => Popouts.isPopoutOpen(Popouts.PopoutKind.InventoryAndHeartsPopout), () => Popouts.openPopout(Popouts.PopoutKind.InventoryAndHeartsPopout), () => Popouts.closePopout(Popouts.PopoutKind.InventoryAndHeartsPopout));
                         entry("Item Locations", () => itemLocationsWindow != null, () => openItemLocationsWindow(), () => { if (itemLocationsWindow != null) { itemLocationsMenuClosing = true; try { itemLocationsWindow.Close(); } finally { itemLocationsMenuClosing = false; } } });
                         entry("Item Progress", () => itemProgressWindow != null, () => openItemProgressWindow(), () => { if (itemProgressWindow != null) itemProgressWindow.Close(); });
-                        entry("Shops", () => Popouts.isPopoutOpen(Popouts.PopoutKind.ShopsPopout), () => Popouts.openPopout(Popouts.PopoutKind.ShopsPopout), () => Popouts.closePopout(Popouts.PopoutKind.ShopsPopout));
+                        if (!Platform.isBrowser)   // (the web build shows no separate windows)
+                            entry("Shops", () => Popouts.isPopoutOpen(Popouts.PopoutKind.ShopsPopout), () => Popouts.openPopout(Popouts.PopoutKind.ShopsPopout), () => Popouts.closePopout(Popouts.PopoutKind.ShopsPopout));
                         entry("Spot Summary", () => Popouts.isPopoutOpen(Popouts.PopoutKind.SpotSummaryPopout), () => Popouts.openPopout(Popouts.PopoutKind.SpotSummaryPopout), () => Popouts.closePopout(Popouts.PopoutKind.SpotSummaryPopout));
                         entry("Uncollected Items", () => Popouts.isPopoutOpen(Popouts.PopoutKind.RemainingItemsPoput), () => Popouts.openPopout(Popouts.PopoutKind.RemainingItemsPoput), () => Popouts.closePopout(Popouts.PopoutKind.RemainingItemsPoput));
                         sp.Children.Add(new DockPanel { Background = Brushes.Gray, Height = 1.0, Margin = new Thickness(6.0, 6.0, 6.0, 4.0) });

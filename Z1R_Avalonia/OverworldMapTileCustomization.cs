@@ -1248,7 +1248,7 @@ public static class OverworldMapTileCustomization
                     }
                 return fullTileBmp;
             }
-            var isDarker = TrackerModel.GetDungeon(ms.State).IsComplete;
+            var isDarker = TrackerModel.GetDungeon(ms.State).IsDimmed;
             if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
             {
                 if (TrackerModel.GetDungeon(ms.State).LabelChar != '?')

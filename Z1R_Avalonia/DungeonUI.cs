@@ -296,9 +296,8 @@ public static class DungeonUI
         var extraIdx = dungeonIndex < 8 ? boxViewsAndActivations.Length - 1 : -1;
         var hasL2Stair = dungeonIndex == 1 && !TrackerModel.IsHiddenDungeonNumbers.Invoke(null) && TrackerModel.level2StairBoxEnabled && boxViewsAndActivations.Length > boxes.Length + (extraIdx >= 0 ? 1 : 0);
         TrackerModel.Box boxAt(int i) => i < boxes.Length ? boxes[i] : TrackerModel.level2StairBox;
-        // empty, or (Intra) holding the tracker's uncollected heart guess, which a placed item replaces
-        bool slotFree(int i) => boxAt(i).CellCurrent() == -1
-            || (TrackerModel.HeartShuffleMode == 1 && boxAt(i).CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && boxAt(i).PlayerHas().Equals(TrackerModel.PlayerHas.NO));
+        // empty, or (Intra) holding the tracker's own uncollected heart guess, which a placed item replaces
+        bool slotFree(int i) => boxAt(i).CellCurrent() == -1 || WPFUI.IsIntraHeartGuess(boxAt(i));
         List<int> make_validBoxIndices()
         {
             if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
@@ -430,23 +429,23 @@ public static class DungeonUI
                         {
                             // no free floor box: a floor heart then means the triforce piece must be in an (empty) stair slot, so infer that and put the heart in the extra floor box
                             // (under Intra Heart Shuffle an uncollected heart in a stair slot is only the tracker's guess for "the one heart of this dungeon", and a floor heart disproves it)
-                            var emptyStair = validBoxIndices.FindIndex(i =>
-                            {
-                                var b = boxAt(i);
-                                return b.CurrentlyHasBasementStair
-                                    && (b.CellCurrent() == -1
-                                        || (TrackerModel.HeartShuffleMode == 1 && b.CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO)));
-                            });
+                            var emptyStair = validBoxIndices.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && slotFree(i));
                             if (emptyStair >= 0 && extraIsUsable())
                             {
-                                // (heart first: placing the piece makes the Intra logic guess a heart, which it skips once the extra box holds one)
+                                var stair = boxAt(validBoxIndices[emptyStair]);
+                                // heart first: placing the piece makes the Intra logic guess a heart, which it skips once the extra box holds one.
+                                // But when the guess in the stair slot is the last heart in the pool, the piece has to go in first to free it.
+                                var pieceFirst = stair.CellCurrent() == TrackerModel.ITEMS.HEARTCONTAINER && extra.CellCurrent() == -1
+                                                    && !extra.Domain.CanAddUse(TrackerModel.ITEMS.HEARTCONTAINER);
                                 var extraWas = (extra.CellCurrent(), extra.PlayerHas());
-                                markExtra();
-                                if (!boxAt(validBoxIndices[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
+                                if (!pieceFirst) markExtra();
+                                if (!stair.AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
                                 {
                                     extra.Set(extraWas.Item1, extraWas.Item2);
                                     Graphics.ErrorBeepWithReminderLogText("Could not infer the triforce location; cannot mark a floor heart");
                                 }
+                                else if (pieceFirst)
+                                    markExtra();
                             }
                             else
                                 Graphics.ErrorBeepWithReminderLogText("There were no floor-drop item boxes remaining in this dungeon, to mark a floor-heart pickup");
@@ -1074,6 +1073,7 @@ public static class DungeonUI
         char getLabelChar(int level) => level == 9 ? '9' : TrackerModel.IsHiddenDungeonNumbers.Invoke(null) ? (char)((int)'A' - 1 + level) : (char)((int)'0' + level);
         //let mutable justUnmarked = None
         (int, int, HotKeys.DungeonRoomHotKey)? justUnmarked = null;
+        var unremarkedInferences = new HashSet<(int, MonsterDetail)>();   // (level, monster) whose inferred "maybe" blocker no unmark and remark has followed yet
         var numeralsByLevel = new TextBox[9];   // each tab's big faint number, so a partner's room change can hide the right one
         var redrawAllRoomsByLevel = new Action[9];   // each tab's redrawAllRooms, for redrawAllRoomsPublic
         var lastRemoteRoomLevel = 0;   // the level (1 to 9) of the last partner room change applied, 0 for none
@@ -1141,12 +1141,17 @@ public static class DungeonUI
             // rupee/blank/key/bomb row highlighter
             Action<int?> make_highlightRow()
             {
-                var bmp = Dungeon.MakeLoZMinimapDisplayBmp(new bool[8, 8], '?');
-                var rupeeKeyBomb = new System.Drawing.Bitmap(8, 32);
-                for (int i = 0; i <= 7; i++)
-                    for (int j = 0; j <= 31; j++)
-                        rupeeKeyBomb.SetPixel(i, j, bmp.GetPixel(72 + i, 8 + j));
-                var img = Graphics.BMPtoImage(rupeeKeyBomb);
+                System.Drawing.Bitmap rupeeKeyBombBmp()
+                {
+                    var bmp = Dungeon.MakeLoZMinimapDisplayBmp(new bool[8, 8], '?');
+                    var rupeeKeyBomb = new System.Drawing.Bitmap(8, 32);
+                    for (int i = 0; i <= 7; i++)
+                        for (int j = 0; j <= 31; j++)
+                            rupeeKeyBomb.SetPixel(i, j, bmp.GetPixel(72 + i, 8 + j));
+                    return rupeeKeyBomb;
+                }
+                var img = Graphics.BMPtoImage(rupeeKeyBombBmp());
+                OptionsMenu.displayIconsInDungeonMapOptionChanged += () => img.Source = Graphics.BMPToBI(rupeeKeyBombBmp());   // (the chest comes and goes with the option)
                 img.Width = 16.0;
                 img.Height = 64.0;
                 img.Stretch = Stretch.UniformToFill;
@@ -2291,7 +2296,9 @@ public static class DungeonUI
                         var all = Enumerable.Range(0, TrackerModel.DungeonBlockersContainer.MAX_BLOCKERS_PER_DUNGEON).Select(k => TrackerModel.DungeonBlockersContainer.GetDungeonBlocker(di, k)).ToList();
                         if (all.Any(x => x.Equals(maybeBlock) || x.Equals(hard))) return;
                         var slot = all.FindIndex(x => x.Equals(TrackerModel.DungeonBlocker.NOTHING));
-                        if (slot >= 0) TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, slot, maybeBlock);
+                        if (slot < 0) return;
+                        TrackerModel.DungeonBlockersContainer.SetDungeonBlocker(di, slot, maybeBlock);
+                        unremarkedInferences.Add((level, md));
                     }
 
                     void SetNewValue(DungeonRoomState newState)
@@ -2389,7 +2396,9 @@ public static class DungeonUI
                                 // when nothing needs updating (the common case for plain room marks).
                                 bool make_doorInferenceChanged()
                                 {
-                                    if (TrackerModelOptions.DoDoorInference.Value && originallyWasNotMarked() && !newState.IsEmpty && !secondTransport && !newState.IsGannonOrZelda)
+                                    // (not for a partner's change: the door would never be sent back; theirs arrives on its own if they infer one)
+                                    if (TrackerModelOptions.DoDoorInference.Value && originallyWasNotMarked() && !newState.IsEmpty && !secondTransport && !newState.IsGannonOrZelda
+                                        && !(TrackerModelOptions.isCurrentlyApplyingRemoteUpdate()))
                                     {
                                         var possibleEntries = new List<Dungeon.Door>();
                                         void maybeAdd(Dungeon.Door door)
@@ -2672,7 +2681,10 @@ public static class DungeonUI
                                                 {
                                                     room.MonsterDetail = monsterDetail;
                                                     inferEnemyBlocker(monsterDetail);
-                                                    urb(choice2(monsterDetail));
+                                                    // the first unmark and remark after inference adds nothing (inference already added the "maybe"), so it must not upgrade it to a hard blocker
+                                                    var isInferredRemark = justUnmarked is (int ux, int uy, var uhk) && ux == i && uy == j && uhk == choice2(monsterDetail)
+                                                                            && unremarkedInferences.Remove((level, monsterDetail));
+                                                    if (!isInferredRemark) urb(choice2(monsterDetail));
                                                 }
                                                 SetNewValue(room);
                                             }

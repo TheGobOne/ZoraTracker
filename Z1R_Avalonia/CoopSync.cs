@@ -359,6 +359,13 @@ public static class CoopSync
     public static string itemsFlagKey(string name) => "Items/" + name;
     public static string tileKey(int x, int y) => $"Overworld/tile/{x},{y}";
     public static string overworldKey(string name) => "Overworld/" + name;
+    public static readonly string[] shopArrayNames = { "ShopStash", "CheapKeyShops" };
+    private static string shopArrayOfKey(string key)   // "Overworld/ShopStash/2" -> "ShopStash"; null for any other key
+    {
+        foreach (var n in shopArrayNames)
+            if (key.StartsWith(overworldKey(n) + "/", StringComparison.Ordinal)) return n;
+        return null;
+    }
     public static string roomKey(int level, int x, int y) => $"DungeonMaps/room/{level},{x},{y}";
     public static string doorKey(int level, int x, int y, bool isH) => $"DungeonMaps/{(isH ? "hdoor" : "vdoor")}/{level},{x},{y}";
     public static string circleKey(int level, int x, int y) => $"DungeonMaps/circle/{level},{x},{y}";
@@ -552,6 +559,7 @@ public static class CoopSync
         // (the 4th Sword's place and Progressive Items: only in messages from trackers that send them, and not in Legacy Mode)
         if (t[FourthSwordField] is Newtonsoft.Json.Linq.JValue fs && fs.Type == Newtonsoft.Json.Linq.JTokenType.Integer) r[fourthSwordKey] = fs.ToString(Formatting.None);
         if (t[ProgressiveField] is Newtonsoft.Json.Linq.JValue pr && pr.Type == Newtonsoft.Json.Linq.JTokenType.Boolean) r[progressiveKey] = (bool)pr ? "1" : "0";
+        if (t["Level9TriforceCount"] is Newtonsoft.Json.Linq.JValue l9 && l9.Type == Newtonsoft.Json.Linq.JTokenType.Integer) r[level9TriforcesKey] = l9.ToString(Formatting.None);
         box(t["WhiteSwordBox"], TrackerModel.sword2Box);
         box(t["LadderBox"], TrackerModel.ladderBox);
         box(t["ArmosBox"], TrackerModel.armosBox);
@@ -580,8 +588,13 @@ public static class CoopSync
         r[overworldKey("Mirror")] = (t["MirrorOverworld"] ?? "").ToString();
         r[overworldKey("Start")] = $"{intOf(t["StartIconX"], -1)},{intOf(t["StartIconY"], -1)}";
         r[overworldKey("Waypoint")] = $"{intOf(t["CustomWaypointX"], -1)},{intOf(t["CustomWaypointY"], -1)}";
-        if (t["ShopStash"] is Newtonsoft.Json.Linq.JArray stash) r[overworldKey("ShopStash")] = stash.ToString(Formatting.None);
-        if (t["CheapKeyShops"] is Newtonsoft.Json.Linq.JArray cheap) r[overworldKey("CheapKeyShops")] = cheap.ToString(Formatting.None);
+        // the shop arrays: one key for the whole array (all a 3.1 tracker knows) and one per shop, so edits of two shops at once both stay (see applyShopGlobals)
+        foreach (var name in shopArrayNames)
+            if (t[name] is Newtonsoft.Json.Linq.JArray a)
+            {
+                r[overworldKey(name)] = a.ToString(Formatting.None);
+                for (int k = 0; k < a.Count && k <= 5; k++) r[overworldKey($"{name}/{k}")] = a[k].ToString(Formatting.None);
+            }
         var map = t["Map"] as Newtonsoft.Json.Linq.JArray;
         if (map == null || map.Count != 384) return;
         var extras = t["TileExtras"] as Newtonsoft.Json.Linq.JArray;
@@ -751,7 +764,11 @@ public static class CoopSync
         public readonly HashSet<string> Displaced = new HashSet<string>();
         /// The partner's message lacks a version of ours that is higher than theirs (a lost or crossing message): ours goes to them again.
         public bool Resend;
-        public bool Takes(string key) => key != null && Taken.ContainsKey(key) && !Failed.Contains(key);
+        /// Overworld: the shop arrays this message versions per shop (a 3.1 tracker versions only the whole array).
+        public readonly HashSet<string> PerIndex = new HashSet<string>();
+        /// (a whole shop array also counts as taken when one of its shops is: Program.cs passes the array only then, and applyShopGlobals takes it shop by shop)
+        public bool Takes(string key) => key != null && !Failed.Contains(key)
+            && (Taken.ContainsKey(key) || (shopArrayNames.Any(n => key == overworldKey(n)) && Taken.Keys.Any(k => k.StartsWith(key + "/", StringComparison.Ordinal))));
         public void Fail(string key) { if (key != null && Taken.ContainsKey(key)) Failed.Add(key); }
         /// The apply threw part way: every taken key is checked against the partner's value (or, with none known, counts as failed).
         public void ApplyThrew(Exception ex)
@@ -777,10 +794,21 @@ public static class CoopSync
         var (present, snap, inV) = takeVersions(kind, payload);
         var m = new Merge { Kind = kind, Versioned = present, Snapshot = snap };
         var theirs = stateFromPayload(kind, payload);
+        // (3.1 and older trackers always send the default 8 without a version: that one is neither taken nor answered. Any other count without
+        // a version is real, e.g. from a loaded save)
+        if (kind == "Items" && theirs.TryGetValue(level9TriforcesKey, out var l9) && l9 == "8" && !(inV.TryGetValue(level9TriforcesKey, out var l9v) && l9v.v > 0)) theirs.Remove(level9TriforcesKey);
+        if (kind == "Overworld") shopMerge = m;
         if (present)
         {
+            if (kind == "Overworld")
+                foreach (var key in inV.Keys)
+                    if (shopArrayOfKey(key) is string n) m.PerIndex.Add(n);
             foreach (var key in theirs.Keys)
+            {
+                // (a 3.1 tracker's array goes by its whole-array version alone: its shops have no versions, and ours must not make us resend each time)
+                if (shopArrayOfKey(key) is string n && !m.PerIndex.Contains(n)) continue;
                 decide(m, key, inV.TryGetValue(key, out var v) ? v : (0L, ""));
+            }
             if (kind != "DungeonTriforce") m.Theirs = theirs;
             m.CheckAll = kind == "Items" || kind == "Overworld";
         }
@@ -837,7 +865,8 @@ public static class CoopSync
             {
                 var key = kv.Key;
                 var failed = m.Failed.Contains(key);
-                if (!failed && now != null && m.Theirs.TryGetValue(key, out var t) && now.TryGetValue(key, out var o) && o != t) failed = true;
+                // (a value the shop stash rule changed after the apply is not a failure: the partner applies the same rule, see reconcileShops)
+                if (!failed && now != null && m.Theirs.TryGetValue(key, out var t) && now.TryGetValue(key, out var o) && o != t && !reconciledKeys.Contains(key)) failed = true;
                 if (!failed) { setVersion(key, kv.Value); applyFailures.Remove(key); continue; }
                 applyFailures.TryGetValue(key, out var n);
                 applyFailures[key] = n + 1;
@@ -860,7 +889,9 @@ public static class CoopSync
                 localEditTicks[key] = DateTime.UtcNow.Ticks;
                 unsentEdits.Add(kindOfKey(key));
             }
+            if (ReferenceEquals(shopMerge, m)) shopMerge = null;
         }
+        reconciledKeys.Clear();
         rebaselineVersions();
         rebaseline("Hints");   // (the poll must not count a partner's hints as ours)
         boxTiersBaseline = buildBoxTiers();   // (nor a partner's box tiers)
@@ -1456,21 +1487,57 @@ public static class CoopSync
         if (dsts.Count > 0) WPFUI.dupLinks[(i, j)] = dsts; else WPFUI.dupLinks.Remove((i, j));
         if (p.Length >= 8) TrackerModel.overworldMapCircles[i, j] = num(p[7], TrackerModel.overworldMapCircles[i, j]);
         tileExtrasBaseline[i, j] = tileExtrasOf(i, j);   // (a partner's state: the poll must not send it back)
+        reconcileShops();   // (the tile can come before or after the stash it takes)
         return true;
     }
 
+    // The Overworld merge being applied (from beginMerge to endMerge), so applyShopGlobals can take the shop arrays shop by shop.
+    private static Merge shopMerge;
+    // Keys the shop stash rule changed during this apply (see reconcileShops and endMerge).
+    private static readonly HashSet<string> reconciledKeys = new HashSet<string>();
+
+    /// Applies the shop stash rule (WPFUI.reconcileShopStash) after a partner's tile or stash was put here. The partner applies the same rule to the
+    /// same state, so the change is not an edit of ours: the poll baselines take it, and endMerge does not count it as a value that failed to apply
+    /// (that would send it back). UI thread, inside applyRemote.
+    private static void reconcileShops()
+    {
+        var before = (int[])TrackerModel.shopStash.Clone();
+        var tiles = WPFUI.reconcileShopStash();
+        if (tiles.Count == 0 && before.SequenceEqual(TrackerModel.shopStash)) return;
+        foreach (var (x, y) in tiles)
+        {
+            tileExtrasBaseline[x, y] = tileExtrasOf(x, y);
+            reconciledKeys.Add(tileKey(x, y));
+            WPFUI.redrawOwTileHook(x, y);
+        }
+        for (int k = 0; k <= 5; k++)
+            if (before[k] != TrackerModel.shopStash[k]) { reconciledKeys.Add(overworldKey($"ShopStash/{k}")); reconciledKeys.Add(overworldKey("ShopStash")); }
+        shopStashBaseline = (int[])TrackerModel.shopStash.Clone();
+        WPFUI.decorStateChanged();
+    }
+
     /// The partner's shop stash and cheap key flags, from a full Overworld message (null arrays: older tracker, left alone). Returns true when they changed. UI thread.
+    /// Each shop goes by its own version, so two trackers that edit two different shops at once both keep both edits. (A 3.1 tracker sends one version for
+    /// the whole array: then the array is taken whole, as 3.1 does.)
     public static bool applyShopGlobals(int[] stash, int[] cheapKeys)
     {
+        var m = shopMerge;
+        bool takes(string name, int k)
+        {
+            if (m == null || m.Takes(overworldKey($"{name}/{k}"))) return true;
+            var whole = overworldKey(name);
+            return m.Versioned && !m.PerIndex.Contains(name) && m.Taken.ContainsKey(whole) && !m.Failed.Contains(whole);
+        }
         var changed = false;
         if (stash != null && stash.Length == 6)
             for (int k = 0; k <= 5; k++)
-                if (TrackerModel.shopStash[k] != stash[k]) { TrackerModel.shopStash[k] = stash[k]; changed = true; }
+                if (TrackerModel.shopStash[k] != stash[k] && takes("ShopStash", k)) { TrackerModel.shopStash[k] = stash[k]; changed = true; }
         if (cheapKeys != null && cheapKeys.Length == 6)
             for (int k = 0; k <= 5; k++)
-                if (TrackerModel.cheapKeyShops[k] != (cheapKeys[k] == 1)) { TrackerModel.cheapKeyShops[k] = cheapKeys[k] == 1; changed = true; }
+                if (TrackerModel.cheapKeyShops[k] != (cheapKeys[k] == 1) && takes("CheapKeyShops", k)) { TrackerModel.cheapKeyShops[k] = cheapKeys[k] == 1; changed = true; }
         shopStashBaseline = (int[])TrackerModel.shopStash.Clone();
         cheapKeyBaseline = (bool[])TrackerModel.cheapKeyShops.Clone();
+        reconcileShops();   // (the stash can come before or after the tile that takes it)
         if (changed) { try { PieMenus.cheapKeysChangedHook(); } catch (Exception) { } }
         return changed;
     }
@@ -1593,6 +1660,24 @@ public static class CoopSync
         }
     }
 
+    /// Keys the start screen's flag paste set (Expanded Dungeon Locations circles, the Level 9 count). They are part of the startup baseline, so
+    /// they would never be sent. When the first partner hello says the partner has no state yet, they become edits of ours; a partner with state
+    /// keeps its own, as the hello rules say. UI thread.
+    public static readonly HashSet<string> startScreenEdits = new HashSet<string>();
+    private static readonly HashSet<string> pendingStartScreenEdits = new HashSet<string>();
+    private static void versionStartScreenEdits()
+    {
+        foreach (var g in pendingStartScreenEdits.GroupBy(kindOfKey).ToList())
+        {
+            if (!versionBaselines.TryGetValue(g.Key, out var b)) continue;
+            var c = new Dictionary<string, string>(b);   // (a baseline may be shared with the state cache: never changed in place)
+            foreach (var k in g) c.Remove(k);
+            versionBaselines[g.Key] = c;
+            stamp(g.Key);
+        }
+        pendingStartScreenEdits.Clear();
+    }
+
     /// Called once when a run has started (new or loaded), on the UI thread. Records the current state as the baseline,
     /// so only changes from now on are sent, then says hello to the partner if connected.
     /// loadedTicks: for a loaded save, the save file's last write time (UTC ticks), used as its state time in the hello.
@@ -1614,6 +1699,9 @@ public static class CoopSync
         partnerClockKnown = false;   // (the counter itself is kept: a run started again in this process numbers on from it)
         sessionNonce = DateTime.UtcNow.Ticks.ToString("x");
         rebaselineVersions();
+        pendingStartScreenEdits.Clear();
+        if (!loadedSave) pendingStartScreenEdits.UnionWith(startScreenEdits);
+        startScreenEdits.Clear();
         try
         {
             lastSentDungeonMapsPayload = buildDungeonMapsJson();
@@ -1689,6 +1777,11 @@ public static class CoopSync
         if (!startupBaselineDone) return;   // our run has not started: we say hello ourselves once it has
         // (before anything is sent: our edits made since a reload get numbers above the partner's, and so does any edit from now on)
         if (them.MaxVersion is long partnerMax) notePartnerClock(partnerMax);
+        if (pendingStartScreenEdits.Count > 0)
+        {
+            if (!them.HasState) versionStartScreenEdits();
+            else pendingStartScreenEdits.Clear();
+        }
         bool iWin;
         var joining = meJoining();
         lock (stateLock)
@@ -1918,6 +2011,7 @@ public static class CoopSync
             model.LetterBox = toSerializableBox(TrackerModel.letterBox);
             model.WoodSwordBox = toSerializableBox(TrackerModel.sword1Box);
             model.Level2StairBox = toSerializableBox(TrackerModel.level2StairBox);   // the level 2 staircase slot (4th Sword)
+            model.Level9TriforceCount = TrackerModel.level9TriforceCount;   // (3.1 ignores it)
 
             model.Dungeons =
                 Enumerable.Range(0, 9).Select(i =>
@@ -1959,6 +2053,7 @@ public static class CoopSync
     public const string ProgressiveField = "ProgressiveItemsOn";
     public static string fourthSwordKey => itemsFlagKey("fourthSword");
     public static string progressiveKey => itemsFlagKey("progressive");
+    public static string level9TriforcesKey => itemsFlagKey("level9Triforces");
 
     /// Where the 4th Sword's item check is now, as SetFourthSwordLocation takes it.
     public static int fourthSwordPlace() => TrackerModel.level9FloorBoxEnabled ? 2 : TrackerModel.level2StairBoxEnabled ? 1 : 0;

@@ -34,11 +34,14 @@ public static class Popouts
         theMainWindow = mainWindow;
         ctxt = ctx;
     }
-    public static void refocusMainWindow()   // keep hotkeys working
+    public static void refocusMainWindow() => refocusMainWindow(null);
+    // stillWanted: checked after the delay (activating the main window would close a flyout still open in a popout)
+    public static void refocusMainWindow(Func<bool> stillWanted)   // keep hotkeys working
     {
         async Task go()
         {
             await Task.Delay(500);  // give new window time to pop up
+            if (stillWanted != null && !stillWanted()) return;
             // (WPF: Async.SwitchToContext(ctxt); awaiting Task.Delay on the UI thread resumes on the UI thread)
             // (WPF's Window.Focus() gives the window keyboard focus, activating it; Avalonia's Focus() only moves focus inside a window, so Activate() too)
             theMainWindow.Activate();
@@ -386,13 +389,17 @@ public static class Popouts
     public static Control shopsContent(Window w)
     {
         Border panel = null;
+        var pickerOpen = false;
+        // the main window gets the keyboard back after a click here, so the map's item hotkeys keep working (not while the picker is open)
+        void refocus() => refocusMainWindow(() => !pickerOpen);
         // the item picker, at the pointer (the main window's popup layers can't be used from another window)
         Task<int> showPicker(List<(int, Control)> items)
         {
             var picked = new TaskCompletionSource<int>();
             var fly = new Flyout();
             fly.Content = PieMenus.makeItemPickerBox(items, 9, id => { picked.TrySetResult(id); fly.Hide(); });
-            fly.Closed += (_, _) => picked.TrySetResult(-1);
+            fly.Closed += (_, _) => { pickerOpen = false; picked.TrySetResult(-1); refocus(); };
+            pickerOpen = true;
             fly.ShowAt(panel, true);
             return picked.Task;
         }
@@ -402,6 +409,7 @@ public static class Popouts
         panel = bord;
         panel.BorderThickness = new Thickness(0.0);   // no grey border in the popout window
         panel.MyKeyAdd(onKey);
+        panel.AddHandler(InputElement.PointerReleasedEvent, new EventHandler<PointerReleasedEventArgs>((_, _) => refocus()), RoutingStrategies.Bubble, true);
         // item hotkeys while this window has the keyboard (with the main window focused, the tracker's own hotkey routing reaches the panel)
         w.KeyDown += (_, ea) =>
         {

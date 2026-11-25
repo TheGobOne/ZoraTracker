@@ -411,7 +411,7 @@ public static class CoopTest
     // ---- both at once ----
     // The two sides start together (A picks the moment, 3 s ahead; both run on this machine's clock) and make changes on a timeline.
     // Some change the same field to different values (one value must win on both sides), some change different fields of the same message
-    // (both must stay), and one is the stale echo case: A ticks Bombs, B ticks the wood arrow (B's message then carries A's Bombs), A unticks Bombs.
+    // (both must stay, including two shops of the shop stash array), and one is the stale echo case: A ticks Bombs, B ticks the wood arrow (B's message then carries A's Bombs), A unticks Bombs.
     private static List<(int atMs, string who, string name, Action act)> concurrentChanges()
     {
         var tile = T(41);
@@ -429,6 +429,9 @@ public static class CoopTest
             (0, "B", "level 2 door shut", () => DungeonUI.horizontalDoorsPerLevel[1][3, 3].State = Dungeon.DoorState.NO),
             (0, "A", "starting items: wand", () => TrackerModel.startingItemsAndExtras.PlayerHasWand.Set(true)),
             (0, "B", "starting items: raft", () => TrackerModel.startingItemsAndExtras.PlayerHasRaft.Set(true)),
+            // (shops 1 and 4 have no tile, so both items go in the shop stash, one co-op array)
+            (0, "A", "shop 1 stash: blue ring", () => WPFUI.addItemToShopGlobal(1, TrackerModel.ITEMS.BLUERING)),
+            (0, "B", "shop 4 stash: book", () => WPFUI.addItemToShopGlobal(4, TrackerModel.ITEMS.BOOKSHIELD)),
             (1500, "A", "bombs on", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBombs.Set(true)),
             (2300, "B", "wood arrow on", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodArrow.Set(true)),
             (2700, "A", "bombs off", () => TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBombs.Set(false)),
@@ -472,6 +475,8 @@ public static class CoopTest
                 if (!p.PlayerHasWoodArrow.Value()) wrong.Add("the wood arrow is off");
                 if (!p.PlayerHasBlueRing.Value() || !p.PlayerHasBlueCandle.Value()) wrong.Add("the blue ring or blue candle is off (two changes to one message: both must stay)");
                 if (!TrackerModel.startingItemsAndExtras.PlayerHasWand.Value() || !TrackerModel.startingItemsAndExtras.PlayerHasRaft.Value()) wrong.Add("the starting wand or raft is off");
+                if (!WPFUI.shopItemIdentsGlobal(1).Contains(TrackerModel.ITEMS.BLUERING) || !WPFUI.shopItemIdentsGlobal(4).Contains(TrackerModel.ITEMS.BOOKSHIELD))
+                    wrong.Add("the shop 1 blue ring or the shop 4 book is gone (two shop stash edits at once: both must stay)");
                 if (wrong.Count == 0) { passes++; report($"PASS step {n} (both): {name} (the same after round {r})"); }
                 else { failures++; report($"FAIL step {n} (both): {name}: the same on both sides, but {string.Join("; ", wrong)}"); }
                 return;

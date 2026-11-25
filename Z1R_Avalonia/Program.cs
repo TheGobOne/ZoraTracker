@@ -749,6 +749,12 @@ public static class Program
                                                     // the 4th Sword's place and Progressive Items (before the boxes: a new place moves our slot's item first;
                                                     // the 4th Sword turns Progressive Items on, never the other way round; nothing in Legacy Mode)
                                                     fourthSwordChanged = CoopSync.applyFourthSwordFromSync(merge, payload);
+                                                    if (merge.Takes(CoopSync.level9TriforcesKey))
+                                                    {
+                                                        TrackerModel.level9TriforceCount = Math.Max(0, Math.Min(8, data.Level9TriforceCount));
+                                                        foreach (var f in Views.redrawBoxes.ToArray()) f();   // (the "9 = triforce xN" picture)
+                                                        TrackerModel.forceUpdate();
+                                                    }
 
                                                     // Top-level boxes, and the level 2 staircase slot (4th Sword). (An older tracker sends no MagicalSword, Letter, WoodSword or Level2Stair box: null, left alone.)
                                                     applyBox(data.WhiteSwordBox, TrackerModel.sword2Box);
@@ -2922,6 +2928,7 @@ public static class Program
                 var lastApplyHadReport = false;   // (set by doApply: it listed something the player should read)
                 var doneShown = false;   // (Close has become Done)
                 (string, string) lastApplied = (null, null);   // (the two boxes' text when doApply last ran)
+                var pastedCircles = new Dictionary<(int, int), (int before, int pasted)>();   // Expanded Dungeon Locations circles a paste wrote, so a later paste with it off can take them back
                 bool doApply()   // true = no flag decode error
                 {
                     var lines = new List<string>();
@@ -2973,6 +2980,7 @@ public static class Program
                             if (p.Level9Triforces.HasValue)
                             {
                                 TrackerModel.level9TriforceCount = p.Level9Triforces.Value;
+                                CoopSync.startScreenEdits.Add(CoopSync.level9TriforcesKey);
                                 lines.Add("Level 9 entry: " + (p.Level9Triforces.Value == 0 ? "no triforces needed" : p.Level9Triforces.Value + " triforces"));
                             }
                             setTri(mocb, p.Mirror, "Mirrored Overworld");
@@ -3000,12 +3008,30 @@ public static class Program
                                 // dungeons can be at the vanilla spots of either quest: circle both sets (2Q first, so the 1Q number wins on the 3 tiles they share)
                                 foreach (var (locs, baseColor) in new[] { (OverworldData.vanilla2QDungeonLocations, 249), (OverworldData.vanilla1QDungeonLocations, 149) })
                                     for (var i = 0; i <= 8; i++)
-                                        TrackerModel.overworldMapCircles[locs[i].Item1, locs[i].Item2] = baseColor + i;
+                                    {
+                                        var (x, y) = (locs[i].Item1, locs[i].Item2);
+                                        var before = pastedCircles.TryGetValue((x, y), out var pc) ? pc.before : TrackerModel.overworldMapCircles[x, y];
+                                        TrackerModel.overworldMapCircles[x, y] = baseColor + i;
+                                        pastedCircles[(x, y)] = (before, baseColor + i);
+                                        CoopSync.startScreenEdits.Add(CoopSync.tileKey(x, y));
+                                    }
                                 lines.Add("Expanded Dungeon Locations: marked the vanilla 1Q (white) and 2Q (orange) dungeon spots");
                             }
+                            else if (z.ExpandedDungeonLocations == FlagPaste.Tri.Off)
+                            {
+                                // take back the circles an earlier paste wrote (a circle changed since then stays)
+                                foreach (var kv in pastedCircles)
+                                {
+                                    var (x, y) = kv.Key;
+                                    if (TrackerModel.overworldMapCircles[x, y] == kv.Value.pasted) TrackerModel.overworldMapCircles[x, y] = kv.Value.before;
+                                    CoopSync.startScreenEdits.Remove(CoopSync.tileKey(x, y));
+                                }
+                                pastedCircles.Clear();
+                            }
+                            else lines.Add("Random (?): Expanded Dungeon Locations, left as it was");
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
-                                        || z.Progressive;
+                                        || z.Progressive || z.ShuffleTriforces == FlagPaste.Tri.On || z.ShuffleMapsCompasses == FlagPaste.Tri.On;
                             if (anyOn && isOn(lmcb))
                             {
                                 setChk(lmcb, false);   // (Legacy Mode locks every ZORA Extra off)
@@ -3045,6 +3071,14 @@ public static class Program
                             setTri3(erbcb, z.ExtraRaftBlocks, "Extra Raft Blocks");
                             setTri3(dwcb, z.RandomizeDeadWoods, "Randomize Dead Woods");
                             setTri3(lhcb, z.RandomizeLostHills, "Randomize Lost Hills");
+                            // (ZORA's Add Triforces / Add Maps/Compasses to the Item Pool: the Shuffle checkboxes have no ?, so Random leaves them as they were)
+                            setTri(shufTriCB, z.ShuffleTriforces, "Shuffle Triforces");
+                            if (z.ShuffleMapsCompasses == FlagPaste.Tri.Random) lines.Add("Random (?): Shuffle Maps and Compasses, left as they were");
+                            else
+                            {
+                                setTri(shufMapsCB, z.ShuffleMapsCompasses, "Shuffle Maps");
+                                setTri(shufCompCB, z.ShuffleMapsCompasses, "Shuffle Compasses");
+                            }
                         }
                     }
                     result.Text = lines.Count == 0 ? "Nothing to change." : string.Join("\n", lines);

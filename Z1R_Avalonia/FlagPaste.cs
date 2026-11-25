@@ -62,9 +62,12 @@ public static class FlagPaste
         l.Add(("detailed_spoiler_log", 2, 20));
         l.Add(("wizzrobes_shoot_wallmasters", 3, 21));
         l.Add(("item_counter", 3, 22));
+        l.Add(("add_triforces_to_pool", 3, 23));
+        l.Add(("add_maps_compasses_to_pool", 3, 23));
+        l.Add(("bomb_upgrades_in_pool", 2, 23));
         return l;
     }
-    private const int zoraCurrentVersion = 22;   // (zora-flags.json 'current_version'; the tracker only needs these fields' radixes to read past them)
+    private const int zoraCurrentVersion = 23;   // (zora-flags.json 'current_version'; the tracker only needs these fields' radixes to read past them)
 
     private static BigInteger? parseBase63(string s)   // (null for None)
     {
@@ -86,7 +89,7 @@ public static class FlagPaste
                                  Tri Mirror,
                                  Tri HideNumbers,
                                  List<string> Notes,
-                                 int? Level9Triforces = null);   // C08: how many triforces level 9 asks for (0 = nothing); null only if the string is not read
+                                 int? Level9Triforces = null);   // C08: how many triforces level 9 asks for (0 = nothing); null when the seed decides it
 
     // (F#: Result<Z1RPart, string>; error is null when it worked)
     public static (Z1RPart ok, string error) decodeZ1R(string s)
@@ -129,11 +132,13 @@ public static class FlagPaste
                 break;
         }
         int? level9 = null;
-        switch (options[7])   // C08 Level 9 entry: 0 to 7 ask for 8 down to 1 pieces, 8 asks for none; the rest (a drawn count, specific levels, an item, random) are decided per seed and stay at 8
+        switch (options[7])   // C08 Level 9 entry: 0 to 7 ask for 8 down to 1 pieces, 8 asks for none; 9 to 12 (a count in a range, specific pieces, an item, random) are decided per seed
         {
             case int c when c <= 7: level9 = 8 - c; break;
             case 8: level9 = 0; break;
-            default: level9 = 8; break;   // (drawn per seed, so the flags can't say: leave the default of 8; the user sets it)
+            default:
+                notes.Add("Level 9 entry is decided per seed in these flags: set it on the tracker (the triforce count next to the 9).");
+                break;
         }
         return (new Z1RPart(quest, shuffle, tri(toggles[5]), tri(toggles[23]), notes, level9), null);
     }
@@ -148,7 +153,9 @@ public static class FlagPaste
                                   Tri RandomizeDeadWoods,
                                   Tri RandomizeLostHills,
                                   Tri ExpandedDungeonLocations,
-                                  string Warning = null);   // (set when the string is newer than this tracker: it was read anyway)
+                                  string Warning = null,   // (set when the string is newer than this tracker: it was read anyway)
+                                  Tri ShuffleTriforces = Tri.Off,       // add_triforces_to_pool
+                                  Tri ShuffleMapsCompasses = Tri.Off);  // add_maps_compasses_to_pool
 
     // a seed file name from the ZORA page (the spec's file_name section): zora-<version>-<Z1R>-<ZORA>-<seed>[-music][.nes | .spoiler.txt | .tracker.json]
     public sealed record FileNameParts(string Version, string Z1R, string Zora, string Seed, bool Music, string Extension);
@@ -204,7 +211,9 @@ public static class FlagPaste
                                  RandomizeDeadWoods: tri(v("randomize_dead_woods")),
                                  RandomizeLostHills: tri(v("randomize_lost_hills")),
                                  ExpandedDungeonLocations: tri(v("expanded_dungeon_locations")),
-                                 Warning: warning), null);
+                                 Warning: warning,
+                                 ShuffleTriforces: tri(v("add_triforces_to_pool")),
+                                 ShuffleMapsCompasses: tri(v("add_maps_compasses_to_pool"))), null);
         }
         if (s == "") return finish();
         var dot = s.IndexOf('.');

@@ -1005,27 +1005,30 @@ and Dungeon(id,numBoxes) =
                 boxes
     member _this.ExtraFloorBox = extraFloorBox
     member this.TriforceIsInItemSlot = this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE) || (id=1 && level2StairBoxEnabled && level2StairBox.CellCurrent() = ITEMS.TRIFORCE)
-    member this.IsComplete = 
+    member private this.TriforceAndBoxesDone(ignoreHearts:bool) : bool =
+        // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
+        let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
+        match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
+        | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
+            if this.PlayerHasTriforce() then
+                let mutable numBoxesDone = 0
+                for b in boxes do
+                    if boxDone b then
+                        numBoxesDone <- numBoxesDone + 1
+                let twoBoxers = if IsSecondQuestDungeons then "123567" else "234567"
+                numBoxesDone = 3 || (numBoxesDone = 2 && (twoBoxers |> Seq.contains this.LabelChar))
+            else
+                false
+        | DungeonTrackerInstanceKind.DEFAULT ->
+            this.PlayerHasTriforce() && this.Boxes |> Array.forall boxDone && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || boxDone extraFloorBox)   // (the floor item that replaces the triforce only has to be collected if one was recorded)
+    // for shading only: the 'Dim dungeon without hearts' option dims a dungeon that is not yet IsComplete
+    member this.IsDimmed = this.TriforceAndBoxesDone(TrackerModelOptions.IgnoreHeartsForDungeonDim.Value)
+    member this.IsComplete =
         if currentlyReentrant then
             priorComplete
         else
             currentlyReentrant <- true
-            // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
-            let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (TrackerModelOptions.IgnoreHeartsForDungeonDim.Value && b.CellCurrent() = ITEMS.HEARTCONTAINER)
-            let r =
-                match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
-                | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
-                    if this.PlayerHasTriforce() then
-                        let mutable numBoxesDone = 0
-                        for b in boxes do
-                            if boxDone b then
-                                numBoxesDone <- numBoxesDone + 1
-                        let twoBoxers = if IsSecondQuestDungeons then "123567" else "234567"
-                        numBoxesDone = 3 || (numBoxesDone = 2 && (twoBoxers |> Seq.contains this.LabelChar))
-                    else
-                        false
-                | DungeonTrackerInstanceKind.DEFAULT ->
-                    this.PlayerHasTriforce() && this.Boxes |> Array.forall boxDone && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || extraFloorBox.IsDone())   // (the floor item that replaces the triforce only has to be collected if one was recorded)
+            let r = this.TriforceAndBoxesDone(false)
             let needToNotify = priorComplete <> r
             priorComplete <- r
             if needToNotify then
@@ -1411,6 +1414,15 @@ let prevOverworldMapCircleColor(i,j) =
     if overworldMapCircles.[i,j] >= 300 then
         overworldMapCircles.[i,j] <- overworldMapCircles.[i,j] - 300
 let mutable overworldMapMarks : Cell[,] = null
+let private refreshAnyRoadBypass() =
+    OverworldData.updateAnyRoadBypass [ for i = 0 to 15 do
+                                            for j = 0 to 7 do
+                                                let m = overworldMapMarks.[i,j].Current()
+                                                if m >= MapSquareChoiceDomainHelper.WARP_1 && m <= MapSquareChoiceDomainHelper.WARP_4 then yield i,j ]
+let private makeOverworldMapMarks() =
+    overworldMapMarks <- Array2D.init 16 8 (fun _ _ -> new Cell(mapSquareChoiceDomain))
+    // refreshed as each mark changes (subscribed first), so nothing reads a stale set before the next map recompute
+    overworldMapMarks |> Array2D.iter (fun c -> c.Changed.Add(fun _ -> refreshAnyRoadBypass()))
 // a wood sword cave tile that is changed to something else (cleared, re-marked...) gives back the 'shuffled' item that was found there
 let pruneShuffledWoodSwordTiles() =
     for (i,j) in Seq.toArray shuffledWoodSwordTiles do
@@ -1521,10 +1533,7 @@ let recomputeMapStateSummary() =
     let mutable magsCaveFound_, woodSwordCaveFound_, foundBlueRingShop_, foundBookShop_, foundCandleShop_, foundArrowShop_, foundBombShop_, havePotionLetter_ = 
                             false, false, false, false, false, false, false, false
     // (needed before any tile is judged below)
-    OverworldData.updateAnyRoadBypass [ for i = 0 to 15 do
-                                            for j = 0 to 7 do
-                                                let m = overworldMapMarks.[i,j].Current()
-                                                if m >= 9 && m < 13 then yield i,j ]
+    refreshAnyRoadBypass()
     for i = 0 to 15 do
         for j = 0 to 7 do
             if not(owInstance.AlwaysEmpty(i,j)) then
@@ -1908,6 +1917,10 @@ let unreachablePossibleDungeonSpotCount() =
                     count <- count + 1
                 if owInstance.Whistleable(x,y) && not(playerComputedStateSummary.HaveRecorder) then
                     count <- count + 1
+                if owInstance.NeedsPowerBracelet(x,y) && not(playerComputedStateSummary.HavePowerBracelet) then
+                    count <- count + 1
+                if owInstance.HintLocked(x,y) then
+                    count <- count + 1
     count
 type TriforceAndGoSummary() =
     let customTrigger = level9CustomTriggerItem() <> -1
@@ -1928,9 +1941,10 @@ type TriforceAndGoSummary() =
                     missingDungeonCount <- missingDungeonCount + 1
                 elif i <> 8 then // L9 has no triforce
                     missingTriforceFromLocatedDungeonCount <- missingTriforceFromLocatedDungeonCount + 1
-        // fewer than 8 triforces needed: that many dungeons may be skipped (unlocated ones first)
+        // fewer than 8 triforces needed: that many dungeons may be skipped (unlocated ones first, but never level 9)
         let spare = 8 - level9TriforceCount
-        let skipDungeons = min spare missingDungeonCount
+        let level9Unlocated = not customTrigger && not(GetDungeon(8).PlayerHasTriforce()) && not(GetDungeon(8).HasBeenLocated())
+        let skipDungeons = min spare (missingDungeonCount - (if level9Unlocated then 1 else 0))
         missingDungeonCount <- missingDungeonCount - skipDungeons
         missingTriforceFromLocatedDungeonCount <- max 0 (missingTriforceFromLocatedDungeonCount - (spare - skipDungeons))
         let compute() =
@@ -2092,7 +2106,7 @@ let allUIEventingLogic(ite : ITrackerEvents) =
     for d = 0 to 8 do
         if mapStateSummary.DungeonLocations.[d] <> NOTFOUND then
             let x,y = mapStateSummary.DungeonLocations.[d]
-            ite.DungeonLocation(d, x, y, GetDungeon(d).PlayerHasTriforce(), GetDungeon(d).IsComplete)
+            ite.DungeonLocation(d, x, y, GetDungeon(d).PlayerHasTriforce(), GetDungeon(d).IsDimmed)
     for a = 0 to 3 do
         if mapStateSummary.AnyRoadLocations.[a] <> NOTFOUND then
             let x,y = mapStateSummary.AnyRoadLocations.[a]
@@ -2128,7 +2142,7 @@ let allUIEventingLogic(ite : ITrackerEvents) =
         if not haveAnnouncedCompletedDungeons.[d] && GetDungeon(d).IsComplete then
             ite.AnnounceCompletedDungeon(d)
             haveAnnouncedCompletedDungeons.[d] <- true
-    ite.CompletedDungeons [| for d = 0 to 7 do yield GetDungeon(d).IsComplete |]
+    ite.CompletedDungeons [| for d = 0 to 7 do yield GetDungeon(d).IsDimmed |]
     let mutable numFound = 0
     for d = 0 to 8 do
         if mapStateSummary.DungeonLocations.[d]<>NOTFOUND then
@@ -2406,7 +2420,7 @@ let initializeAll(instance:OverworldData.OverworldInstance, kind) =
         mapSquareChoiceDomain <- ChoiceDomain("mapSquare", overworldTileMaxUses(instance.Quest))
         mapSquareChoiceDomain.Changed.Add(fun _ -> mapLastChangedTime.SetNow())
         mapSquareChoiceDomain.Changed.Add(fun x -> mapSquareChangedStable.Trigger(x))
-        overworldMapMarks <- Array2D.init 16 8 (fun _ _ -> new Cell(mapSquareChoiceDomain))  
+        makeOverworldMapMarks()
     else
         failwith "cannot initialize mapSquareChoiceDomain twice"
 
@@ -2439,7 +2453,7 @@ let reinitializeOverworld(newInstance: OverworldData.OverworldInstance) =
     mapSquareChoiceDomain.Changed.Add(fun x -> mapSquareChangedStable.Trigger(x))
 
     // Replace Cell array (all reads of overworldMapMarks.[i,j] will now use new cells)
-    overworldMapMarks <- Array2D.init 16 8 (fun _ _ -> new Cell(mapSquareChoiceDomain))
+    makeOverworldMapMarks()
 
     // Restore marks, preserving as much data as possible
     let dropped = ResizeArray<int*int*int>()

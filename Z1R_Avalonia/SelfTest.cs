@@ -180,15 +180,15 @@ public static class SelfTest
             var (z18, err18) = FlagPaste.decodeZora("18.1!5I5HHHX0dg");
             if (z18 == null) fail("ZORA flags (version 18): " + err18);
             else if (!(z18.Progressive && z18.FourthSword == FlagPaste.Tri.On && z18.BootsReplaceBoomerangs == FlagPaste.Tri.On)) fail("ZORA flags (version 18) decoded wrong");
-            // the spec's current ZORA string version is 22 (fields 42..45 added in 19..22): an all-zero version 22 string must be accepted (23 is checked below)
+            // an all-zero version 22 string must be accepted (the current version, 23, is checked below)
             var (z22, err22) = FlagPaste.decodeZora("22.0");
             if (z22 == null) fail("ZORA flags (version 22): " + err22);
             // the version is plain digits with no leading zero (the spec's ^([1-9][0-9]*)\.): a sign, a space or a leading zero is refused
             foreach (var bad in new[] { "+18.0", "18 .0", "018.0", "0.0", "-1.0" })
                 if (FlagPaste.decodeZora(bad).ok != null) fail($"ZORA flags '{bad}' were accepted (the version must be digits with no leading zero)");
             // a newer version is read anyway, with a warning (and its extra digits are not an error: they are fields this tracker does not know)
-            var (z23, err23) = FlagPaste.decodeZora("23.1");
-            if (z23 == null || z23.Warning == null) fail("ZORA flags (version 23, newer than the spec) were refused or gave no warning: " + err23);
+            var (z24, err24) = FlagPaste.decodeZora("24.1");
+            if (z24 == null || z24.Warning == null) fail("ZORA flags (version 24, newer than the tracker) were refused or gave no warning: " + err24);
             // seed file names, every way they can arrive
             {
                 var full = "zora-2.0.1-91250lSP91JdxpR4V55maWlQu8UJ3A-20.7KrCiA5uIm16-2011";
@@ -228,6 +228,20 @@ public static class SelfTest
                 else if (!(z22b.Progressive && z22b.FourthSword == FlagPaste.Tri.On)) fail($"ZORA flags (version 22, '22.{payload}') decoded wrong");
                 // the same payload read as version 21 leaves item_counter over: it must be refused, not read as other flags
                 if (FlagPaste.decodeZora("21." + payload).error == null) fail($"ZORA flags: '21.{payload}' (a version 22 field set) was accepted as version 21");
+                // version 23 (test channel flags/latest.json): add_triforces_to_pool 3, add_maps_compasses_to_pool 3, bomb_upgrades_in_pool 2
+                var r23 = specRadixes.Concat(new[] { 3, 3, 2 }).ToArray();
+                var d23 = new int[r23.Length];
+                d23[46] = 1;   // add_triforces_to_pool On
+                d23[47] = 2;   // add_maps_compasses_to_pool Random
+                d23[48] = 1;   // bomb_upgrades_in_pool On
+                var n23 = System.Numerics.BigInteger.Zero;
+                for (var k = r23.Length - 1; k >= 0; k--) n23 = n23 * r23[k] + d23[k];
+                var p23 = "";
+                while (n23 > 0) { p23 = alphabet63[(int)(n23 % 63)] + p23; n23 /= 63; }
+                var (z23, err23) = FlagPaste.decodeZora("23." + p23);
+                if (z23 == null || z23.Warning != null) fail($"ZORA flags (version 23, '23.{p23}') were refused or gave a warning: {err23}");
+                else if (z23.ShuffleTriforces != FlagPaste.Tri.On || z23.ShuffleMapsCompasses != FlagPaste.Tri.Random) fail($"ZORA flags (version 23, '23.{p23}') decoded the pool flags wrong");
+                if (FlagPaste.decodeZora("22." + p23).error == null) fail($"ZORA flags: '22.{p23}' (version 23 fields set) was accepted as version 22");
             }
             // the string the Paste Flags check below uses for "only the 4th sword": add_l4_sword On (in level 9), everything else Off, Progressive Items included
             var (z4, err4) = FlagPaste.decodeZora(fourthSwordOnlyZora);
@@ -913,24 +927,30 @@ public static class SelfTest
                     {
                         var ow = new OverworldData.OverworldInstance(OverworldData.OWQuest.FIRST);
                         var saved = (OverworldData.ExtraPBBlocks, OverworldData.ExtraRaftBlocks, OverworldData.DeadWoodsEnabled, OverworldData.LostHillsEnabled, OverworldData.DeadWoodsHintKnown, OverworldData.LostHillsHintKnown);
-                        OverworldData.ExtraPBBlocks = OverworldData.ExtraRaftBlocks = OverworldData.DeadWoodsEnabled = OverworldData.LostHillsEnabled = true;
-                        OverworldData.DeadWoodsHintKnown = OverworldData.LostHillsHintKnown = false;
-                        bool blocked(Tuple<int, int> t) => OverworldData.extraPBBlockTiles.Contains(t) ? ow.NeedsPowerBracelet(t.Item1, t.Item2)
-                            : OverworldData.deadWoodsTiles.Contains(t) || OverworldData.lostHillsTiles.Contains(t) ? ow.HintLocked(t.Item1, t.Item2)
-                            : ow.NeedsRaft(t.Item1, t.Item2);
-                        foreach (var opened in OverworldData.anyRoadBypassGroups)
+                        try
                         {
-                            OverworldData.updateAnyRoadBypass(new[] { opened.First() });
-                            foreach (var group in OverworldData.anyRoadBypassGroups)
-                                foreach (var t in group)
-                                {
-                                    // (a tile with its own bracelet rock still needs the bracelet)
-                                    var want = !group.Equals(opened) || (OverworldData.extraPBBlockTiles.Contains(t) && ow.PowerBraceletableBase(t.Item1, t.Item2));
-                                    if (blocked(t) != want) fail($"any road at {opened.First()}: tile {t} blocked should be {want}");
-                                }
+                            OverworldData.ExtraPBBlocks = OverworldData.ExtraRaftBlocks = OverworldData.DeadWoodsEnabled = OverworldData.LostHillsEnabled = true;
+                            OverworldData.DeadWoodsHintKnown = OverworldData.LostHillsHintKnown = false;
+                            bool blocked(Tuple<int, int> t) => OverworldData.extraPBBlockTiles.Contains(t) ? ow.NeedsPowerBracelet(t.Item1, t.Item2)
+                                : OverworldData.deadWoodsTiles.Contains(t) || OverworldData.lostHillsTiles.Contains(t) ? ow.HintLocked(t.Item1, t.Item2)
+                                : ow.NeedsRaft(t.Item1, t.Item2);
+                            foreach (var opened in OverworldData.anyRoadBypassGroups)
+                            {
+                                OverworldData.updateAnyRoadBypass(new[] { opened.First() });
+                                foreach (var group in OverworldData.anyRoadBypassGroups)
+                                    foreach (var t in group)
+                                    {
+                                        // (a tile with its own bracelet rock still needs the bracelet)
+                                        var want = !group.Equals(opened) || (OverworldData.extraPBBlockTiles.Contains(t) && ow.PowerBraceletableBase(t.Item1, t.Item2));
+                                        if (blocked(t) != want) fail($"any road at {opened.First()}: tile {t} blocked should be {want}");
+                                    }
+                            }
                         }
-                        (OverworldData.ExtraPBBlocks, OverworldData.ExtraRaftBlocks, OverworldData.DeadWoodsEnabled, OverworldData.LostHillsEnabled, OverworldData.DeadWoodsHintKnown, OverworldData.LostHillsHintKnown) = saved;
-                        TrackerModel.recomputeMapStateSummary();   // rebuild the opened set from the map marks
+                        finally
+                        {
+                            (OverworldData.ExtraPBBlocks, OverworldData.ExtraRaftBlocks, OverworldData.DeadWoodsEnabled, OverworldData.LostHillsEnabled, OverworldData.DeadWoodsHintKnown, OverworldData.LostHillsHintKnown) = saved;
+                            TrackerModel.recomputeMapStateSummary();   // rebuild the opened set from the map marks
+                        }
                     });
                     // the Close button closes the window
                     var closeBtn = descendants(root).FirstOrDefault(d => isButtonLike(d) && label(d) == "Close") as Control;
@@ -994,23 +1014,38 @@ public static class SelfTest
             WPFUI.clearAllTileIcons(2, 2);
             if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[2, 2]) != 0) fail("shop: clearing the tile left the shop label");
             // Shops popout: an item added to a shop with no tile waits in the shop, and the first tile of that shop picks it up
-            var popout = Popouts.shopsContent(new Window());
-            popout.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            popout.Arrange(new Rect(popout.DesiredSize));
-            if (popout.DesiredSize.Width < 100.0) fail("shops popout: the window content did not build");
-            if (TrackerModel.shopLabelCount(2) == 0)
+            // (its own guard, so a throw here still lets the rooms below be put back)
+            guard("shops popout", () =>
             {
-                var stash = TrackerModel.shopStash[2];
-                TrackerModel.shopStash[2] = -1;
-                WPFUI.addItemToShopGlobal(2, TrackerModel.ITEMS.MEAT);
-                if (!WPFUI.shopItemIdentsGlobal(2).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: an item added to a shop with no tile did not show");
-                WPFUI.setShopLabel(2, 2, 2);
-                if (!TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[2, 2]).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: the placed shop did not pick up the item");
-                WPFUI.addItemToShopGlobal(2, TrackerModel.ITEMS.MEAT);
-                if (WPFUI.shopItemIdentsGlobal(2).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: adding the item again did not remove it from the shop's tile");
-                WPFUI.clearAllTileIcons(2, 2);
-                TrackerModel.shopStash[2] = stash;
-            }
+                var popout = Popouts.shopsContent(new Window());
+                popout.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                popout.Arrange(new Rect(popout.DesiredSize));
+                if (popout.DesiredSize.Width < 100.0) fail("shops popout: the window content did not build");
+                if (TrackerModel.shopLabelCount(2) == 0)
+                {
+                    var stash = TrackerModel.shopStash[2];
+                    try
+                    {
+                        TrackerModel.shopStash[2] = -1;
+                        WPFUI.addItemToShopGlobal(2, TrackerModel.ITEMS.MEAT);
+                        if (!WPFUI.shopItemIdentsGlobal(2).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: an item added to a shop with no tile did not show");
+                        WPFUI.setShopLabel(2, 2, 2);
+                        if (!TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[2, 2]).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: the placed shop did not pick up the item");
+                        WPFUI.addItemToShopGlobal(2, TrackerModel.ITEMS.MEAT);
+                        if (WPFUI.shopItemIdentsGlobal(2).Contains(TrackerModel.ITEMS.MEAT)) fail("shops popout: adding the item again did not remove it from the shop's tile");
+                        // two heart containers waiting in the shop both move onto its tile
+                        WPFUI.clearAllTileIcons(2, 2);
+                        TrackerModel.shopStash[2] = TrackerModel.decorIconsToggle(TrackerModel.decorIconsToggle(-1, TrackerModel.ITEMS.HEARTCONTAINER), TrackerModel.ITEMS.HEARTCONTAINER);
+                        WPFUI.setShopLabel(2, 2, 2);
+                        if (WPFUI.shopItemIdentsGlobal(2).Count != 2) fail("shops popout: a repeated heart container was dropped when the shop was placed");
+                    }
+                    finally
+                    {
+                        WPFUI.clearAllTileIcons(2, 2);
+                        TrackerModel.shopStash[2] = stash;
+                    }
+                }
+            });
             // put everything back
             foreach (var (x, y) in new[] { (3, 3), (4, 3), (0, 6), (2, 6), (4, 6), (6, 5) }) { try { set(x, y, unmarked); } catch { } }
             hDoor(3, 3).State = Dungeon.DoorState.UNKNOWN;

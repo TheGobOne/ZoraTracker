@@ -504,6 +504,8 @@ public static class UIComponents
         ToolTip.SetTip(recorderDestinationButtonCanvas, recorderPatternTip);
         ToolTip.SetShowDelay(recorderDestinationButtonCanvas, 100);
         setToolTipShowDuration(recorderDestinationButtonCanvas, 60000);
+        // (1st Quest removes the tip below, and the opening handler cannot run without one, so a quest switch puts it back)
+        onEvent(TrackerModel.overworldQuestChanged.Publish, _ => ToolTip.SetTip(recorderDestinationButtonCanvas, recorderPatternTip));
         ToolTip.AddToolTipOpeningHandler(recorderDestinationButtonCanvas, (_, _) =>
         {
             var isFirst = TrackerModel.owInstance.Quest.IsFirstQuestOW;

@@ -955,7 +955,7 @@ public static class PieMenus
         // (display only: this must not write to the model)
         string signature() => string.Join("|", Enumerable.Range(0, 5).Select(n =>
                 $"{TrackerModel.shopLabelCount(n == 0 ? 5 : n)};{string.Join(",", shopItemIdentsHook(n))};{string.Join(",", OverworldMapTileCustomization.shopItemBitmapsHook(n).Select(t => t.Item2))};{TrackerModel.cheapKeyShops[n]}"))
-            + $"|{TrackerModel.progressiveSwordTier()},{TrackerModel.progressiveFamilyTier(2)},{TrackerModel.progressiveFamilyTier(3)},{TrackerModel.progressiveFamilyTier(4)}"
+            + $"|{TrackerModel.progressiveSwordTier()},{TrackerModel.progressiveFamilyTier(2)},{TrackerModel.progressiveFamilyTier(3)},{TrackerModel.progressiveFamilyTier(4)},{TrackerModel.progressiveFamilyTier(5)}"
             + $"|{TrackerModelOptions.SwapMouseButtons},{TrackerModelOptions.JumpMouseToShop.Value},{TrackerModelOptions.HoverShopTooltip.Value},{TrackerModelOptions.ShopsInMenu.Value}";
         var shown = "";
         void refresh()
