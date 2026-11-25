@@ -25,7 +25,6 @@ type Overworld() =
     member val ExtraBlocksRandom = -1 with get,set   // same bits: which of those four were Random (?) rather than plain On (-1 = older save: none were)
     member val BootsReplaceBoomerangs = -1 with get,set   // 0 = Off, 1 = On, 2 = Random (?, counts as Off until confirmed); -1 = older save: keep what the start screen chose
     member val ProgressiveItems = -1 with get,set   // 0 = Off, 1 = On; -1 = older save: keep what the start screen chose
-    member val Shuffle = 0 with get,set   // bit 0 = maps, bit 1 = compasses, bit 2 = triforces can be in other dungeons (older saves: 0, none)
     member val DeadWoodsHint : string = null with get,set   // the letters typed into the Dead Woods / Lost Hills hint buttons (null = older save)
     member val LostHillsHint : string = null with get,set
 
@@ -248,7 +247,6 @@ let SaveOverworld(prefix) =
     lines.Add(sprintf """    "ExtraBlocksRandom": %d,""" ((if OverworldData.ExtraPBRandom then 1 else 0) + (if OverworldData.ExtraRaftRandom then 2 else 0) + (if OverworldData.DeadWoodsRandom then 4 else 0) + (if OverworldData.LostHillsRandom then 8 else 0)))
     lines.Add(sprintf """    "BootsReplaceBoomerangs": %d,""" (if TrackerModel.BootsReplaceBoomerangs then 1 elif TrackerModel.BootsRandom then 2 else 0))
     lines.Add(sprintf """    "ProgressiveItems": %d,""" (if TrackerModel.ProgressiveItems then 1 else 0))
-    lines.Add(sprintf """    "Shuffle": %d,""" ((if TrackerModel.ShuffleMaps then 1 else 0) + (if TrackerModel.ShuffleCompasses then 2 else 0) + (if TrackerModel.ShuffleTriforces then 4 else 0)))
     let cleanHint (s:string) = (if isNull s then "" else s).Replace("\\", "").Replace("\"", "")
     lines.Add(sprintf """    "DeadWoodsHint": "%s",""" (cleanHint OverworldData.DeadWoodsHint))
     lines.Add(sprintf """    "LostHillsHint": "%s",""" (cleanHint OverworldData.LostHillsHint))
@@ -483,9 +481,6 @@ let ApplyLoadedOptions(ow:Overworld) =
             TrackerModel.BootsRandom <- (ow.BootsReplaceBoomerangs = 2)   // (Random, ?, counts as Off until confirmed)
         if ow.ProgressiveItems >= 0 then
             TrackerModel.ProgressiveItems <- (ow.ProgressiveItems = 1)
-        TrackerModel.ShuffleMaps <- (ow.Shuffle &&& 1) <> 0
-        TrackerModel.ShuffleCompasses <- (ow.Shuffle &&& 2) <> 0
-        TrackerModel.ShuffleTriforces <- (ow.Shuffle &&& 4) <> 0
         if ow.ExtraBlocks >= 0 then
             OverworldData.ExtraPBBlocks <- (ow.ExtraBlocks &&& 1) <> 0
             OverworldData.ExtraRaftBlocks <- (ow.ExtraBlocks &&& 2) <> 0

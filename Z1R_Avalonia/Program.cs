@@ -2122,29 +2122,8 @@ public static class Program
             var lhcb = makeExtraBlocksCheckBox("Randomize Lost Hills", "These overworld tiles are locked by the Lost Hills hint:\nA12, A13, A14\n(hovering one highlights the Lost Hills button)" + randomNote);
             foreach (var cb in new[] { epbcb, erbcb, dwcb, lhcb }) cb.IsThreeState = true;
             var pricb = makeExtraBlocksCheckBox("Progressive Items", "Blue candle, blue ring, wood arrows and swords become progressive:\ncollecting the base item upgrades the others of it marked on the map\nblue candle > red candle, blue ring > red ring, wood arrow > silver arrow,\nwood sword > white > magical > 4th sword\n\nRequired by the 4th Sword: it is turned on, and held on, while 4th Sword is checked.");
-            // 'Shuffle': maps, compasses and triforces can be in other dungeons (the choices are only recorded for now)
-            CheckBox makeShuffleCheckBox(string label)
-            {
-                var cb = new CheckBox { Content = new TextBox { Text = label, IsReadOnly = true, BorderThickness = new Thickness(0.0), IsHitTestVisible = false }, Margin = new Thickness(2.0, 0.0, 6.0, 0.0) };
-                Graphics.scaleUpCheckBoxBox(cb, 1.66);
-                cb.IsChecked = false;
-                return cb;
-            }
-            var shufMapsCB = makeShuffleCheckBox("Maps");
-            var shufCompCB = makeShuffleCheckBox("Compasses");
-            var shufTriCB = makeShuffleCheckBox("Triforces");
-            var shuffleTop = new StackPanel { Orientation = Orientation.Horizontal };
-            shuffleTop.Children.Add(new TextBox { Text = "Shuffle:", IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2.0, 0.0, 6.0, 0.0) });
-            foreach (var cb in new[] { shufMapsCB, shufCompCB }) shuffleTop.Children.Add(cb);
-            var shuffleRow = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.Transparent };
-            shuffleRow.Children.Add(shuffleTop);
-            shuffleRow.Children.Add(shufTriCB);   // second row, under "Shuffle:": one row is too wide for the card
-            shuffleRow.PointerEntered += (_, _) => hoverExplain(shuffleRow, "ZORA can shuffle these between dungeons.\nCheck the ones your seed shuffles: maps, compasses, triforces.");
-            shuffleRow.PointerExited += (_, _) => explainHide();
-            extrasSP.Children.Add(new DockPanel { Width = 10.0 });
-            extrasSP.Children.Add(shuffleRow);
             // the 'ZORA Extras' master checkbox
-            var extrasCheckBoxes = new List<CheckBox> { fscb, clncb, brcb, epbcb, erbcb, dwcb, lhcb, pricb, shufMapsCB, shufCompCB, shufTriCB };
+            var extrasCheckBoxes = new List<CheckBox> { fscb, clncb, brcb, epbcb, erbcb, dwcb, lhcb, pricb };
             var settingExtras = false;
             bool isOn(CheckBox cb) => cb.IsChecked == true;
             // the 4th Sword needs Progressive Items (the other way round is fine): checking 4th Sword checks it, and it can't be unchecked while 4th Sword is on
@@ -2193,7 +2172,7 @@ public static class Program
             Graphics.onUnchecked(lmcb, () => applyLegacyMode());
             // 'Remember startup selection' (Other options): bring back the checkboxes that were checked when the last game was started
             var rememberedCheckBoxes = new List<(string, CheckBox)> {
-                ("legacy", lmcb), ("hdn", hdcb), ("mirror", mocb), ("bomb", mbcb), ("4th", fscb), ("cln", clncb), ("boots", brcb), ("epb", epbcb), ("erb", erbcb), ("dw", dwcb), ("lh", lhcb), ("prog", pricb), ("shufmap", shufMapsCB), ("shufcomp", shufCompCB), ("shuftri", shufTriCB) };
+                ("legacy", lmcb), ("hdn", hdcb), ("mirror", mocb), ("bomb", mbcb), ("4th", fscb), ("cln", clncb), ("boots", brcb), ("epb", epbcb), ("erb", erbcb), ("dw", dwcb), ("lh", lhcb), ("prog", pricb) };
             // the co-op host's start screen choices, when a partner has already started (see CoopSync.StartupOptions); the quest button is highlighted further down
             var coopOptionsNote = new TextBox { IsReadOnly = true, IsVisible = false, Padding = new Thickness(5.0, 2.0), Width = WIDTH_SANS_CHROME - 60.0, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
                                                 Foreground = Brushes.LimeGreen, Background = Brushes.Black, BorderBrush = Brushes.LimeGreen, BorderThickness = new Thickness(1.0) };
@@ -2403,9 +2382,6 @@ public static class Program
                 OverworldData.LostHillsHintKnown = false;
                 TrackerModel.MarkBombDroppers = mbcb.IsChecked == true;
                 TrackerModel.ProgressiveItems = pricb.IsChecked == true;
-                TrackerModel.ShuffleMaps = shufMapsCB.IsChecked == true;
-                TrackerModel.ShuffleCompasses = shufCompCB.IsChecked == true;
-                TrackerModel.ShuffleTriforces = shufTriCB.IsChecked == true;
                 // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
                 if (loadData != null) SaveAndLoad.ApplyLoadedOptions(loadData.Overworld);
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
@@ -3031,7 +3007,7 @@ public static class Program
                             else lines.Add("Random (?): Expanded Dungeon Locations, left as it was");
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
-                                        || z.Progressive || z.ShuffleTriforces == FlagPaste.Tri.On || z.ShuffleMapsCompasses == FlagPaste.Tri.On;
+                                        || z.Progressive;
                             if (anyOn && isOn(lmcb))
                             {
                                 setChk(lmcb, false);   // (Legacy Mode locks every ZORA Extra off)
@@ -3071,14 +3047,6 @@ public static class Program
                             setTri3(erbcb, z.ExtraRaftBlocks, "Extra Raft Blocks");
                             setTri3(dwcb, z.RandomizeDeadWoods, "Randomize Dead Woods");
                             setTri3(lhcb, z.RandomizeLostHills, "Randomize Lost Hills");
-                            // (ZORA's Add Triforces / Add Maps/Compasses to the Item Pool: the Shuffle checkboxes have no ?, so Random leaves them as they were)
-                            setTri(shufTriCB, z.ShuffleTriforces, "Shuffle Triforces");
-                            if (z.ShuffleMapsCompasses == FlagPaste.Tri.Random) lines.Add("Random (?): Shuffle Maps and Compasses, left as they were");
-                            else
-                            {
-                                setTri(shufMapsCB, z.ShuffleMapsCompasses, "Shuffle Maps");
-                                setTri(shufCompCB, z.ShuffleMapsCompasses, "Shuffle Compasses");
-                            }
                         }
                     }
                     result.Text = lines.Count == 0 ? "Nothing to change." : string.Join("\n", lines);

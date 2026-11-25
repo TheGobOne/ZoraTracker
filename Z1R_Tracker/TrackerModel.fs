@@ -46,9 +46,6 @@ let mutable LegacyMode = false   // startup Legacy Mode: every ZORA Extra is off
 let mutable MarkBombDroppers = false   // Startup Options checkbox: middle-clicking an overworld tile marks it as a bomb dropper screen
 let mutable BootsReplaceBoomerangs = false   // ZORA Extras startup option (behavior still to be decided)
 let mutable BootsRandom = false   // the flags left Boots to chance (a ?): BootsReplaceBoomerangs stays false (boomerangs) until it is confirmed in Overworld + Extras
-let mutable ShuffleMaps = false   // ZORA Extras "Shuffle" startup option: maps can be in other dungeons
-let mutable ShuffleCompasses = false   // ZORA Extras "Shuffle" startup option: compasses can be in other dungeons
-let mutable ShuffleTriforces = false   // ZORA Extras "Shuffle" startup option: triforces can be in other dungeons
 let mutable CustomLevelName = ""   // up to 7 chars (uppercase); if non-empty, replaces 'LEVEL-n' in each dungeon map header
 let mutable MirrorOverworld = false
 

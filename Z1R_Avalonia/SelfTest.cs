@@ -240,7 +240,6 @@ public static class SelfTest
                 while (n23 > 0) { p23 = alphabet63[(int)(n23 % 63)] + p23; n23 /= 63; }
                 var (z23, err23) = FlagPaste.decodeZora("23." + p23);
                 if (z23 == null || z23.Warning != null) fail($"ZORA flags (version 23, '23.{p23}') were refused or gave a warning: {err23}");
-                else if (z23.ShuffleTriforces != FlagPaste.Tri.On || z23.ShuffleMapsCompasses != FlagPaste.Tri.Random) fail($"ZORA flags (version 23, '23.{p23}') decoded the pool flags wrong");
                 if (FlagPaste.decodeZora("22." + p23).error == null) fail($"ZORA flags: '22.{p23}' (version 23 fields set) was accepted as version 22");
             }
             // the string the Paste Flags check below uses for "only the 4th sword": add_l4_sword On (in level 9), everything else Off, Progressive Items included
