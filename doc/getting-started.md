@@ -6,14 +6,14 @@ ZORATracker 3.0 runs in a browser or as a desktop app on Windows, macOS and Linu
 
 ## Install
 
-Every desktop zip is on the [Releases page](https://github.com/TheGobOne/ZoraTracker/releases/latest).
+Every desktop zip is on the [Releases page](https://github.com/TheGobOne/ZoraTracker/releases/latest). In the file names below, `<version>` is the release number, for example `v3.2`.
 
 | Where | Steps |
 |---|---|
 | Browser | Open [zoratracker.gg](https://zoratracker.gg). Nothing to install. |
-| Windows | Download `ZoraTracker-CrossPlatform-v3.0.0-win-x64.zip`. Unzip it into a folder you want to keep, then run `ZoraTracker.CrossPlatform.exe`. |
-| macOS | Download `ZoraTracker-CrossPlatform-v3.0.0-macOS-arm64.zip` (Apple silicon) or `ZoraTracker-CrossPlatform-v3.0.0-macOS-x64.zip` (Intel). Unzip it and move `ZORATracker.app` to Applications. |
-| Linux | Download `ZoraTracker-CrossPlatform-v3.0.0-linux-x64.zip`, unzip it and run `./ZoraTracker.CrossPlatform`. |
+| Windows | Download `ZoraTracker-CrossPlatform-<version>-win-x64.zip`. Unzip it into a folder you want to keep, then run `ZoraTracker.CrossPlatform.exe`. |
+| macOS | Download `ZoraTracker-CrossPlatform-<version>-macOS-arm64.zip` (Apple silicon) or `ZoraTracker-CrossPlatform-<version>-macOS-x64.zip` (Intel). Unzip it and move `ZORATracker.app` to Applications. |
+| Linux | Download `ZoraTracker-CrossPlatform-<version>-linux-x64.zip`, unzip it and run `./ZoraTracker.CrossPlatform`. |
 
 Windows may warn about an unknown app the first time. Choose **More info**, then **Run anyway**. If your antivirus quarantines `ZoraTracker.CrossPlatform.exe`, restore it from the quarantine list.
 

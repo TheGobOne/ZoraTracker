@@ -65,7 +65,6 @@ Options that only some ZORA seeds use. **Legacy Mode** turns them all off and lo
 
 - **4th Sword** adds a fourth sword level above the magical sword. Choose where its item lives: **Level 2** (the level 2 staircase slot, the default) or **Level 9** (a level 9 floor item). Those two choices are available once 4th Sword is ticked.
 - **Progressive Items** makes the blue candle, blue ring, wood arrows and swords progressive.
-- **Shuffle** has three boxes: **Maps**, **Compasses** and **Triforces**. Tick the ones your seed shuffles between dungeons. They only record your choice for now.
 - **Pegasus Boots** replaces the boomerangs with boots.
 - **Extra Power Bracelet Blocks**, **Extra Raft Blocks**, **Randomize Dead Woods** and **Randomize Lost Hills**. Marking an Any Road inside one of these blocked areas makes that whole area count as reachable. The two raft areas count separately.
 - **Custom LEVEL Name** replaces `LEVEL-n` at the top of each dungeon map with up to 7 letters or numbers. It only works with ZORA seeds, so leave it off otherwise.
@@ -102,6 +101,9 @@ The dialog lists what each flag did under the boxes, for example `Checked: Progr
 
 - A seed that sets Item Shuffle, Mirrored Overworld or Hide Dungeon Numbers ticks those boxes. The overworld button for the seed's quest glows, so you know which to click.
 - A seed with any ZORA Extra on unticks Legacy Mode.
+- Z1R flags that set the number of triforces Level 9 needs set that count.
+- ZORA flags with Expanded Dungeon Locations circle the vanilla dungeon spots of both quests: 1st Quest in white, 2nd Quest in orange.
+- A ZORA seed whose Level 9 entrance needs the level 4 sword sets the 4th sword as the Level 9 entry item.
 - If the Z1R flags leave the quest or Item Shuffle at Random, the list tells you to set it yourself.
 - Your ZORA flags are saved with the save file and come back when you load it.
 
@@ -110,4 +112,4 @@ The dialog lists what each flag did under the boxes, for example `Checked: Progr
 - **Recently loaded saves** lists your last three saves. **Load Save** opens any save file.
 - **Guided Tour** walks through the start screen and the main screen.
 - **Options** opens the settings panel. See [Options](options.md).
-- The **version** button shows what is new and glows green when an update is available. See [Updating](getting-started.md#updating).
+- The **version** button shows the About text and glows green when an update is available. See [Updating](getting-started.md#updating).

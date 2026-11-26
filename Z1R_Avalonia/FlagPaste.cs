@@ -153,7 +153,8 @@ public static class FlagPaste
                                   Tri RandomizeDeadWoods,
                                   Tri RandomizeLostHills,
                                   Tri ExpandedDungeonLocations,
-                                  string Warning = null);   // (set when the string is newer than this tracker: it was read anyway)
+                                  string Warning = null,   // (set when the string is newer than this tracker: it was read anyway)
+                                  bool Level9SwordEntrance = false);   // level_9_entrance_sword
 
     // a seed file name from the ZORA page (the spec's file_name section): zora-<version>-<Z1R>-<ZORA>-<seed>[-music][.nes | .spoiler.txt | .tracker.json]
     public sealed record FileNameParts(string Version, string Z1R, string Zora, string Seed, bool Music, string Extension);
@@ -209,7 +210,8 @@ public static class FlagPaste
                                  RandomizeDeadWoods: tri(v("randomize_dead_woods")),
                                  RandomizeLostHills: tri(v("randomize_lost_hills")),
                                  ExpandedDungeonLocations: tri(v("expanded_dungeon_locations")),
-                                 Warning: warning), null);
+                                 Warning: warning,
+                                 Level9SwordEntrance: v("level_9_entrance_sword") == 1), null);
         }
         if (s == "") return finish();
         var dot = s.IndexOf('.');

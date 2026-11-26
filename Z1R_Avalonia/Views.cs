@@ -314,7 +314,10 @@ public static class Views
     public static readonly bool[] triforceBlocked = new bool[9];   // middle-clicking a dungeon's triforce above it puts a red X on it, and it can't be collected until the X is removed (this session only)
     // right click on a dungeon's numbered triforce (dungeons 1-8): puts the Triforce Piece in an empty basement item slot, or takes it back out of the slot it is in.
     // Returns true when it did something (the click is then used up); false lets the click do its normal job (the collected toggle).
-    // (level 2: its extra staircase slot when that is on; level 8: the middle basement slot; an empty slot is preferred, otherwise the slot's uncollected item is replaced)
+    // (level 2: its extra staircase slot when that is on; level 8: the middle basement slot; an empty slot is preferred, otherwise the slot's uncollected item is replaced,
+    // and comes back when the piece is taken out again)
+    private static readonly Dictionary<TrackerModel.Box, (int cell, TrackerModel.PlayerHas has)> replacedByPiece =
+        new Dictionary<TrackerModel.Box, (int, TrackerModel.PlayerHas)>(ReferenceEqualityComparer.Instance);   // (this session only)
     public static bool TryRightClickTriforcePlacement(int dungeonIndex)
     {
         if (dungeonIndex < 0 || dungeonIndex > 7) return false;
@@ -325,7 +328,9 @@ public static class Views
             var inSlot = d.Boxes.FirstOrDefault(b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
             if (inSlot == null && dungeonIndex == 1 && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) inSlot = TrackerModel.level2StairBox;
             if (inSlot == null) return false;
+            var replaced = replacedByPiece.Remove(inSlot, out var was);
             inSlot.Set(-1, TrackerModel.PlayerHas.NO);   // (right click again toggles the Triforce Piece back out of the slot)
+            if (replaced) inSlot.AttemptToSet(was.cell, was.has);   // (refused if the item was marked elsewhere since: the slot stays empty)
             return true;
         }
         var target = stairOn ? (TrackerModel.level2StairBox.CellCurrent() == -1 ? TrackerModel.level2StairBox : null)
@@ -336,7 +341,17 @@ public static class Views
         target ??= stairOn ? (uncollected(TrackerModel.level2StairBox) ? TrackerModel.level2StairBox : null)
                            : d.Boxes.Take(3).FirstOrDefault(b => b.CurrentlyHasBasementStair && uncollected(b));
         if (target == null) return false;
-        return target.AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO);
+        var old = (target.CellCurrent(), target.PlayerHas());
+        var keep = old.Item1 != -1 && !WPFUI.IsIntraHeartGuess(target);   // (a guessed heart is not kept: it is guessed again if still implied)
+        if (!target.AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO)) return false;
+        replacedByPiece.Remove(target);
+        if (keep)
+        {
+            replacedByPiece[target] = old;
+            // (the slot changed some other way: forget what was there)
+            onEvent(target.Changed, _ => { if (target.CellCurrent() != TrackerModel.ITEMS.TRIFORCE) replacedByPiece.Remove(target); });
+        }
+        return true;
     }
     public static Canvas MakeTriforceDisplayView(CustomComboBoxes.CanvasManager cmo, int trackerIndex, OverworldData.OverworldInstance owInstanceOpt)    // cmo non-null means "makeInteractive" (WPF: Some(cm)); owInstanceOpt null for None
     {

@@ -364,27 +364,28 @@ public static class DungeonUI
                 break;
             case HotKeys.DungeonRoomHotKey.OfFloorDropDetail { Value: FloorDropDetail.OtherKeyItem }:
                 {
-                    // find the topmost empty non-basement, if it exists, otherwise just choose topmost box
+                    // find the topmost empty non-basement, if it exists; then the extra floor box; then (Intra) a guessed heart's box; otherwise the topmost box
                     var idxs = validBoxIndices;
                     var r = -1;
                     foreach (var i in idxs)
-                        if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && slotFree(i))
+                        if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && boxAt(i).CellCurrent() == -1)
                             r = i;
+                    if (r == -1 && dungeon.TriforceIsInItemSlot && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() == -1)
+                        r = extraIdx;   // the triforce is in an item slot, so the floor drop goes in the extra floor box rather than replacing a box or a guess
+                    if (r == -1)
+                        foreach (var i in idxs)
+                            if (r == -1 && !(boxAt(i).CurrentlyHasBasementStair) && slotFree(i))
+                                r = i;
                     if (r == -1)
                     {
-                        if (dungeon.TriforceIsInItemSlot && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() == -1)
-                            r = extraIdx;   // the triforce is in an item slot, so the floor drop goes in the extra floor box rather than replacing a regular box
+                        // no free floor box: as for a floor heart, the triforce piece must be in an empty stair slot, so infer that and use the extra floor box
+                        // (before, the topmost box was reopened, and picking an item there replaced the floor item already in it)
+                        var emptyStair = idxs.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && slotFree(i));
+                        if (emptyStair >= 0 && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() == -1
+                            && boxAt(idxs[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
+                            r = extraIdx;
                         else
-                        {
-                            // no free floor box: as for a floor heart, the triforce piece must be in an empty stair slot, so infer that and use the extra floor box
-                            // (before, the topmost box was reopened, and picking an item there replaced the floor item already in it)
-                            var emptyStair = idxs.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && slotFree(i));
-                            if (emptyStair >= 0 && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() == -1
-                                && boxAt(idxs[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
-                                r = extraIdx;
-                            else
-                                r = idxs[0];
-                        }
+                            r = idxs[0];
                     }
                     // r is now the index of the box we want
                     activateBox(r);

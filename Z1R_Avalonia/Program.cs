@@ -788,6 +788,7 @@ public static class Program
                                                         }
                                                     }
                                                     CoopSync.applyBoxes(merge, boxes);
+                                                    WPFUI.RegisterRestoredIntraHearts(b => merge.Takes(CoopSync.boxKey(b)));
 
                                                     TrackerModelOptions.DebugConfig.Log($"[Sync] Applied Items update from {senderId} (Triforce excluded)");
                                                 }
@@ -955,13 +956,13 @@ public static class Program
                                                                         var edKey = TrackerModel.MapSquareChoiceDomainHelper.IsItem(cur) ? TrackerModel.MapSquareChoiceDomainHelper.SHOP : cur;
                                                                         TrackerModel.setOverworldMapExtraData(i, j, edKey, ed);
                                                                     }
-                                                                    TrackerModel.overworldMapCircles[i, j] = circ;
+                                                                    if (TrackerModel.overworldMapCircles[i, j] != circ) { TrackerModel.overworldMapCircles[i, j] = circ; extrasChanged.Add((i, j)); }   // (redrawn with the extras)
                                                                 }
                                                                 catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not set tile ({i},{j}): {ex.Message}"); }
                                                                 // the tile's marker icons, bomb dropper, price and the rest (older trackers send none: left as they are)
                                                                 try
                                                                 {
-                                                                    if (tileExtras != null && CoopSync.applyTileExtras(i, j, tileExtras[j * 16 + i])) extrasChanged.Add((i, j));
+                                                                    if (tileExtras != null && CoopSync.applyTileExtras(i, j, tileExtras[j * 16 + i], reconcile: false)) extrasChanged.Add((i, j));
                                                                 }
                                                                 catch (Exception ex) { TrackerModelOptions.DebugConfig.Log($"[Sync] Could not set the extras of tile ({i},{j}): {ex.Message}"); }
                                                             }
@@ -1395,9 +1396,10 @@ public static class Program
                                                                 var edKey = TrackerModel.MapSquareChoiceDomainHelper.IsItem(data.MapTileValue) ? TrackerModel.MapSquareChoiceDomainHelper.SHOP : data.MapTileValue;
                                                                 TrackerModel.setOverworldMapExtraData(data.X, data.Y, edKey, data.ExtraData);
                                                             }
+                                                            var circleChanged = TrackerModel.overworldMapCircles[data.X, data.Y] != data.CircleValue;
                                                             TrackerModel.overworldMapCircles[data.X, data.Y] = data.CircleValue;
                                                             // the tile's marker icons, bomb dropper, price and the rest (older trackers send none: left as they are)
-                                                            if (data.Extras != null && CoopSync.applyTileExtras(data.X, data.Y, data.Extras))
+                                                            if ((data.Extras != null && CoopSync.applyTileExtras(data.X, data.Y, data.Extras)) || circleChanged)
                                                                 CoopSync.finishTileExtras(new List<(int, int)> { (data.X, data.Y) });
                                                         }
                                                     }
@@ -2028,7 +2030,7 @@ public static class Program
             Graphics.scaleUpCheckBoxBox(mbcb, 1.66);
             mbcb.IsChecked = false;
             var mbArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = mbcb, VerticalAlignment = VerticalAlignment.Top });
-            mbArea.PointerEntered += (_, _) => hoverExplain(mbArea, "Middle-click an overworld tile to mark it as a bomb dropper screen (enemies drop bombs).\nThen scroll the mouse wheel to cycle: bomb dropper > blue > yellow > red circle > bomb dropper...\nMiddle-click again to remove it. Shift+middle-click toggles a plain circle.\nHover the bomb shop highlight to see bomb dropper screens outlined in red.");
+            mbArea.PointerEntered += (_, _) => hoverExplain(mbArea, "Middle-click an overworld tile to mark it as a bomb dropper screen (enemies drop bombs).\nThen scroll the mouse wheel to cycle: bomb dropper > blue > white > orange circle > bomb dropper...\nMiddle-click again to remove it. Shift+middle-click toggles a plain circle.\nHover the bomb shop highlight to see bomb dropper screens outlined in red.");
             mbArea.PointerExited += (_, _) => explainHide();
             checkboxSP.Children.Add(new DockPanel { Width = 10.0 });
             checkboxSP.Children.Add(mbArea);
@@ -2275,7 +2277,7 @@ public static class Program
             rightCol.Children.Add(extrasHeader);
             rightCol.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });   // line under the header
             var extrasRows = plainRows(extrasSP);
-            for (int spare = 0; spare < 1; spare++) extrasRows.Children.Add(new Border { Height = 30.0, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) });
+            for (int spare = 0; spare < 2; spare++) extrasRows.Children.Add(new Border { Height = 30.0, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) });
             extrasRows.Children.Add(new Border { Height = 34.0 });   // a blank row above the Custom LEVEL Name checkbox
             extrasRows.Children.Add(clnArea);
             rightCol.Children.Add(extrasRows);
@@ -2863,6 +2865,7 @@ public static class Program
             // Paste Flags: reads the Z1R and ZORA flag strings from the ZORA site and sets the matching startup options
             var pasteFlagsButton = Graphics.makeButton("Paste Flags", null, null);
             Layout.styleStartupButton(pasteFlagsButton);
+            var pastedCircles = new Dictionary<(int, int), (int before, int pasted)>();   // Expanded Dungeon Locations circles a paste wrote, so a later paste with it off can take them back (even after reopening the dialog)
             pasteFlagsButton.Click += (_, _) =>
             {
                 if (popupIsActive) return;
@@ -2904,7 +2907,6 @@ public static class Program
                 var lastApplyHadReport = false;   // (set by doApply: it listed something the player should read)
                 var doneShown = false;   // (Close has become Done)
                 (string, string) lastApplied = (null, null);   // (the two boxes' text when doApply last ran)
-                var pastedCircles = new Dictionary<(int, int), (int before, int pasted)>();   // Expanded Dungeon Locations circles a paste wrote, so a later paste with it off can take them back
                 bool doApply()   // true = no flag decode error
                 {
                     var lines = new List<string>();
@@ -2941,6 +2943,7 @@ public static class Program
                     }
                     else if ((z1r.StartsWith("zora-", StringComparison.OrdinalIgnoreCase) || zora.StartsWith("zora-", StringComparison.OrdinalIgnoreCase)))
                         lines.Add("ZORA flags: that file name is not one the ZORA site made, so it holds no flags. Paste the flag strings instead.");
+                    string level9Line = null;   // what the Z1R part said about level 9 (the ZORA part can replace it)
                     if (z1r != "")
                     {
                         var (p, err) = FlagPaste.decodeZ1R(z1r);
@@ -2957,7 +2960,12 @@ public static class Program
                             {
                                 TrackerModel.level9TriforceCount = p.Level9Triforces.Value;
                                 CoopSync.startScreenEdits.Add(CoopSync.level9TriforcesKey);
-                                lines.Add("Level 9 entry: " + (p.Level9Triforces.Value == 0 ? "no triforces needed" : p.Level9Triforces.Value + " triforces"));
+                                lines.Add(level9Line = "Level 9 entry: " + (p.Level9Triforces.Value == 0 ? "no triforces needed" : p.Level9Triforces.Value + " triforces"));
+                            }
+                            else if (CoopSync.startScreenEdits.Remove(CoopSync.level9TriforcesKey))
+                            {
+                                TrackerModel.level9TriforceCount = 8;
+                                lines.Add(level9Line = "Level 9 entry: back to 8 triforces (these flags do not set a count)");
                             }
                             setTri(mocb, p.Mirror, "Mirrored Overworld");
                             setTri(hdcb, p.HideNumbers, "Hide Dungeon Numbers");
@@ -3007,12 +3015,21 @@ public static class Program
                             else lines.Add("Random (?): Expanded Dungeon Locations, left as it was");
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
-                                        || z.Progressive;
+                                        || z.Progressive || z.Level9SwordEntrance;
                             if (anyOn && isOn(lmcb))
                             {
                                 setChk(lmcb, false);   // (Legacy Mode locks every ZORA Extra off)
                                 lines.Add("Unchecked: Legacy Mode");
                             }
+                            // ZORA's Level 9 Entrance = Level 4 sword replaces the triforces: the level 9 entry item is the 4th sword
+                            if (z.Level9SwordEntrance)
+                            {
+                                TrackerModel.level9TriggerBox.AttemptToSet(TrackerModel.ITEMS.WHITESWORD4, TrackerModel.PlayerHas.SKIPPED);
+                                if (level9Line != null) lines.Remove(level9Line);
+                                lines.Add("Level 9 entry: the 4th sword");
+                            }
+                            else if (TrackerModel.level9TriggerBox.CellCurrent() == TrackerModel.ITEMS.WHITESWORD4)
+                                TrackerModel.level9TriggerBox.AttemptToSet(-1, TrackerModel.PlayerHas.SKIPPED);   // (left from an earlier paste)
                             switch (z.FourthSword)
                             {
                                 case FlagPaste.Tri.On:

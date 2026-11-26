@@ -1017,7 +1017,7 @@ and Dungeon(id,numBoxes) =
             else
                 false
         | DungeonTrackerInstanceKind.DEFAULT ->
-            this.PlayerHasTriforce() && this.Boxes |> Array.forall boxDone && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || boxDone extraFloorBox)   // (the floor item that replaces the triforce only has to be collected if one was recorded)
+            this.PlayerHasTriforce() && this.Boxes |> Array.forall boxDone && (not(id=1 && level2StairBoxEnabled && not level9FloorBoxEnabled) || boxDone level2StairBox) && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || boxDone extraFloorBox)   // (the floor item that replaces the triforce only has to be collected if one was recorded)
     // for shading only: the 'Dim dungeon without hearts' option dims a dungeon that is not yet IsComplete
     member this.IsDimmed = this.TriforceAndBoxesDone(TrackerModelOptions.IgnoreHeartsForDungeonDim.Value)
     member this.IsComplete =
@@ -1933,14 +1933,14 @@ type TriforceAndGoSummary() =
     let mutable missingDungeonCount = 0
     let tagLevel = 
         for i = 0 to 8 do
-            if not customTrigger && not(GetDungeon(i).PlayerHasTriforce()) then   // (a custom level 9 entry item replaces the triforce requirement)
+            if (i = 8 || not customTrigger) && not(GetDungeon(i).PlayerHasTriforce()) then   // (a custom level 9 entry item replaces the triforce requirement, not finding level 9)
                 if not(GetDungeon(i).HasBeenLocated()) then
                     missingDungeonCount <- missingDungeonCount + 1
                 elif i <> 8 then // L9 has no triforce
                     missingTriforceFromLocatedDungeonCount <- missingTriforceFromLocatedDungeonCount + 1
         // fewer than 8 triforces needed: that many dungeons may be skipped (unlocated ones first, but never level 9)
         let spare = 8 - level9TriforceCount
-        let level9Unlocated = not customTrigger && not(GetDungeon(8).PlayerHasTriforce()) && not(GetDungeon(8).HasBeenLocated())
+        let level9Unlocated = not(GetDungeon(8).PlayerHasTriforce()) && not(GetDungeon(8).HasBeenLocated())
         let skipDungeons = min spare (missingDungeonCount - (if level9Unlocated then 1 else 0))
         missingDungeonCount <- missingDungeonCount - skipDungeons
         missingTriforceFromLocatedDungeonCount <- max 0 (missingTriforceFromLocatedDungeonCount - (spare - skipDungeons))

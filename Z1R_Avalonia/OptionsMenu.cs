@@ -1390,9 +1390,7 @@ public static class OptionsMenu
         options3sp.Children.Add(cb3);
 
         cb3 = new CheckBox { Content = new TextBox { Text = "Dim dungeon without hearts", IsReadOnly = true } };
-        cb3.IsChecked = TrackerModelOptions.IgnoreHeartsForDungeonDim.Value;
-        Graphics.onChecked(cb3, () => TrackerModelOptions.IgnoreHeartsForDungeonDim.Value = true);
-        Graphics.onUnchecked(cb3, () => TrackerModelOptions.IgnoreHeartsForDungeonDim.Value = false);
+        link(cb3, TrackerModelOptions.IgnoreHeartsForDungeonDim, true, () => { });
         ToolTip.SetTip(cb3, "When checked, a dungeon dims as complete once you have its triforce and every item except the heart containers");
         setToolTipShowDuration(cb3, 10000);
         options3sp.Children.Add(cb3);

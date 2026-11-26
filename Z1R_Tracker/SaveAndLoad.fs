@@ -65,6 +65,7 @@ type Items() =
     member val LetterBox : Box = null with get,set
     member val WoodSwordBox : Box = null with get,set
     member val CustomLevelName : string = null with get,set   // (older saves do not have this)
+    member val IntraHeartGuesses : string = null with get,set   // "boxname;..." (namedBoxes) holding a guessed heart; null: older save, not recorded
     member val ShuffledWoodSwordTiles : string = null with get,set   // "i,j;i,j" overworld tiles whose wood sword cave holds a shuffled item
     member val HintShopColors : string = null with get,set   // "i,j,color;..." background colors chosen for hint shop tiles (older saves do not have this)
     member val ProgressiveTileTiers : string = null with get,set   // "i,j,item,tier;..." the progressive tier each collected overworld item icon was collected at (older saves do not have this)
@@ -290,6 +291,8 @@ let namedBoxes() : (string * TrackerModel.Box)[] =
     |]
 // the UI keeps the duplicate links; it sets this so a save includes them (null: none)
 let mutable DupLinksText : System.Func<string> = null
+// the UI keeps which item boxes hold a guessed (Intra) heart; it sets this so a save includes them (null: not saved)
+let mutable IntraHeartGuessesText : System.Func<string> = null
 // the UI keeps which take any caves were taken; it sets this so a save includes them (null: none)
 let mutable TakeAnyTakenText : System.Func<string> = null
 // and which main screen take any heart slots gave the blue candle ("0100"; null: none)
@@ -320,6 +323,9 @@ let SaveItems(prefix) =
     lines.Add(sprintf """"Items": {""")
     lines.Add(sprintf """    "HiddenDungeonNumbers": %b,""" (TrackerModel.IsHiddenDungeonNumbers()))
     lines.Add(sprintf """    "SecondQuestDungeons": %b,""" TrackerModel.IsSecondQuestDungeons)
+    if not(isNull IntraHeartGuessesText) then
+        try lines.Add(sprintf """    "IntraHeartGuesses": "%s",""" (IntraHeartGuessesText.Invoke()))
+        with _ -> ()   // (left out, so it loads like an older save; the save itself must not fail)
     lines.Add(sprintf """    "WhiteSwordBox": {""")
     SaveBox("    ", TrackerModel.sword2Box)
     lines.Add(sprintf """    }, "LadderBox": {""")

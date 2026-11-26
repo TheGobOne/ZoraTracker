@@ -36,7 +36,7 @@ public static class Popouts
     }
     public static void refocusMainWindow() => refocusMainWindow(null);
     // stillWanted: checked after the delay (activating the main window would close a flyout still open in a popout)
-    public static void refocusMainWindow(Func<bool> stillWanted)   // keep hotkeys working
+    public static void refocusMainWindow(Func<bool> stillWanted, Action then = null)   // keep hotkeys working
     {
         async Task go()
         {
@@ -46,6 +46,7 @@ public static class Popouts
             // (WPF's Window.Focus() gives the window keyboard focus, activating it; Avalonia's Focus() only moves focus inside a window, so Activate() too)
             theMainWindow.Activate();
             theMainWindow.Focus();
+            then?.Invoke();
         }
         CustomComboBoxes.StartImmediate(go());
     }
@@ -386,12 +387,14 @@ public static class Popouts
     }
 
     // the Shop window of the overworld menu, in its own window. It has no tile, so nothing here places a shop on the map: it lists the shops and edits what is in them
+    // (Avalonia raises a window with SWP_NOACTIVATE on Windows, so the main window keeps the keyboard)
+    private static void raiseWithoutFocus(Window w) { w.Topmost = true; w.Topmost = false; }
     public static Control shopsContent(Window w)
     {
         Border panel = null;
         var pickerOpen = false;
         // the main window gets the keyboard back after a click here, so the map's item hotkeys keep working (not while the picker is open)
-        void refocus() => refocusMainWindow(() => !pickerOpen);
+        void refocus() => refocusMainWindow(() => !pickerOpen, () => raiseWithoutFocus(w));
         // the item picker, at the pointer (the main window's popup layers can't be used from another window)
         Task<int> showPicker(List<(int, Control)> items)
         {
@@ -608,7 +611,12 @@ public static class Popouts
             setLeftTop(w, left, top);
         }
         // otherwise (e.g. right click, bad data) just display a new window at default location selected by Windows
-        w.PositionChanged += (_, _) => { save(); refocusMainWindow(); };
+        w.PositionChanged += (_, _) =>
+        {
+            save();
+            if (kind == PopoutKind.ShopsPopout) refocusMainWindow(null, () => raiseWithoutFocus(w));   // (dragged over the main window, it stays in front)
+            else refocusMainWindow();
+        };
         var sizeSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600.0) };
         sizeSaveTimer.Tick += (_, _) => { sizeSaveTimer.Stop(); save(); };
         w.SizeChanged += (_, _) =>   // remember the size the user drags it to

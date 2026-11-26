@@ -247,6 +247,9 @@ public static class SelfTest
             if (z4 == null) fail($"ZORA flags '{fourthSwordOnlyZora}': {err4}");
             else if (z4.Progressive || z4.FourthSword != FlagPaste.Tri.On || z4.FourthInLevel2 || z4.BootsReplaceBoomerangs != FlagPaste.Tri.Off)
                 fail($"ZORA flags '{fourthSwordOnlyZora}' should be the 4th sword in level 9 and nothing else");
+            // ZORA's documented example (All Swords No Boards): Level 9 Entrance = Level 4 sword is read
+            var (zs, errS) = FlagPaste.decodeZora("4.T9Jvg");
+            if (zs == null || !zs.Level9SwordEntrance || z4?.Level9SwordEntrance != false) fail($"ZORA flags '4.T9Jvg': the level 4 sword entrance was not read ({errS})");
             // '_' is an alias for '!' (flags copied from a seed file name): both spellings must decode the same
             var (pa, _e1) = FlagPaste.decodeZ1R("8hq4BeR1JXo89BJ2!TFpTP02u8UJ3A");
             var (pb, _e2) = FlagPaste.decodeZ1R("8hq4BeR1JXo89BJ2_TFpTP02u8UJ3A");
@@ -545,6 +548,11 @@ public static class SelfTest
                 string build() => string.Join("\n", SaveAndLoad.BuildSaveLines("", 0, new[] { "}" }, new string[0], "", false, 0, false, false));
                 try
                 {
+                    var sGuesses = SaveAndLoad.IntraHeartGuessesText;
+                    SaveAndLoad.IntraHeartGuessesText = () => "d0.0;x1";
+                    var guessesRead = DungeonSaveAndLoad.LoadAll(build()).Items.IntraHeartGuesses;
+                    SaveAndLoad.IntraHeartGuessesText = sGuesses;
+                    if (guessesRead != "d0.0;x1") fail($"newer save fields: the guessed hearts were saved as '{guessesRead}'");
                     TrackerModel.setShopPrice(3, 4, 160);
                     TrackerModel.level9TriforceCount = 5;
                     TrackerModel.level9TriggerSwordTier = 3;
@@ -743,6 +751,38 @@ public static class SelfTest
                     l2.AttemptToSet(sL2Cell, sL2Has);
                     OverworldItemGridUI.fourthSwordStashItem = sStash; OverworldItemGridUI.fourthSwordStashHas = sStashHas;
                     OverworldItemGridUI.fourthSwordL2WithHiddenNumbers = sLatch; OverworldItemGridUI.fourthSwordTurnedProgressiveOn = sTurned;
+                    TrackerModel.recomputePlayerStateSummary();
+                }
+            });
+            guard("level 9 entry item and level 2 staircase slot", () =>
+            {
+                var trig = TrackerModel.level9TriggerBox;
+                var (tCell, tHas) = (trig.CellCurrent(), trig.PlayerHas());
+                if (!TrackerModel.GetDungeon(8).HasBeenLocated() && !TrackerModel.GetDungeon(8).PlayerHasTriforce() && trig.AttemptToSet(TrackerModel.ITEMS.WHITESWORD4, TrackerModel.PlayerHas.SKIPPED))
+                {
+                    if (new TrackerModel.TriforceAndGoSummary().MissingDungeonCount != 1) fail("go time: with a level 9 entry item, an unlocated level 9 was not counted as missing");
+                    trig.AttemptToSet(tCell, tHas);
+                }
+                if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) return;
+                var d = TrackerModel.GetDungeon(1);
+                var (sL2, sL9) = (TrackerModel.level2StairBoxEnabled, TrackerModel.level9FloorBoxEnabled);
+                var l2 = TrackerModel.level2StairBox;
+                var saved = d.Boxes.Append(l2).Select(b => (b, cell: b.CellCurrent(), has: b.PlayerHas())).ToList();
+                var tri = d.PlayerHasTriforce();
+                try
+                {
+                    TrackerModel.SetLevel9FloorBoxEnabled(false); TrackerModel.SetLevel2StairBoxEnabled(true);
+                    l2.Set(-1, TrackerModel.PlayerHas.NO);
+                    if (!tri) d.ToggleTriforce();
+                    if (d.Boxes.All(b => b.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.SKIPPED)) && d.IsDimmed)
+                        fail("level 2 counted as complete with the 4th sword staircase slot empty");
+                }
+                finally
+                {
+                    foreach (var s in saved) s.b.Set(-1, TrackerModel.PlayerHas.NO);
+                    foreach (var s in saved) s.b.AttemptToSet(s.cell, s.has);
+                    if (d.PlayerHasTriforce() != tri) d.ToggleTriforce();
+                    TrackerModel.SetLevel2StairBoxEnabled(sL2); TrackerModel.SetLevel9FloorBoxEnabled(sL9);
                     TrackerModel.recomputePlayerStateSummary();
                 }
             });
@@ -1037,9 +1077,15 @@ public static class SelfTest
                         TrackerModel.shopStash[2] = TrackerModel.decorIconsToggle(TrackerModel.decorIconsToggle(-1, TrackerModel.ITEMS.HEARTCONTAINER), TrackerModel.ITEMS.HEARTCONTAINER);
                         WPFUI.setShopLabel(2, 2, 2);
                         if (WPFUI.shopItemIdentsGlobal(2).Count != 2) fail("shops popout: a repeated heart container was dropped when the shop was placed");
+                        // leftovers of a full first tile must not land on an empty second tile (it is copied from the first)
+                        WPFUI.addItemToShopGlobal(2, TrackerModel.ITEMS.BOW);   // (the tile now holds 3: full)
+                        TrackerModel.shopStash[2] = TrackerModel.decorIconsToggle(-1, TrackerModel.ITEMS.MEAT);
+                        WPFUI.setShopLabel(5, 2, 2);
+                        if (!TrackerModel.decorIconsOf(TrackerModel.owSwordIcons[5, 2]).IsEmpty) fail("shops: a second tile of a full shop got the leftover item");
                     }
                     finally
                     {
+                        WPFUI.clearAllTileIcons(5, 2);
                         WPFUI.clearAllTileIcons(2, 2);
                         TrackerModel.shopStash[2] = stash;
                     }

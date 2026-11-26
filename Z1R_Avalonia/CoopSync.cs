@@ -795,8 +795,9 @@ public static class CoopSync
         var m = new Merge { Kind = kind, Versioned = present, Snapshot = snap };
         var theirs = stateFromPayload(kind, payload);
         // (3.1 and older trackers always send the default 8 without a version: that one is neither taken nor answered. Any other count without
-        // a version is real, e.g. from a loaded save)
-        if (kind == "Items" && theirs.TryGetValue(level9TriforcesKey, out var l9) && l9 == "8" && !(inV.TryGetValue(level9TriforcesKey, out var l9v) && l9v.v > 0)) theirs.Remove(level9TriforcesKey);
+        // a version is real, e.g. from a loaded save. A snapshot's 8 is answered when ours has a version, such as a pasted count)
+        if (kind == "Items" && theirs.TryGetValue(level9TriforcesKey, out var l9) && l9 == "8" && !(inV.TryGetValue(level9TriforcesKey, out var l9v) && l9v.v > 0)
+            && !(snap && versionOf(level9TriforcesKey).v > 0)) theirs.Remove(level9TriforcesKey);
         if (kind == "Overworld") shopMerge = m;
         if (present)
         {
@@ -865,7 +866,7 @@ public static class CoopSync
             {
                 var key = kv.Key;
                 var failed = m.Failed.Contains(key);
-                // (a value the shop stash rule changed after the apply is not a failure: the partner applies the same rule, see reconcileShops)
+                // (a value the shop stash rule changed after the apply is not a failure: it goes out as an edit of ours, below)
                 if (!failed && now != null && m.Theirs.TryGetValue(key, out var t) && now.TryGetValue(key, out var o) && o != t && !reconciledKeys.Contains(key)) failed = true;
                 if (!failed) { setVersion(key, kv.Value); applyFailures.Remove(key); continue; }
                 applyFailures.TryGetValue(key, out var n);
@@ -882,6 +883,7 @@ public static class CoopSync
                 m.Resend = true;
                 TrackerModelOptions.DebugConfig.Log($"[Sync] {key}: the partner's value could not be applied; ours stays and goes back to them");
             }
+            m.Displaced.UnionWith(reconciledKeys);   // (made from both sides' values, so the partner may not have them)
             foreach (var key in m.Displaced)
             {
                 // (cleared here to make room for the partner's value: our edit, so the partner clears it too)
@@ -1455,7 +1457,8 @@ public static class CoopSync
     }
 
     /// Puts a partner's extras on one tile. Returns true when something changed (call finishTileExtras after a batch). UI thread, inside applyRemote.
-    public static bool applyTileExtras(int i, int j, string extras)
+    /// reconcile false: part of a full Overworld message, whose stash is not here yet (applyShopGlobals applies the stash rule after all of it).
+    public static bool applyTileExtras(int i, int j, string extras, bool reconcile = true)
     {
         if (string.IsNullOrEmpty(extras) || extras == tileExtrasOf(i, j)) return false;
         var p = extras.Split('|');
@@ -1487,7 +1490,7 @@ public static class CoopSync
         if (dsts.Count > 0) WPFUI.dupLinks[(i, j)] = dsts; else WPFUI.dupLinks.Remove((i, j));
         if (p.Length >= 8) TrackerModel.overworldMapCircles[i, j] = num(p[7], TrackerModel.overworldMapCircles[i, j]);
         tileExtrasBaseline[i, j] = tileExtrasOf(i, j);   // (a partner's state: the poll must not send it back)
-        reconcileShops();   // (the tile can come before or after the stash it takes)
+        if (reconcile) reconcileShops();   // (the tile can come before or after the stash it takes)
         return true;
     }
 
@@ -1496,9 +1499,9 @@ public static class CoopSync
     // Keys the shop stash rule changed during this apply (see reconcileShops and endMerge).
     private static readonly HashSet<string> reconciledKeys = new HashSet<string>();
 
-    /// Applies the shop stash rule (WPFUI.reconcileShopStash) after a partner's tile or stash was put here. The partner applies the same rule to the
-    /// same state, so the change is not an edit of ours: the poll baselines take it, and endMerge does not count it as a value that failed to apply
-    /// (that would send it back). UI thread, inside applyRemote.
+    /// Applies the shop stash rule (WPFUI.reconcileShopStash) after a partner's tile or stash was put here. The result can hold a stash item of ours
+    /// the partner never received, so endMerge versions it as an edit of ours, and the poll (its baselines are left as they were) sends it. A partner
+    /// that already has the same value takes it without change, so this ends. UI thread, inside applyRemote.
     private static void reconcileShops()
     {
         var before = (int[])TrackerModel.shopStash.Clone();
@@ -1506,13 +1509,11 @@ public static class CoopSync
         if (tiles.Count == 0 && before.SequenceEqual(TrackerModel.shopStash)) return;
         foreach (var (x, y) in tiles)
         {
-            tileExtrasBaseline[x, y] = tileExtrasOf(x, y);
             reconciledKeys.Add(tileKey(x, y));
             WPFUI.redrawOwTileHook(x, y);
         }
         for (int k = 0; k <= 5; k++)
             if (before[k] != TrackerModel.shopStash[k]) { reconciledKeys.Add(overworldKey($"ShopStash/{k}")); reconciledKeys.Add(overworldKey("ShopStash")); }
-        shopStashBaseline = (int[])TrackerModel.shopStash.Clone();
         WPFUI.decorStateChanged();
     }
 
@@ -1661,21 +1662,18 @@ public static class CoopSync
     }
 
     /// Keys the start screen's flag paste set (Expanded Dungeon Locations circles, the Level 9 count). They are part of the startup baseline, so
-    /// they would never be sent. When the first partner hello says the partner has no state yet, they become edits of ours; a partner with state
-    /// keeps its own, as the hello rules say. UI thread.
+    /// they would never be sent. They get the lowest version a value can have (it beats an untouched value and loses to any edit):
+    /// the count at the start of the run, so it holds against a partner's snapshot; the tiles only when a hello says the partner has no state
+    /// (a partner with state keeps its own tiles, as the hello rules say). Pasting never counts as having state. UI thread.
     public static readonly HashSet<string> startScreenEdits = new HashSet<string>();
     private static readonly HashSet<string> pendingStartScreenEdits = new HashSet<string>();
-    private static void versionStartScreenEdits()
+    private static void versionStartScreenKey(string key) { if (versionOf(key).v == 0) setVersion(key, (1, "")); }   // (the empty writer loses a tie to any real edit)
+    private static void sendStartScreenEdits()
     {
-        foreach (var g in pendingStartScreenEdits.GroupBy(kindOfKey).ToList())
-        {
-            if (!versionBaselines.TryGetValue(g.Key, out var b)) continue;
-            var c = new Dictionary<string, string>(b);   // (a baseline may be shared with the state cache: never changed in place)
-            foreach (var k in g) c.Remove(k);
-            versionBaselines[g.Key] = c;
-            stamp(g.Key);
-        }
+        var kinds = pendingStartScreenEdits.Select(kindOfKey).Distinct().ToList();
+        foreach (var k in pendingStartScreenEdits) versionStartScreenKey(k);
         pendingStartScreenEdits.Clear();
+        foreach (var kind in kinds) resendKind(kind);   // (not a snapshot: only newer versions are taken, so nothing of the partner's is wiped)
     }
 
     /// Called once when a run has started (new or loaded), on the UI thread. Records the current state as the baseline,
@@ -1702,6 +1700,7 @@ public static class CoopSync
         pendingStartScreenEdits.Clear();
         if (!loadedSave) pendingStartScreenEdits.UnionWith(startScreenEdits);
         startScreenEdits.Clear();
+        if (pendingStartScreenEdits.Contains(level9TriforcesKey)) versionStartScreenKey(level9TriforcesKey);
         try
         {
             lastSentDungeonMapsPayload = buildDungeonMapsJson();
@@ -1751,6 +1750,7 @@ public static class CoopSync
         public bool Joining { get; set; }
         public string Nonce { get; set; }   // (makes each hello different, so it is never dropped as a duplicate)
         public long? MaxVersion { get; set; }   // the sender's version counter (null from trackers without one), see notePartnerClock
+        public bool Reply { get; set; }   // an answer to a blank partner's joining hello: never answered in turn
     }
 
     // We count as joining for a short time after our own joining hello, long enough for the handshake to finish.
@@ -1758,7 +1758,7 @@ public static class CoopSync
     private static bool meJoining() => DateTime.UtcNow < joiningUntil;
 
     /// joining: true when this tracker has just started a run or (re)connected. UI thread.
-    public static void sendStateHello(bool joining = false)
+    public static void sendStateHello(bool joining = false, bool reply = false)
     {
         if (!startupBaselineDone || !TrackerModelOptions.CoopSyncOptions.GetEnableCoop()) return;
         if (joining)
@@ -1767,7 +1767,7 @@ public static class CoopSync
             resetReceivedState();   // (we will take the partner's snapshot if they win: apply all of it)
         }
         StateHello hello;
-        lock (stateLock) hello = new StateHello { HasState = hasState, StateTicks = stateTicks, Joining = meJoining(), Nonce = Guid.NewGuid().ToString(), MaxVersion = versionClock };
+        lock (stateLock) hello = new StateHello { HasState = hasState, StateTicks = stateTicks, Joining = meJoining(), Nonce = Guid.NewGuid().ToString(), MaxVersion = versionClock, Reply = reply };
         SyncManager.EnqueueSync("StateHello", JsonConvert.SerializeObject(hello), TrackerModelOptions.CoopSyncOptions.MyConsoleId);
     }
 
@@ -1777,11 +1777,6 @@ public static class CoopSync
         if (!startupBaselineDone) return;   // our run has not started: we say hello ourselves once it has
         // (before anything is sent: our edits made since a reload get numbers above the partner's, and so does any edit from now on)
         if (them.MaxVersion is long partnerMax) notePartnerClock(partnerMax);
-        if (pendingStartScreenEdits.Count > 0)
-        {
-            if (!them.HasState) versionStartScreenEdits();
-            else pendingStartScreenEdits.Clear();
-        }
         bool iWin;
         var joining = meJoining();
         lock (stateLock)
@@ -1800,7 +1795,14 @@ public static class CoopSync
             resetReceivedState();
             sendStateHello();   // our hello makes them send it (they decide by the same rule, so this ends)
         }
-        // (neither has any state: no snapshot comes, both are blank)
+        // (neither has any state: no snapshot comes, both are blank. A joining partner is answered once, so one that started after us hears that
+        // we are blank too and can send its pasted start screen values)
+        else if (them.Joining && !them.Reply && !hasState) sendStateHello(reply: true);
+        if (pendingStartScreenEdits.Count > 0)
+        {
+            if (!them.HasState) sendStartScreenEdits();
+            else pendingStartScreenEdits.Clear();
+        }
     }
 
     // ---- notes ----

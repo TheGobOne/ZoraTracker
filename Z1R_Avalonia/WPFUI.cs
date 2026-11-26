@@ -51,6 +51,8 @@ public static class WPFUI
     private static readonly double OMTW = OverworldItemGridUI.OMTW;
     // true for a box holding the uncollected heart the Intra Heart Shuffle logic guessed (set in makeAll)
     public static Func<TrackerModel.Box, bool> IsIntraHeartGuess = _ => false;
+    public static Action<Func<TrackerModel.Box, bool>> RegisterRestoredIntraHearts = _ => { };   // call after an older save's load or a partner's items, with which boxes came from it
+    public static Action<string> RegisterSavedIntraHearts = _ => { };   // call after loading a save that records its guesses (Items.IntraHeartGuesses)
 
     // Icons for the 4th Sword and Progressive Sword overworld markers, in the same pixel-art style as the Wood/White/Magical sword cave icons:
     // a black glyph on the brown cave floor, with a colored sword underneath (5x9 logical pixels, each drawn 3x3)
@@ -632,6 +634,21 @@ public static class WPFUI
     }
     // (port helper: F#'s `TrackerModel.TimelineItemModel.All.TryGetValue(name)` match)
     private static bool tryTimelineItem(string name, out TrackerModel.TimelineItemModel tim) => TrackerModel.TimelineItemModel.All.TryGetValue(name, out tim);
+    private static List<(int, TrackerModel.BoolProperty)> mapBoxLinks() => new List<(int, TrackerModel.BoolProperty)> {
+        (TrackerModel.ITEMS.WOODARROW,   TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodArrow),
+        (TrackerModel.ITEMS.BLUERING,    TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueRing),
+        (TrackerModel.ITEMS.BLUECANDLE,  TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueCandle),
+        (TrackerModel.ITEMS.WOODSWORD,   TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword) };
+    // when setShopLabel moves stash items onto a tile, a collected one checks its item box (never unchecks). Not for loads or co-op applies,
+    // which bring their own box states
+    private static void checkBoxesForStashMove(Action move)
+    {
+        var had = mapBoxLinks().Select(p => TrackerModel.mapCollectedCount[p.Item1] > 0).ToList();
+        move();
+        var links = mapBoxLinks();
+        for (int k = 0; k < links.Count; k++)
+            if (!had[k] && TrackerModel.mapCollectedCount[links[k].Item1] > 0) links[k].Item2.Set(true);
+    }
     public static void setDecorIcons(int i, int j, int newPacked0)
     {
         var oldEntriesForDups = TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons[i, j]);
@@ -639,11 +656,7 @@ public static class WPFUI
         var oldLabel = TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[i, j]);
         var newPacked = oldLabel > 0 && TrackerModel.shopLabelOf(newPacked0) == 0 ? TrackerModel.withShopLabel(newPacked0, oldLabel) : newPacked0;
         // cave/shop items checked off on the map also check their box in the upper item area (and un-check it again if un-collected)
-        var boxLinks = new List<(int, TrackerModel.BoolProperty)> {
-            (TrackerModel.ITEMS.WOODARROW,   TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodArrow),
-            (TrackerModel.ITEMS.BLUERING,    TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueRing),
-            (TrackerModel.ITEMS.BLUECANDLE,  TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasBlueCandle),
-            (TrackerModel.ITEMS.WOODSWORD,   TrackerModel.playerProgressAndTakeAnyHearts.PlayerHasWoodSword) };
+        var boxLinks = mapBoxLinks();
         var before = boxLinks.Select(p => TrackerModel.mapCollectedCount[p.Item1] > 0).ToList();
         var triforceWasCollectedHere = TrackerModel.decorIsCollected(TrackerModel.owSwordIcons[i, j], TrackerModel.ITEMS.TRIFORCE);
         var heartsBefore = TrackerModel.mapCollectedCount[TrackerModel.ITEMS.HEARTCONTAINER];
@@ -872,12 +885,12 @@ public static class WPFUI
                 }
                 else TrackerModel.owSwordIcons[i, j] = TrackerModel.withShopLabel(-1, label);
             }
-            rebuildMapCollected();
+            checkBoxesForStashMove(rebuildMapCollected);
         }
         else if (label > 0 && label != old && TrackerModel.shopStash[label] > 0)
         {
             // the first tile of a shop picks up the items already entered in its shop window, after its own icons
-            reconcileShopStash();
+            checkBoxesForStashMove(() => reconcileShopStash());
             if (TrackerModel.shopStash[label] > 0)
                 Graphics.ErrorBeepWithReminderLogText($"Shop {(label == 5 ? "P" : label.ToString())}: the tile is full, so {TrackerModel.decorEntriesOf(TrackerModel.shopStash[label]).Length} item(s) from the shop window stay there");
         }
@@ -907,16 +920,20 @@ public static class WPFUI
         for (int label = 1; label <= 5; label++)
         {
             if (TrackerModel.shopStash[label] <= 0) continue;
-            var left = (int?)null;
+            var tiles = new List<(int, int)>();
             for (int x = 0; x <= 15; x++)
                 for (int y = 0; y <= 7; y++)
-                {
-                    if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[x, y]) != label) continue;
-                    var (p, rest) = mergeStash(TrackerModel.owSwordIcons[x, y], label);
-                    left ??= rest;   // (the first tile decides what stays: tiles of one shop carry the same items)
-                    if (p != TrackerModel.owSwordIcons[x, y]) { TrackerModel.owSwordIcons[x, y] = p; changed.Add((x, y)); }
-                }
-            if (left is int l) TrackerModel.shopStash[label] = l;
+                    if (TrackerModel.shopLabelOf(TrackerModel.owSwordIcons[x, y]) == label) tiles.Add((x, y));
+            if (tiles.Count == 0) continue;
+            // the stash is merged once, onto the shop's fullest tile, and copied to the tiles that matched it. Any other tile is left alone: leftovers
+            // must not land on an empty second tile, which is about to be copied from the first (see autoDupShop)
+            var (bx, by) = tiles.MaxBy(t => TrackerModel.decorEntriesOf(TrackerModel.owSwordIcons[t.Item1, t.Item2]).Length);
+            var old = TrackerModel.owSwordIcons[bx, by];
+            var (merged, rest) = mergeStash(old, label);
+            if (merged != old)
+                foreach (var (x, y) in tiles)
+                    if (TrackerModel.owSwordIcons[x, y] == old) { TrackerModel.owSwordIcons[x, y] = merged; changed.Add((x, y)); }
+            TrackerModel.shopStash[label] = rest;
         }
         if (changed.Count > 0) rebuildMapCollected();
         return changed;
@@ -1320,6 +1337,9 @@ public static class WPFUI
         // dungeon holds a non-heart item, the last open slot is filled with an uncollected heart. A dungeon with 3 slots (1 or 4, 8, or 2 with the 4th
         // sword) only counts the other items once they are collected, so a placed but uncollected item does not give the heart away.
         IsIntraHeartGuess = _ => false;
+        RegisterRestoredIntraHearts = _ => { };
+        RegisterSavedIntraHearts = _ => { };
+        SaveAndLoad.IntraHeartGuessesText = null;
         if (TrackerModel.HeartShuffleMode == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)))
         {
             var autoHearts = new HashSet<TrackerModel.Box>(ReferenceEqualityComparer.Instance);
@@ -1333,6 +1353,38 @@ public static class WPFUI
                 if (i == 1 && TrackerModel.level2StairBoxEnabled) l.Add(TrackerModel.level2StairBox);
                 return l.ToArray();
             }
+            // every slot but b holds a non-heart item (in a dungeon with 3 slots, a collected one; a triforce counts even before it is collected)
+            bool othersFilled(TrackerModel.Box[] slots, TrackerModel.Box b) => slots.All(o => ReferenceEquals(o, b) ||
+                (o.CellCurrent() != -1 && !(isHeart(o)) && (slots.Length < 3 || o.PlayerHas().Equals(TrackerModel.PlayerHas.YES) || o.CellCurrent() == TrackerModel.ITEMS.TRIFORCE)));
+            bool uncollectedHeart(TrackerModel.Box b) => isHeart(b) && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO);
+            int extraDungeon(string boxName) => boxName.StartsWith("x") ? int.Parse(boxName.Substring(1)) : -1;   // (namedBoxes: "x3" is dungeon index 3's extra floor box)
+            SaveAndLoad.IntraHeartGuessesText = () => string.Join(";", SaveAndLoad.namedBoxes()
+                .Where(nb => IsIntraHeartGuess(nb.Item2) || (autoExtraHearts.Contains(extraDungeon(nb.Item1)) && uncollectedHeart(nb.Item2)))
+                .Select(nb => nb.Item1));
+            RegisterSavedIntraHearts = saved =>
+            {
+                // (replaces whatever reconcile guessed while the load was only part-way in. autoExtraHearts is kept: the extra floor box loads first,
+                // so an entry made during the load is a heart this code put there)
+                autoHearts.Clear();
+                var names = new HashSet<string>(saved.Split(';'));
+                foreach (var nb in SaveAndLoad.namedBoxes())
+                    if (names.Contains(nb.Item1) && uncollectedHeart(nb.Item2))
+                    {
+                        if (extraDungeon(nb.Item1) >= 0) autoExtraHearts.Add(extraDungeon(nb.Item1));
+                        else autoHearts.Add(nb.Item2);
+                    }
+            };
+            // A save or a partner can fill the guessed heart's box before the items that imply it, so reconcile never made that guess: it is
+            // registered here, once everything is in. (Only for boxes just restored: a heart the player marks in live play stays theirs.)
+            RegisterRestoredIntraHearts = restored =>
+            {
+                for (int i = 0; i <= 7; i++)
+                {
+                    var slots = slotsOf(i);
+                    foreach (var b in slots)
+                        if (restored(b) && isHeart(b) && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO) && othersFilled(slots, b)) autoHearts.Add(b);
+                }
+            };
             void reconcile(int i)
             {
                 if (!busy)
@@ -1341,9 +1393,6 @@ public static class WPFUI
                     try
                     {
                         var slots = slotsOf(i);
-                        var needCollected = slots.Length >= 3;
-                        bool filled(TrackerModel.Box b) => b.CellCurrent() != -1 && !(isHeart(b)) && (!needCollected || b.PlayerHas().Equals(TrackerModel.PlayerHas.YES) || b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);   // (a triforce placed in a slot counts even before it is collected)
-                        bool othersFilled(TrackerModel.Box b) => slots.All(o => ReferenceEquals(o, b) || filled(o));
                         // the extra floor box (shown while the triforce sits in an item slot) may hold a heart this code moved there: take it back if that no longer holds
                         var extra = TrackerModel.GetDungeon(i).ExtraFloorBox;
                         if (autoExtraHearts.Contains(i))
@@ -1367,7 +1416,7 @@ public static class WPFUI
                                     if (b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE && i < 8 && extra.CellCurrent() == -1)
                                         if (extra.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO)) autoExtraHearts.Add(i);
                                 }
-                                else if (!(othersFilled(b)))
+                                else if (!(othersFilled(slots, b)))
                                 {
                                     autoHearts.Remove(b);
                                     b.Set(-1, TrackerModel.PlayerHas.NO);   // (the item that implied this heart was removed)
@@ -1377,7 +1426,7 @@ public static class WPFUI
                         if (!(slots.Any(isHeart)) && !isHeart(extra))   // (a heart in the extra floor box is the dungeon's heart too)
                         {
                             var empties = slots.Where(b => b.IsEmptyRedBox).ToArray();
-                            if (empties.Length == 1 && othersFilled(empties[0]))
+                            if (empties.Length == 1 && othersFilled(slots, empties[0]))
                             {
                                 var b = empties[0];
                                 if (b.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO)) autoHearts.Add(b);
@@ -2035,7 +2084,7 @@ public static class WPFUI
                         async Task go()
                         {
                             await CustomComboBoxes.DoModalCore(cm, wh, (c, e) => canvasAdd(c, e, 0.0, 0.0), (c, e) => c.Children.Remove(e), element, 0.7);
-                            owCircleRedraws[i, j]();
+                            redrawOWCircle.Value(i, j);
                             popupIsActive = false;
                         }
                         CustomComboBoxes.StartImmediate(go());
@@ -2375,10 +2424,13 @@ public static class WPFUI
                     }
                 }
                 Views.hintDashedItemsChanged += () => redrawGridSpot();
-                // the letter / white sword / magical sword cave once the user has picked 'Took ...' there
-                bool tookCaveItem(int state) =>
-                    (state == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || state == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || state == TrackerModel.MapSquareChoiceDomainHelper.SWORD3)
-                    && TrackerModel.getOverworldMapExtraData(i, j, state) == state;
+                // the tile only takes the bomb dropper: take any, dungeon, any road, or a letter / sword cave not holding a shuffled item
+                bool markersBlockedFor(int state)
+                {
+                    var isItemCave = state == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || state == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || state == TrackerModel.MapSquareChoiceDomainHelper.SWORD3;
+                    if (isItemCave) return TrackerModel.getOverworldMapExtraData(i, j, state) != OverworldMapTileCustomization.SHUFFLED_ITEM;
+                    return state == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY || isDungeonOrAnyRoad(state);
+                }
                 bool isLegalHere(int state) => state == TrackerModel.MapSquareChoiceDomainHelper.ARMOS ? owInstance.HasArmos(i, j) : true;
                 void updateGridSpot(int delta, string phrase)
                 {
@@ -2445,7 +2497,7 @@ public static class WPFUI
                     CustomComboBoxes.StartImmediate(go());
                 }
                 owUpdateFunctions[i, j] = updateGridSpot;
-                redrawOwTileHook = (x, y) => owUpdateFunctions[x, y](0, null);
+                redrawOwTileHook = (x, y) => { owUpdateFunctions[x, y](0, null); redrawOWCircle.Value(x, y); };
                 owCanvases[i, j] = c;
                 mirrorOverworldFEs.Add(c);
                 mirrorOverworldFEs.Add(owDarkeningMapGridCanvases[i, j]);
@@ -2561,8 +2613,7 @@ public static class WPFUI
                     // decorative marker icons (ids are offset by 1000 so they cannot be confused with real overworld tile states)
                     // a Take Any cave, or a letter / white sword / magical sword cave, only gets the bomb dropper marker (middle click); other icons only go on a tile where the sword / letter icon was picked instead (that tile is no longer a cave)
                     // (a letter / white / magical sword cave that already holds a shuffled item can take icons: the choice box just crosses out its 'Shuffled Item' option)
-                    var holdsShuffled = (originalState == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || originalState == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || originalState == TrackerModel.MapSquareChoiceDomainHelper.SWORD3) && TrackerModel.getOverworldMapExtraData(i, j, originalState) == OverworldMapTileCustomization.SHUFFLED_ITEM;
-                    var markersBlocked = !holdsShuffled && ((originalState == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY) || originalState == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER || originalState == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 || originalState == TrackerModel.MapSquareChoiceDomainHelper.SWORD3 || isDungeonOrAnyRoad(originalState));   // (a dungeon entrance or any road tile only gets the bomb dropper marker too)
+                    var markersBlocked = markersBlockedFor(originalState);   // (the hotkeys follow the same rule)
                     (Control, bool, int) swordIconCell(int ident)
                     {
                         if (ident == SHOP_MENU)
@@ -3238,7 +3289,7 @@ public static class WPFUI
                                         if (TrackerModel.overworldMapCircles[i, j] != 0)
                                         {
                                             TrackerModel.overworldMapCircles[i, j] = 0;
-                                            owCircleRedraws[i, j]();
+                                            redrawOWCircle.Value(i, j);
                                         }
                                         TrackerModel.forceUpdate();
                                         redrawGridSpot();
@@ -3257,7 +3308,7 @@ public static class WPFUI
                         {
                             if (TrackerModel.MarkBombDroppers && ea.KeyModifiers != KeyModifiers.Shift)
                             {
-                                // 'Mark Bomb Droppers' startup option: the first middle click puts the bomb dropper icon on the tile; the scroll wheel then cycles bomb dropper > blue > yellow > red circle and around;
+                                // 'Mark Bomb Droppers' startup option: the first middle click puts the bomb dropper icon on the tile; the scroll wheel then cycles bomb dropper > blue > white > orange circle and around;
                                 // middle clicking again removes whatever was chosen. (shift+middle click is the plain circle toggle)
                                 var hasDropper = TrackerModel.owBombDroppers[i, j];
                                 if (hasDropper)
@@ -3265,7 +3316,7 @@ public static class WPFUI
                                 else if (TrackerModel.overworldMapCircles[i, j] != 0)
                                 {
                                     TrackerModel.overworldMapCircles[i, j] = 0;
-                                    owCircleRedraws[i, j]();
+                                    redrawOWCircle.Value(i, j);
                                 }
                                 else
                                     TrackerModel.owBombDroppers[i, j] = true;
@@ -3276,7 +3327,7 @@ public static class WPFUI
                             {
                                 // middle click toggles the circle
                                 TrackerModel.toggleOverworldMapCircle(i, j);
-                                owCircleRedraws[i, j]();
+                                redrawOWCircle.Value(i, j);
                             }
                         }
                     }
@@ -3299,11 +3350,11 @@ public static class WPFUI
                         }
                         else if (TrackerModel.MarkBombDroppers && hasDropper && TrackerModel.overworldMapCircles[i, j] == 0)
                         {
-                            // bomb dropper > (scroll) blue > yellow > red > bomb dropper ...
+                            // bomb dropper > (scroll) blue > white > orange > bomb dropper ...
                             TrackerModel.owBombDroppers[i, j] = false;
                             TrackerModel.toggleOverworldMapCircle(i, j);   // starts at the first color
                             if (notch >= 0) TrackerModel.prevOverworldMapCircleColor(i, j);   // scrolling the other way enters the rotation at the last color
-                            owCircleRedraws[i, j]();
+                            redrawOWCircle.Value(i, j);
                             redrawGridSpot();
                         }
                         else if (TrackerModel.overworldMapCircles[i, j] != 0)   // if there's a circle, then it takes scrollwheel priority
@@ -3314,7 +3365,7 @@ public static class WPFUI
                             {
                                 // scrolled past the last (first) color: back around to the bomb dropper icon
                                 TrackerModel.overworldMapCircles[i, j] = 0;
-                                owCircleRedraws[i, j]();
+                                redrawOWCircle.Value(i, j);
                                 TrackerModel.owBombDroppers[i, j] = true;
                                 TrackerModel.forceUpdate();
                                 redrawGridSpot();
@@ -3325,7 +3376,7 @@ public static class WPFUI
                                     TrackerModel.nextOverworldMapCircleColor(i, j);
                                 else
                                     TrackerModel.prevOverworldMapCircleColor(i, j);
-                                owCircleRedraws[i, j]();
+                                redrawOWCircle.Value(i, j);
                             }
                         }
                         else
@@ -3386,7 +3437,7 @@ public static class WPFUI
                     if (!popupIsActive)
                     {
                         var hasHotKeyedState = HotKeys.OverworldHotKeyProcessor.TryGetValue(ea.Key, out var hotKeyedState);
-                        if (hasHotKeyedState && (hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)) && (TrackerModel.overworldMapMarks[i, j].Current() == TrackerModel.MapSquareChoiceDomainHelper.TAKE_ANY || tookCaveItem(TrackerModel.overworldMapMarks[i, j].Current()) || isDungeonOrAnyRoad(TrackerModel.overworldMapMarks[i, j].Current())))
+                        if (hasHotKeyedState && (hotKeyedState == TrackerModel.MapSquareChoiceDomainHelper.POTION_SHOP || TrackerModel.MapSquareChoiceDomainHelper.IsItem(hotKeyedState)) && markersBlockedFor(TrackerModel.overworldMapMarks[i, j].Current()))
                         {
                             ea.Handled = true;
                             Graphics.ErrorBeepWithReminderLogText("This cave can only have the bomb dropper marker");
@@ -3501,10 +3552,10 @@ public static class WPFUI
                                 }
                                 CustomComboBoxes.StartImmediate(go());
                             }
-                            else if (markerIdent.HasValue && isDungeonOrAnyRoad(TrackerModel.overworldMapMarks[i, j].Current()))
+                            else if (markerIdent.HasValue && markersBlockedFor(TrackerModel.overworldMapMarks[i, j].Current()))
                             {
                                 ea.Handled = true;
-                                Graphics.ErrorBeepWithReminderLogText("A dungeon entrance or any road can only have the bomb dropper marker");
+                                Graphics.ErrorBeepWithReminderLogText("This cave can only have the bomb dropper marker");
                             }
                             else if (markerIdent is int ident2)
                             {
@@ -5688,16 +5739,20 @@ public static class WPFUI
                     if (optionsCanvas.Child is StackPanel optsTotal && optsTotal.Children.OfType<Viewbox>().FirstOrDefault() is Viewbox optsBox)
                     {
                         // (an explicit height makes the Viewbox scale its content down to fit; a MaxHeight alone did not)
-                        optsBox.MaxHeight = double.PositiveInfinity;
+                        // (set it only when the content is too tall: measured before the popup is on screen the content can come out short,
+                        // and forcing that height shrank the columns and left a blank strip on the right)
+                        var cap = Math.Max(200.0, cm.Height - 40.0);
+                        optsBox.MaxHeight = cap;
                         optsBox.Child.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                        optsBox.Height = Math.Min(optsBox.Child.DesiredSize.Height, Math.Max(200.0, cm.Height - 40.0));
-                    }
+                        optsBox.Height = optsBox.Child.DesiredSize.Height > cap ? cap : double.NaN;                    }
                     optionsCanvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                     double owBottom;
                     try { owBottom = overworldCanvas.TranslatePoint(new Point(0.0, overworldCanvas.Bounds.Height), cm.AppMainCanvas).Value.Y; } catch (Exception) { owBottom = 0.0; }   // (WPF: ActualHeight)
                     var popupY = Math.Max(0.0, Math.Min(owBottom, (cm.Height - optionsCanvas.DesiredSize.Height)));
                     OptionsMenu.closeOptionsPopupHook = () => wh.Set();
-                    await CustomComboBoxes.DoModal(cm, wh, 0.0, popupY, optionsCanvas);
+                    var modal = CustomComboBoxes.DoModal(cm, wh, 0.0, popupY, optionsCanvas);
+                    optionsCanvas.UpdateLayout();   // now on screen, so its height is the real one: keep its bottom inside the window
+                    Canvas.SetTop(optionsCanvas, Math.Max(0.0, Math.Min(owBottom, cm.Height - optionsCanvas.Bounds.Height)));                    await modal;
                     OptionsMenu.closeOptionsPopupHook = () => { };
                     TrackerModelOptions.writeSettings();
                     popupIsActive = false;
@@ -5909,7 +5964,7 @@ public static class WPFUI
                         TrackerModel.setOverworldMapExtraData(i, j, k, ed);
                     TrackerModel.overworldMapCircles[i, j] = circle;
                     owUpdateFunctions[i, j](0, null);  // redraw the tile
-                    owCircleRedraws[i, j]();
+                    redrawOWCircle.Value(i, j);
                 }
             }
             await showProgress("finished loading overworld");
@@ -6104,6 +6159,8 @@ public static class WPFUI
                 throw;
             }
             // done
+            if (data.Items.IntraHeartGuesses == null) RegisterRestoredIntraHearts(_ => true);   // (older save: work out which hearts were guesses)
+            else RegisterSavedIntraHearts(data.Items.IntraHeartGuesses);
             TrackerModel.currentlyIgnoringForceUpdatesDuringALoad = false;
             TrackerModel.forceUpdate();
             doUIUpdateEvent.Trigger();
