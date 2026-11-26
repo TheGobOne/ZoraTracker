@@ -297,6 +297,9 @@ let namedBoxes() : (string * TrackerModel.Box)[] =
         yield ("Letter", TrackerModel.letterBox)
         yield ("Sword1", TrackerModel.sword1Box)
     |]
+// the boxes whose progressive tier is saved: namedBoxes plus the M/C/Tri Shuffle spots (kept out of namedBoxes, which co-op syncs)
+let tierBoxes() : (string * TrackerModel.Box)[] =
+    Array.append (namedBoxes()) (TrackerModel.shuffleSlotBoxes |> Array.mapi (fun k b -> sprintf "spot%d" k, b))
 // the UI keeps the duplicate links; it sets this so a save includes them (null: none)
 let mutable DupLinksText : System.Func<string> = null
 // the UI keeps which item boxes hold a guessed (Intra) heart; it sets this so a save includes them (null: not saved)
@@ -352,7 +355,7 @@ let SaveItems(prefix) =
     let progressiveTiers = TrackerModel.progressiveTileTier |> Seq.map (fun kv -> let (i,j,item) = kv.Key in sprintf "%d,%d,%d,%d" i j item kv.Value) |> String.concat ";"
     let boxTiers =
         try
-            namedBoxes() |> Array.choose (fun (name, b) -> match TrackerModel.progressiveBoxTier.TryGetValue(b) with | true, t -> Some(sprintf "%s,%d" name t) | _ -> None) |> String.concat ";"
+            tierBoxes() |> Array.choose (fun (name, b) -> match TrackerModel.progressiveBoxTier.TryGetValue(b) with | true, t -> Some(sprintf "%s,%d" name t) | _ -> None) |> String.concat ";"
         with _ -> ""
     let dupLinks = if isNull DupLinksText then "" else (try DupLinksText.Invoke() with _ -> "")
     let takeAnyTaken = if isNull TakeAnyTakenText then "" else (try TakeAnyTakenText.Invoke() with _ -> "")

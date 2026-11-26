@@ -644,6 +644,7 @@ public static class SelfTest
                     pp.PlayerHasBlueCandle.Set(true);
                     TrackerModel.progressiveTileTier[Tuple.Create(7, 2, TrackerModel.ITEMS.BLUECANDLE)] = 2;
                     TrackerModel.progressiveBoxTier[TrackerModel.sword2Box] = 3;
+                    TrackerModel.progressiveBoxTier[TrackerModel.shuffleSlotBoxes[5]] = 2;
                     TrackerModel.hintShopColors[Tuple.Create(9, 1)] = 4;
                     se.PlayerHasSword4.Set(!sSword4); se.PlayerHasMagicalSword.Set(!sMags);
                     SaveAndLoad.lastKnownZoraFlags = "22.7KrCiA"; SaveAndLoad.lastKnownZoraVersion = "2.0.1";
@@ -657,6 +658,8 @@ public static class SelfTest
                     if (it.TakeAnySlotGaveCandle != "0101") fail($"save round trip: TakeAnySlotGaveCandle 0101 came back as '{it.TakeAnySlotGaveCandle}'");
                     if (it.ProgressiveTileTiers == null || !it.ProgressiveTileTiers.Split(';').Contains($"7,2,{TrackerModel.ITEMS.BLUECANDLE},2")) fail($"save round trip: ProgressiveTileTiers came back as '{it.ProgressiveTileTiers}'");
                     if (it.ProgressiveBoxTiers == null || !it.ProgressiveBoxTiers.Split(';').Contains("Sword2,3")) fail($"save round trip: ProgressiveBoxTiers came back as '{it.ProgressiveBoxTiers}'");
+                    if (it.ProgressiveBoxTiers == null || !it.ProgressiveBoxTiers.Split(';').Contains("spot5,2")) fail($"save round trip: a shuffle spot's tier is missing from ProgressiveBoxTiers '{it.ProgressiveBoxTiers}'");
+                    if (!SaveAndLoad.tierBoxes().Any(nb => nb.Item1 == "spot5" && ReferenceEquals(nb.Item2, TrackerModel.shuffleSlotBoxes[5]))) fail("save load: the name 'spot5' does not lead back to its shuffle spot");
                     if (it.HintShopColors == null || !it.HintShopColors.Split(';').Contains("9,1,4")) fail($"save round trip: HintShopColors came back as '{it.HintShopColors}'");
                     if (d.StartingItemsAndExtras.PlayerHasSword4 != !sSword4 || d.StartingItemsAndExtras.PlayerHasMagicalSword != !sMags) fail("save round trip: the starting 4th sword / magical sword did not come back");
                     if (d.ZoraFlags != "22.7KrCiA" || d.ZoraVersion != "2.0.1") fail($"save round trip: ZORA flags / version came back as '{d.ZoraFlags}' / '{d.ZoraVersion}'");

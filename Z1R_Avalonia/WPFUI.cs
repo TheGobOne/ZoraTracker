@@ -6111,7 +6111,7 @@ public static class WPFUI
             {
                 TrackerModel.progressiveBoxTier.Clear();
                 var byName = new Dictionary<string, TrackerModel.Box>();
-                foreach (var nb in SaveAndLoad.namedBoxes()) byName[nb.Item1] = nb.Item2;
+                foreach (var nb in SaveAndLoad.tierBoxes()) byName[nb.Item1] = nb.Item2;
                 foreach (var t in data.Items.ProgressiveBoxTiers.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
                 {
                     var p = t.Split(',');
