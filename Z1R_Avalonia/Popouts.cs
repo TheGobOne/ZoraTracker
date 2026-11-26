@@ -432,7 +432,7 @@ public static class Popouts
     // level it is for), then that level's item boxes (the same boxes as the main tracker's)
     public static Control shuffleItemsContent(Window w)
     {
-        var rows = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Black, Margin = new Thickness(6.0) };
+        var rows = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Black, Margin = new Thickness(6.0) };   // holds the columns of levels
         var pickerOpen = false;
         void refocus() => refocusMainWindow(() => !pickerOpen, () => raiseWithoutFocus(w));
         // menus open as flyouts (the main window's popup layers can't be used from another window)
@@ -520,9 +520,22 @@ public static class Popouts
             };
             return view;
         }
+        // the levels flow into the number of columns that shows them largest at the window's shape (the window opens as one column)
+        var shownColumns = 1;
+        var lineWidth = 0.0;
+        int bestColumns()
+        {
+            if (w.SizeToContent != SizeToContent.Manual || lineWidth <= 0.0) return 1;
+            double scaleAt(int n) => Math.Min(w.ClientSize.Width / (n * lineWidth + (n - 1) * 16.0 + 12.0), w.ClientSize.Height / ((8 / n + 1) * 34.0 + 12.0));
+            var best = 1;
+            for (var n = 2; n <= 9; n++) if (scaleAt(n) > scaleAt(best)) best = n;
+            return best;
+        }
         void redraw()
         {
             rows.Children.Clear();
+            var lines = new List<StackPanel>();
+            lineWidth = 0.0;
             for (var row = 0; row <= 8; row++)
             {
                 var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) };
@@ -536,9 +549,19 @@ public static class Popouts
                 if (row == 1 && TrackerModel.level2StairBoxEnabled) boxes.Add(itemBox(TrackerModel.level2StairBox));
                 if (row == 8 && TrackerModel.level9FloorBoxEnabled) boxes.Add(itemBox(d.ExtraFloorBox));
                 foreach (var box in boxes) { box.Margin = new Thickness(0.0, 0.0, 4.0, 0.0); line.Children.Add(box); }
-                rows.Children.Add(line);
+                lines.Add(line);
+                lineWidth = Math.Max(lineWidth, 80.0 + boxes.Count * 34.0);
+            }
+            shownColumns = bestColumns();
+            var perColumn = 8 / shownColumns + 1;   // (9 levels, rounded up; read down each column, then the next)
+            for (var i = 0; i < lines.Count; i += perColumn)
+            {
+                var column = new StackPanel { Orientation = Orientation.Vertical, Width = lineWidth, Margin = new Thickness(i == 0 ? 0.0 : 16.0, 0.0, 0.0, 0.0) };
+                column.Children.AddRange(lines.Skip(i).Take(perColumn));
+                rows.Children.Add(column);
             }
         }
+        w.SizeChanged += (_, _) => { if (bestColumns() != shownColumns) redraw(); };
         redraw();
         // (subscribed only while on screen; see spotSummaryContent)
         var slotsHandler = new Microsoft.FSharp.Control.FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => redraw());
