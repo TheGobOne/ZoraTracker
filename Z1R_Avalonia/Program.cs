@@ -2030,7 +2030,7 @@ public static class Program
             Graphics.scaleUpCheckBoxBox(mbcb, 1.66);
             mbcb.IsChecked = false;
             var mbArea = Layout.optionBorderStyle(new Border { BorderThickness = new Thickness(1.0), Child = mbcb, VerticalAlignment = VerticalAlignment.Top });
-            mbArea.PointerEntered += (_, _) => hoverExplain(mbArea, "Middle-click an overworld tile to mark it as a bomb dropper screen (enemies drop bombs).\nThen scroll the mouse wheel to cycle: bomb dropper > blue > white > orange circle > bomb dropper...\nMiddle-click again to remove it. Shift+middle-click toggles a plain circle.\nHover the bomb shop highlight to see bomb dropper screens outlined in red.");
+            mbArea.PointerEntered += (_, _) => hoverExplain(mbArea, "Middle-click an overworld tile to mark it as a bomb dropper screen (enemies drop bombs).\nThen scroll the mouse wheel to cycle: bomb dropper > blue > pink > yellow circle > bomb dropper...\nMiddle-click again to remove it. Shift+middle-click toggles a plain circle.\nHover the bomb shop highlight to see bomb dropper screens outlined in red.");
             mbArea.PointerExited += (_, _) => explainHide();
             checkboxSP.Children.Add(new DockPanel { Width = 10.0 });
             checkboxSP.Children.Add(mbArea);
@@ -2990,7 +2990,7 @@ public static class Program
                             if (z.ExpandedDungeonLocations == FlagPaste.Tri.On)
                             {
                                 // dungeons can be at the vanilla spots of either quest: circle both sets (2Q first, so the 1Q number wins on the 3 tiles they share)
-                                foreach (var (locs, baseColor) in new[] { (OverworldData.vanilla2QDungeonLocations, 249), (OverworldData.vanilla1QDungeonLocations, 149) })
+                                foreach (var (locs, baseColor) in new[] { (OverworldData.vanilla2QDungeonLocations, 449), (OverworldData.vanilla1QDungeonLocations, 349) })
                                     for (var i = 0; i <= 8; i++)
                                     {
                                         var (x, y) = (locs[i].Item1, locs[i].Item2);

@@ -1395,18 +1395,21 @@ let decorToggleCollectedNth(packed:int, ident:int, n:int) : int =
 let decorRemoveNth(packed:int, ident:int, n:int) : int =
     let mutable seen = -1
     decorEntriesOf packed |> List.filter (fun (x,_) -> if x = ident then (seen <- seen + 1; seen <> n) else true) |> decorEntriesPack
-let overworldMapCircles = Array2D.create 16 8 0   // 0 means none, 1 means just circle, 48-57 means circle with 0-9 label, 65-90 means circle with A-Z label; +100 of those or +200 of those changes color
+let overworldMapCircles = Array2D.create 16 8 0   // 0 means none, 1 means just circle, 48-57 means circle with 0-9 label, 65-90 means circle with A-Z label; +100 of those or +200 of those changes color; +300 / +400 are the vanilla 1Q / 2Q dungeon marks
 let toggleOverworldMapCircle(i,j) =
     overworldMapCircles.[i,j] <- 
         if overworldMapCircles.[i,j]%100=0 then 
-            overworldMapCircles.[i,j]+1 
+            // (a new plain circle where a vanilla dungeon mark was removed is pink / yellow again)
+            (if overworldMapCircles.[i,j] >= 300 then overworldMapCircles.[i,j] - 200 else overworldMapCircles.[i,j]) + 1
         else 
             overworldMapCircles.[i,j] - overworldMapCircles.[i,j]%100
 let nextOverworldMapCircleColor(i,j) =
+    if overworldMapCircles.[i,j] >= 300 then overworldMapCircles.[i,j] <- overworldMapCircles.[i,j] - 200   // a vanilla dungeon mark rotates as pink (1Q) or yellow (2Q)
     overworldMapCircles.[i,j] <- overworldMapCircles.[i,j] + 100
     if overworldMapCircles.[i,j] >= 300 then
         overworldMapCircles.[i,j] <- overworldMapCircles.[i,j] - 300
 let prevOverworldMapCircleColor(i,j) =
+    if overworldMapCircles.[i,j] >= 300 then overworldMapCircles.[i,j] <- overworldMapCircles.[i,j] - 200   // a vanilla dungeon mark rotates as pink (1Q) or yellow (2Q)
     overworldMapCircles.[i,j] <- overworldMapCircles.[i,j] + 200
     if overworldMapCircles.[i,j] >= 300 then
         overworldMapCircles.[i,j] <- overworldMapCircles.[i,j] - 300

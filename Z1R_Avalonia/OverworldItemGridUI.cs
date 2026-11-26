@@ -1511,7 +1511,7 @@ public static class OverworldItemGridUI
                         for (var i = 0; i <= 8; i++)
                         {
                             var (x, y) = OverworldData.vanilla1QDungeonLocations[i];
-                            TrackerModel.overworldMapCircles[x, y] = 149 + i;
+                            TrackerModel.overworldMapCircles[x, y] = 349 + i;
                             redrawOWCircle.Value(x, y);
                         }
                         wh.Set();
@@ -1526,7 +1526,7 @@ public static class OverworldItemGridUI
                         for (var i = 0; i <= 8; i++)
                         {
                             var (x, y) = OverworldData.vanilla2QDungeonLocations[i];
-                            TrackerModel.overworldMapCircles[x, y] = 249 + i;
+                            TrackerModel.overworldMapCircles[x, y] = 449 + i;
                             redrawOWCircle.Value(x, y);
                         }
                         wh.Set();

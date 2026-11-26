@@ -1785,7 +1785,9 @@ public static class WPFUI
         Ellipse makeOwCircle(IBrush brush) => new Ellipse { Width = (double)(11 * 3) - 2.0, Height = (double)(11 * 3) - 2.0, Stroke = brush, StrokeThickness = 3.0, IsHitTestVisible = false };
         var orangeBrush = Graphics.freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x90, 0x00)));
         var brightBlueBrush = Graphics.freeze(new SolidColorBrush(Color.FromRgb(0x00, 0xD0, 0xFF)));
-        IBrush owCircleColor(int data) => data >= 200 ? orangeBrush : data >= 100 ? Brushes.White : brightBlueBrush;
+        var pinkBrush = Graphics.freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x40, 0x99)));
+        // 300s (white) and 400s (orange) are only the vanilla 1Q / 2Q dungeon marks
+        IBrush owCircleColor(int data) => data >= 400 ? orangeBrush : data >= 300 ? Brushes.White : data >= 200 ? Brushes.Yellow : data >= 100 ? pinkBrush : brightBlueBrush;
         // tiles that are a dungeon spot in both vanilla quests: their circle is drawn split, 1Q (white) on the left half and 2Q (orange) on the right,
         // with both numbers; the value is the label char of each quest's dungeon there
         var sharedDungeonSpots = new Dictionary<(int, int), (int, int)>();
@@ -1799,7 +1801,7 @@ public static class WPFUI
         {
             var locs = first ? OverworldData.vanilla1QDungeonLocations : OverworldData.vanilla2QDungeonLocations;
             for (var k = 0; k <= 8; k++)
-                if (!sharedDungeonSpots.ContainsKey((locs[k].Item1, locs[k].Item2)) && TrackerModel.overworldMapCircles[locs[k].Item1, locs[k].Item2] == (first ? 149 : 249) + k) return true;
+                if (!sharedDungeonSpots.ContainsKey((locs[k].Item1, locs[k].Item2)) && TrackerModel.overworldMapCircles[locs[k].Item1, locs[k].Item2] == (first ? 349 : 449) + k) return true;
             return false;
         }
         var overworldCirclesCanvas = new Canvas { Width = 16.0 * OMTW, Height = (double)(8 * 11 * 3) };
@@ -1821,7 +1823,7 @@ public static class WPFUI
                     var brush = owCircleColor(v);
                     var colorBase = v - v % 100;
                     v = v % 100;
-                    if (colorBase >= 100 && colorBase <= 200 && sharedDungeonSpots.TryGetValue((i, j), out var labs) && (v == labs.Item1 || v == labs.Item2) && questMarked(true) && questMarked(false))
+                    if (colorBase >= 300 && sharedDungeonSpots.TryGetValue((i, j), out var labs) && (v == labs.Item1 || v == labs.Item2) && questMarked(true) && questMarked(false))
                     {
                         const double d = 11.0 * 3.0 - 2.0, r = d / 2.0;
                         Path half(bool left) => new Path
@@ -2049,7 +2051,7 @@ public static class WPFUI
                                                 Text = "Press a key A-Z or 0-9 to label this circle\nOR\nLeft-click to make an un-labeled circle\nOR\nRight-click to remove this circle" };
                         var element = new Canvas { Width = appMainCanvas.Width, Height = appMainCanvas.Height, Background = Brushes.Transparent, IsHitTestVisible = true };
                         canvasAdd(element, tb, 250.0, 10.0);
-                        var baseColor = TrackerModel.overworldMapCircles[i, j] >= 200 ? 200 : TrackerModel.overworldMapCircles[i, j] >= 100 ? 100 : 0;
+                        var baseColor = TrackerModel.overworldMapCircles[i, j] / 100 * 100;
                         var displayCircle = makeOwCircle(owCircleColor(baseColor));
                         canvasAdd(element, displayCircle, (double)(displayIsCurrentlyMirrored ? (15 - i) : i) * OMTW + 8.5 * OMTW / 48.0, 150.0 + (double)(j * 11 * 3));
                         var wh = new ManualResetEvent(false);
@@ -3308,7 +3310,7 @@ public static class WPFUI
                         {
                             if (TrackerModel.MarkBombDroppers && ea.KeyModifiers != KeyModifiers.Shift)
                             {
-                                // 'Mark Bomb Droppers' startup option: the first middle click puts the bomb dropper icon on the tile; the scroll wheel then cycles bomb dropper > blue > white > orange circle and around;
+                                // 'Mark Bomb Droppers' startup option: the first middle click puts the bomb dropper icon on the tile; the scroll wheel then cycles bomb dropper > blue > pink > yellow circle and around;
                                 // middle clicking again removes whatever was chosen. (shift+middle click is the plain circle toggle)
                                 var hasDropper = TrackerModel.owBombDroppers[i, j];
                                 if (hasDropper)
@@ -3350,7 +3352,7 @@ public static class WPFUI
                         }
                         else if (TrackerModel.MarkBombDroppers && hasDropper && TrackerModel.overworldMapCircles[i, j] == 0)
                         {
-                            // bomb dropper > (scroll) blue > white > orange > bomb dropper ...
+                            // bomb dropper > (scroll) blue > pink > yellow > bomb dropper ...
                             TrackerModel.owBombDroppers[i, j] = false;
                             TrackerModel.toggleOverworldMapCircle(i, j);   // starts at the first color
                             if (notch >= 0) TrackerModel.prevOverworldMapCircleColor(i, j);   // scrolling the other way enters the rotation at the last color
