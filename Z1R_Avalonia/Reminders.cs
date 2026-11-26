@@ -396,10 +396,11 @@ public static class Reminders
                     }
                 }
             }
-            // remind white sword (fires at base interval) — triggers when white sword cave is unmarked or item not yet obtained
+            // remind white sword (fires at base interval) once the cave is found on the map and its item is not yet obtained
             if ((DateTime.Now - whiteSwordTime.Time).TotalMinutes >= interval)
             {
-                if (TrackerModel.playerComputedStateSummary.SwordLevel < 2 && TrackerModel.playerComputedStateSummary.PlayerHearts >= 4)  // player doesn't have white or magic sword, and has at least the minimum 4 hearts to lift the white sword
+                if (!TrackerModel.mapStateSummary.Sword2Location.Equals(TrackerModel.NOTFOUND)   // an item can be marked in the box before the cave has been seen
+                        && TrackerModel.playerComputedStateSummary.SwordLevel < 2 && TrackerModel.playerComputedStateSummary.PlayerHearts >= 4)  // player doesn't have white or magic sword, and has at least the minimum 4 hearts to lift the white sword
                 {
                     if (TrackerModel.sword2Box.PlayerHas().Equals(TrackerModel.PlayerHas.NO))  // not yet obtained
                         RemindSword2();

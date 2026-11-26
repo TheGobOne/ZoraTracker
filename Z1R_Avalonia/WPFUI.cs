@@ -718,7 +718,7 @@ public static class WPFUI
             if (d >= 0 && d <= 7)
             {
                 var dungeon = TrackerModel.GetDungeon(d);
-                if (dungeon.PlayerHasTriforce() != triforceIsCollectedHere) dungeon.ToggleTriforce();
+                if (dungeon.PlayerHasOwnTriforce() != triforceIsCollectedHere) dungeon.ToggleTriforce();
             }
         }
         // overworld hearts checked off on the map are stamped on the timeline

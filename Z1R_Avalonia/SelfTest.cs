@@ -240,6 +240,7 @@ public static class SelfTest
                 while (n23 > 0) { p23 = alphabet63[(int)(n23 % 63)] + p23; n23 /= 63; }
                 var (z23, err23) = FlagPaste.decodeZora("23." + p23);
                 if (z23 == null || z23.Warning != null) fail($"ZORA flags (version 23, '23.{p23}') were refused or gave a warning: {err23}");
+                else if (z23.ShuffleTriforces != FlagPaste.Tri.On || z23.ShuffleMapsCompasses != FlagPaste.Tri.Random) fail($"ZORA flags (version 23, '23.{p23}') decoded the pool flags wrong");
                 if (FlagPaste.decodeZora("22." + p23).error == null) fail($"ZORA flags: '22.{p23}' (version 23 fields set) was accepted as version 22");
             }
             // the string the Paste Flags check below uses for "only the 4th sword": add_l4_sword On (in level 9), everything else Off, Progressive Items included
@@ -497,6 +498,19 @@ public static class SelfTest
                     var d2 = DungeonSaveAndLoad.LoadAll(build(""));
                     if (d2.Overworld.MirrorOverworld) fail("save round trip: Mirrored Overworld (off) came back on");
                     if (d2.Items.CustomLevelName == null || d2.Items.CustomLevelName != "") fail("save round trip: an empty custom LEVEL name should come back empty, not missing");
+                    // M/C/Tri Shuffle window: a triforce collected for another level lights that level only, survives a save, and is not saved as the level's own
+                    var (wasGot, wasChosen) = (TrackerModel.shuffleSlotGot[6], TrackerModel.shuffleSlotChosen[6]);
+                    var before = Enumerable.Range(0, 8).Select(i => TrackerModel.GetDungeon(i).PlayerHasTriforce()).ToArray();
+                    TrackerModel.SetShuffleSlot(2, 0, true, 4);
+                    for (var i = 0; i < 8; i++)
+                        if (TrackerModel.GetDungeon(i).PlayerHasTriforce() != (before[i] || i == 4)) fail($"shuffle window: collecting level 5's triforce changed level {i + 1} wrongly");
+                    if (TrackerModel.GetDungeon(4).PlayerHasOwnTriforce() != before[4]) fail("shuffle window: its triforce counted as the level's own");
+                    var dShuf = DungeonSaveAndLoad.LoadAll(build(""));
+                    TrackerModel.SetShuffleSlot(2, 0, false, -1);
+                    if (TrackerModel.GetDungeon(4).PlayerHasTriforce() != before[4]) fail("shuffle window: un-collecting did not clear the triforce");
+                    SaveAndLoad.ApplyLoadedOptions(dShuf.Overworld);
+                    if (!TrackerModel.shuffleSlotGot[6] || TrackerModel.shuffleSlotChosen[6] != 4) fail("shuffle window: the slot did not survive a save round trip");
+                    TrackerModel.SetShuffleSlot(2, 0, wasGot, wasChosen);
                     // 4th Sword: its two slots (level 2 staircase / level 9 floor check) say whether it was on, and where
                     foreach (var (l2, l9) in new[] { (false, false), (true, false), (false, true) })
                     {

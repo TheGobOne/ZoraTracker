@@ -674,7 +674,8 @@ public static class Views
             }
             if (bmp != null)
             {
-                canvasAdd(innerc, innerCanvasStairwayHider, 3.0, 3.0);  // a black box covers any stair drawing behind the item, so the item is easy to read
+                // a black box covers any stair drawing behind the item, so the item is easy to read (not behind an Intra guessed heart: its stair must stay visible)
+                if (!WPFUI.IsIntraHeartGuess(box)) canvasAdd(innerc, innerCanvasStairwayHider, 3.0, 3.0);
                 if (box.PlayerHas().Equals(TrackerModel.PlayerHas.NO))
                 {
                     var image = Graphics.BMPtoImage(Graphics.greyscale(bmp));

@@ -305,13 +305,15 @@ public static class Popouts
         SpotSummaryPopout,
         InventoryAndHeartsPopout,
         RemainingItemsPoput,
-        ShopsPopout
+        ShopsPopout,
+        ShuffleItemsPopout
     }
 
     public static Window theSpotSummaryPopoutWindow = null;
     public static Window theInventoryAndHeartsPopoutWindow = null;
     public static Window theRemainingItemsPopoutWindow = null;
     public static Window theShopsPopoutWindow = null;
+    public static Window theShuffleItemsPopoutWindow = null;
 
     public static DockPanel spotSummaryContent(Graphics.SharedEvent doUIUpdateEvent)
     {
@@ -424,6 +426,140 @@ public static class Popouts
             }
         };
         return panel;
+    }
+
+    // the M/C/Tri Shuffle window: one row per level with the triforce, map and compass found there (each marked with the
+    // level it is for), then that level's item boxes (the same boxes as the main tracker's)
+    public static Control shuffleItemsContent(Window w)
+    {
+        var rows = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Black, Margin = new Thickness(6.0) };
+        var pickerOpen = false;
+        void refocus() => refocusMainWindow(() => !pickerOpen, () => raiseWithoutFocus(w));
+        // menus open as flyouts (the main window's popup layers can't be used from another window)
+        // done(after): closes the menu, then runs after once it has gone (a change redraws the rows, and the menu must not lose its box while closing)
+        void showMenu(Control at, Func<Action<Action>, Control> makeContent)
+        {
+            var fly = new Flyout();
+            fly.Content = makeContent(after => { fly.Hide(); Dispatcher.UIThread.Post(after, DispatcherPriority.Background); });
+            fly.Closed += (_, _) => { pickerOpen = false; refocus(); };
+            pickerOpen = true;
+            fly.ShowAt(at, true);
+        }
+        TextBox text(string s, double size) => new TextBox { Text = s, FontSize = size, FontWeight = FontWeight.Bold, IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0),
+                                                           Foreground = Brushes.Orange, Background = Brushes.Black, MinWidth = 0.0, MinHeight = 0.0, Padding = new Thickness(0.0), VerticalAlignment = VerticalAlignment.Center };
+        string levelName(int level) => level < 8 && TrackerModel.IsHiddenDungeonNumbers.Invoke(null) ? ((char)('A' + level)).ToString() : (level + 1).ToString();
+        Control slotBox(int row, int slot)
+        {
+            var c = new Canvas { Width = 30.0, Height = 30.0, Background = Brushes.Black };
+            var got = TrackerModel.shuffleSlotGot[row * 3 + slot];
+            var level = TrackerModel.ShuffleSlotLevel(row, slot);
+            var bmp = slot == 0 ? CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.TRIFORCE, null) : slot == 1 ? Graphics.zi_map_bmp : Graphics.zi_compass_bmp;
+            var img = Graphics.BMPtoImage(got ? bmp : Graphics.greyscale(bmp));
+            img.Width = 21.0; img.Height = 21.0; img.Stretch = Stretch.Uniform;
+            RenderOptions.SetBitmapInterpolationMode(img, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+            Graphics.canvasAdd(c, img, 4.0, 4.0);
+            c.Children.Add(new Avalonia.Controls.Shapes.Rectangle { Width = 30.0, Height = 30.0, Stroke = got ? CustomComboBoxes.yes : CustomComboBoxes.no, StrokeThickness = 3.0 });
+            var tag = new Border { Background = Brushes.Black, Child = new TextBlock { Text = level < 0 ? "?" : levelName(level), FontSize = 11.0, FontWeight = FontWeight.Bold, Foreground = Brushes.White } };
+            Graphics.canvasAdd(c, tag, 19.0, 15.0);
+            var kind = slot == 0 ? "Triforce" : slot == 1 ? "Map" : "Compass";
+            ToolTip.SetTip(c, $"{kind} found in level {levelName(row)}\nLeft click: collected. Right click: which level it is for.");
+            c.PointerPressed += (_, ea) =>
+            {
+                var button = ea.GetCurrentPoint(c).Properties.PointerUpdateKind;
+                var chosen = TrackerModel.shuffleSlotChosen[row * 3 + slot];
+                if (button == PointerUpdateKind.LeftButtonPressed)
+                    TrackerModel.SetShuffleSlot(row, slot, !got, chosen);
+                else if (button == PointerUpdateKind.RightButtonPressed)
+                    showMenu(c, done =>
+                    {
+                        var sp = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Black };
+                        var count = slot == 0 ? 8 : 9;
+                        for (var n = -1; n < count; n++)
+                        {
+                            var pick = n;
+                            var label = new TextBlock { Text = pick < 0 ? "?" : levelName(pick), FontSize = 16.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, HorizontalAlignment = HorizontalAlignment.Center };
+                            var b = new Button { Template = Graphics.roundedButtonTemplate, Content = label, MinWidth = 32.0, Margin = new Thickness(2.0), Padding = new Thickness(6.0, 4.0),
+                                                 Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush };
+                            b.Click += (_, _) => done(() => TrackerModel.SetShuffleSlot(row, slot, TrackerModel.shuffleSlotGot[row * 3 + slot], pick));
+                            sp.Children.Add(b);
+                        }
+                        return sp;
+                    });
+                ea.Handled = true;
+            };
+            return c;
+        }
+        Control itemBox(TrackerModel.Box box)
+        {
+            var (view, _) = Views.MakeBoxItemWithExtraDecorations(null, box, false, null);   // (draws and redraws; the clicks are below)
+            void pickItem() => showMenu(view, done =>
+            {
+                var extra = (TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER } : new int[0])
+                                .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k));
+                var items = CustomComboBoxes.itemMenuIdents.Concat(extra)
+                    .Where(id => id == -1 || (id != TrackerModel.ITEMS.TRIFORCE && !TrackerModel.progressiveDisabledIdent(id) && (id == box.CellCurrent() || box.Domain.CanAddUse(id))))
+                    .Select(id =>
+                    {
+                        Control icon = id == -1 ? new TextBlock { Text = "X", FontSize = 16.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, HorizontalAlignment = HorizontalAlignment.Center }
+                                                : Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(id, null));
+                        return (id, icon);
+                    }).ToList();
+                return PieMenus.makeItemPickerBox(items, 5, id =>
+                {
+                    done(() => { if (id != box.CellCurrent()) box.AttemptToSet(id, TrackerModel.PlayerHas.NO); });
+                });
+            });
+            view.PointerPressed += (_, ea) =>
+            {
+                var button = ea.GetCurrentPoint(view).Properties.PointerUpdateKind;
+                if (button != PointerUpdateKind.LeftButtonPressed && button != PointerUpdateKind.MiddleButtonPressed && button != PointerUpdateKind.RightButtonPressed) return;
+                ea.Handled = true;
+                var desire = CustomComboBoxes.MouseButtonEventArgsToPlayerHas(ea);
+                if (box.CellCurrent() == -1 || desire.Equals(box.PlayerHas())) pickItem();   // (as the main tracker's boxes)
+                else box.SetPlayerHas(desire);
+            };
+            return view;
+        }
+        void redraw()
+        {
+            rows.Children.Clear();
+            for (var row = 0; row <= 8; row++)
+            {
+                var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) };
+                var label = text($"LEVEL-{levelName(row)}", 14.0);
+                label.Width = 80.0;
+                line.Children.Add(label);
+                var boxes = new List<Control>();
+                for (var slot = row < 8 ? 0 : 1; slot <= 2; slot++) boxes.Add(slotBox(row, slot));
+                var d = TrackerModel.GetDungeon(row);
+                foreach (var box in d.Boxes) boxes.Add(itemBox(box));
+                if (row == 1 && TrackerModel.level2StairBoxEnabled) boxes.Add(itemBox(TrackerModel.level2StairBox));
+                if (row == 8 && TrackerModel.level9FloorBoxEnabled) boxes.Add(itemBox(d.ExtraFloorBox));
+                foreach (var box in boxes) { box.Margin = new Thickness(0.0, 0.0, 4.0, 0.0); line.Children.Add(box); }
+                rows.Children.Add(line);
+            }
+        }
+        redraw();
+        // (subscribed only while on screen; see spotSummaryContent)
+        var slotsHandler = new Microsoft.FSharp.Control.FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => redraw());
+        System.Action questHandler = () => redraw();
+        rows.AttachedToVisualTree += (_, _) =>
+        {
+            TrackerModel.shuffleSlotsChanged.Publish.AddHandler(slotsHandler);
+            TrackerModel.level2StairBoxEnabledChanged.Publish.AddHandler(slotsHandler);
+            TrackerModel.level9FloorBoxEnabledChanged.Publish.AddHandler(slotsHandler);
+            OptionsMenu.secondQuestDungeonsOptionChanged += questHandler;
+            redraw();
+        };
+        rows.DetachedFromVisualTree += (_, _) =>
+        {
+            TrackerModel.shuffleSlotsChanged.Publish.RemoveHandler(slotsHandler);
+            TrackerModel.level2StairBoxEnabledChanged.Publish.RemoveHandler(slotsHandler);
+            TrackerModel.level9FloorBoxEnabledChanged.Publish.RemoveHandler(slotsHandler);
+            OptionsMenu.secondQuestDungeonsOptionChanged -= questHandler;
+        };
+        rows.AddHandler(InputElement.PointerReleasedEvent, new EventHandler<PointerReleasedEventArgs>((_, _) => refocus()), RoutingStrategies.Bubble, true);
+        return rows;
     }
 
     public static bool insideMakePopoutCall = false;
@@ -591,6 +727,31 @@ public static class Popouts
                 };
                 matches = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ShopsPopout_DisplayedLT, @"^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$");
                 break;
+            case PopoutKind.ShuffleItemsPopout:
+                if (theShuffleItemsPopoutWindow != null)
+                    theShuffleItemsPopoutWindow.Close();
+                theShuffleItemsPopoutWindow = w;
+                w.Title = "M/C/Tri Shuffle";
+                w.Content = scalable(shuffleItemsContent(w));
+                save = () =>
+                {
+                    noteRestoreBounds();
+                    if (minimizedOrClosing()) // minimized or closing
+                        TrackerModelOptions.ShuffleItemsPopout_DisplayedLT = $"0,{(int)restoreLeft},{(int)restoreTop}" + sz();
+                    else
+                        TrackerModelOptions.ShuffleItemsPopout_DisplayedLT = $"1,{(int)leftOf(w)},{(int)topOf(w)}" + sz();
+                    ShowRunCustom.writeSettingsSoon();   // (called on every move event)
+                };
+                noDisplay = () =>
+                {
+                    if (TrackerModelOptions.ShuffleItemsPopout_DisplayedLT.Length != 0)
+                    {
+                        TrackerModelOptions.ShuffleItemsPopout_DisplayedLT = "0" + TrackerModelOptions.ShuffleItemsPopout_DisplayedLT.Substring(1);
+                        TrackerModelOptions.writeSettings();
+                    }
+                };
+                matches = System.Text.RegularExpressions.Regex.Match(TrackerModelOptions.ShuffleItemsPopout_DisplayedLT, @"^(1|0),(-?\d+),(-?\d+)(?:,(\d+),(\d+))?$");
+                break;
             default: throw new InvalidOperationException();
         }
         var (ok, disp, left, top) =
@@ -614,7 +775,7 @@ public static class Popouts
         w.PositionChanged += (_, _) =>
         {
             save();
-            if (kind == PopoutKind.ShopsPopout) refocusMainWindow(null, () => raiseWithoutFocus(w));   // (dragged over the main window, it stays in front)
+            if (kind == PopoutKind.ShopsPopout || kind == PopoutKind.ShuffleItemsPopout) refocusMainWindow(null, () => raiseWithoutFocus(w));   // (dragged over the main window, it stays in front)
             else refocusMainWindow();
         };
         var sizeSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600.0) };
@@ -636,6 +797,7 @@ public static class Popouts
                 case PopoutKind.InventoryAndHeartsPopout: TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT = s; break;
                 case PopoutKind.RemainingItemsPoput: TrackerModelOptions.RemainingItemsPoput_DisplayedLT = s; break;
                 case PopoutKind.ShopsPopout: TrackerModelOptions.ShopsPopout_DisplayedLT = s; break;
+                case PopoutKind.ShuffleItemsPopout: TrackerModelOptions.ShuffleItemsPopout_DisplayedLT = s; break;
             }
         }
         w.Closed += (_, _) =>
@@ -661,6 +823,7 @@ public static class Popouts
                 case PopoutKind.InventoryAndHeartsPopout: if (ReferenceEquals(theInventoryAndHeartsPopoutWindow, w)) theInventoryAndHeartsPopoutWindow = null; break;
                 case PopoutKind.RemainingItemsPoput: if (ReferenceEquals(theRemainingItemsPopoutWindow, w)) theRemainingItemsPopoutWindow = null; break;
                 case PopoutKind.ShopsPopout: if (ReferenceEquals(theShopsPopoutWindow, w)) theShopsPopoutWindow = null; break;
+                case PopoutKind.ShuffleItemsPopout: if (ReferenceEquals(theShuffleItemsPopoutWindow, w)) theShuffleItemsPopoutWindow = null; break;
             }
         };
         w.Show();
@@ -676,6 +839,7 @@ public static class Popouts
             PopoutKind.InventoryAndHeartsPopout => theInventoryAndHeartsPopoutWindow,
             PopoutKind.RemainingItemsPoput => theRemainingItemsPopoutWindow,
             PopoutKind.ShopsPopout => theShopsPopoutWindow,
+            PopoutKind.ShuffleItemsPopout => theShuffleItemsPopoutWindow,
             _ => throw new InvalidOperationException()
         };
     public static bool isPopoutOpen(PopoutKind kind) => popoutWindowOf(kind) != null;
@@ -849,7 +1013,8 @@ public static class Popouts
         foreach (var (k, s) in new[] { (PopoutKind.SpotSummaryPopout, TrackerModelOptions.SpotSummaryPopout_DisplayedLT),
                                        (PopoutKind.InventoryAndHeartsPopout, TrackerModelOptions.InventoryAndHeartsPopout_DisplayedLT),
                                        (PopoutKind.RemainingItemsPoput, TrackerModelOptions.RemainingItemsPoput_DisplayedLT),
-                                       (PopoutKind.ShopsPopout, TrackerModelOptions.ShopsPopout_DisplayedLT) })
+                                       (PopoutKind.ShopsPopout, TrackerModelOptions.ShopsPopout_DisplayedLT),
+                                       (PopoutKind.ShuffleItemsPopout, TrackerModelOptions.ShuffleItemsPopout_DisplayedLT) })
         {
             f(k, s);
         }

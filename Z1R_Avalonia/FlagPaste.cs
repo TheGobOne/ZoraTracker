@@ -154,6 +154,8 @@ public static class FlagPaste
                                   Tri RandomizeLostHills,
                                   Tri ExpandedDungeonLocations,
                                   string Warning = null,   // (set when the string is newer than this tracker: it was read anyway)
+                                  Tri ShuffleTriforces = Tri.Off,       // add_triforces_to_pool
+                                  Tri ShuffleMapsCompasses = Tri.Off,   // add_maps_compasses_to_pool
                                   bool Level9SwordEntrance = false);   // level_9_entrance_sword
 
     // a seed file name from the ZORA page (the spec's file_name section): zora-<version>-<Z1R>-<ZORA>-<seed>[-music][.nes | .spoiler.txt | .tracker.json]
@@ -211,6 +213,8 @@ public static class FlagPaste
                                  RandomizeLostHills: tri(v("randomize_lost_hills")),
                                  ExpandedDungeonLocations: tri(v("expanded_dungeon_locations")),
                                  Warning: warning,
+                                 ShuffleTriforces: tri(v("add_triforces_to_pool")),
+                                 ShuffleMapsCompasses: tri(v("add_maps_compasses_to_pool")),
                                  Level9SwordEntrance: v("level_9_entrance_sword") == 1), null);
         }
         if (s == "") return finish();

@@ -25,6 +25,8 @@ type Overworld() =
     member val ExtraBlocksRandom = -1 with get,set   // same bits: which of those four were Random (?) rather than plain On (-1 = older save: none were)
     member val BootsReplaceBoomerangs = -1 with get,set   // 0 = Off, 1 = On, 2 = Random (?, counts as Off until confirmed); -1 = older save: keep what the start screen chose
     member val ProgressiveItems = -1 with get,set   // 0 = Off, 1 = On; -1 = older save: keep what the start screen chose
+    member val Shuffle = 0 with get,set   // bit 0 = maps, bit 1 = compasses, bit 2 = triforces can be in other dungeons; Shuffle Type: bit 3 = Between Levels, bit 4 = Anywhere (older saves: 0, none)
+    member val ShuffleSlots : string = null with get,set   // M/C/Tri Shuffle window: 27 "collected,level" pairs split by ';' (null = older save: none)
     member val DeadWoodsHint : string = null with get,set   // the letters typed into the Dead Woods / Lost Hills hint buttons (null = older save)
     member val LostHillsHint : string = null with get,set
 
@@ -45,7 +47,7 @@ type Dungeon() =
     member this.TryApply(d : TrackerModel.Dungeon) =
       if isNull this.Boxes || this.Boxes.Length <> d.Boxes.Length then false   // (a save with a different number of boxes: nothing is applied, rather than throwing mid-load)
       else
-        if this.Triforce <> d.PlayerHasTriforce() then
+        if this.Triforce <> d.PlayerHasOwnTriforce() then
             d.ToggleTriforce()
         d.Color <- this.Color
         d.LabelChar <- (if System.String.IsNullOrEmpty(this.LabelChar) then '?' else this.LabelChar.[0])
@@ -248,6 +250,9 @@ let SaveOverworld(prefix) =
     lines.Add(sprintf """    "ExtraBlocksRandom": %d,""" ((if OverworldData.ExtraPBRandom then 1 else 0) + (if OverworldData.ExtraRaftRandom then 2 else 0) + (if OverworldData.DeadWoodsRandom then 4 else 0) + (if OverworldData.LostHillsRandom then 8 else 0)))
     lines.Add(sprintf """    "BootsReplaceBoomerangs": %d,""" (if TrackerModel.BootsReplaceBoomerangs then 1 elif TrackerModel.BootsRandom then 2 else 0))
     lines.Add(sprintf """    "ProgressiveItems": %d,""" (if TrackerModel.ProgressiveItems then 1 else 0))
+    lines.Add(sprintf """    "Shuffle": %d,""" ((if TrackerModel.ShuffleMaps then 1 else 0) + (if TrackerModel.ShuffleCompasses then 2 else 0) + (if TrackerModel.ShuffleTriforces then 4 else 0) + (if TrackerModel.ShuffleBetweenLevels then 8 else 0) + (if TrackerModel.ShuffleAnywhere then 16 else 0)))
+    let shuffleSlots = [ for k in 0..26 -> sprintf "%d,%d" (if TrackerModel.shuffleSlotGot.[k] then 1 else 0) TrackerModel.shuffleSlotChosen.[k] ] |> String.concat ";"
+    lines.Add(sprintf """    "ShuffleSlots": "%s",""" shuffleSlots)
     let cleanHint (s:string) = (if isNull s then "" else s).Replace("\\", "").Replace("\"", "")
     lines.Add(sprintf """    "DeadWoodsHint": "%s",""" (cleanHint OverworldData.DeadWoodsHint))
     lines.Add(sprintf """    "LostHillsHint": "%s",""" (cleanHint OverworldData.LostHillsHint))
@@ -358,7 +363,7 @@ let SaveItems(prefix) =
     lines.Add(sprintf """    }, "Level9FloorBoxEnabled": %b, "Dungeons": [""" TrackerModel.level9FloorBoxEnabled)
     for i = 0 to 8 do
         let d = TrackerModel.GetDungeon(i)
-        lines.Add(sprintf """            { "Triforce": %b, "Color": %d, "LabelChar": "%s", "PlayerHasMap": %b, "Boxes": [ {""" (d.PlayerHasTriforce()) d.Color (d.LabelChar.ToString()) d.PlayerHasMapOfThisDungeon) |> ignore
+        lines.Add(sprintf """            { "Triforce": %b, "Color": %d, "LabelChar": "%s", "PlayerHasMap": %b, "Boxes": [ {""" (d.PlayerHasOwnTriforce()) d.Color (d.LabelChar.ToString()) d.PlayerHasOwnMap) |> ignore
         for box in d.Boxes do
             SaveBox("            ", box)
             lines.Add("                }, {")
@@ -487,6 +492,20 @@ let ApplyLoadedOptions(ow:Overworld) =
             TrackerModel.BootsRandom <- (ow.BootsReplaceBoomerangs = 2)   // (Random, ?, counts as Off until confirmed)
         if ow.ProgressiveItems >= 0 then
             TrackerModel.ProgressiveItems <- (ow.ProgressiveItems = 1)
+        TrackerModel.ShuffleMaps <- (ow.Shuffle &&& 1) <> 0
+        TrackerModel.ShuffleCompasses <- (ow.Shuffle &&& 2) <> 0
+        TrackerModel.ShuffleTriforces <- (ow.Shuffle &&& 4) <> 0
+        TrackerModel.ShuffleBetweenLevels <- (ow.Shuffle &&& 8) <> 0
+        TrackerModel.ShuffleAnywhere <- (ow.Shuffle &&& 16) <> 0
+        if not (isNull ow.ShuffleSlots) then
+            let saved = ow.ShuffleSlots.Split(';')
+            for k in 0..26 do
+                let p = if k < saved.Length then saved.[k].Split(',') else [||]
+                let got, level =
+                    match p with
+                    | [| g; l |] -> g = "1", (match System.Int32.TryParse(l) with | true, v when v >= 0 && v <= 8 -> v | _ -> -1)
+                    | _ -> false, -1
+                TrackerModel.SetShuffleSlot(k/3, k%3, got, level)
         if ow.ExtraBlocks >= 0 then
             OverworldData.ExtraPBBlocks <- (ow.ExtraBlocks &&& 1) <> 0
             OverworldData.ExtraRaftBlocks <- (ow.ExtraBlocks &&& 2) <> 0

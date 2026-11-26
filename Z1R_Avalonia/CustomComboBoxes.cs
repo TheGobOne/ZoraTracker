@@ -1670,7 +1670,22 @@ public static class CustomComboBoxes
             || (ident == TrackerModel.ITEMS.POWERBRACELET && sm.HavePowerBracelet) || (ident == TrackerModel.ITEMS.BOW && sm.HaveBow) || (ident == TrackerModel.ITEMS.WAND && sm.HaveWand)
             || (ident == TrackerModel.ITEMS.KEY && sm.HaveAnyKey);
     }
-    public static bool allItemsSelectable = false;   // true while the level 9 entry item menu is open: that box is only a note, so every item (even a 'disabled' one) can be picked
+    // the item menu's built-in cells, 5 across (-1 is the empty cell)
+    public static readonly int[] itemMenuIdents = {
+        // row 1: swords
+        TrackerModel.ITEMS.WOODSWORD, TrackerModel.ITEMS.WHITESWORD, TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.ITEMS.WHITESWORD4, TrackerModel.ITEMS.PROGRESSIVESWORD,
+        // row 2
+        TrackerModel.ITEMS.LADDER, TrackerModel.ITEMS.POWERBRACELET, TrackerModel.ITEMS.RECORDER, TrackerModel.ITEMS.RAFT, TrackerModel.ITEMS.BOW,
+        // row 3
+        TrackerModel.ITEMS.BLUERING, TrackerModel.ITEMS.REDRING, TrackerModel.ITEMS.KEY, TrackerModel.ITEMS.WOODARROW, TrackerModel.ITEMS.SILVERARROW,
+        // row 4
+        TrackerModel.ITEMS.WAND, TrackerModel.ITEMS.BLUECANDLE, TrackerModel.ITEMS.REDCANDLE, TrackerModel.ITEMS.BOOMERANG, TrackerModel.ITEMS.MAGICBOOMERANG,
+        // row 5
+        TrackerModel.ITEMS.BOOKSHIELD, TrackerModel.ITEMS.SHIELD, TrackerModel.ITEMS.MEAT, TrackerModel.ITEMS.OLDKEY, TrackerModel.ITEMS.BOMBUPGRADE,
+        // row 6
+        TrackerModel.ITEMS.BLUEPOTION, TrackerModel.ITEMS.LETTER, TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.ITEMS.TRIFORCE, -1,
+    };
+    public static bool allItemsSelectable = false;  // true while the level 9 entry item menu is open: that box is only a note, so every item (even a 'disabled' one) can be picked
     public static bool itemMenuTriforceBlocked = false;   // set by an item box while its menu is open: a Triforce Piece can only be placed on a basement slot
     public static HashSet<int> itemMenuMovableIdents = new HashSet<int>();   // set by a dungeon box while its menu is open: used-up items held by another slot of that dungeon, which this slot may take
     public static TrackerModel.ChoiceDomain itemMenuDomain =TrackerModel.allItemWithHeartShuffleChoiceDomain;   // DoLocalItemComboBox swaps this for boxes that don't use up items
@@ -1693,20 +1708,7 @@ public static class CustomComboBoxes
         }
         redraw(boxCellCurrent);
         // the grid is 5 columns wide and 6 rows tall (-1 is the empty cell)
-        var gridIdents0 = new[] {
-            // row 1: swords
-            TrackerModel.ITEMS.WOODSWORD, TrackerModel.ITEMS.WHITESWORD, TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.ITEMS.WHITESWORD4, TrackerModel.ITEMS.PROGRESSIVESWORD,
-            // row 2
-            TrackerModel.ITEMS.LADDER, TrackerModel.ITEMS.POWERBRACELET, TrackerModel.ITEMS.RECORDER, TrackerModel.ITEMS.RAFT, TrackerModel.ITEMS.BOW,
-            // row 3
-            TrackerModel.ITEMS.BLUERING, TrackerModel.ITEMS.REDRING, TrackerModel.ITEMS.KEY, TrackerModel.ITEMS.WOODARROW, TrackerModel.ITEMS.SILVERARROW,
-            // row 4
-            TrackerModel.ITEMS.WAND, TrackerModel.ITEMS.BLUECANDLE, TrackerModel.ITEMS.REDCANDLE, TrackerModel.ITEMS.BOOMERANG, TrackerModel.ITEMS.MAGICBOOMERANG,
-            // row 5
-            TrackerModel.ITEMS.BOOKSHIELD, TrackerModel.ITEMS.SHIELD, TrackerModel.ITEMS.MEAT, TrackerModel.ITEMS.OLDKEY, TrackerModel.ITEMS.BOMBUPGRADE,
-            // row 6
-            TrackerModel.ITEMS.BLUEPOTION, TrackerModel.ITEMS.LETTER, TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.ITEMS.TRIFORCE, -1,
-            };
+        var gridIdents0 = itemMenuIdents;
         // the user's custom icons (if that option is on) go in extra rows at the bottom; -2 pads out the last row with blank, unselectable cells
         var emptyCellIdx = Array.IndexOf(gridIdents0, -1);   // (the clear cell is the -1 at the end of row 6, not the last cell now that row 7 follows)
         int[] make_gridIdents()

@@ -187,6 +187,7 @@ let mutable SpotSummaryPopout_DisplayedLT = ""
 let mutable InventoryAndHeartsPopout_DisplayedLT = ""
 let mutable RemainingItemsPoput_DisplayedLT = ""
 let mutable ShopsPopout_DisplayedLT = ""
+let mutable ShuffleItemsPopout_DisplayedLT = ""
 let mutable ItemLocationsWindow_DisplayedLT = ""
 let mutable ShowCustomOnStartup = false
 let mutable SwapMouseButtons = false   // swap the left and right mouse buttons everywhere in the tracker (Popout Windows menu)
@@ -337,6 +338,7 @@ type ReadWrite() =
     member val InventoryAndHeartsPopout_DisplayedLT = "" with get,set
     member val RemainingItemsPoput_DisplayedLT = "" with get,set
     member val ShopsPopout_DisplayedLT = "" with get,set
+    member val ShuffleItemsPopout_DisplayedLT = "" with get,set
     member val ItemLocationsWindow_DisplayedLT = "" with get,set
     member val ShowCustomOnStartup = false with get,set
     member val SwapMouseButtons = false with get,set
@@ -496,6 +498,7 @@ let private writeImpl(filename) =
     data.InventoryAndHeartsPopout_DisplayedLT <- InventoryAndHeartsPopout_DisplayedLT
     data.RemainingItemsPoput_DisplayedLT <- RemainingItemsPoput_DisplayedLT
     data.ShopsPopout_DisplayedLT <- ShopsPopout_DisplayedLT
+    data.ShuffleItemsPopout_DisplayedLT <- ShuffleItemsPopout_DisplayedLT
     data.ItemLocationsWindow_DisplayedLT <- ItemLocationsWindow_DisplayedLT
     data.ShowCustomOnStartup <- ShowCustomOnStartup
     data.SwapMouseButtons <- SwapMouseButtons
@@ -669,6 +672,7 @@ let private read(filename) =
         InventoryAndHeartsPopout_DisplayedLT <- data.InventoryAndHeartsPopout_DisplayedLT
         RemainingItemsPoput_DisplayedLT <- data.RemainingItemsPoput_DisplayedLT
         ShopsPopout_DisplayedLT <- data.ShopsPopout_DisplayedLT
+        ShuffleItemsPopout_DisplayedLT <- (if isNull data.ShuffleItemsPopout_DisplayedLT then "" else data.ShuffleItemsPopout_DisplayedLT)
         ItemLocationsWindow_DisplayedLT <- (if isNull data.ItemLocationsWindow_DisplayedLT then "" else data.ItemLocationsWindow_DisplayedLT)
         ShowCustomOnStartup <- data.ShowCustomOnStartup
         SwapMouseButtons <- data.SwapMouseButtons

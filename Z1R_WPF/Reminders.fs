@@ -274,9 +274,9 @@ type PeriodicReminders() =
                 if boomShopFound then
                     SendReminder(TrackerModel.ReminderCategory.BoomstickBook, "Consider buying the boomstick book", [upcb(Graphics.iconRightArrow_bmp); upcb(Graphics.boom_book_bmp)])
                     boomstickTime.SetNow()
-        // remind white sword (fires at base interval) — triggers when white sword cave is unmarked or item not yet obtained
+        // remind white sword (fires at base interval) once the cave is found on the map and its item is not yet obtained
         if (DateTime.Now - whiteSwordTime.Time).TotalMinutes >= interval then
-            if TrackerModel.playerComputedStateSummary.SwordLevel < 2 && TrackerModel.playerComputedStateSummary.PlayerHearts >= 4 then  // player doesn't have white or magic sword, and has at least the minimum 4 hearts to lift the white sword
+            if TrackerModel.mapStateSummary.Sword2Location <> TrackerModel.NOTFOUND && TrackerModel.playerComputedStateSummary.SwordLevel < 2 && TrackerModel.playerComputedStateSummary.PlayerHearts >= 4 then  // player doesn't have white or magic sword, and has at least the minimum 4 hearts to lift the white sword
                 if TrackerModel.sword2Box.PlayerHas() = TrackerModel.PlayerHas.NO then  // not yet obtained
                     RemindSword2()
             whiteSwordTime.SetNow()

@@ -46,6 +46,11 @@ let mutable LegacyMode = false   // startup Legacy Mode: every ZORA Extra is off
 let mutable MarkBombDroppers = false   // Startup Options checkbox: middle-clicking an overworld tile marks it as a bomb dropper screen
 let mutable BootsReplaceBoomerangs = false   // ZORA Extras startup option (behavior still to be decided)
 let mutable BootsRandom = false   // the flags left Boots to chance (a ?): BootsReplaceBoomerangs stays false (boomerangs) until it is confirmed in Overworld + Extras
+let mutable ShuffleMaps = false   // ZORA Extras "Shuffle" startup option: maps can be in other dungeons
+let mutable ShuffleCompasses = false   // ZORA Extras "Shuffle" startup option: compasses can be in other dungeons
+let mutable ShuffleTriforces = false   // ZORA Extras "Shuffle" startup option: triforces can be in other dungeons
+let mutable ShuffleBetweenLevels = false   // "Shuffle Type" startup option: shuffled items stay between levels
+let mutable ShuffleAnywhere = false   // "Shuffle Type" startup option: shuffled items join the main item pool
 let mutable CustomLevelName = ""   // up to 7 chars (uppercase); if non-empty, replaces 'LEVEL-n' in each dungeon map header
 let mutable MirrorOverworld = false
 
@@ -859,6 +864,25 @@ let SetLevel9FloorBoxEnabled(enabled:bool) =
         level9FloorBoxEnabled <- enabled
         level9FloorBoxEnabledChanged.Trigger()
 
+// M/C/Tri Shuffle window: each level row (0-8) has a triforce (slot 0), map (1) and compass (2) found in that level.
+// Each records whether it was collected and which level (0-8) it is for. Level 9 has no triforce.
+let shuffleSlotsChanged = new Event<unit>()
+let shuffleSlotGot : bool[] = Array.zeroCreate 27          // index row*3+slot
+let shuffleSlotChosen : int[] = Array.create 27 -1         // -1 = not chosen
+// the level an item is for: the chosen one, else its own row when that kind is not shuffled, else unknown (-1)
+let ShuffleSlotLevel(row, slot) =
+    let chosen = shuffleSlotChosen.[row*3+slot]
+    let shuffled = match slot with 0 -> ShuffleTriforces | 1 -> ShuffleMaps | _ -> ShuffleCompasses
+    if chosen >= 0 then chosen elif shuffled then -1 else row
+// whether the window has this level's triforce (slot 0) or map (slot 1) collected
+let ShuffleCredits(slot, level) =
+    [0..8] |> List.exists (fun row -> (slot <> 0 || row < 8) && shuffleSlotGot.[row*3+slot] && ShuffleSlotLevel(row,slot) = level)
+let SetShuffleSlot(row, slot, got, level) =
+    shuffleSlotGot.[row*3+slot] <- got
+    shuffleSlotChosen.[row*3+slot] <- level
+    dungeonsAndBoxesLastChangedTime.SetNow()
+    shuffleSlotsChanged.Trigger()
+
 [<RequireQualifiedAccess>]
 type DungeonTrackerInstanceKind =
     | HIDE_DUNGEON_NUMBERS
@@ -976,7 +1000,19 @@ and Dungeon(id,numBoxes) =
     let completedWasNoticedChanged = new Event<_>()
     let mutable priorComplete = false
     let mutable currentlyReentrant = false
+    let mutable shuffleTriforce = id < 8 && ShuffleCredits(0,id)
+    let mutable shuffleMap = ShuffleCredits(1,id)
     do
+        shuffleSlotsChanged.Publish.Add(fun () ->
+            let tri = id < 8 && ShuffleCredits(0,id)
+            if tri <> shuffleTriforce then
+                shuffleTriforce <- tri
+                playerHasTriforceChangeEvent.Trigger(playerHasTriforce || tri)
+            let map = ShuffleCredits(1,id)
+            if map <> shuffleMap then
+                shuffleMap <- map
+                playerHasMapOfThisDungeonChangeEvent.Trigger()
+                playerCanSeeMapOfThisDungeonChangeEvent.Trigger())
         mapSquareChangedStable.Publish.Add(fun (_,key) -> if key=id then hasBeenLocatedChangeEvent.Trigger())
         // atlas watching
         IsCurrentlyBookChanged.Add(fun _ -> playerCanSeeMapOfThisDungeonChangeEvent.Trigger())
@@ -985,12 +1021,15 @@ and Dungeon(id,numBoxes) =
         playerComputedStateSummaryForPlayerHasBookChanged.Publish.Add(fun _ -> playerCanSeeMapOfThisDungeonChangeEvent.Trigger())
     member _this.HasBeenLocated() = mapSquareChoiceDomain.NumUses(id) = 1   // WARNING: this being true does NOT mean TrackerModel.mapStateSummary.DungeonLocations.[i] has a legal (non-NOTFOUND) value
     member _this.HasBeenLocatedChanged = hasBeenLocatedChangeEvent.Publish
-    member this.PlayerHasTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE && b.PlayerHas() = PlayerHas.YES)) || (id=1 && level2StairBoxEnabled && level2StairBox.CellCurrent() = ITEMS.TRIFORCE && level2StairBox.PlayerHas() = PlayerHas.YES)   // (a triforce piece marked as obtained in an item slot counts too)
+    member this.PlayerHasTriforce() = this.PlayerHasOwnTriforce() || (id < 8 && ShuffleCredits(0,id))
+    // without the M/C/Tri Shuffle window's share (what a save records, so the window can still take it back)
+    member this.PlayerHasOwnTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE && b.PlayerHas() = PlayerHas.YES)) || (id=1 && level2StairBoxEnabled && level2StairBox.CellCurrent() = ITEMS.TRIFORCE && level2StairBox.PlayerHas() = PlayerHas.YES)   // (a triforce piece marked as obtained in an item slot counts too)
     member _this.ToggleTriforce() = playerHasTriforce <- not playerHasTriforce; playerHasTriforceChangeEvent.Trigger(playerHasTriforce); dungeonsAndBoxesLastChangedTime.SetNow()
     member _this.PlayerHasTriforceChanged = playerHasTriforceChangeEvent.Publish
-    member _this.PlayerHasMapOfThisDungeon with get() = playerHasMap and set(x) = playerHasMap <- x; playerHasMapOfThisDungeonChangeEvent.Trigger(); playerCanSeeMapOfThisDungeonChangeEvent.Trigger()
+    member _this.PlayerHasMapOfThisDungeon with get() = playerHasMap || ShuffleCredits(1,id) and set(x) = playerHasMap <- x; playerHasMapOfThisDungeonChangeEvent.Trigger(); playerCanSeeMapOfThisDungeonChangeEvent.Trigger()
+    member _this.PlayerHasOwnMap = playerHasMap
     member _this.PlayerHasMapOfThisDungeonChanged = playerHasMapOfThisDungeonChangeEvent.Publish
-    member _this.PlayerCanSeeMapOfThisDungeon = playerHasMap || playerHasAtlas()
+    member this.PlayerCanSeeMapOfThisDungeon = this.PlayerHasMapOfThisDungeon || playerHasAtlas()
     member _this.PlayerCanSeeMapOfThisDungeonChanged = playerCanSeeMapOfThisDungeonChangeEvent.Publish
     member _this.Boxes = 
         match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
@@ -1005,9 +1044,11 @@ and Dungeon(id,numBoxes) =
     member private this.TriforceAndBoxesDone(ignoreHearts:bool) : bool =
         // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
         let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
+        // completion is about the piece found IN this dungeon, not this dungeon's piece turning up elsewhere (M/C/Tri Shuffle window)
+        let pieceFoundHere = this.PlayerHasOwnTriforce() || (id < 8 && shuffleSlotGot.[id*3])
         match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
         | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
-            if this.PlayerHasTriforce() then
+            if pieceFoundHere then
                 let mutable numBoxesDone = 0
                 for b in boxes do
                     if boxDone b then
@@ -1017,7 +1058,7 @@ and Dungeon(id,numBoxes) =
             else
                 false
         | DungeonTrackerInstanceKind.DEFAULT ->
-            this.PlayerHasTriforce() && this.Boxes |> Array.forall boxDone && (not(id=1 && level2StairBoxEnabled && not level9FloorBoxEnabled) || boxDone level2StairBox) && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || boxDone extraFloorBox)   // (the floor item that replaces the triforce only has to be collected if one was recorded)
+            pieceFoundHere && this.Boxes |> Array.forall boxDone && (not(id=1 && level2StairBoxEnabled && not level9FloorBoxEnabled) || boxDone level2StairBox) && (not(this.TriforceIsInItemSlot) || extraFloorBox.CellCurrent() = -1 || boxDone extraFloorBox)   // (the floor item that replaces the triforce only has to be collected if one was recorded)
     // for shading only: the 'Dim dungeon without hearts' option dims a dungeon that is not yet IsComplete
     member this.IsDimmed = this.TriforceAndBoxesDone(TrackerModelOptions.IgnoreHeartsForDungeonDim.Value)
     member this.IsComplete =

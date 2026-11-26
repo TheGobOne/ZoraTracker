@@ -1396,7 +1396,7 @@ public static class CoopSync
     public static string buildTriforceJson()
     {
         var model = new DungeonsTriforceState();
-        model.Triforces = Enumerable.Range(0, 9).Select(i => TrackerModel.GetDungeon(i).PlayerHasTriforce()).ToArray();
+        model.Triforces = Enumerable.Range(0, 9).Select(i => TrackerModel.GetDungeon(i).PlayerHasOwnTriforce()).ToArray();
         return JsonConvert.SerializeObject(model);
     }
     // The overworld quest goes along with the map, so a partner on a different quest can skip it (the tile values mean other things there).
@@ -2024,7 +2024,7 @@ public static class CoopSync
                     d.Triforce = false; // EXCLUDE this value — syncing Triforce separately
                     d.Color = trackerDungeon.Color;
                     d.LabelChar = trackerDungeon.LabelChar.ToString();
-                    d.PlayerHasMap = trackerDungeon.PlayerHasMapOfThisDungeon;
+                    d.PlayerHasMap = trackerDungeon.PlayerHasOwnMap;
                     d.Boxes =
                         trackerDungeon.Boxes.Select(box => toSerializableBox(box)).ToArray();
                     d.ExtraBox = toSerializableBox(trackerDungeon.ExtraFloorBox);   // the dungeon's extra floor item slot (4th Sword)
