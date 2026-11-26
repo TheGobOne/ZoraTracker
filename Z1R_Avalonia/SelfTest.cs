@@ -499,6 +499,9 @@ public static class SelfTest
                     if (d2.Overworld.MirrorOverworld) fail("save round trip: Mirrored Overworld (off) came back on");
                     if (d2.Items.CustomLevelName == null || d2.Items.CustomLevelName != "") fail("save round trip: an empty custom LEVEL name should come back empty, not missing");
                     // M/C/Tri Shuffle window: a triforce collected for another level lights that level only, survives a save, and is not saved as the level's own
+                    var (betweenBefore, anywhereBefore) = (TrackerModel.ShuffleBetweenLevels, TrackerModel.ShuffleAnywhere);
+                    TrackerModel.ShuffleBetweenLevels = false;   // (the preset slots only give credit without Anywhere)
+                    TrackerModel.ShuffleAnywhere = false;
                     var (wasGot, wasChosen) = (TrackerModel.shuffleSlotGot[6], TrackerModel.shuffleSlotChosen[6]);
                     var before = Enumerable.Range(0, 8).Select(i => TrackerModel.GetDungeon(i).PlayerHasTriforce()).ToArray();
                     TrackerModel.SetShuffleSlot(2, 0, true, 4);
@@ -511,6 +514,67 @@ public static class SelfTest
                     SaveAndLoad.ApplyLoadedOptions(dShuf.Overworld);
                     if (!TrackerModel.shuffleSlotGot[6] || TrackerModel.shuffleSlotChosen[6] != 4) fail("shuffle window: the slot did not survive a save round trip");
                     TrackerModel.SetShuffleSlot(2, 0, wasGot, wasChosen);
+                    // Shuffle Type Anywhere: a triforce in a spot tagged for level 5 credits level 5 only, and survives a save with its tag
+                    var spot = TrackerModel.shuffleSlotBoxes[3];
+                    TrackerModel.ShuffleAnywhere = true;
+                    TrackerModel.ApplyShuffleAnywhereCaps();
+                    var told = 0;
+                    var toldHandler = new Microsoft.FSharp.Control.FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => told++);
+                    TrackerModel.shuffleSlotsChanged.Publish.AddHandler(toldHandler);
+                    spot.AttemptToSetForLevel(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.YES, 4);
+                    TrackerModel.shuffleSlotsChanged.Publish.RemoveHandler(toldHandler);
+                    if (told == 0) fail("anywhere: changing a spot did not tell the levels to update");
+                    if (!TrackerModel.ShuffleCredits(0, 4)) fail("anywhere: a triforce spot tagged for level 5 did not credit level 5");
+                    if (TrackerModel.ShuffleCredits(0, 3)) fail("anywhere: a triforce spot tagged for level 5 also credited level 4");
+                    var mapSpot = TrackerModel.shuffleSlotBoxes[4];
+                    var itemSpot = TrackerModel.shuffleSlotBoxes[5];
+                    mapSpot.AttemptToSetForLevel(TrackerModel.ITEMS.MAP, TrackerModel.PlayerHas.YES, 2);
+                    itemSpot.AttemptToSet(TrackerModel.ITEMS.APITEM, TrackerModel.PlayerHas.YES);
+                    if (!TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Contains(itemSpot)) fail("anywhere: an item in a spot does not count as owned");
+                    var dAny = DungeonSaveAndLoad.LoadAll(build(""));
+                    foreach (var b in new[] { spot, mapSpot, itemSpot }) b.Set(-1, TrackerModel.PlayerHas.NO);
+                    SaveAndLoad.ApplyLoadedOptions(dAny.Overworld);
+                    if (!SaveAndLoad.ApplyLoadedShuffleSpots(dAny.Overworld)) fail("anywhere: a saved spot did not load");
+                    if (spot.CellCurrent() != TrackerModel.ITEMS.TRIFORCE || spot.ShuffleLevel != 4 || spot.PlayerHas() != TrackerModel.PlayerHas.YES) fail("anywhere: the spot's triforce and level did not survive a save round trip");
+                    if (!TrackerModel.GetDungeon(4).PlayerHasTriforce()) fail("anywhere: the loaded triforce did not light level 5");
+                    if (!TrackerModel.ShuffleCredits(1, 2)) fail("anywhere: the loaded map did not credit level 3");
+                    if (itemSpot.CellCurrent() != TrackerModel.ITEMS.APITEM || itemSpot.PlayerHas() != TrackerModel.PlayerHas.YES) fail("anywhere: an ordinary item in a spot did not survive a save round trip");
+                    foreach (var b in new[] { spot, mapSpot, itemSpot }) b.Set(-1, TrackerModel.PlayerHas.NO);
+                    // a shop's level 3 map, collected, credits level 3's map only (not its compass, not another level)
+                    TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 2)] = 1;
+                    if (!TrackerModel.ShuffleCredits(1, 2) || TrackerModel.ShuffleCredits(1, 3) || TrackerModel.ShuffleCredits(2, 2)) fail("anywhere: a shop's level 3 map credited the wrong thing");
+                    TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 2)] = 0;
+                    // completion: level 5 needs its boxes, its three spots, and its map and compass (no triforce with Anywhere)
+                    var level5 = TrackerModel.GetDungeon(4);
+                    var boxes5 = level5.Boxes.Concat(TrackerModel.shuffleSlotBoxes.Skip(12).Take(3)).ToArray();
+                    var was5 = boxes5.Select(b => (b.CellCurrent(), b.PlayerHas())).ToArray();
+                    foreach (var b in boxes5) b.Set(TrackerModel.ITEMS.APITEM, TrackerModel.PlayerHas.YES);
+                    TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 4)] = 1;
+                    if (level5.IsComplete) fail("anywhere: a level completed without its compass");
+                    TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(2, 4)] = 1;
+                    if (!level5.IsComplete) fail("anywhere: a level with its items, spots, map and compass did not complete");
+                    TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 4)] = 0;
+                    if (level5.IsComplete && !level5.PlayerHasOwnMap) fail("anywhere: a level completed without its map");
+                    TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(2, 4)] = 0;
+                    // Between Levels: level 5 (items collected, its own triforce) also needs its map and its compass
+                    TrackerModel.ShuffleAnywhere = false;
+                    TrackerModel.ShuffleBetweenLevels = true;
+                    var (compassGot, compassChosen) = (TrackerModel.shuffleSlotGot[14], TrackerModel.shuffleSlotChosen[14]);
+                    var (hadTri, hadMap) = (level5.PlayerHasOwnTriforce(), level5.PlayerHasOwnMap);
+                    if (!hadTri) level5.ToggleTriforce();
+                    level5.PlayerHasMapOfThisDungeon = true;
+                    TrackerModel.SetShuffleSlot(4, 2, false, -1);
+                    if (level5.IsComplete) fail("between levels: a level completed without its compass");
+                    TrackerModel.SetShuffleSlot(4, 2, true, 4);
+                    if (!level5.IsComplete) fail("between levels: a level with its items, triforce, map and compass did not complete");
+                    TrackerModel.SetShuffleSlot(4, 2, compassGot, compassChosen);
+                    level5.PlayerHasMapOfThisDungeon = hadMap;
+                    if (!hadTri) level5.ToggleTriforce();
+                    for (var k = 0; k < boxes5.Length; k++) boxes5[k].Set(was5[k].Item1, was5[k].Item2);
+                    TrackerModel.ShuffleBetweenLevels = betweenBefore;
+                    TrackerModel.ShuffleAnywhere = anywhereBefore;
+                    TrackerModel.ApplyShuffleAnywhereCaps();
+                    TrackerModel.ApplyShuffleAnywhereCaps();
                     // 4th Sword: its two slots (level 2 staircase / level 9 floor check) say whether it was on, and where
                     foreach (var (l2, l9) in new[] { (false, false), (true, false), (false, true) })
                     {

@@ -27,6 +27,7 @@ type Overworld() =
     member val ProgressiveItems = -1 with get,set   // 0 = Off, 1 = On; -1 = older save: keep what the start screen chose
     member val Shuffle = 0 with get,set   // bit 0 = maps, bit 1 = compasses, bit 2 = triforces can be in other dungeons; Shuffle Type: bit 3 = Between Levels, bit 4 = Anywhere (older saves: 0, none)
     member val ShuffleSlots : string = null with get,set   // M/C/Tri Shuffle window: 27 "collected,level" pairs split by ';' (null = older save: none)
+    member val ShuffleSpots : string = null with get,set   // Shuffle Type Anywhere: 27 "item,playerHas,level" triples split by ';' (null = older save: no spots)
     member val DeadWoodsHint : string = null with get,set   // the letters typed into the Dead Woods / Lost Hills hint buttons (null = older save)
     member val LostHillsHint : string = null with get,set
 
@@ -253,6 +254,8 @@ let SaveOverworld(prefix) =
     lines.Add(sprintf """    "Shuffle": %d,""" ((if TrackerModel.ShuffleMaps then 1 else 0) + (if TrackerModel.ShuffleCompasses then 2 else 0) + (if TrackerModel.ShuffleTriforces then 4 else 0) + (if TrackerModel.ShuffleBetweenLevels then 8 else 0) + (if TrackerModel.ShuffleAnywhere then 16 else 0)))
     let shuffleSlots = [ for k in 0..26 -> sprintf "%d,%d" (if TrackerModel.shuffleSlotGot.[k] then 1 else 0) TrackerModel.shuffleSlotChosen.[k] ] |> String.concat ";"
     lines.Add(sprintf """    "ShuffleSlots": "%s",""" shuffleSlots)
+    let shuffleSpots = [ for b in TrackerModel.shuffleSlotBoxes -> sprintf "%d,%d,%d" (b.CellCurrent()) (b.PlayerHas().AsInt()) b.ShuffleLevel ] |> String.concat ";"
+    lines.Add(sprintf """    "ShuffleSpots": "%s",""" shuffleSpots)
     let cleanHint (s:string) = (if isNull s then "" else s).Replace("\\", "").Replace("\"", "")
     lines.Add(sprintf """    "DeadWoodsHint": "%s",""" (cleanHint OverworldData.DeadWoodsHint))
     lines.Add(sprintf """    "LostHillsHint": "%s",""" (cleanHint OverworldData.LostHillsHint))
@@ -506,6 +509,7 @@ let ApplyLoadedOptions(ow:Overworld) =
                     | [| g; l |] -> g = "1", (match System.Int32.TryParse(l) with | true, v when v >= 0 && v <= 8 -> v | _ -> -1)
                     | _ -> false, -1
                 TrackerModel.SetShuffleSlot(k/3, k%3, got, level)
+        TrackerModel.ApplyShuffleAnywhereCaps()
         if ow.ExtraBlocks >= 0 then
             OverworldData.ExtraPBBlocks <- (ow.ExtraBlocks &&& 1) <> 0
             OverworldData.ExtraRaftBlocks <- (ow.ExtraBlocks &&& 2) <> 0
@@ -523,6 +527,24 @@ let ApplyLoadedOptions(ow:Overworld) =
         if not (isNull ow.LostHillsHint) then
             OverworldData.LostHillsHint <- ow.LostHillsHint
             OverworldData.LostHillsHintKnown <- (ow.LostHillsHint <> "")
+
+/// Shuffle Type Anywhere: puts back the shuffle window's spots (blank when the save has none) and the level each triforce / map / compass
+/// is for. Call after the item boxes and their use caps are in place. False when a spot's item did not fit.
+let ApplyLoadedShuffleSpots(ow:Overworld) =
+    let mutable ok = true
+    if not (isNull ow) then
+        for spot in TrackerModel.shuffleSlotBoxes do
+            spot.Set(-1, TrackerModel.PlayerHas.NO)
+        let saved = if isNull ow.ShuffleSpots then [||] else ow.ShuffleSpots.Split(';')
+        for k in 0..26 do
+            match (if k < saved.Length then saved.[k].Split(',') else [||]) with
+            | [| c; ph; l |] ->
+                let cell = match System.Int32.TryParse(c) with | true, v -> v | _ -> -1
+                let has = match System.Int32.TryParse(ph) with | true, v when v >= 0 && v <= 2 -> TrackerModel.PlayerHas.FromInt v | _ -> TrackerModel.PlayerHas.NO
+                let level = match System.Int32.TryParse(l) with | true, v when v >= -1 && v <= 8 -> v | _ -> -1
+                if not (TrackerModel.shuffleSlotBoxes.[k].AttemptToSetForLevel(cell, has, level)) then ok <- false
+            | _ -> ()
+    ok
 
 /// Whether the 4th Sword start option was on in a loaded save: the level 2 staircase slot or the level 9 floor check is only enabled by it (older saves predate the option: nothing is restricted)
 let FourthSwordWasOn(items:Items) =

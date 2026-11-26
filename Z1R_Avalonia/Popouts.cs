@@ -430,6 +430,11 @@ public static class Popouts
 
     // the M/C/Tri Shuffle window: one row per level with the triforce, map and compass found there (each marked with the
     // level it is for), then that level's item boxes (the same boxes as the main tracker's)
+    public static string shuffleLevelName(int level) => level < 0 ? "?" : level < 8 && TrackerModel.IsHiddenDungeonNumbers.Invoke(null) ? ((char)('A' + level)).ToString() : (level + 1).ToString();
+    // the small tag naming the level a spot's triforce / map / compass is for
+    public static Control shuffleLevelTag(int level) =>
+        new Border { Background = Brushes.Black, Child = new TextBlock { Text = shuffleLevelName(level), FontSize = 11.0, FontWeight = FontWeight.Bold, Foreground = Brushes.White } };
+
     public static Control shuffleItemsContent(Window w)
     {
         var rows = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Black, Margin = new Thickness(6.0) };   // holds the columns of levels
@@ -448,6 +453,25 @@ public static class Popouts
         TextBox text(string s, double size) => new TextBox { Text = s, FontSize = size, FontWeight = FontWeight.Bold, IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0),
                                                            Foreground = Brushes.Orange, Background = Brushes.Black, MinWidth = 0.0, MinHeight = 0.0, Padding = new Thickness(0.0), VerticalAlignment = VerticalAlignment.Center };
         string levelName(int level) => level < 8 && TrackerModel.IsHiddenDungeonNumbers.Invoke(null) ? ((char)('A' + level)).ToString() : (level + 1).ToString();
+        // the levels to choose from (no "?"), as the slot menus show them
+        Control levelStrip(int count, Action<int> picked)
+        {
+            var sp = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Black };
+            for (var n = 0; n < count; n++)
+            {
+                var pick = n;
+                var label = new TextBlock { Text = levelName(pick), FontSize = 16.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, HorizontalAlignment = HorizontalAlignment.Center };
+                var b = new Button { Template = Graphics.roundedButtonTemplate, Content = label, MinWidth = 32.0, Margin = new Thickness(2.0), Padding = new Thickness(6.0, 4.0),
+                                     Focusable = false, Background = Graphics.almostBlack, BorderBrush = Graphics.roundedBorderBrush };
+                b.Click += (_, _) => picked(pick);
+                sp.Children.Add(b);
+            }
+            return sp;
+        }
+        // a triforce / map / compass placed in a spot: asks which level it is for (triforce 1-8, map and compass 1-9), and
+        // marks it collected (these are marked as they are picked up)
+        void pickLevel(Control at, int id, TrackerModel.Box box) =>
+            showMenu(at, done => levelStrip(id == TrackerModel.ITEMS.TRIFORCE ? 8 : 9, lvl => done(() => box.AttemptToSetForLevel(id, TrackerModel.PlayerHas.YES, lvl))));
         Control slotBox(int row, int slot)
         {
             var c = new Canvas { Width = 30.0, Height = 30.0, Background = Brushes.Black };
@@ -492,22 +516,34 @@ public static class Popouts
         Control itemBox(TrackerModel.Box box)
         {
             var (view, _) = Views.MakeBoxItemWithExtraDecorations(null, box, false, null);   // (draws and redraws; the clicks are below)
+            // a spot (Shuffle Type Anywhere) takes any item, a triforce / map / compass included; a dungeon's own box never takes those three
+            var isSpot = TrackerModel.shuffleSlotBoxes.Contains(box);
+            bool allowed(int id) => isSpot || !TrackerModel.ITEMS.isShuffleItem(id);
             void pickItem() => showMenu(view, done =>
             {
                 var extra = (TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER } : new int[0])
-                                .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k));
+                                .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k))
+                                .Concat(new[] { TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS });   // (only this window offers them: spots, Shuffle Type Anywhere)
                 var items = CustomComboBoxes.itemMenuIdents.Concat(extra)
-                    .Where(id => id == -1 || (id != TrackerModel.ITEMS.TRIFORCE && !TrackerModel.progressiveDisabledIdent(id) && (id == box.CellCurrent() || box.Domain.CanAddUse(id))))
+                    .Where(id => id != -1 && allowed(id) && !TrackerModel.progressiveDisabledIdent(id) && (id == box.CellCurrent() || box.Domain.CanAddUse(id)))
+                    .Concat(new[] { -1 })   // (the clear button comes last)
                     .Select(id =>
                     {
-                        Control icon = id == -1 ? new TextBlock { Text = "X", FontSize = 16.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, HorizontalAlignment = HorizontalAlignment.Center }
+                        Control icon = id == -1 ? new TextBlock { Text = "X", FontSize = 24.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Red, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
                                                 : Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(id, null));
                         return (id, icon);
                     }).ToList();
-                return PieMenus.makeItemPickerBox(items, 5, id =>
+                var picker = PieMenus.makeItemPickerBox(items, 5, id =>
                 {
-                    done(() => { if (id != box.CellCurrent()) box.AttemptToSet(id, TrackerModel.PlayerHas.NO); });
+                    done(() =>
+                    {
+                        if (isSpot && TrackerModel.ITEMS.isShuffleItem(id)) pickLevel(view, id, box);
+                        else if (id != box.CellCurrent()) box.AttemptToSet(id, TrackerModel.PlayerHas.NO);
+                    });
                 });
+                var grid = (Avalonia.Controls.Primitives.UniformGrid)picker.Child;
+                while (grid.Children.Count % 5 != 0) grid.Children.Insert(grid.Children.Count - 1, new Control());   // (blanks, so the X ends the bottom row)
+                return picker;
             });
             view.PointerPressed += (_, ea) =>
             {
@@ -543,7 +579,8 @@ public static class Popouts
                 label.Width = 80.0;
                 line.Children.Add(label);
                 var boxes = new List<Control>();
-                for (var slot = row < 8 ? 0 : 1; slot <= 2; slot++) boxes.Add(slotBox(row, slot));
+                if (TrackerModel.ShuffleAnywhere) for (var slot = 0; slot <= 2; slot++) boxes.Add(itemBox(TrackerModel.shuffleSlotBoxes[row * 3 + slot]));
+                else for (var slot = row < 8 ? 0 : 1; slot <= 2; slot++) boxes.Add(slotBox(row, slot));
                 var d = TrackerModel.GetDungeon(row);
                 foreach (var box in d.Boxes) boxes.Add(itemBox(box));
                 if (row == 1 && TrackerModel.level2StairBoxEnabled) boxes.Add(itemBox(TrackerModel.level2StairBox));

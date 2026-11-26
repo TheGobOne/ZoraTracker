@@ -1583,7 +1583,12 @@ public static class OverworldMapTileCustomization
             foreach (var i in new[] { 9, 10, 11, 12, 13, 14, 15, 30, 31 })
             {
                 // the letter uses the same icon as the item menus, and dims once the letter has been collected
-                var icon = i == 30 ? Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.LETTER, null)) : Graphics.BMPtoImage(new MapStateProxy(i).DefaultInteriorBmp());
+                // (Use old sword icons: the plain sword pictures, as in the overworld tile menu)
+                var oldSword = !TrackerModelOptions.UseOldSwordIcons.Value ? null
+                    : i == TrackerModel.MapSquareChoiceDomainHelper.SWORD1 ? Graphics.ow_sword1_menu_bmp
+                    : i == TrackerModel.MapSquareChoiceDomainHelper.SWORD2 ? Graphics.ow_sword2_menu_bmp
+                    : i == TrackerModel.MapSquareChoiceDomainHelper.SWORD3 ? Graphics.ow_sword3_menu_bmp : null;
+                var icon = i == 30 ? Graphics.BMPtoImage(CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.LETTER, null)) : Graphics.BMPtoImage(oldSword ?? new MapStateProxy(i).DefaultInteriorBmp());
                 if (!(TrackerModel.mapSquareChoiceDomain.CanAddUse(i)) || (i == 30 && letterCollected) || swordCollected(i))
                     icon.Opacity = OPA;
                 var bi = new Border { Child = icon, BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Black };   // (thinner black border than the count cells, to keep the row narrower)

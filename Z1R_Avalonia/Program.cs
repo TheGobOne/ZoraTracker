@@ -2132,16 +2132,16 @@ public static class Program
                 cb.IsChecked = false;
                 return cb;
             }
-            var shufMapsCB = makeShuffleCheckBox("Maps");
-            var shufCompCB = makeShuffleCheckBox("Compasses");
+            var shufMapsCB = makeShuffleCheckBox("Maps/Compasses");   // (one ZORA setting for both)
             var shufTriCB = makeShuffleCheckBox("Triforces");
-            var shuffleTop = new StackPanel { Orientation = Orientation.Horizontal };
-            shuffleTop.Children.Add(new TextBox { Text = "Shuffle:", IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2.0, 0.0, 6.0, 0.0) });
-            foreach (var cb in new[] { shufMapsCB, shufCompCB }) shuffleTop.Children.Add(cb);
+            // each block: its heading centered and underlined on a row of its own, the choices on the row below
+            TextBlock shuffleHeading(string s) => new TextBlock { Text = s, FontWeight = FontWeight.Bold, TextDecorations = TextDecorations.Underline, Foreground = Brushes.Orange, HorizontalAlignment = HorizontalAlignment.Center };
+            var shuffleOptions = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (var cb in new[] { shufMapsCB, shufTriCB }) shuffleOptions.Children.Add(cb);
             var shuffleRow = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.Transparent };
-            shuffleRow.Children.Add(shuffleTop);
-            shuffleRow.Children.Add(shufTriCB);   // second row, under "Shuffle:": one row is too wide for the card
-            shuffleRow.PointerEntered += (_, _) => hoverExplain(shuffleRow, "ZORA can shuffle these between dungeons.\nCheck the ones your seed shuffles: maps, compasses, triforces.");
+            shuffleRow.Children.Add(shuffleHeading("Shuffle"));
+            shuffleRow.Children.Add(shuffleOptions);
+            shuffleRow.PointerEntered += (_, _) => hoverExplain(shuffleRow, "ZORA can shuffle these between dungeons.\nCheck the ones your seed shuffles: maps and compasses, triforces.");
             shuffleRow.PointerExited += (_, _) => explainHide();
             // divider between Progressive Items and the shuffle options
             // (a StackPanel with spacers above and below the line: plainRows overwrites the margin of the item itself, and blanks every Border)
@@ -2156,9 +2156,8 @@ public static class Program
             var shufTypeAnywhereCB = makeShuffleCheckBox("Anywhere");
             Graphics.onChecked(shufTypeBetweenCB, () => shufTypeAnywhereCB.IsChecked = false);
             Graphics.onChecked(shufTypeAnywhereCB, () => shufTypeBetweenCB.IsChecked = false);
-            var shufTypeHeader = new TextBox { Text = "Shuffle Type:", IsReadOnly = true, IsHitTestVisible = false, BorderThickness = new Thickness(0.0), FontWeight = FontWeight.Bold, Margin = new Thickness(2.0, 0.0, 6.0, 0.0) };
             var shuffleTypeRow = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.Transparent };
-            shuffleTypeRow.Children.Add(shufTypeHeader);
+            shuffleTypeRow.Children.Add(shuffleHeading("Shuffle Type"));
             var shufTypeOptions = new StackPanel { Orientation = Orientation.Horizontal };
             shufTypeOptions.Children.Add(shufTypeBetweenCB);
             shufTypeOptions.Children.Add(shufTypeAnywhereCB);
@@ -2168,7 +2167,7 @@ public static class Program
             extrasSP.Children.Add(new DockPanel { Width = 10.0 });
             extrasSP.Children.Add(shuffleTypeRow);
             // the 'ZORA Extras' master checkbox
-            var extrasCheckBoxes = new List<CheckBox> { fscb, clncb, brcb, epbcb, erbcb, dwcb, lhcb, pricb, shufMapsCB, shufCompCB, shufTriCB, shufTypeBetweenCB, shufTypeAnywhereCB };
+            var extrasCheckBoxes = new List<CheckBox> { fscb, clncb, brcb, epbcb, erbcb, dwcb, lhcb, pricb, shufMapsCB, shufTriCB, shufTypeBetweenCB, shufTypeAnywhereCB };
             var settingExtras = false;
             bool isOn(CheckBox cb) => cb.IsChecked == true;
             // the 4th Sword needs Progressive Items (the other way round is fine): checking 4th Sword checks it, and it can't be unchecked while 4th Sword is on
@@ -2217,7 +2216,7 @@ public static class Program
             Graphics.onUnchecked(lmcb, () => applyLegacyMode());
             // 'Remember startup selection' (Other options): bring back the checkboxes that were checked when the last game was started
             var rememberedCheckBoxes = new List<(string, CheckBox)> {
-                ("legacy", lmcb), ("hdn", hdcb), ("mirror", mocb), ("bomb", mbcb), ("4th", fscb), ("cln", clncb), ("boots", brcb), ("epb", epbcb), ("erb", erbcb), ("dw", dwcb), ("lh", lhcb), ("prog", pricb), ("shufmap", shufMapsCB), ("shufcomp", shufCompCB), ("shuftri", shufTriCB), ("shufbetween", shufTypeBetweenCB), ("shufanywhere", shufTypeAnywhereCB) };
+                ("legacy", lmcb), ("hdn", hdcb), ("mirror", mocb), ("bomb", mbcb), ("4th", fscb), ("cln", clncb), ("boots", brcb), ("epb", epbcb), ("erb", erbcb), ("dw", dwcb), ("lh", lhcb), ("prog", pricb), ("shufmap", shufMapsCB), ("shuftri", shufTriCB), ("shufbetween", shufTypeBetweenCB), ("shufanywhere", shufTypeAnywhereCB) };
             // the co-op host's start screen choices, when a partner has already started (see CoopSync.StartupOptions); the quest button is highlighted further down
             var coopOptionsNote = new TextBox { IsReadOnly = true, IsVisible = false, Padding = new Thickness(5.0, 2.0), Width = WIDTH_SANS_CHROME - 60.0, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
                                                 Foreground = Brushes.LimeGreen, Background = Brushes.Black, BorderBrush = Brushes.LimeGreen, BorderThickness = new Thickness(1.0) };
@@ -2427,10 +2426,11 @@ public static class Program
                 TrackerModel.MarkBombDroppers = mbcb.IsChecked == true;
                 TrackerModel.ProgressiveItems = pricb.IsChecked == true;
                 TrackerModel.ShuffleMaps = shufMapsCB.IsChecked == true;
-                TrackerModel.ShuffleCompasses = shufCompCB.IsChecked == true;
+                TrackerModel.ShuffleCompasses = shufMapsCB.IsChecked == true;
                 TrackerModel.ShuffleTriforces = shufTriCB.IsChecked == true;
                 TrackerModel.ShuffleBetweenLevels = shufTypeBetweenCB.IsChecked == true;
                 TrackerModel.ShuffleAnywhere = shufTypeAnywhereCB.IsChecked == true;
+                TrackerModel.ApplyShuffleAnywhereCaps();
                 // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
                 if (loadData != null) SaveAndLoad.ApplyLoadedOptions(loadData.Overworld);
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
@@ -2506,12 +2506,18 @@ public static class Program
                 Graphics.canvasAdd(hmsTimerCanvas, OverworldItemGridUI.niceTimerBox, Layout.PANEL_X1 - 13.0, 0.0);   // 'Nice timer bro' shows here while the timer is hidden
                 OverworldItemGridUI.niceTimerBox.Opacity = (OverworldItemGridUI.SHOW_NICE_TIMER_BRO && TrackerModelOptions.HideTimer.Value ? 1.0 : 0.0);   // (WPF: Visibility Visible / Hidden)
                 OptionsMenu.triggerHideTimerChanged();   // (apply the saved Hide Timer setting: the startup patch-up trigger fires before these timer boxes exist and so listens to nothing)
-                // Race Mode notice: once the app is up, tell the user what Race Mode does (unless they ticked "Do not show this again")
-                if (TrackerModelOptions.RaceMode.Value && !TrackerModelOptions.RaceModeNoticeHidden.Value)
+                // Startup notices, one after the other: Race Mode (unless ticked "Do not show this again"), then the Shuffle popout reminder while maps/compasses or triforces are shuffled
+                bool showRaceNotice = TrackerModelOptions.RaceMode.Value && !TrackerModelOptions.RaceModeNoticeHidden.Value;
+                bool showShuffle = TrackerModel.ShuffleMaps || TrackerModel.ShuffleCompasses || TrackerModel.ShuffleTriforces;
+                if (showRaceNotice || showShuffle)
                 {
-                    void showRaceNotice() => WPFUI.showRaceModeNotice(this);
                     var noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400.0) };   // (one-shot: lets startup finish first)
-                    noticeTimer.Tick += (_, _) => { noticeTimer.Stop(); showRaceNotice(); };
+                    noticeTimer.Tick += (_, _) =>
+                    {
+                        noticeTimer.Stop();
+                        if (showRaceNotice) WPFUI.showRaceModeNotice(this);
+                        if (showShuffle) WPFUI.showShuffleNotice(this);
+                    };
                     noticeTimer.Start();
                 }
                 gotThruStartup = true;
@@ -2558,6 +2564,22 @@ public static class Program
             void startButtonBehavior(int n)
             {
                 if (startButtonHasBeenClicked) return;
+                // a new run that shuffles maps/compasses or triforces needs a Shuffle Type (a loaded save, 999, brings back its own)
+                // (headless test runs have nobody to click OK)
+                if (n != 999 && !SelfTest.isSelfTest && !CoopTest.isActive && (isOn(shufMapsCB) || isOn(shufTriCB)) && !isOn(shufTypeBetweenCB) && !isOn(shufTypeAnywhereCB))
+                {
+                    async Task askForShuffleType()
+                    {
+                        startButtonHasBeenClicked = true;   // (no second box from another Start while this one is up)
+                        var popupWasActive = popupIsActive;
+                        popupIsActive = true;
+                        _ = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, "Shuffle is on: pick a Shuffle Type\n(Between Levels or Anywhere) before starting.", new[] { "OK" });
+                        if (!popupWasActive) popupIsActive = false;
+                        startButtonHasBeenClicked = false;
+                    }
+                    CustomComboBoxes.StartImmediate(askForShuffleType());
+                    return;
+                }
                 startButtonHasBeenClicked = true;
                 explainHide();
                 turnHeartShuffleOn();  // To draw the display, I have been interacting with the global ChoiceDomain for items.  This switches all the boxes back to empty, 'zeroing out' what we did.
@@ -3116,8 +3138,7 @@ public static class Program
                             if (z.ShuffleMapsCompasses == FlagPaste.Tri.Random) lines.Add("Random (?): Shuffle Maps and Compasses, left as they were");
                             else
                             {
-                                setTri(shufMapsCB, z.ShuffleMapsCompasses, "Shuffle Maps");
-                                setTri(shufCompCB, z.ShuffleMapsCompasses, "Shuffle Compasses");
+                                setTri(shufMapsCB, z.ShuffleMapsCompasses, "Shuffle Maps/Compasses");
                             }
                         }
                     }

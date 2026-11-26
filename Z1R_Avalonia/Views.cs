@@ -691,6 +691,7 @@ public static class Views
                     canvasAdd(innerc, image, 4.0, 4.0);
                 }
                 if (itemIsHintDashed(box.CellCurrent())) canvasAdd(innerc, makeHintDashedRect(26.0, 26.0), 2.0, 2.0);
+                if (box.ShuffleLevel >= 0) canvasAdd(innerc, Popouts.shuffleLevelTag(box.ShuffleLevel), 19.0, 15.0);   // (a spot's level, see the M/C/Tri Shuffle window)
             }
             // redraw box outline
             switch (box.PlayerHas().Tag)

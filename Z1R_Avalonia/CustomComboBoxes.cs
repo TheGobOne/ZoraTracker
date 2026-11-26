@@ -170,6 +170,8 @@ public static class CustomComboBoxes
             case 46: return Graphics.ap_item_bmp;   // the AP Item: red, progression
             case 47: return Graphics.ap_item_blue_bmp;   // blue, useful
             case 48: return Graphics.ap_item_white_bmp;   // white, filler
+            case 49: return Graphics.map_item_bmp;
+            case 50: return Graphics.compass_item_bmp;
             default:
                 if (timelineOrigin != null)
                 {

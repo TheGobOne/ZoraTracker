@@ -1505,18 +1505,20 @@ public static class Graphics
         return r;
     }
     // triforce piece icon (the item-sheet triforce, centered in a 21x21 cell)
-    private static System.Drawing.Bitmap make_triforce_item_bmp()
+    private static System.Drawing.Bitmap make_sheet_item_bmp(System.Drawing.Bitmap source)
     {
         var r = new System.Drawing.Bitmap(21, 21);
         for (int px = 0; px <= 15; px++)
             for (int py = 0; py <= 15; py++)
             {
-                var c = zi_triforce_bmp.GetPixel(px + 1, py + 1);
+                var c = source.GetPixel(px + 1, py + 1);
                 if (c.ToArgb() != System.Drawing.Color.Black.ToArgb()) r.SetPixel(px + 2, py + 2, c);
             }
         return r;
     }
-    public static readonly System.Drawing.Bitmap triforce_item_bmp = make_triforce_item_bmp();
+    public static readonly System.Drawing.Bitmap triforce_item_bmp = make_sheet_item_bmp(zi_triforce_bmp);
+    public static readonly System.Drawing.Bitmap map_item_bmp = make_sheet_item_bmp(zi_map_bmp);
+    public static readonly System.Drawing.Bitmap compass_item_bmp = make_sheet_item_bmp(zi_compass_bmp);
     // magical key (the NES magic key sprite: orange ring-head, red shading, short toothed shaft)
     public static readonly System.Drawing.Bitmap magic_key_bmp =
         makeSprite7x7(new[] { "..ooo..",

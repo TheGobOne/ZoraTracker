@@ -271,6 +271,8 @@ module ITEMS =
         // the AP Item in two more kinds (ids 47 and 48), so players can tell what kind it is: red = progression (46), blue = useful (47), white = filler (48)
         "APItemUseful" , 1000
         "APItemFiller" , 1000
+        "ShuffleMap" , 0   // 49: a dungeon map placed in a M/C/Tri Shuffle spot (Shuffle Type Anywhere only; 0 uses until ApplyShuffleAnywhereCaps)
+        "ShuffleCompass" , 0   // 50: a compass placed in a M/C/Tri Shuffle spot (same)
         |]
     let NumBuiltIn = 30
     let CUSTOM_BASE = 30
@@ -279,6 +281,8 @@ module ITEMS =
     let APITEM_USEFUL = APITEM + 1   // 47 (blue)
     let APITEM_FILLER = APITEM + 2   // 48 (white)
     let isApItem (id:int) = id >= APITEM && id <= APITEM_FILLER
+    let MAP = APITEM_FILLER + 1   // 49
+    let COMPASS = APITEM_FILLER + 2   // 50
     let customNames : string[] = Array.init CUSTOM_COUNT (fun i -> sprintf "Custom icon %d" (i+1))
     let mutable customMenuCount = 0   // how many custom icons the menus currently offer (0 when the option is off)
     let BOOKSHIELD = 0
@@ -311,6 +315,7 @@ module ITEMS =
     let OLDKEY = 27
     let BOMBUPGRADE = 28
     let TRIFORCE = 29
+    let isShuffleItem (id:int) = id = TRIFORCE || id = MAP || id = COMPASS   // the items a M/C/Tri Shuffle spot can hold for a chosen level
     let PriorityOrderForRemainingDisplay = [| BOW; SILVERARROW; LADDER; RECORDER; POWERBRACELET; RAFT; WAND; REDRING; KEY; WHITESWORD; BOOKSHIELD; REDCANDLE; MAGICBOOMERANG; BOOMERANG |]
     let AsPronounceString(n) =
         match n with
@@ -348,6 +353,8 @@ module ITEMS =
         | 46 -> "AP Item (progression)"
         | 47 -> "AP Item (useful)"
         | 48 -> "AP Item (filler)"
+        | 49 -> "map"
+        | 50 -> "compass"
         | _ -> failwith "bad ITEMS id"
     let AsHotKeyName(n) =
         if n>=0 && n<itemNamesAndCounts.Length then
@@ -390,6 +397,8 @@ module ITEMS =
         | 46 -> "AP Item (progression)"
         | 47 -> "AP Item (useful)"
         | 48 -> "AP Item (filler)"
+        | 49 -> "Map"
+        | 50 -> "Compass"
         | _ -> failwith "bad ITEMS id"
 let allItemWithHeartShuffleChoiceDomain = ChoiceDomain("allItemsWithHeartShuffle", ITEMS.itemNamesAndCounts |> Array.map snd)
 
@@ -769,7 +778,9 @@ type Box(stair:StairKind, owner, domain:ChoiceDomain) =
     let mutable playerHas = PlayerHas.NO
     let mutable lockedItem = -1   // Legacy Mode: the letter / magical sword boxes keep their item; it can be collected or uncollected, but never removed or swapped
     let changed = new Event<_>()
+    let mutable shuffleLevel = -1   // Shuffle Type Anywhere: the level a triforce / map / compass in this box is for (-1 = not tagged; any change to the box clears it)
     member _this.Changed = changed.Publish
+    member _this.ShuffleLevel with get() = shuffleLevel and set(v:int) = shuffleLevel <- v
     member _this.LockedItem with get() = lockedItem and set(v:int) = lockedItem <- v
     member _this.PlayerHas() = playerHas           // note that the state (cell = -1, playerHas = SKIPPED) is used to mean 'white-highlighted box' in the UI
     member this.IsEmptyRedBox = this.PlayerHas() = PlayerHas.NO && this.CellCurrent() = -1
@@ -808,24 +819,36 @@ type Box(stair:StairKind, owner, domain:ChoiceDomain) =
     member _this.CellPrev() = 
       if lockedItem = -1 then
         cell.Prev()
+        shuffleLevel <- -1
         dungeonsAndBoxesLastChangedTime.SetNow()
         changed.Trigger()
     member _this.CellNext() = 
       if lockedItem = -1 then
         cell.Next()
+        shuffleLevel <- -1
         dungeonsAndBoxesLastChangedTime.SetNow()
         changed.Trigger()
     member _this.CellCurrent() = cell.Current()
     member _this.Set(v,ph) = 
         let (v, ph) = if lockedItem <> -1 then (lockedItem, (if ph = PlayerHas.YES then PlayerHas.YES else PlayerHas.NO)) else (v, ph)
         cell.Set(v)
+        shuffleLevel <- -1
         playerHas <- ph
         dungeonsAndBoxesLastChangedTime.SetNow()
         changed.Trigger()
     member _this.AttemptToSet(v,ph) = 
         if (lockedItem = -1 || v = lockedItem) && cell.AttemptToSet(v) then
+            shuffleLevel <- -1
             playerHas <- ph
             dungeonsAndBoxesLastChangedTime.SetNow()
+            changed.Trigger()
+            true
+        else
+            false
+    // as AttemptToSet, then tags the item with the level it is for (Shuffle Type Anywhere)
+    member _this.AttemptToSetForLevel(v,ph,level:int) =
+        if _this.AttemptToSet(v,ph) then
+            shuffleLevel <- level
             changed.Trigger()
             true
         else
@@ -867,16 +890,37 @@ let SetLevel9FloorBoxEnabled(enabled:bool) =
 // M/C/Tri Shuffle window: each level row (0-8) has a triforce (slot 0), map (1) and compass (2) found in that level.
 // Each records whether it was collected and which level (0-8) it is for. Level 9 has no triforce.
 let shuffleSlotsChanged = new Event<unit>()
+// how many marker icons of each kind are checked off as 'collected' on the overworld map (index = item id); these count as owning the item
+let mapCollectedCount : int[] = Array.zeroCreate 128
+// a triforce / map / compass for one level as an overworld marker icon (a shop can sell them with Between Levels / Anywhere). The level is part
+// of the id, so it travels with the tile: 51-58 triforces of levels 1-8, 59-67 maps of levels 1-9, 68-76 compasses (slot: 0, 1, 2)
+let shuffleMarker(slot:int, level:int) = (match slot with 0 -> 51 | 1 -> 59 | _ -> 68) + level
+let isShuffleMarker(ident:int) = ident >= 51 && ident <= 76
+let shuffleMarkerSlot(ident:int) = if ident < 59 then 0 elif ident < 68 then 1 else 2
+let shuffleMarkerLevel(ident:int) = ident - shuffleMarker(shuffleMarkerSlot(ident), 0)
 let shuffleSlotGot : bool[] = Array.zeroCreate 27          // index row*3+slot
 let shuffleSlotChosen : int[] = Array.create 27 -1         // -1 = not chosen
+// Shuffle Type Anywhere: the window's three spots per level are item boxes that can hold any item (index row*3+slot; level 9's triforce spot is a plain box too)
+let shuffleSlotBoxes : Box[] = Array.init 27 (fun _ -> Box(StairKind.Never, BoxOwner.None))
+for b in shuffleSlotBoxes do
+    b.Changed.Add(fun _ -> shuffleSlotsChanged.Trigger())   // so the levels' triforce / map marks and the window follow the spots
+// Anywhere allows a map or compass only through the window's spots: 9 of each
+let ApplyShuffleAnywhereCaps() =
+    for id in [ ITEMS.MAP; ITEMS.COMPASS ] do
+        allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, (if ShuffleAnywhere then 9 else 0))
 // the level an item is for: the chosen one, else its own row when that kind is not shuffled, else unknown (-1)
 let ShuffleSlotLevel(row, slot) =
     let chosen = shuffleSlotChosen.[row*3+slot]
     let shuffled = match slot with 0 -> ShuffleTriforces | 1 -> ShuffleMaps | _ -> ShuffleCompasses
     if chosen >= 0 then chosen elif shuffled then -1 else row
-// whether the window has this level's triforce (slot 0) or map (slot 1) collected
+// whether this level's triforce (slot 0), map (1) or compass (2) has been collected: in the window, or from a shop's marker icon
 let ShuffleCredits(slot, level) =
-    [0..8] |> List.exists (fun row -> (slot <> 0 || row < 8) && shuffleSlotGot.[row*3+slot] && ShuffleSlotLevel(row,slot) = level)
+    ((slot <> 0 || level < 8) && mapCollectedCount.[shuffleMarker(slot, level)] > 0)
+    || (if ShuffleAnywhere then
+            let item = match slot with 0 -> ITEMS.TRIFORCE | 1 -> ITEMS.MAP | _ -> ITEMS.COMPASS
+            shuffleSlotBoxes |> Array.exists (fun b -> b.CellCurrent() = item && b.PlayerHas() = PlayerHas.YES && b.ShuffleLevel = level)
+        else
+            [0..8] |> List.exists (fun row -> (slot <> 0 || row < 8) && shuffleSlotGot.[row*3+slot] && ShuffleSlotLevel(row,slot) = level))
 let SetShuffleSlot(row, slot, got, level) =
     shuffleSlotGot.[row*3+slot] <- got
     shuffleSlotChosen.[row*3+slot] <- level
@@ -935,16 +979,18 @@ type DungeonTrackerInstance(kind) =
                 yield sword1Box
                 |] |> Array.distinct
         allBoxes
-    let allBoxProgress = 
+    // Shuffle Type Anywhere: the M/C/Tri Shuffle window's spots hold items too, so they count for what the player has
+    let allWithSpots() = if ShuffleAnywhere then Array.append (all()) shuffleSlotBoxes else all()
+    let allBoxProgress =
         let mutable pct = 0.
         let mutable anyChanged = None
         let any() =
             if anyChanged.IsNone then
                 anyChanged <- Some(
                     new SyntheticEventingBool((fun()-> 
-                        pct <- float(all() |> Seq.sumBy (fun b -> if not(b.IsEmptyRedBox) then 1 else 0)) / 20. // 23 items exist; be max red when few left
+                        pct <- float(allWithSpots() |> Seq.sumBy (fun b -> if not(b.IsEmptyRedBox) then 1 else 0)) / 20. // 23 items exist; be max red when few left
                         pct <- min pct 1.0    // don't say e.g. 23./20., and also hidden dungeon numbers has extra boxes
-                        false), all() |> Seq.map (fun b -> b.Changed)))
+                        false), allWithSpots() |> Seq.map (fun b -> b.Changed)))
             anyChanged.Value
         { new IEventingReader<float> with
             member this.Value = pct
@@ -961,7 +1007,7 @@ type DungeonTrackerInstance(kind) =
         match kind with
         | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS -> failwith "FinalBoxOf1Or4 does not exist in HIDE_DUNGEON_NUMBERS"
         | DungeonTrackerInstanceKind.DEFAULT -> finalBoxOf1Or4
-    member _this.AllBoxes() = all()
+    member _this.AllBoxes() = allWithSpots()
     member this.AllBoxProgress = allBoxProgress
     //RPT updating
     static member TheDungeonTrackerInstance 
@@ -1045,7 +1091,11 @@ and Dungeon(id,numBoxes) =
         // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
         let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
         // completion is about the piece found IN this dungeon, not this dungeon's piece turning up elsewhere (M/C/Tri Shuffle window)
-        let pieceFoundHere = this.PlayerHasOwnTriforce() || (id < 8 && shuffleSlotGot.[id*3])
+        // Anywhere: pieces join the item pool, so a level need not hold one; instead its three spots are item locations too (level 9 has two)
+        let spotsDone = not ShuffleAnywhere || ([ (if id < 8 then 0 else 1) .. 2 ] |> List.forall (fun s -> boxDone shuffleSlotBoxes.[id*3+s]))
+        // Between Levels / Anywhere: this level's map and compass must have been collected too, wherever they turned up
+        let mapAndCompass = not (ShuffleBetweenLevels || ShuffleAnywhere) || (this.PlayerHasMapOfThisDungeon && ShuffleCredits(2, id))
+        let pieceFoundHere = ((ShuffleAnywhere && id < 8) || this.PlayerHasOwnTriforce() || (id < 8 && shuffleSlotGot.[id*3])) && spotsDone && mapAndCompass
         match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
         | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
             if pieceFoundHere then
@@ -1128,8 +1178,6 @@ let PlayerHasTheBook() = if IsCurrentlyBook() then playerComputedStateSummary.Ha
 let playerComputedStateSummaryLastComputedTime = new LastChangedTime()
 let playerSwordLevel, playerCandleLevel, playerRingLevel, playerArrowLevel = new EventingInt(0), new EventingInt(0), new EventingInt(0), new EventingInt(0)
 let playerHasSword4 = new EventingInt(0)   // 1 if a 4th sword has been collected (an item box, or its marker icon checked off on the map); puts the purple X on the 3rd (magical) sword box
-// how many marker icons of each kind are checked off as 'collected' on the overworld map (index = item id); these count as owning the item
-let mapCollectedCount : int[] = Array.zeroCreate 128
 // Progressive Items: every progressive sword (the 'P' sword) that has been collected, on the map or in an item box, bumps the tier shown by the ones still to be collected (P1 wood, P2 white, P3 magical, P4 4th sword); 0 when the option is off
 let progressiveTierChanged = new Event<unit>()
 // with Progressive Items on, a sword placed in a dungeon item box acts like its progressive sword: wood = P1, white = P2, magical = P3, 4th = P4

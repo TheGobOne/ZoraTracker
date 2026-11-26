@@ -89,7 +89,7 @@ public static class WPFUI
     private static readonly Dictionary<int, System.Drawing.Bitmap> decorIconCache = new Dictionary<int, System.Drawing.Bitmap>();
     public static readonly int CLEAR_ICONS = 2000;   // pseudo-id of the red-X menu cell that removes every marker icon from the tile
     public static readonly int ANYROAD_MENU = 2001;   // pseudo-result: an Any Road cell was right-clicked (offers to place all four vanilla any roads)
-    public static string decorDescription(int ident) => ident == TrackerModel.DECOR_BOMB ? "Bomb" : ident == TrackerModel.DECOR_BOMB_DROPPER ? "Bomb Dropper" : TrackerModel.ITEMS.AsDisplayDescription(ident);
+    public static string decorDescription(int ident) => TrackerModel.isShuffleMarker(ident) ? $"{new[] { "Triforce", "Map", "Compass" }[TrackerModel.shuffleMarkerSlot(ident)]} for level {Popouts.shuffleLevelName(TrackerModel.shuffleMarkerLevel(ident))}" : ident == TrackerModel.DECOR_BOMB ? "Bomb" :ident == TrackerModel.DECOR_BOMB_DROPPER ? "Bomb Dropper" : TrackerModel.ITEMS.AsDisplayDescription(ident);
     // once the player has the magic key, the key marker icons on the map are hidden; likewise wood arrow markers once silver arrows are collected (they come back if deselected)
     public static bool isKeyDecor(int ident) => (ident == TrackerModel.ITEMS.KEY || ident == TrackerModel.ITEMS.OLDKEY);
     public static List<int> visibleDecorIcons(int packed)
@@ -237,10 +237,42 @@ public static class WPFUI
         if (family == 1) return Graphics.ow_progressive_tier_item_bmps[Math.Max(1, Math.Min(4, tier))];
         else return CustomComboBoxes.boxCurrentBMP(TrackerModel.progressiveFamilyIdent(family, tier), null);
     }
+    // the level a shop's triforce / map / compass is for, drawn in the corner of its picture (3x5 glyphs, doubled): 1-9, or A-H with hidden dungeon numbers
+    private static readonly Dictionary<(int, bool), System.Drawing.Bitmap> shuffleMarkerBmps = new();
+    private static readonly Dictionary<char, string> levelGlyphs = new()
+    {
+        ['1'] = ".x.xx..x..x.xxx", ['2'] = "xxx..xxxxx..xxx", ['3'] = "xxx..xxxx..xxxx", ['4'] = "x.xx.xxxx..x..x", ['5'] = "xxxx..xxx..xxxx",
+        ['6'] = "xxxx..xxxx.xxxx", ['7'] = "xxx..x..x..x..x", ['8'] = "xxxx.xxxxx.xxxx", ['9'] = "xxxx.xxxx..xxxx",
+        ['A'] = ".x.x.xxxxx.xx.x", ['B'] = "xx.x.xxx.x.xxx.", ['C'] = "xxxx..x..x..xxx", ['D'] = "xx.x.xx.xx.xxx.",
+        ['E'] = "xxxx..xx.x..xxx", ['F'] = "xxxx..xx.x..x..", ['G'] = "xxxx..x.xx.xxxx", ['H'] = "x.xx.xxxxx.xx.x",
+    };
+    private static System.Drawing.Bitmap shuffleMarkerBmp(int ident)
+    {
+        var level = TrackerModel.shuffleMarkerLevel(ident);
+        var hidden = TrackerModel.IsHiddenDungeonNumbers.Invoke(null);
+        if (shuffleMarkerBmps.TryGetValue((ident, hidden), out var cached)) return cached;
+        var slot = TrackerModel.shuffleMarkerSlot(ident);
+        var picture = slot == 0 ? Graphics.triforce_item_bmp : slot == 1 ? Graphics.map_item_bmp : Graphics.compass_item_bmp;
+        var r = new System.Drawing.Bitmap(21, 21);
+        for (int x = 0; x < 21; x++)
+            for (int y = 0; y < 21; y++)
+                r.SetPixel(x, y, picture.GetPixel(x, y));
+        var glyph = levelGlyphs[hidden && level < 8 ? (char)('A' + level) : (char)('1' + level)];
+        for (int x = 13; x < 21; x++)
+            for (int y = 9; y < 21; y++)
+            {
+                var (gx, gy) = ((x - 14) / 2, (y - 10) / 2);
+                var lit = x >= 14 && x < 20 && y >= 10 && y < 20 && glyph[gy * 3 + gx] == 'x';
+                r.SetPixel(x, y, lit ? System.Drawing.Color.White : System.Drawing.Color.Black);
+            }
+        shuffleMarkerBmps[(ident, hidden)] = r;
+        return r;
+    }
     public static System.Drawing.Bitmap decorSourceBmp(int item)
     {
         if (item == TrackerModel.DECOR_BOMB) return Graphics.bomb_bmp;
         else if (item == TrackerModel.DECOR_BOMB_DROPPER) return bombDropperBmp;
+        else if (TrackerModel.isShuffleMarker(item)) return shuffleMarkerBmp(item);
         else if (item == TrackerModel.ITEMS.BLUEPOTION) return (TrackerModelOptions.UseOldPotionLetterIcons.Value ? Graphics.old_blue_potion_bmp : Graphics.blue_potion_bmp);
         else if (item == TrackerModel.ITEMS.REDPOTION) return (TrackerModelOptions.UseOldPotionLetterIcons.Value ? Graphics.old_red_potion_bmp : Graphics.red_potion_bmp);
         else if (TrackerModel.ProgressiveItems && TrackerModel.progressiveSwordBoxTier(item) >= 1 && TrackerModel.progressiveSwordBoxTier(item) <= 5) return Graphics.ow_progressive_tier_item_bmps[TrackerModel.progressiveSwordTier()];   // Progressive Items: swords act like the progressive sword (they all show the current tier, P1..P4)
@@ -395,8 +427,22 @@ public static class WPFUI
             var (cell, enabled) = markerIconCell(ident);
             if ((enabled && !blocked) || isProgressiveDisabled(ident) || isLegacyDisabled(ident)) items.Add((ident, cell));
         }
+        // Anywhere only: a shop can sell a level's triforce, map or compass (picked here, then the level). Between Levels keeps them in their own level.
+        if (TrackerModel.ShuffleAnywhere && !blocked)
+            foreach (var (ident, bmp) in new[] { (TrackerModel.ITEMS.TRIFORCE, Graphics.triforce_item_bmp), (TrackerModel.ITEMS.MAP, Graphics.map_item_bmp), (TrackerModel.ITEMS.COMPASS, Graphics.compass_item_bmp) })
+                items.Add((ident, Graphics.BMPtoImage(bmp)));
         PieMenus.itemPickerDisabledTip = ident => isLegacyDisabled(ident) ? "Disabled In Legacy Mode" : isProgressiveDisabled(ident) ? "Disabled Due to Progressive Items" : null;
-        return show(items);
+        return thenPickShuffleLevel(show, show(items));
+    }
+    private static async Task<int> thenPickShuffleLevel(Func<List<(int, Control)>, Task<int>> show, Task<int> first)
+    {
+        var ident = await first;
+        var slot = ident == TrackerModel.ITEMS.TRIFORCE ? 0 : ident == TrackerModel.ITEMS.MAP ? 1 : ident == TrackerModel.ITEMS.COMPASS ? 2 : -1;
+        if (slot < 0) return ident;
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);   // (the first picker closes before the next opens)
+        var levels = Enumerable.Range(0, slot == 0 ? 8 : 9).Select(level => (TrackerModel.shuffleMarker(slot, level),
+            (Control)new TextBlock { Text = Popouts.shuffleLevelName(level), FontSize = 16.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, HorizontalAlignment = HorizontalAlignment.Center })).ToList();
+        return await show(levels);
     }
     // the overworld menu's marker icons, in item-menu order from the ladder to the heart container (without the Shop cell)
     private static List<int> markerIdents() => new List<int> {
@@ -536,6 +582,9 @@ public static class WPFUI
     // heart containers marked 'collected' on the map count toward the player's max hearts; every change to a tile's icons goes through here
     public static void rebuildMapCollected()
     {
+        // which level triforces / maps / compasses were collected from shops, to tell the levels if that changes
+        List<bool> shuffleMarks() => Enumerable.Range(0, TrackerModel.mapCollectedCount.Length).Where(TrackerModel.isShuffleMarker).Select(k => TrackerModel.mapCollectedCount[k] > 0).ToList();
+        var shuffleWas = shuffleMarks();
         Array.Clear(TrackerModel.mapCollectedCount, 0, TrackerModel.mapCollectedCount.Length);
         // (with Progressive Items, a shop shown on several tiles is still one shop: its swords / rings / candles / arrows count once, however many tiles carry it)
         var shopCounted = new HashSet<(int, int)>();   // (shop label, item)
@@ -567,6 +616,11 @@ public static class WPFUI
         }
         foreach (var kv in shopHearts)
             TrackerModel.mapCollectedCount[TrackerModel.ITEMS.HEARTCONTAINER] = TrackerModel.mapCollectedCount[TrackerModel.ITEMS.HEARTCONTAINER] + kv.Value;
+        if (!shuffleMarks().SequenceEqual(shuffleWas))
+        {
+            TrackerModel.dungeonsAndBoxesLastChangedTime.SetNow();
+            TrackerModel.shuffleSlotsChanged.Trigger(null);
+        }
     }
     public static List<int> copiedMarkerIdents = new List<int>();
     public static int copiedMarkerPacked = -1;   // same, including each icon's collected state   // shift+left-click on a tile that has only item markers copies them; shift+left-click on an unmarked tile pastes them
@@ -1064,6 +1118,27 @@ public static class WPFUI
             w.Show();
         Dispatcher.UIThread.PushFrame(frame);
     }
+    // the Shuffle notice (shown at startup while maps/compasses or triforces are shuffled): it recommends tracking with the M/C/Tri Shuffle popout; OK closes it
+    public static void showShuffleNotice(Window owner)
+    {
+        var w = new Window { Title = "Shuffle is on", SizeToContent = SizeToContent.WidthAndHeight, CanResize = false, ShowInTaskbar = false, Background = Brushes.Black, SystemDecorations = SystemDecorations.None };
+        w.WindowStartupLocation = ReferenceEquals(owner, null) ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
+        var sp = new StackPanel { Margin = new Thickness(28.0) };
+        var what = string.Join(" and ", new[] { TrackerModel.ShuffleMaps || TrackerModel.ShuffleCompasses ? "Map/Compass" : null, TrackerModel.ShuffleTriforces ? "Triforce" : null }.Where(s => s != null));
+        sp.Children.Add(new TextBlock { Text = what + " Shuffle is on for this seed", FontSize = 26.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 460.0, Margin = new Thickness(0.0, 0.0, 0.0, 14.0) });
+        sp.Children.Add(new TextBlock { Text = "It is highly recommended that you track with the M/C/Tri Shuffle popout.", FontSize = 18.0, Foreground = Brushes.Red, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 460.0, Margin = new Thickness(0.0, 0.0, 0.0, 22.0) });
+        var ok = new Button { Content = new TextBlock { Text = "OK", FontSize = 22.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, TextAlignment = TextAlignment.Center }, Width = 120.0, Height = 44.0, Background = Brushes.Black, BorderBrush = Brushes.Orange, BorderThickness = new Thickness(4.0), HorizontalAlignment = HorizontalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, IsDefault = true };
+        ok.Click += (_, _) => w.Close();
+        sp.Children.Add(ok);
+        w.Content = new Border { Child = sp, BorderBrush = Brushes.Orange, BorderThickness = new Thickness(4.0) };   // (no title bar: the border marks the edge)
+        var frame = new DispatcherFrame();
+        w.Closed += (_, _) => frame.Continue = false;
+        if (!ReferenceEquals(owner, null))
+            _ = w.ShowDialog(owner);
+        else
+            w.Show();
+        Dispatcher.UIThread.PushFrame(frame);
+    }
     private static StackPanel make_owRemainingScreensTextBoxContainerPanelThatSeesMouseEvents()
     {
         var dp = new StackPanel { Background = Brushes.Black, Orientation = Orientation.Vertical };
@@ -1351,6 +1426,7 @@ public static class WPFUI
             {
                 var l = new List<TrackerModel.Box>(TrackerModel.GetDungeon(i).Boxes);
                 if (i == 1 && TrackerModel.level2StairBoxEnabled) l.Add(TrackerModel.level2StairBox);
+                if (TrackerModel.ShuffleAnywhere) l.AddRange(TrackerModel.shuffleSlotBoxes.Skip(i * 3).Take(3));   // (the level's spots can hold its heart)
                 return l.ToArray();
             }
             // every slot but b holds a non-heart item (in a dungeon with 3 slots, a collected one; a triforce counts even before it is collected)
@@ -1426,7 +1502,8 @@ public static class WPFUI
                         if (!(slots.Any(isHeart)) && !isHeart(extra))   // (a heart in the extra floor box is the dungeon's heart too)
                         {
                             var empties = slots.Where(b => b.IsEmptyRedBox).ToArray();
-                            if (empties.Length == 1 && othersFilled(slots, empties[0]))
+                            // (never guessed into a spot: a save only records guesses in the named item boxes)
+                            if (empties.Length == 1 && !TrackerModel.shuffleSlotBoxes.Contains(empties[0]) && othersFilled(slots, empties[0]))
                             {
                                 var b = empties[0];
                                 if (b.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO)) autoHearts.Add(b);
@@ -1445,6 +1522,7 @@ public static class WPFUI
                 var boxes0 = new List<TrackerModel.Box>(TrackerModel.GetDungeon(i).Boxes);
                 if (i == 0 || i == 3) boxes0.Add(TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.FinalBoxOf1Or4);
                 if (i == 1) boxes0.Add(TrackerModel.level2StairBox);
+                if (TrackerModel.ShuffleAnywhere) boxes0.AddRange(TrackerModel.shuffleSlotBoxes.Skip(i * 3).Take(3));
                 var boxes = boxes0.Distinct().ToArray();   // (F#'s Array.distinct: Box has reference equality)
                 foreach (var b in boxes)
                     onEvent(b.Changed, _ => reconcile(i));
@@ -6027,6 +6105,7 @@ public static class WPFUI
                 var dd = TrackerModel.GetDungeon(i);
                 if (!(ds.TryApply(dd))) anySetProblems = true;
             }
+            if (!(SaveAndLoad.ApplyLoadedShuffleSpots(data.Overworld))) anySetProblems = true;
             // the tier each progressive item box was collected at (after the boxes, whose change handlers note the current tier; older saves keep that)
             if (data.Items.ProgressiveBoxTiers != null)
             {
