@@ -2679,7 +2679,7 @@ public static class WPFUI
                     }
                     var clearIconsCell = make_clearIconsCell();
                     var tailCells = lastRowIdents.Select(swordIconCell).Append(clearIconsCell).Append(_darkXCell).ToArray();   // (Don't Care is the last cell, at the far right of the bottom row)
-                    // 'Shops in menu' (a checkbox in the shop window): a row of buttons for the 5 shops (P, 1-4), starting on a new row; each opens the Shop window, where the shop is picked
+                    // 'Shops in menu' (a checkbox in the shop window): a row of buttons for the 5 shops (P, 1-4), starting on a new row; a click places that shop, the other button opens the Shop window
                     (Control, bool, int)[] shopRowCells;
                     if (!TrackerModelOptions.ShopsInMenu.Value) shopRowCells = new (Control, bool, int)[0];
                     else
@@ -2769,7 +2769,7 @@ public static class WPFUI
                                     var s =
                                         isSwordIcon ? decorDescription(currentState - 1000) + (currentState - 1000 == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled ? "\n4th Sword Not Enabled" : "") + (TrackerModel.progressiveDisabledIdent(currentState - 1000) ? "\nDisabled Due to Progressive Items" : "")
                                         : isClearCell ? "Clear this tile\n(removes marker icons and sets it back to unmarked)"
-                                        : isShopLabelCell ? (currentState == SHOP_LABEL_BASE + 5 ? "P Shop\n(opens the Shop window: pick P there to put the potion shop on this tile)" : string.Format("Shop {0}\n(opens the Shop window: pick {0} there to put the shop on this tile)", (currentState - SHOP_LABEL_BASE)))
+                                        : isShopLabelCell ? string.Format("{0}\n({1} click: puts the shop on this tile\n{2} click: opens the Shop window)", currentState == SHOP_LABEL_BASE + 5 ? "P Shop" : "Shop " + (currentState - SHOP_LABEL_BASE), TrackerModelOptions.SwapMouseButtons ? "Right" : "Left", TrackerModelOptions.SwapMouseButtons ? "Left" : "Right")
                                         : isShopCell ? "Shop...\n(potion shop, or shop 1-4: puts the shop's name at the top of the tile)"
                                         : currentState == -1 ? "Unmarked"
                                         : TrackerModel.dummyOverworldTiles[currentState].Item4;
@@ -2808,6 +2808,9 @@ public static class WPFUI
                                 {
                                     if (ea.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed && currentState >= TrackerModel.MapSquareChoiceDomainHelper.WARP_1 && currentState <= TrackerModel.MapSquareChoiceDomainHelper.WARP_4)
                                         return new CustomComboBoxes.PopupClickBehavior<int>.DismissPopupWithResult(ANYROAD_MENU);
+                                    // right click on a 'Shops in menu' button opens the Shop window (left click with swap L/R on)
+                                    else if (currentState > SHOP_LABEL_BASE && currentState <= SHOP_LABEL_BASE + 5 && ea.GetCurrentPoint(null).Properties.PointerUpdateKind == (TrackerModelOptions.SwapMouseButtons ? PointerUpdateKind.LeftButtonPressed : PointerUpdateKind.RightButtonPressed))
+                                        return new CustomComboBoxes.PopupClickBehavior<int>.DismissPopupWithResult(SHOP_MENU);
                                     else return new CustomComboBoxes.PopupClickBehavior<int>.DismissPopupWithResult(currentState);
                                 },
                                 new List<(Control, double, double)>(), CustomComboBoxes.ModalGridSelectBrushes.Defaults(), new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter(), null, "OWGridTile", null);
@@ -2849,8 +2852,7 @@ public static class WPFUI
                         // the 'Shop' cell opens a flyout: the potion shop (the usual blue potion marker) or one of the 4 numbered shops
                         async Task<int?> flyout()
                         {
-                            // (the 'Shops in menu' row buttons also open the flyout; which button was picked does not matter)
-                            if (r0 is int sel && (sel == SHOP_MENU || (sel > SHOP_LABEL_BASE && sel <= SHOP_LABEL_BASE + 5)))
+                            if (r0 is int sel && sel == SHOP_MENU)
                             {
                                 flyoutAddedItem = false;
                                 var counts = Enumerable.Range(0, 5).Select(n => TrackerModel.shopLabelCount(n == 0 ? 5 : n)).ToArray();
