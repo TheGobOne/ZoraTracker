@@ -553,6 +553,8 @@ public static class CoopSync
         {
             if (b == null || b.Type != Newtonsoft.Json.Linq.JTokenType.Object || model == null || !names.TryGetValue(model, out var name)) return;
             r[boxKey(name)] = $"{intOf(b["CellCurrent"], -1)},{intOf(b["PlayerHas"], 0)},{(tiersKnown ? (tiers.TryGetValue(name, out var tier) ? tier : "-") : "?")}";
+            var level = intOf(b["ShuffleLevel"], -1);
+            if (level >= 0) r[boxKey(name)] += $",{level}";   // (only when tagged, so untagged boxes read as before)
         }
         r[itemsFlagKey("HiddenDungeonNumbers")] = (t["HiddenDungeonNumbers"] ?? "").ToString();
         r[itemsFlagKey("SecondQuestDungeons")] = (t["SecondQuestDungeons"] ?? "").ToString();
@@ -609,7 +611,7 @@ public static class CoopSync
         if (!TrackerModel.ShuffleAnywhere || !(payload[ShuffleSpotsField] is Newtonsoft.Json.Linq.JArray spots)) return;
         for (int k = 0; k < spots.Count && k < 27; k++)
             if (shuffleNumbers(spots[k], 3) is int[] n)
-                pairs.Add((new SaveAndLoad.Box { CellCurrent = n[0], PlayerHas = n[1] }, TrackerModel.shuffleSlotBoxes[k]));
+                pairs.Add((new SaveAndLoad.Box { CellCurrent = n[0], PlayerHas = n[1], ShuffleLevel = shuffleLevelOf(n[2]) }, TrackerModel.shuffleSlotBoxes[k]));
     }
 
     /// After applyBoxes: the level each taken spot's item is for, and the partner's Between Levels slots. UI thread, inside applyRemote.
@@ -1033,7 +1035,7 @@ public static class CoopSync
     public static void applyBoxes(Merge m, List<(SaveAndLoad.Box src, TrackerModel.Box dest)> pairs)
     {
         var todo = pairs.Where(p => p.src != null && p.dest != null && m.Takes(boxKey(p.dest))
-                                    && (p.src.CellCurrent != p.dest.CellCurrent() || p.src.PlayerHas != p.dest.PlayerHas().AsInt())).ToList();
+                                    && (p.src.CellCurrent != p.dest.CellCurrent() || p.src.PlayerHas != p.dest.PlayerHas().AsInt() || p.src.ShuffleLevel != p.dest.ShuffleLevel)).ToList();
         var old = todo.Select(p => (cell: p.dest.CellCurrent(), has: p.dest.PlayerHas(), level: p.dest.ShuffleLevel)).ToList();
         for (int k = 0; k < todo.Count; k++)
             if (todo[k].src.CellCurrent != old[k].cell && todo[k].dest.LockedItem == -1)
@@ -1055,7 +1057,7 @@ public static class CoopSync
         var key = boxKey(dest);
         TrackerModel.PlayerHas ph;
         try { ph = TrackerModel.PlayerHas.FromInt(src.PlayerHas); } catch (Exception) { m.Fail(key); return false; }
-        if (dest.AttemptToSet(src.CellCurrent, ph)) return true;
+        if (dest.AttemptToSetForLevel(src.CellCurrent, ph, src.ShuffleLevel)) return true;
         if (src.CellCurrent >= 0 && dest.LockedItem == -1 && key != null && m.Taken.TryGetValue(key, out var theirs))
         {
             foreach (var nb in SaveAndLoad.tierBoxes())   // (a M/C/Tri Shuffle spot can hold the item too)
@@ -1069,7 +1071,7 @@ public static class CoopSync
                 if (h.AttemptToSet(-1, TrackerModel.PlayerHas.NO))
                 {
                     m.Displaced.Add(hk);
-                    if (dest.AttemptToSet(src.CellCurrent, ph)) return true;
+                    if (dest.AttemptToSetForLevel(src.CellCurrent, ph, src.ShuffleLevel)) return true;
                 }
             }
         }
@@ -1179,7 +1181,7 @@ public static class CoopSync
     public static bool triforceInBox(int i)
     {
         var d = TrackerModel.GetDungeon(i);
-        bool got(TrackerModel.Box b) => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE && b.PlayerHas() == TrackerModel.PlayerHas.YES;
+        bool got(TrackerModel.Box b) => b.IsOwnTriforce && b.PlayerHas() == TrackerModel.PlayerHas.YES;
         return d.Boxes.Any(got) || (i == 1 && TrackerModel.level2StairBoxEnabled && got(TrackerModel.level2StairBox));
     }
 
@@ -1421,6 +1423,7 @@ public static class CoopSync
         var box = new SaveAndLoad.Box();
         box.CellCurrent = b.CellCurrent();
         box.PlayerHas = b.PlayerHas().AsInt();
+        box.ShuffleLevel = b.ShuffleLevel;
         return box;
     }
 

@@ -772,15 +772,26 @@ type BoxOwner =   // for deciding what Blocker-projections to display in it
     | None                          // an item box that does not below to a dungeon, e.g. CoastItem
 // the level 9 entry box is only a note, so it gets its own domain (it must not use up items that the real boxes need)
 let level9TriggerDomain = ChoiceDomain("level9Trigger", ITEMS.itemNamesAndCounts |> Array.map (fun _ -> 1000))
+let shuffleSlotsChanged = new Event<unit>()   // a shuffle slot, or a box holding a level-tagged item, changed
 type Box(stair:StairKind, owner, domain:ChoiceDomain) =
+    static let tagged = System.Collections.Generic.HashSet<Box>()   // every box holding a level-tagged item, for ShuffleCredits
     // this contains both a Cell (player-knowing-location-contents), and a bool (whether the players _has_ the thing there)
     let cell = new Cell(domain)
     let mutable playerHas = PlayerHas.NO
     let mutable lockedItem = -1   // Legacy Mode: the letter / magical sword boxes keep their item; it can be collected or uncollected, but never removed or swapped
     let changed = new Event<_>()
-    let mutable shuffleLevel = -1   // Shuffle Type Anywhere: the level a triforce / map / compass in this box is for (-1 = not tagged; any change to the box clears it)
+    let mutable shuffleLevel = -1   // Shuffle Type Anywhere: the level a triforce / map / compass in this box is for (-1 = not tagged; changing the item clears it)
     member _this.Changed = changed.Publish
-    member _this.ShuffleLevel with get() = shuffleLevel and set(v:int) = shuffleLevel <- v
+    member _this.ShuffleLevel = shuffleLevel
+    static member Tagged = tagged :> seq<Box>
+    member private this.Retag(level:int) =
+        shuffleLevel <- level
+        if level >= 0 then tagged.Add(this) |> ignore else tagged.Remove(this) |> ignore
+    member private _this.Notify(wasTagged:bool) =
+        changed.Trigger()
+        if wasTagged || shuffleLevel >= 0 then shuffleSlotsChanged.Trigger()
+    // a triforce piece counted as this dungeon's own (a level-tagged one counts for the tagged level instead)
+    member _this.IsOwnTriforce = cell.Current() = ITEMS.TRIFORCE && shuffleLevel < 0
     member _this.LockedItem with get() = lockedItem and set(v:int) = lockedItem <- v
     member _this.PlayerHas() = playerHas           // note that the state (cell = -1, playerHas = SKIPPED) is used to mean 'white-highlighted box' in the UI
     member this.IsEmptyRedBox = this.PlayerHas() = PlayerHas.NO && this.CellCurrent() = -1
@@ -816,49 +827,53 @@ type Box(stair:StairKind, owner, domain:ChoiceDomain) =
     member _this.Domain = domain
     member _this.CellNextFreeKey() = domain.NextFreeKey(cell.Current())
     member _this.CellPrevFreeKey() = domain.PrevFreeKey(cell.Current())
-    member _this.CellPrev() = 
+    member this.CellPrev() =
       if lockedItem = -1 then
+        let wasTagged = shuffleLevel >= 0
         cell.Prev()
-        shuffleLevel <- -1
+        this.Retag(-1)
         dungeonsAndBoxesLastChangedTime.SetNow()
-        changed.Trigger()
-    member _this.CellNext() = 
+        this.Notify(wasTagged)
+    member this.CellNext() =
       if lockedItem = -1 then
+        let wasTagged = shuffleLevel >= 0
         cell.Next()
-        shuffleLevel <- -1
+        this.Retag(-1)
         dungeonsAndBoxesLastChangedTime.SetNow()
-        changed.Trigger()
+        this.Notify(wasTagged)
     member _this.CellCurrent() = cell.Current()
-    member _this.Set(v,ph) = 
+    member this.Set(v,ph) =
         let (v, ph) = if lockedItem <> -1 then (lockedItem, (if ph = PlayerHas.YES then PlayerHas.YES else PlayerHas.NO)) else (v, ph)
+        let wasTagged = shuffleLevel >= 0
+        let level = if v = cell.Current() then shuffleLevel else -1   // (the same item keeps its level)
         cell.Set(v)
-        shuffleLevel <- -1
+        this.Retag(level)
         playerHas <- ph
         dungeonsAndBoxesLastChangedTime.SetNow()
-        changed.Trigger()
-    member _this.AttemptToSet(v,ph) = 
+        this.Notify(wasTagged)
+    member private this.TrySet(v:int, ph:PlayerHas, level:int) : bool =
+        let wasTagged = shuffleLevel >= 0
         if (lockedItem = -1 || v = lockedItem) && cell.AttemptToSet(v) then
-            shuffleLevel <- -1
+            this.Retag(level)   // (before anything is told, so the piece is never seen as this dungeon's own)
             playerHas <- ph
             dungeonsAndBoxesLastChangedTime.SetNow()
-            changed.Trigger()
+            this.Notify(wasTagged)
             true
         else
             false
-    // as AttemptToSet, then tags the item with the level it is for (Shuffle Type Anywhere)
-    member _this.AttemptToSetForLevel(v,ph,level:int) =
+    member this.AttemptToSet(v:int, ph:PlayerHas) : bool =
+        this.TrySet(v, ph, (if v = cell.Current() then shuffleLevel else -1))
+    // as AttemptToSet, with the level the item is for (Shuffle Type Anywhere; only a triforce, map or compass takes one)
+    member this.AttemptToSetForLevel(v:int, ph:PlayerHas, level:int) : bool =
+        let level = if ITEMS.isShuffleItem v && level >= 0 && level <= 8 then level else -1
         if cell.Current() = v && playerHas = ph && shuffleLevel = level then
             true   // (picking the same thing again changes nothing: a change would move its timeline time to now)
-        elif _this.AttemptToSet(v,ph) then
-            shuffleLevel <- level
-            changed.Trigger()
-            true
         else
-            false
-    member _this.SetPlayerHas(v) = 
+            this.TrySet(v, ph, level)
+    member this.SetPlayerHas(v) =
         playerHas <- v
         dungeonsAndBoxesLastChangedTime.SetNow()
-        changed.Trigger()
+        this.Notify(shuffleLevel >= 0)
     member _this.IsDone() = cell.Current() <> -1 && playerHas <> PlayerHas.NO   // the player knows the item here and has gotten or intentionally skipped it
 
 let ladderBox = (let b = Box(StairKind.Never, BoxOwner.None) in b.SetPlayerHas(PlayerHas.SKIPPED); b)
@@ -891,7 +906,6 @@ let SetLevel9FloorBoxEnabled(enabled:bool) =
 
 // M/C/Tri Shuffle window: each level row (0-8) has a triforce (slot 0), map (1) and compass (2) found in that level.
 // Each records whether it was collected and which level (0-8) it is for. Level 9 has no triforce.
-let shuffleSlotsChanged = new Event<unit>()
 // how many marker icons of each kind are checked off as 'collected' on the overworld map (index = item id); these count as owning the item
 let mapCollectedCount : int[] = Array.zeroCreate 128
 // a triforce / map / compass for one level as an overworld marker icon (a shop can sell them with Between Levels / Anywhere). The level is part
@@ -920,7 +934,7 @@ let ShuffleCredits(slot, level) =
     ((slot <> 0 || level < 8) && mapCollectedCount.[shuffleMarker(slot, level)] > 0)
     || (if ShuffleAnywhere then
             let item = match slot with 0 -> ITEMS.TRIFORCE | 1 -> ITEMS.MAP | _ -> ITEMS.COMPASS
-            shuffleSlotBoxes |> Array.exists (fun b -> b.CellCurrent() = item && b.PlayerHas() = PlayerHas.YES && b.ShuffleLevel = level)
+            Box.Tagged |> Seq.exists (fun b -> b.CellCurrent() = item && b.PlayerHas() = PlayerHas.YES && b.ShuffleLevel = level)   // (a window spot or a level's own box)
         else
             [0..8] |> List.exists (fun row -> (slot <> 0 || row < 8) && shuffleSlotGot.[row*3+slot] && ShuffleSlotLevel(row,slot) = level))
 let SetShuffleSlot(row, slot, got, level) =
@@ -1072,7 +1086,7 @@ and Dungeon(id,numBoxes) =
     member this.PlayerHasTriforce() = this.PlayerHasOwnTriforce() || this.HasShuffleTriforceCredit
     member _this.HasShuffleTriforceCredit : bool = id < 8 && ShuffleCredits(0,id)
     // without the M/C/Tri Shuffle window's share (what a save records, so the window can still take it back)
-    member this.PlayerHasOwnTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE && b.PlayerHas() = PlayerHas.YES)) || (id=1 && level2StairBoxEnabled && level2StairBox.CellCurrent() = ITEMS.TRIFORCE && level2StairBox.PlayerHas() = PlayerHas.YES)   // (a triforce piece marked as obtained in an item slot counts too)
+    member this.PlayerHasOwnTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.IsOwnTriforce && b.PlayerHas() = PlayerHas.YES)) || (id=1 && level2StairBoxEnabled && level2StairBox.IsOwnTriforce && level2StairBox.PlayerHas() = PlayerHas.YES)   // (a triforce piece marked as obtained in an item slot counts too)
     member _this.ToggleTriforce() = playerHasTriforce <- not playerHasTriforce; playerHasTriforceChangeEvent.Trigger(playerHasTriforce); dungeonsAndBoxesLastChangedTime.SetNow()
     member _this.PlayerHasTriforceChanged = playerHasTriforceChangeEvent.Publish
     member _this.PlayerHasMapOfThisDungeon with get() = playerHasMap || ShuffleCredits(1,id) and set(x) = playerHasMap <- x; playerHasMapOfThisDungeonChangeEvent.Trigger(); playerCanSeeMapOfThisDungeonChangeEvent.Trigger()
@@ -1089,7 +1103,7 @@ and Dungeon(id,numBoxes) =
             else
                 boxes
     member _this.ExtraFloorBox = extraFloorBox
-    member this.TriforceIsInItemSlot = this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE) || (id=1 && level2StairBoxEnabled && level2StairBox.CellCurrent() = ITEMS.TRIFORCE)
+    member this.TriforceIsInItemSlot = this.Boxes |> Array.exists (fun b -> b.IsOwnTriforce) || (id=1 && level2StairBoxEnabled && level2StairBox.IsOwnTriforce)
     member private this.TriforceAndBoxesDone(ignoreHearts:bool) : bool =
         // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
         let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
@@ -2413,7 +2427,7 @@ type TimelineItemModel(desc: TimelineItemDescription) =
                                                     if has <> (finishedTotalSeconds >= 0) then stamp(has, PlayerHas.YES))   // (a second source of the same piece keeps its time)
         | TimelineItemDescription.ItemBox(name,b) ->
             let isSpot = name.StartsWith("ShuffleSpot")   // (a spot's triforce already has its level's Triforce entry, and maps and compasses have none)
-            b.Changed.Add(fun _ -> stamp(b.CellCurrent() <> -1 && not(isSpot && ITEMS.isShuffleItem(b.CellCurrent())) && b.PlayerHas()<>PlayerHas.NO && not(timelineSuppressedBoxes.Contains(b)), b.PlayerHas()))
+            b.Changed.Add(fun _ -> stamp(b.CellCurrent() <> -1 && not((isSpot || b.ShuffleLevel >= 0) && ITEMS.isShuffleItem(b.CellCurrent())) && b.PlayerHas()<>PlayerHas.NO && not(timelineSuppressedBoxes.Contains(b)), b.PlayerHas()))
         | TimelineItemDescription.UserCustom(_,e) -> e.Publish.Add(fun b -> stamp(b,PlayerHas.YES))
         | TimelineItemDescription.MapCollected _ -> ()
     static member TriggerTimelineChanged() =  // used when Loading a Save file

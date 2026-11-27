@@ -1507,7 +1507,7 @@ public static class WPFUI
                                 {
                                     autoHearts.Remove(b);   // (the player changed it)
                                     // the guessed heart sat where a triforce piece has now been placed, so the dungeon's heart is on the floor: the extra floor box
-                                    if (b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE && i < 8 && extra.CellCurrent() == -1)
+                                    if (b.IsOwnTriforce && i < 8 && extra.CellCurrent() == -1)
                                         if (extra.AttemptToSet(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO)) autoExtraHearts.Add(i);
                                 }
                                 else if (!(othersFilled(slots, b)))
