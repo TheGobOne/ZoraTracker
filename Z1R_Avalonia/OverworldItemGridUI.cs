@@ -1304,13 +1304,14 @@ public static class OverworldItemGridUI
             TrackerModel.SetLevel2StairBoxEnabled(items.Level2StairBoxEnabled);
             TrackerModel.SetLevel9FloorBoxEnabled(items.Level9FloorBoxEnabled);   // (older saves: false)
         }
-        TrackerModelOptions.FourthSwordEnabled = SaveAndLoad.FourthSwordWasOn(items);   // (older saves predate the 4th Sword option: nothing is restricted)
         // (only a save that really had the 4th sword on: an older save has no 4th Sword fields, so its own Progressive Items setting stands. Legacy Mode keeps Progressive Items off)
         if (SaveAndLoad.FourthSwordSavedOn(items) && !TrackerModel.ProgressiveItems && !TrackerModel.LegacyMode)
         {
             TrackerModel.ProgressiveItems = true;
             ApplyProgressiveItemCaps();
         }
+        // (older saves predate the 4th Sword option: unrestricted, but the 4th sword never appears with Progressive Items off)
+        TrackerModelOptions.FourthSwordEnabled = SaveAndLoad.FourthSwordWasOn(items) && TrackerModel.ProgressiveItems;
         ResetFourthSwordRunState();   // (this run's 4th Sword memory starts from the loaded save)
         return ok;
     }

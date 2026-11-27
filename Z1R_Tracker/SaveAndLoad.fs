@@ -557,7 +557,7 @@ let ApplyLoadedShuffleSpots(ow:Overworld) =
             | _ -> ()
     ok
 
-/// Whether the 4th Sword start option was on in a loaded save: the level 2 staircase slot or the level 9 floor check is only enabled by it (older saves predate the option: nothing is restricted)
+/// Whether the 4th Sword start option was on in a loaded save: the level 2 staircase slot or the level 9 floor check is only enabled by it (older saves predate the option: true, and the load step then turns it off if Progressive Items is off)
 let FourthSwordWasOn(items:Items) =
     if isNull items.Level2StairBox then true else (items.Level2StairBoxEnabled || items.Level9FloorBoxEnabled)
 /// Whether a loaded save says the 4th sword was really on (an older save without the 4th Sword fields cannot say: false, so its Progressive Items setting is not overridden)

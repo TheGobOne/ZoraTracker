@@ -853,8 +853,12 @@ public static class SelfTest
                     SaveAndLoad.ApplyLoadedOptions(d.Overworld);   // (a real load applies the options first)
                     OverworldItemGridUI.ApplyLoadedFourthSword(d.Items);
                     if (TrackerModel.ProgressiveItems) fail("4th sword load: an older save with Progressive Items 0 and no 4th Sword fields came back with Progressive Items on");
-                    if (!TrackerModelOptions.FourthSwordEnabled) fail("4th sword load: an older save should leave the 4th sword unrestricted");
+                    if (TrackerModelOptions.FourthSwordEnabled) fail("4th sword load: an older save with Progressive Items off came back with the 4th sword on");
                     if (OverworldItemGridUI.fourthSwordStashItem != -1) fail("4th sword load: an item kept from a turned-off 4th sword slot survived the load");
+                    d.Overworld.ProgressiveItems = 1;
+                    SaveAndLoad.ApplyLoadedOptions(d.Overworld);
+                    OverworldItemGridUI.ApplyLoadedFourthSword(d.Items);
+                    if (!TrackerModelOptions.FourthSwordEnabled) fail("4th sword load: an older save with Progressive Items on should leave the 4th sword unrestricted");
                     // a save with the 4th sword in level 2 but Progressive Items 0 (a damaged or hand-edited save): Progressive Items comes on, with its caps
                     OverworldItemGridUI.ApplyProgressiveItemCaps();
                     TrackerModel.SetLevel2StairBoxEnabled(true);
