@@ -1089,6 +1089,8 @@ and Dungeon(id,numBoxes) =
     member _this.HasShuffleTriforceCredit : bool = id < 8 && ShuffleCredits(0,id)
     // without the M/C/Tri Shuffle window's share (what a save records, so the window can still take it back)
     member this.PlayerHasOwnTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.IsOwnTriforce && b.PlayerHas() = PlayerHas.YES)) || (id=1 && level2StairBoxEnabled && level2StairBox.IsOwnTriforce && level2StairBox.PlayerHas() = PlayerHas.YES)   // (a triforce piece marked as obtained in an item slot counts too)
+    // the header flag only: a triforce held in an item box is not counted (the box saves its own)
+    member _this.PlayerHasTriforceFlag() = playerHasTriforce
     member _this.ToggleTriforce() = playerHasTriforce <- not playerHasTriforce; playerHasTriforceChangeEvent.Trigger(playerHasTriforce); dungeonsAndBoxesLastChangedTime.SetNow()
     member _this.PlayerHasTriforceChanged = playerHasTriforceChangeEvent.Publish
     member _this.PlayerHasMapOfThisDungeon with get() = playerHasMap || ShuffleCredits(1,id) and set(x) = playerHasMap <- x; playerHasMapOfThisDungeonChangeEvent.Trigger(); playerCanSeeMapOfThisDungeonChangeEvent.Trigger()

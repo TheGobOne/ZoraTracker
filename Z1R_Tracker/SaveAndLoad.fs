@@ -49,7 +49,7 @@ type Dungeon() =
     member this.TryApply(d : TrackerModel.Dungeon) =
       if isNull this.Boxes || this.Boxes.Length <> d.Boxes.Length then false   // (a save with a different number of boxes: nothing is applied, rather than throwing mid-load)
       else
-        if this.Triforce <> d.PlayerHasOwnTriforce() then
+        if this.Triforce <> d.PlayerHasTriforceFlag() then
             d.ToggleTriforce()
         d.Color <- this.Color
         d.LabelChar <- (if System.String.IsNullOrEmpty(this.LabelChar) then '?' else this.LabelChar.[0])
@@ -371,7 +371,7 @@ let SaveItems(prefix) =
     lines.Add(sprintf """    }, "Level9FloorBoxEnabled": %b, "Dungeons": [""" TrackerModel.level9FloorBoxEnabled)
     for i = 0 to 8 do
         let d = TrackerModel.GetDungeon(i)
-        lines.Add(sprintf """            { "Triforce": %b, "Color": %d, "LabelChar": "%s", "PlayerHasMap": %b, "Boxes": [ {""" (d.PlayerHasOwnTriforce()) d.Color (d.LabelChar.ToString()) d.PlayerHasOwnMap) |> ignore
+        lines.Add(sprintf """            { "Triforce": %b, "Color": %d, "LabelChar": "%s", "PlayerHasMap": %b, "Boxes": [ {""" (d.PlayerHasTriforceFlag()) d.Color (d.LabelChar.ToString()) d.PlayerHasOwnMap) |> ignore
         for box in d.Boxes do
             SaveBox("            ", box)
             lines.Add("                }, {")

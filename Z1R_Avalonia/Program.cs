@@ -2646,6 +2646,9 @@ public static class Program
                                     _ = r;
                                 }
                                 loadData = DungeonSaveAndLoad.LoadAll(json);
+                                // (the web build cannot track Anywhere spots: loading one would drop them, and the next web save would lose them for good)
+                                if (Platform.isBrowser && loadData.Overworld != null && loadData.Overworld.Shuffle >= 0 && (loadData.Overworld.Shuffle & 16) != 0)
+                                    throw new Exception("this save uses Shuffle Type Anywhere, which the web version cannot track. Load it in the desktop app.");
                                 try { loadedSaveTicks = File.GetLastWriteTimeUtc(pickedFile).Ticks; } catch (Exception) { loadedSaveTicks = 0; }
                                 recordRecentLoad(pickedFile);
                             }
@@ -3167,7 +3170,11 @@ public static class Program
                                 lines.Add("Shuffle Type: " + (anywhere ? "Anywhere" : "Between Levels"));
                             }
                             else if (shuffleKinds.Count == 2)
+                            {
+                                // (clear both ticks, so Start asks for a type instead of using the old one)
+                                shufTypeAnywhereCB.IsChecked = shufTypeBetweenCB.IsChecked = false;
                                 lines.Add("Shuffle Type: the flags pick different types (Between Levels and Anywhere). Pick one.");
+                            }
                         }
                     }
                     result.Text = lines.Count == 0 ? "Nothing to change." : string.Join("\n", lines);

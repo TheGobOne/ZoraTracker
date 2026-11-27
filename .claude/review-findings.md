@@ -10,13 +10,10 @@ None open.
 
 - [ ] 106: `Z1R_Avalonia/CoopSync.cs:2088`, `:1037-1048`: not rechecked. A 3.2 or 3.0.4 partner cannot apply item ids 49/50, resends its old value, and our map or compass box is cleared with no notice. Two current trackers may do the same if only one has Anywhere on (not checked). About 60 minutes.
 - [ ] 107: `Z1R_Avalonia/CoopSync.cs:327-331`, `:1038`, `:1060`, `Z1R_Avalonia/Program.cs:1111`: not rechecked, medium-high confidence. A 3.2 partner sends no level tag, so a reconnect or box edit untags our box and can mark the wrong level's triforce. About 45 minutes.
-- [ ] 112: `Z1R_Avalonia/Program.cs:3153-3166`: not rechecked. Flags with different shuffle types for triforces and maps keep the old tick, so Start proceeds with the wrong type and maps may not fit item boxes. About 15 minutes for the prompt.
-- [ ] 108: `Z1R_Avalonia/WPFUI.cs:591`, `:6126`, `Z1R_Tracker/SaveAndLoad.fs:39`: not rechecked. Loading a desktop Anywhere save on web drops spot items, boxed maps and compasses and tagged triforces, and a web save makes the loss permanent. Reopens part of 83. About 20 minutes to refuse such saves.
 - [ ] 111: `Z1R_Avalonia/CoopSync.cs:611`: not rechecked, medium confidence. A web partner in an Anywhere game ignores spot items and boxed maps with no notice. About 20 minutes.
 
 ## Medium
 
-- [ ] 115: `Z1R_Tracker/SaveAndLoad.fs:52`, `:374`: not rechecked, predates v3.2. A triforce held in an item box is also saved as the header flag, so clearing the box after a load leaves the level counted. About 15 minutes.
 - [ ] 80: `Z1R_Avalonia/CoopSync.cs:1490-1501`: needs your call. 3.2 partners show shop shuffle markers as heart containers; fairy id 102 probably too (unconfirmed). Fix is to stop sending those ids to old partners. About 30 minutes.
 
 ## Low and cleanup
@@ -44,6 +41,9 @@ Fixed findings are removed from the lists above. Release desktop and web Debug b
 
 - 87, 97, 116: level completion and item progress under shuffle.
 - 103, 104, 105, 113, 118: item boxes and menus. Check on screen.
+- 108: web refuses a desktop save that uses Shuffle Type Anywhere (error box, nothing loaded). Not opened in a browser. Web saves never write Anywhere, so they are unaffected.
+- 112: flags that pick different shuffle types clear both Shuffle Type ticks, so Start asks for one.
+- 115: the header Triforce flag saves only the header flag, not a triforce held in a box. Save files written before this fix keep the old flag, so they still count the level after the box is cleared.
 - 114, 119, 121: crash recovery, old save load, guessed heart in a spot.
 - 109, 130: web, not opened in a browser.
 - 110, 126: co-op, needs a live session.
