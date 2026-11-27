@@ -28,8 +28,8 @@ Scope: all work since v3.2 (v3.2..d7c7e20). Six read-only agents, 2026-11-26. Fi
 - [ ] 66: `Z1R_Avalonia/Popouts.cs:527`: the shuffle window's picker skips the main menu's rules. It offers the 4th sword with 4th Sword off, and items you already have. About 20 minutes.
 - [ ] 67: `Z1R_WPF/WPFUI.fs:4106`: WPF loads a save with Anywhere spots without applying them, then saves them empty (data loss, needs an Avalonia save opened in WPF). About 5 minutes.
 - [ ] 68: `Z1R_Avalonia/Popouts.cs:602`: each open of the shuffle window probably leaves a set of box views subscribed, so redraw cost grows (inferred from Avalonia behavior, not run). About 5 minutes.
-- [ ] 69: `Z1R_Avalonia/WPFUI.cs:434`: the shop picker's disabled tip is never reset. In Legacy Mode the shuffle window picker then greys out most items and the red X. About 5 minutes.
-- [ ] 70: `Z1R_Avalonia/WPFUI.cs:1134`: web only. The shuffle notice has no browser guard and throws. The Race Mode notice has the same older defect. About 5 minutes.
+- [x] 69: `Z1R_Avalonia/WPFUI.cs:434`: the shop picker's disabled tip is never reset. In Legacy Mode the shuffle window picker then greys out most items and the red X. About 5 minutes.
+- [x] 70: `Z1R_Avalonia/WPFUI.cs:1134`: web only. The shuffle notice has no browser guard and throws. The Race Mode notice has the same older defect. About 5 minutes.
 
 ## Low and cleanup
 
@@ -41,7 +41,7 @@ Scope: all work since v3.2 (v3.2..d7c7e20). Six read-only agents, 2026-11-26. Fi
 - [ ] 76: `Z1R_Avalonia/OptionsMenu.cs:786`: a tour Continue blocked by the Shuffle Type box leaves the main tour pending, so it opens after a later Start or Load. About 10 minutes.
 - [ ] 77: `Z1R_Avalonia/SelfTest.cs:544`: the test zeroes marker counts instead of restoring them; line 555 can pass without testing; `:576` calls the caps twice. About 10 minutes.
 - [ ] 78: `Z1R_Avalonia/Popouts.cs:838`: on Mac or Linux the popout may drop behind the main window (low confidence, not run).
-- [ ] 79: `doc/release-notes-3.2.md:3`: the committed draft says 3.2 is not published. It is. About 2 minutes.
+- [x] 79: `doc/release-notes-3.2.md:3`: the committed draft says 3.2 is not published. It is. About 2 minutes.
 
 ## Deferred: co-op Medium and Low
 

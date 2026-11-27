@@ -437,6 +437,7 @@ public static class WPFUI
     private static async Task<int> thenPickShuffleLevel(Func<List<(int, Control)>, Task<int>> show, Task<int> first)
     {
         var ident = await first;
+        PieMenus.itemPickerDisabledTip = null;   // (the disabled-item tip only applies while this picker is open)
         var slot = ident == TrackerModel.ITEMS.TRIFORCE ? 0 : ident == TrackerModel.ITEMS.MAP ? 1 : ident == TrackerModel.ITEMS.COMPASS ? 2 : -1;
         if (slot < 0) return ident;
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);   // (the first picker closes before the next opens)
@@ -1121,6 +1122,7 @@ public static class WPFUI
     // the Shuffle notice (shown at startup while maps/compasses or triforces are shuffled): it recommends tracking with the M/C/Tri Shuffle popout; OK closes it
     public static void showShuffleNotice(Window owner)
     {
+        if (Platform.isBrowser) return;   // (the web build offers no shuffle, and its windows cannot ShowDialog)
         var w = new Window { Title = "Shuffle is on", SizeToContent = SizeToContent.WidthAndHeight, CanResize = false, ShowInTaskbar = false, Background = Brushes.Black, SystemDecorations = SystemDecorations.None };
         w.WindowStartupLocation = ReferenceEquals(owner, null) ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
         var sp = new StackPanel { Margin = new Thickness(28.0) };

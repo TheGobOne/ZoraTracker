@@ -1,6 +1,6 @@
 # ZORATracker 3.2 release notes (draft)
 
-Compared against the published 3.1 release. Not published.
+Compared against the published 3.1 release. 3.2 is published.
 
 ## Discord copy
 
