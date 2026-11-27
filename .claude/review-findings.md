@@ -25,8 +25,6 @@ None open.
 
 - [ ] Check the shuffle popout on screen.
 - [ ] At ZORA's 2.0.2 release, recheck the format 23 flag table (`Z1R_Avalonia/FlagPaste.cs:65`). It matches the current test build; local `upstream/main` (not fetched) is still `8e3a612`.
-- [ ] Bump the version: `CurrentReleaseLabel` and `GlobalAssemblyInfo.fs` still say 3.2.
-- [ ] Run the release workflow by hand on master to check the Mac and Linux builds.
 
 ## Applied, needs a live check
 
@@ -37,7 +35,7 @@ Fixed findings are removed from the lists above. Release desktop and web Debug b
 - 108: web refuses a desktop save that uses Shuffle Type Anywhere (error box, nothing loaded). Not opened in a browser. Web saves never write Anywhere, so they are unaffected.
 - 112: flags that pick different shuffle types clear both Shuffle Type ticks, so Start asks for one.
 - 125: a ZORA-made file reads its shuffle settings from its ZORA flags on load (desktop only). Two different types load as Between Levels. Not run in the app.
-- 94: under Anywhere, the M/C/Tri Shuffle window has an Overworld row with the coast, armos and white sword boxes, which take a triforce, map or compass with a level. Check on screen. The main tracker's item menu is unchanged.
+- 94: under Anywhere, every item box (dungeon and overworld) takes a map, compass or shuffled triforce from the item menu or a hotkey and asks which level it is for (hotkeys: triforce only, as maps and compasses have no binding). The M/C/Tri Shuffle window has no Overworld row. Check on screen.
 - 80: the co-op hello and Overworld messages say the sender knows the fairy and shuffle shop markers. A partner that does not is sent none, and its tiles keep ours. Needs a live session with a 3.2 partner. A tile already holding 3 icons of theirs drops ours. An older partner stays flagged until our next reconnect, and while flagged the new markers do not sync to current partners either.
 - 115: the header Triforce flag saves only the header flag, not a triforce held in a box. Save files written before this fix keep the old flag, so they still count the level after the box is cleared.
 - 114, 119, 121: crash recovery, old save load, guessed heart in a spot.
