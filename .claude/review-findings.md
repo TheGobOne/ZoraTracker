@@ -10,14 +10,12 @@ Scope: all work since v3.2 (v3.2..d7c7e20). Six read-only agents, 2026-11-26. Fi
 ## Medium
 
 - [ ] 66: `Z1R_Avalonia/Popouts.cs:527`: the shuffle window's picker skips the main menu's rules. It offers the 4th sword with 4th Sword off, and items you already have. About 20 minutes.
-- [ ] 67: `Z1R_WPF/WPFUI.fs:4106`: WPF loads a save with Anywhere spots without applying them, then saves them empty (data loss, needs an Avalonia save opened in WPF). About 5 minutes.
 - [ ] 68: `Z1R_Avalonia/Popouts.cs:602`: each open of the shuffle window probably leaves a set of box views subscribed, so redraw cost grows (inferred from Avalonia behavior, not run). About 5 minutes.
 
 ## Low and cleanup
 
 - [ ] 71: `Z1R_Avalonia/DungeonUI.cs:459`: the Map hotkey does nothing visible when shuffle gives the map, and can clear the level's own map. About 5 minutes.
 - [ ] 72: `Z1R_Tracker/TrackerModel.fs:2407`, `Popouts.cs:474`: picking the same triforce and level again moves its timeline time to now. About 15 minutes.
-- [ ] 73: `Z1R_WPF/MainTrackerTriforcesAndItems.fs:357`, `OverworldItemGridUI.fs:731`, `WPFUI.fs:381`: WPF toggles the own triforce flag after testing the credited value (needs a shuffle save opened in WPF). About 10 minutes.
 - [ ] 74: `Z1R_Avalonia/Program.cs:3085`: Paste Flags ignores Random shuffle flags when deciding to untick Legacy Mode. About 5 minutes.
 - [ ] 75: `Z1R_Avalonia/Program.cs:3136`: Paste Flags ticks a shuffle box without saying a Shuffle Type is needed. About 5 minutes.
 - [ ] 76: `Z1R_Avalonia/OptionsMenu.cs:786`: a tour Continue blocked by the Shuffle Type box leaves the main tour pending, so it opens after a later Start or Load. About 10 minutes.
