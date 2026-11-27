@@ -1,88 +1,76 @@
 # ZORATracker review findings
 
-Scope: everything going out in 3.2 (v3.1..974f69b). Six read-only agents, 2026-11-25. Findings come from reading code. Nothing was reproduced in the running app. Numbers 1-30 are from the earlier review (v3.1..c4ddd43).
+Scope: all work since v3.2 (v3.2..d7c7e20). Six read-only agents, 2026-11-26. Findings come from reading code. Nothing was reproduced in the running app. 57-60, 63 and 64 were checked against the source after the review. The web Debug build compiles with 0 errors. Numbers 1-56 are from earlier reviews. Shuffle is not in the released 3.2, so the shuffle findings affect unreleased code only.
 
-Fixes for 3, 5, 7, 19, 21, 25, 31-49, 51 and 53-56 are uncommitted. Desktop Release and web Debug build with 0 errors. None are tested in the running app or in live co-op, and the self-test has not been run. WPF does not build with `dotnet build` (MSB4020 at `Z1R_WPF.fsproj:69`).
+## Decided by the user
 
-## Before tagging v3.2
+- 58: a Shuffle Type with no shuffle box ticked is ignored. Fixed.
+- 65: a dungeon box may not hold a triforce while triforces are shuffled. Fixed.
+- `Z1R_Avalonia/Popouts.cs:541`: an ordinary item picked in the shuffle window starts uncollected. Intended. No change.
 
-- [ ] Commit the fixes, then push the local commits. A v3.2 release made on GitHub now would build old code labeled 3.1.
-- [ ] Attach `ZoraTracker-CrossPlatform-v3.2-win-x64.zip` by hand. The workflow builds only Mac and Linux, and Windows Install update needs the zip.
-- [ ] At ZORA's 2.0.2 release, recheck the format 23 flag table. It follows the unreleased test build.
-- [ ] Release notes: door inference on and draw routes off apply to new installs only. The Level 9 triforce count does not reach 3.0.4 or 3.1 co-op partners.
+## Critical
 
-## Low (deferred: co-op)
+- [x] 57: `Z1R_Avalonia/OverworldItemGridUI.cs:1037`: Reset Tracker tests `PlayerHasTriforce()` (includes shuffle credit) but toggles the level's own flag. A level lit only by a slot, spot or shop marker gets its triforce turned on by Reset, and it is saved. About 5 minutes.
+- [x] 58: `Z1R_Avalonia/Program.cs:2431`, `Z1R_Tracker/TrackerModel.fs:1095`: a Shuffle Type applies with both shuffle boxes off (Paste Flags unticks only the boxes; remembered selection keeps the type). Completion then needs maps, compasses and spots, no notice shows, and no level completes. About 10 minutes.
+- [x] 59: `Z1R_Avalonia/MainTrackerTriforcesAndItems.cs:1089`: web only. The start screen offers shuffle, but the M/C/Tri Shuffle window is hidden. Levels cannot complete. About 20 minutes.
+- [ ] 60: `Z1R_Avalonia/CoopSync.cs:1001`, `Z1R_Tracker/TrackerModel.fs:904`: co-op. An item in the host's Anywhere spot uses up its cap. The partner marks the same item in a dungeon box, the host cannot apply it, resends its empty box, and the partner's box is cleared. Agent rated High, medium confidence on how often. About 45 minutes.
 
-Co-op is used very little, so only Critical and High findings there get fixed (decided 2026-11-25).
+## High
 
-- [ ] 50: `Z1R_Avalonia/CoopSync.cs` (`beginMerge`): the "unversioned 8" filter also drops a real 8 from a 3.2 partner's save. Telling 3.1 from 3.2 apart needs a new marker in the co-op payload.
-- [ ] 52: `Z1R_Avalonia/CoopSync.cs` (`endMerge`): a normal per-shop merge still counts as a failed apply, adding log noise and an extra round. The whole-array `ShopStash` / `CheapKeyShops` key is compared even when shops merge one by one. Likely fix: skip that comparison for arrays in `m.PerIndex`.
+- [x] 61: `Z1R_Avalonia/Views.cs:438`, `WPFUI.cs:4132`, `OverworldItemGridUI.cs:897`, `DungeonUI.cs:363`: clicking a triforce lit only by shuffle credit changes the hidden own flag with no visible change. The level can then dim as complete, and stays lit after the credit is removed. About 20 minutes.
+- [x] 62: `Z1R_Avalonia/OverworldItemGridUI.cs:1033`: Reset Tracker does not clear the window's collected slots or shop shuffle markers, so map, compass and triforce credit survive a reset. Marker part may be intended. About 15 minutes.
+- [x] 63: `Z1R_Avalonia/Program.cs:2170`: the ZORA Extras check-all box ticks both Shuffle Types, which leaves the experimental Anywhere mode on and the master box half-checked. About 5 minutes.
+- [ ] 64: `Z1R_Avalonia/SelfTest.cs:532`, `:551`: the shuffle test uses the AP Item, which has 0 uses while Archipelago Items is off (the default). The test fails, skips its restores and the 4th Sword slot tests, and leaves Anywhere on. About 10 minutes.
+- [x] 65: `Z1R_Avalonia/Views.cs:913`, `MainTrackerTriforcesAndItems.cs:1249`, `CustomComboBoxes.cs:1769`: with shuffle on, the hotkey, header right click and main menu can still put a triforce in a dungeon box, which credits that dungeon. The shuffle window forbids this. Needs your call. About 30 minutes.
+
+## Medium
+
+- [ ] 66: `Z1R_Avalonia/Popouts.cs:527`: the shuffle window's picker skips the main menu's rules. It offers the 4th sword with 4th Sword off, and items you already have. About 20 minutes.
+- [ ] 67: `Z1R_WPF/WPFUI.fs:4106`: WPF loads a save with Anywhere spots without applying them, then saves them empty (data loss, needs an Avalonia save opened in WPF). About 5 minutes.
+- [ ] 68: `Z1R_Avalonia/Popouts.cs:602`: each open of the shuffle window probably leaves a set of box views subscribed, so redraw cost grows (inferred from Avalonia behavior, not run). About 5 minutes.
+- [ ] 69: `Z1R_Avalonia/WPFUI.cs:434`: the shop picker's disabled tip is never reset. In Legacy Mode the shuffle window picker then greys out most items and the red X. About 5 minutes.
+- [ ] 70: `Z1R_Avalonia/WPFUI.cs:1134`: web only. The shuffle notice has no browser guard and throws. The Race Mode notice has the same older defect. About 5 minutes.
+
+## Low and cleanup
+
+- [ ] 71: `Z1R_Avalonia/DungeonUI.cs:459`: the Map hotkey does nothing visible when shuffle gives the map, and can clear the level's own map. About 5 minutes.
+- [ ] 72: `Z1R_Tracker/TrackerModel.fs:2407`, `Popouts.cs:474`: picking the same triforce and level again moves its timeline time to now. About 15 minutes.
+- [ ] 73: `Z1R_WPF/MainTrackerTriforcesAndItems.fs:357`, `OverworldItemGridUI.fs:731`, `WPFUI.fs:381`: WPF toggles the own triforce flag after testing the credited value (needs a shuffle save opened in WPF). About 10 minutes.
+- [ ] 74: `Z1R_Avalonia/Program.cs:3085`: Paste Flags ignores Random shuffle flags when deciding to untick Legacy Mode. About 5 minutes.
+- [ ] 75: `Z1R_Avalonia/Program.cs:3136`: Paste Flags ticks a shuffle box without saying a Shuffle Type is needed. About 5 minutes.
+- [ ] 76: `Z1R_Avalonia/OptionsMenu.cs:786`: a tour Continue blocked by the Shuffle Type box leaves the main tour pending, so it opens after a later Start or Load. About 10 minutes.
+- [ ] 77: `Z1R_Avalonia/SelfTest.cs:544`: the test zeroes marker counts instead of restoring them; line 555 can pass without testing; `:576` calls the caps twice. About 10 minutes.
+- [ ] 78: `Z1R_Avalonia/Popouts.cs:838`: on Mac or Linux the popout may drop behind the main window (low confidence, not run).
+- [ ] 79: `doc/release-notes-3.2.md:3`: the committed draft says 3.2 is not published. It is. About 2 minutes.
+
+## Deferred: co-op Medium and Low
+
+Only Critical and High co-op findings get fixed (decided 2026-11-25).
+
+- [ ] 50: `Z1R_Avalonia/CoopSync.cs` (`beginMerge`): the "unversioned 8" filter also drops a real 8 from a 3.2 partner's save.
+- [ ] 52: `Z1R_Avalonia/CoopSync.cs` (`endMerge`): a normal per-shop merge still counts as a failed apply.
+- [ ] 80: `Z1R_Tracker/TrackerModel.fs:897`: 3.2 and older partners show shop shuffle markers as heart containers.
+- [ ] 81: `Z1R_Avalonia/Program.cs:2232`: host startup options that arrive while the Shuffle Type box is up are dropped.
+
+## Before the next release
+
+- [ ] At ZORA's 2.0.2 release, recheck the format 23 flag table (`Z1R_Avalonia/FlagPaste.cs:65`). Released ZORA is still 2.0.1 / 22; the table matches the test build.
 
 ## Closed
 
-- [x] 1: Header right click no longer replaces a collected basement item.
-- [x] 2: Stash and cheap key merge holds between two 3.2 trackers.
-- [x] 3: A stash item moved onto a partner's tile is sent.
-- [x] 4: First shop tile keeps its own icons.
-- [x] 5: Restored Intra heart guesses are registered (see 38).
-- [x] 6: Level 9 count syncs for edits mid-run.
-- [x] 7: Pasted Level 9 count and circles reach a partner, at the lowest version.
-- [x] 8: C08 values 9-12 handled.
-- [x] 9: ZORA format 23 tables read.
-- [x] 10: Dimming no longer changes `IsComplete`.
-- [x] 11: Dimming covers the extra floor box.
-- [x] 12: Bracelet and hint locked spots count as unreachable.
-- [x] 13: Level 9 entry count, triforce path.
-- [x] 14: Heart-first order with all hearts used.
-- [x] 15: Enemy inference no longer upgrades the maybe blocker.
-- [x] 16: "Shops in menu" hover text matches intent.
-- [x] 17: No door inference on partner room changes.
-- [x] 18: Version shown is 3.2.
-- [x] 19: Pasted circles can be taken back after reopening the paste dialog.
-- [x] 20: Shuffle options removed for 3.2 (974f69b). Saves and remembered settings with the old keys load.
-- [x] 21: Shop, item and marker hotkeys follow the tile menu's blocked caves.
-- [x] 22: Map hotkeys work after a Shops popout click (see 48).
-- [x] 23: Progressive boomerang mirror refresh.
-- [x] 24: Shops popout hidden on web.
-- [x] 25: Hand circle edits redraw the shared dungeon spots.
-- [x] 26: Side strip chest follows the option.
-- [x] 27: Recorder tip restored.
-- [x] 28: Any Road bypass refresh.
-- [x] 29: Self-test restores state.
-- [x] 30: Version strings say 3.2.
-- [x] 31: Leftover stash items no longer go onto a second shop tile.
-- [x] 32: Floor key item gesture no longer overwrites a heart guess when a box is free.
-- [x] 33: Stash rule runs after the partner's stash is applied.
-- [x] 34: A circle received from a partner is drawn.
-- [x] 35: ZORA's level 4 sword Level 9 entrance is read.
-- [x] 36: Go time counts an unlocated Level 9 when an entry item is set.
-- [x] 37: Level 2 completion counts the 4th sword staircase box.
-- [x] 38: Saves record which hearts are guesses, so a marked heart stays yours after a load. Older saves still work them out, so 38 can happen with those.
-- [x] 39: A guessed heart in the extra floor box is taken back after loading a save that records it (not older saves).
-- [x] 40: Shuffle line removed from the start screen docs.
-- [x] 41: Paste Flags docs cover the Level 9 count, circles and entry item.
-- [x] 42: Download steps no longer name v3.0.0 zips.
-- [x] 43: A paste with no Level 9 count takes back an earlier paste's count.
-- [x] 44: "Dim dungeon without hearts" redraws when toggled.
-- [x] 45: ZORA Extras has its two spare rows again, as in 3.1. Not looked at in the app.
-- [x] 46: Taking the Triforce Piece back out by header right click puts back the item it replaced (this session only).
-- [x] 47: Collected items moved from the shop window to a tile by placing the shop check their item box.
-- [x] 48: The Shops popout stays in front after the main window takes the keyboard back. Not tried in the app; Avalonia source checked for Windows only.
-- [x] 49: Bomb dropper hover text and comments name the right colors.
-- [x] 51: A stash merged onto a tile is resent.
-- [x] 53: Docs row for "Dim dungeon without hearts".
-- [x] 54: Enemy inference docs state its conditions.
-- [x] 55: New defaults for door inference and draw routes documented.
-- [x] 56: Version button docs say it shows the About text.
+- [x] 1-49, 51, 53-56: fixed before 3.2.
+- [x] 3.2 release steps: published with the Windows zip.
 
 ## Looked clean
 
-- Version strings and the update check (3.0.4 and 3.1 see v3.2 as newer). Tag a hotfix as v3.2.1; a dash suffix is not offered as an update.
-- v3.1 saves load unchanged.
-- Any Road rule, mirrored overworld with split circles, minimap chest.
+- 3.1 and 3.2 saves load. New save fields and spot tiers round trip; load order is right.
+- New item ids 49-76 do not collide, and array bounds hold.
 - 4th Sword enables Progressive Items, not the reverse.
-- No leftover Shuffle code.
+- Version strings match v3.2; build, workflow and platform files are unchanged.
+- Co-op triforce, map and box tier sync.
+- No headless run hangs on the new popups.
+- Mirrored overworld, marker bitmaps, popout column layout.
 
 ## Not reviewed
 
-WPF, OverworldRouting.fs, self-test, live co-op, start screen and options popup layout, web Release/AOT, Mac and Linux builds.
+Running app, live co-op, self-test run, web page in a browser, web Release/AOT, Mac and Linux runs, WPF beyond crash and data loss reading.

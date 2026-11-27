@@ -360,7 +360,8 @@ public static class DungeonUI
                 break;
 
             case HotKeys.DungeonRoomHotKey.OfFloorDropDetail { Value: FloorDropDetail.Triforce }:
-                dungeon.ToggleTriforce();
+                if (dungeon.PlayerHasTriforce() == dungeon.PlayerHasOwnTriforce())   // (a triforce lit only by shuffle credit is not toggled: the toggle is invisible)
+                    dungeon.ToggleTriforce();
                 break;
             case HotKeys.DungeonRoomHotKey.OfFloorDropDetail { Value: FloorDropDetail.OtherKeyItem }:
                 {

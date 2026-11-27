@@ -4129,7 +4129,7 @@ public static class WPFUI
                                     if (TrackerModel.GetDungeon(d).LabelChar == labels[k]) { dungeonIndex = d; break; }
                             }
                             else dungeonIndex = (int)labels[k] - (int)'1';
-                            if (dungeonIndex is int d2 && !Views.triforceBlocked[d2]) TrackerModel.GetDungeon(d2).ToggleTriforce();
+                            if (dungeonIndex is int d2 && !Views.triforceBlocked[d2] && TrackerModel.GetDungeon(d2).PlayerHasTriforce() == TrackerModel.GetDungeon(d2).PlayerHasOwnTriforce()) TrackerModel.GetDungeon(d2).ToggleTriforce();
                         }
                     };
                 }

@@ -893,7 +893,7 @@ public static class OverworldItemGridUI
                 {
                     if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
                         TrackerModel.startingItemsAndExtras.HDNStartingTriforcePieces[i].Toggle();
-                    else
+                    else if (TrackerModel.GetDungeon(i).PlayerHasTriforce() == TrackerModel.GetDungeon(i).PlayerHasOwnTriforce())   // (a credit-only triforce is not toggled: the toggle is invisible)
                         TrackerModel.GetDungeon(i).ToggleTriforce();
                     redraw();
                 };
@@ -1030,20 +1030,23 @@ public static class OverworldItemGridUI
                             filename = System.IO.Path.GetFileName(filename);  // remove directory info (could have username in path, don't display PII on-screen)
                             var r = await CustomComboBoxes.DoModalMessageBox(cm, null, $"ZORATracker data saved to file\n{filename}\nThe tracker will now be reset.", new[] { "OK" });
                             _ = r;
-                            // remove triforces
-                            for (var i = 0; i <= 7; i++)
-                            {
-                                var dung = TrackerModel.GetDungeon(i);
-                                if (dung.PlayerHasTriforce())
-                                    dung.ToggleTriforce();
-                            }
                             // remove (red-ify) all items (keep skipped as marked)
                             // (the overworld cave boxes too: the coast, armos, letter, white sword, magical sword and shuffled wood sword cave items)
                             foreach (var b in TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes()
-                                              .Concat(new[] { TrackerModel.ladderBox, TrackerModel.armosBox, TrackerModel.letterBox, TrackerModel.sword1Box, TrackerModel.sword2Box, TrackerModel.sword3Box }))
+                                              .Concat(new[] { TrackerModel.ladderBox, TrackerModel.armosBox, TrackerModel.letterBox, TrackerModel.sword1Box, TrackerModel.sword2Box, TrackerModel.sword3Box }).Concat(TrackerModel.shuffleSlotBoxes))
                             {
                                 if (!b.PlayerHas().Equals(TrackerModel.PlayerHas.SKIPPED))
                                     b.SetPlayerHas(TrackerModel.PlayerHas.NO);
+                            }
+                            // clear the M/C/Tri Shuffle window's collected slots (which level each is for is kept)
+                            for (var i = 0; i < 27; i++)
+                                if (TrackerModel.shuffleSlotGot[i]) TrackerModel.SetShuffleSlot(i / 3, i % 3, false, TrackerModel.shuffleSlotChosen[i]);
+                            // remove triforces (after the boxes: a got triforce in a box counts as owned until its box is cleared)
+                            for (var i = 0; i <= 7; i++)
+                            {
+                                var dung = TrackerModel.GetDungeon(i);
+                                if (dung.PlayerHasOwnTriforce())
+                                    dung.ToggleTriforce();
                             }
                             // clear mags/shop items and the take-any heart boxes
                             TrackerModel.playerProgressAndTakeAnyHearts.ResetAll();

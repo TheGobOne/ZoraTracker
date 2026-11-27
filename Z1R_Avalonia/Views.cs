@@ -333,6 +333,7 @@ public static class Views
             if (replaced) inSlot.AttemptToSet(was.cell, was.has);   // (refused if the item was marked elsewhere since: the slot stays empty)
             return true;
         }
+        if (TrackerModel.ShuffleTriforces) return false;   // (triforces shuffled: a dungeon box cannot take the piece; taking one out above still works)
         var target = stairOn ? (TrackerModel.level2StairBox.CellCurrent() == -1 ? TrackerModel.level2StairBox : null)
                              : d.Boxes.Take(3).FirstOrDefault(b => b.CurrentlyHasBasementStair && b.CellCurrent() == -1);
         // no empty slot: replace the item in the basement slot (the piece is there, so that item was marked in the wrong place)
@@ -433,7 +434,7 @@ public static class Views
                     ea.Handled = true;
                     redraw();
                 }
-                else if (!CustomComboBoxes.GlobalFlag.popupIsActive && !triforceBlocked[trackerIndex])
+                else if (!CustomComboBoxes.GlobalFlag.popupIsActive && !triforceBlocked[trackerIndex] && dungeon.PlayerHasTriforce() == dungeon.PlayerHasOwnTriforce())   // (a triforce lit only by shuffle credit is not toggled: the toggle is invisible)
                 {
                     dungeon.ToggleTriforce();
                     if (dungeon.PlayerHasTriforce() && TrackerModel.IsHiddenDungeonNumbers.Invoke(null) && dungeon.LabelChar == '?')
@@ -834,7 +835,7 @@ public static class Views
                 CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
                 {
                     CustomComboBoxes.itemMenuMovableIdents = movableIdents();
-                    CustomComboBoxes.itemMenuTriforceBlocked = !box.CurrentlyHasBasementStair;
+                    CustomComboBoxes.itemMenuTriforceBlocked = !box.CurrentlyHasBasementStair || TrackerModel.ShuffleTriforces;
                     (bool hasResult, (int, TrackerModel.PlayerHas) result) r;
                     try { r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, box.CellCurrent(), activationDelta, box.PlayerHas(), extraDecorations, gridClickDismissalWarpReturn); }
                     finally { CustomComboBoxes.itemMenuMovableIdents = new HashSet<int>(); CustomComboBoxes.itemMenuTriforceBlocked = false; }
@@ -910,7 +911,9 @@ public static class Views
                         else
                         {
                             // changing from empty/other-item box to this item value always NO on first hotkey press, as this is 'model harmless'
-                            if (i == TrackerModel.ITEMS.TRIFORCE && !box.CurrentlyHasBasementStair)
+                            if (i == TrackerModel.ITEMS.TRIFORCE && TrackerModel.ShuffleTriforces)
+                                Graphics.ErrorBeepWithReminderLogText("Triforce Pieces are shuffled: place them in the M/C/Tri Shuffle window");
+                            else if (i == TrackerModel.ITEMS.TRIFORCE && !box.CurrentlyHasBasementStair)
                                 Graphics.ErrorBeepWithReminderLogText("A Triforce Piece can only be placed on a basement slot");
                             else
                             {

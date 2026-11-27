@@ -2149,8 +2149,12 @@ public static class Program
             shuffleDivider.Children.Add(new Panel { Height = 10.0 });
             shuffleDivider.Children.Add(new Panel { Height = 1.0, Background = Brushes.Gray });
             shuffleDivider.Children.Add(new Panel { Height = 10.0 });
-            extrasSP.Children.Add(shuffleDivider);
-            extrasSP.Children.Add(shuffleRow);
+            // (the web build has no M/C/Tri Shuffle window, so a shuffle could never complete there: no shuffle options are offered)
+            if (!Platform.isBrowser)
+            {
+                extrasSP.Children.Add(shuffleDivider);
+                extrasSP.Children.Add(shuffleRow);
+            }
             // 'Shuffle Type': how the shuffled maps, compasses and triforces are placed (mutually exclusive)
             var shufTypeBetweenCB = makeShuffleCheckBox("Between Levels");
             var shufTypeAnywhereCB = makeShuffleCheckBox("Anywhere");
@@ -2164,10 +2168,14 @@ public static class Program
             shuffleTypeRow.Children.Add(shufTypeOptions);
             shuffleTypeRow.PointerEntered += (_, _) => hoverExplain(shuffleTypeRow, "Between Levels: triforces shuffle between levels 1-8, maps and compasses between levels 1-9.\nEach level keeps one triforce, one map and one compass. Recommended for single player.\nAnywhere: they join the main item pool with other items (experimental).");
             shuffleTypeRow.PointerExited += (_, _) => explainHide();
-            extrasSP.Children.Add(new DockPanel { Width = 10.0 });
-            extrasSP.Children.Add(shuffleTypeRow);
+            if (!Platform.isBrowser)
+            {
+                extrasSP.Children.Add(new DockPanel { Width = 10.0 });
+                extrasSP.Children.Add(shuffleTypeRow);
+            }
             // the 'ZORA Extras' master checkbox
-            var extrasCheckBoxes = new List<CheckBox> { fscb, clncb, brcb, epbcb, erbcb, dwcb, lhcb, pricb, shufMapsCB, shufTriCB, shufTypeBetweenCB, shufTypeAnywhereCB };
+            // (the two Shuffle Types are not in the check-all set: checking all would turn on the experimental Anywhere type)
+            var extrasCheckBoxes = new List<CheckBox> { fscb, clncb, brcb, epbcb, erbcb, dwcb, lhcb, pricb, shufMapsCB, shufTriCB };
             var settingExtras = false;
             bool isOn(CheckBox cb) => cb.IsChecked == true;
             // the 4th Sword needs Progressive Items (the other way round is fine): checking 4th Sword checks it, and it can't be unchecked while 4th Sword is on
@@ -2425,14 +2433,22 @@ public static class Program
                 OverworldData.LostHillsHintKnown = false;
                 TrackerModel.MarkBombDroppers = mbcb.IsChecked == true;
                 TrackerModel.ProgressiveItems = pricb.IsChecked == true;
-                TrackerModel.ShuffleMaps = shufMapsCB.IsChecked == true;
-                TrackerModel.ShuffleCompasses = shufMapsCB.IsChecked == true;
-                TrackerModel.ShuffleTriforces = shufTriCB.IsChecked == true;
-                TrackerModel.ShuffleBetweenLevels = shufTypeBetweenCB.IsChecked == true;
-                TrackerModel.ShuffleAnywhere = shufTypeAnywhereCB.IsChecked == true;
+                // (the web build has no M/C/Tri Shuffle window, so no shuffle is started there, even if a paste or a remembered choice ticked the boxes)
+                var shuffleOn = !Platform.isBrowser;
+                TrackerModel.ShuffleMaps = shuffleOn && shufMapsCB.IsChecked == true;
+                TrackerModel.ShuffleCompasses = shuffleOn && shufMapsCB.IsChecked == true;
+                TrackerModel.ShuffleTriforces = shuffleOn && shufTriCB.IsChecked == true;
+                // a Shuffle Type with no M/C/Tri box ticked is ignored (nothing to shuffle, and no level could complete)
+                var anyShuffleBox = TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces;
+                TrackerModel.ShuffleBetweenLevels = anyShuffleBox && shufTypeBetweenCB.IsChecked == true;
+                TrackerModel.ShuffleAnywhere = anyShuffleBox && shufTypeAnywhereCB.IsChecked == true;
                 TrackerModel.ApplyShuffleAnywhereCaps();
                 // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
                 if (loadData != null) SaveAndLoad.ApplyLoadedOptions(loadData.Overworld);
+                // a loaded save can bring back shuffle settings: the web build has no shuffle window, and a type needs a shuffled maps/compasses or triforces
+                if (Platform.isBrowser) TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = TrackerModel.ShuffleTriforces = false;
+                if (Platform.isBrowser || !(TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces)) { TrackerModel.ShuffleBetweenLevels = false; TrackerModel.ShuffleAnywhere = false; }
+                TrackerModel.ApplyShuffleAnywhereCaps();
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
                 OverworldItemGridUI.ApplyProgressiveItemCaps();
                 TrackerModel.CustomLevelName =
