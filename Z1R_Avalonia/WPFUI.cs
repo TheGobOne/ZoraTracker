@@ -437,7 +437,7 @@ public static class WPFUI
     private static async Task<int> thenPickShuffleLevel(Func<List<(int, Control)>, Task<int>> show, Task<int> first)
     {
         var ident = await first;
-        PieMenus.itemPickerDisabledTip = null;   // (the disabled-item tip only applies while this picker is open)
+        PieMenus.itemPickerDisabledTip = _ => null;   // (back to the default, no item disabled: the tip only applies while this picker is open)
         var slot = ident == TrackerModel.ITEMS.TRIFORCE ? 0 : ident == TrackerModel.ITEMS.MAP ? 1 : ident == TrackerModel.ITEMS.COMPASS ? 2 : -1;
         if (slot < 0) return ident;
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);   // (the first picker closes before the next opens)
