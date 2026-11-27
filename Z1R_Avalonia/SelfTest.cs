@@ -1586,6 +1586,18 @@ public static class SelfTest
             if (CoopSync.maxVersion > CoopSync.MaxPartnerVersion) fail($"co-op bound: a hello counter of long.MaxValue raised ours above 2^40, to {CoopSync.maxVersion}");
             else if (CoopSync.maxVersion != before) fail($"co-op bound: a hello counter of long.MaxValue raised ours from {before} to {CoopSync.maxVersion}");
         });
+        guard("co-op old partner markers", () =>
+        {
+            int icons(int a, int b) => TrackerModel.decorIconsPack(Microsoft.FSharp.Collections.ListModule.OfSeq(new[] { a, b }));
+            var ours = TrackerModel.withShopLabel(icons(TrackerModel.shuffleMarker(1, 2), TrackerModel.DECOR_BOMB), 3) + "|0|0|-1|0|||0";
+            var sent = CoopSync.withoutNewMarkers(ours);
+            var wantIcons = TrackerModel.withShopLabel(TrackerModel.decorIconsPack(Microsoft.FSharp.Collections.ListModule.OfSeq(new[] { TrackerModel.DECOR_BOMB })), 3);
+            if (sent != wantIcons + "|0|0|-1|0|||0") fail($"co-op markers: sent '{sent}' to an older partner");
+            if (CoopSync.keepOurNewMarkers(sent, ours) != ours) fail("co-op markers: an older partner's echo changed our tile");
+            var cleared = CoopSync.keepOurNewMarkers("-1|0|0|-1|0|||0", ours);
+            if (!cleared.StartsWith(TrackerModel.decorIconsPack(Microsoft.FSharp.Collections.ListModule.OfSeq(new[] { TrackerModel.shuffleMarker(1, 2) })) + "|"))
+                fail($"co-op markers: an older partner's cleared tile gave '{cleared}'");
+        });
         // 6k. the state cache: a kind's state is parsed again only when its JSON changed, and DungeonMaps is serialized again only when a map changed.
         // It must never miss a change (here a door and a level's big numeral) and must give exactly what an uncached build gives.
         guard("co-op state cache", () =>

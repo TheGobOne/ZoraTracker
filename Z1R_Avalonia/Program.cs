@@ -903,6 +903,7 @@ public static class Program
                                             }
                                             CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
+                                                CoopSync.fromPartner(payload, senderId);   // (an older partner's tiles keep our fairy / shuffle markers)
                                                 var merge = CoopSync.beginMerge("Overworld", payload, senderId);   // (each tile and each global: is the partner's newer?)
                                                 SaveAndLoad.Overworld data = null;
                                                 string[] tileExtras = null;
@@ -1381,6 +1382,8 @@ public static class Program
                                                     return;
                                                 }
                                                 var key = CoopSync.tileKey(data.X, data.Y);
+                                                CoopSync.fromPartner(payload, senderId);   // (an older partner's tile keeps our fairy / shuffle markers)
+                                                data = payload.ToObject<CoopSync.OverworldTileUpdate>();
                                                 // (with the tile's value as stateOf writes it, so endMerge can check that the tile really took it)
                                                 var merge = CoopSync.beginMergeUnit("Overworld", key, payload, senderId, CoopSync.unitTileValue(data.MapTileValue, data.ExtraData, data.CircleValue, data.Extras));
                                                 if (merge.Takes(key))
@@ -2440,6 +2443,18 @@ public static class Program
                 TrackerModel.ApplyShuffleAnywhereCaps();
                 // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
                 if (loadData != null) WPFUI.ApplyLoadedOptions(loadData.Overworld);
+                // a ZORA-made file has no Shuffle key: its ZORA flags say the shuffle settings (not on the web, which has no shuffle tracking)
+                if (!Platform.isBrowser && loadData?.Overworld is SaveAndLoad.Overworld zow && zow.Shuffle < 0 && zow.BootsReplaceBoomerangs >= 0 && zow.ProgressiveItems < 0 && zow.LegacyMode < 0
+                    && !string.IsNullOrEmpty(loadData.ZoraFlags) && FlagPaste.decodeZora(loadData.ZoraFlags) is var (zp, zerr) && zerr == null)
+                {
+                    TrackerModel.ShuffleTriforces = zp.ShuffleTriforces != FlagPaste.Tri.Off;
+                    TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = zp.ShuffleMapsCompasses != FlagPaste.Tri.Off;
+                    var zoraKinds = new[] { zp.ShuffleTriforces, zp.ShuffleMapsCompasses }.Where(t => t != FlagPaste.Tri.Off).Distinct().ToList();
+                    var zoraAnywhere = zoraKinds.Count == 1 && zoraKinds[0] == FlagPaste.Tri.On;   // (two different types: Between Levels, as ApplyLoadedOptions falls back)
+                    TrackerModel.ShuffleAnywhere = zoraAnywhere;
+                    TrackerModel.ShuffleBetweenLevels = !zoraAnywhere && (TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces);
+                    TrackerModel.ApplyShuffleAnywhereCaps();
+                }
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
                 OverworldItemGridUI.ApplyProgressiveItemCaps();
                 TrackerModel.CustomLevelName =

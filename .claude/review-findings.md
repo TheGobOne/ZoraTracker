@@ -14,14 +14,9 @@ None open.
 
 ## Medium
 
-- [ ] 80: `Z1R_Avalonia/CoopSync.cs:1490-1501`: needs your call. 3.2 partners show shop shuffle markers as heart containers; fairy id 102 probably too (unconfirmed). Fix is to stop sending those ids to old partners. About 30 minutes.
 
 ## Low and cleanup
 
-- [ ] 94: `Z1R_Avalonia/CustomComboBoxes.cs:1676-1689`, `Z1R_Avalonia/Views.cs:838`: not rechecked, depends on ZORA seeds. Under Anywhere, coast, armos and white sword boxes cannot record a triforce, map or compass. About 45 minutes.
-- [ ] 120: `Z1R_Tracker/TrackerModel.fs:830-843`: not rechecked, medium confidence. Scrolling a box under Anywhere may stop on a map or compass with no level. About 15 minutes.
-- [ ] 98: `Z1R_Avalonia/MainTrackerTriforcesAndItems.cs:186-191`, `:226-231`: needs your call. Item Locations does not list Anywhere spots. About 20 minutes.
-- [ ] 125: `Z1R_Tracker/SaveAndLoad.fs:504-513`: not rechecked, may be intended. A ZORA-made tracker file ignores its `ZoraFlags` for shuffle settings. About 30 minutes.
 - [ ] 123: `Z1R_Avalonia/Popouts.cs:489`, `:555`: not rechecked, low confidence. After a popout click, map hotkeys may do nothing until the main window is clicked. About 15 minutes.
 - [ ] 124: `Z1R_Avalonia/MainTrackerTriforcesAndItems.cs:626-627`: not rechecked. 27 hidden spot views redraw all session. About 15 minutes.
 - [ ] 127: `Z1R_Avalonia/CoopTest.cs`: no co-op test covers spots, slots or tagged boxes. About 45 minutes.
@@ -43,6 +38,9 @@ Fixed findings are removed from the lists above. Release desktop and web Debug b
 - 103, 104, 105, 113, 118: item boxes and menus. Check on screen.
 - 108: web refuses a desktop save that uses Shuffle Type Anywhere (error box, nothing loaded). Not opened in a browser. Web saves never write Anywhere, so they are unaffected.
 - 112: flags that pick different shuffle types clear both Shuffle Type ticks, so Start asks for one.
+- 125: a ZORA-made file reads its shuffle settings from its ZORA flags on load (desktop only). Two different types load as Between Levels. Not run in the app.
+- 94: under Anywhere, the M/C/Tri Shuffle window has an Overworld row with the coast, armos and white sword boxes, which take a triforce, map or compass with a level. Check on screen. The main tracker's item menu is unchanged.
+- 80: the co-op hello and Overworld messages say the sender knows the fairy and shuffle shop markers. A partner that does not is sent none, and its tiles keep ours. Needs a live session with a 3.2 partner. A tile already holding 3 icons of theirs drops ours. An older partner stays flagged until our next reconnect, and while flagged the new markers do not sync to current partners either.
 - 115: the header Triforce flag saves only the header flag, not a triforce held in a box. Save files written before this fix keep the old flag, so they still count the level after the box is cleared.
 - 114, 119, 121: crash recovery, old save load, guessed heart in a spot.
 - 109, 130: web, not opened in a browser.
@@ -56,7 +54,7 @@ Fixed findings are removed from the lists above. Release desktop and web Debug b
 - 72, 88, 91: not run in the app.
 - 102: web, not opened in a browser.
 
-Closed: 100 (`Directory.Build.Props` casing has no visible effect beyond DLL metadata on Linux).
+Closed: 100 (`Directory.Build.Props` casing has no visible effect beyond DLL metadata on Linux). 98 (Item Locations and Anywhere spots): decided no. 120 (Anywhere box scroll): decided intended, the box keeps "?" until a level is picked.
 
 ## Not reviewed
 

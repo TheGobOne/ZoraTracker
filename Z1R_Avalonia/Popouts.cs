@@ -596,7 +596,7 @@ public static class Popouts
         int bestColumns()
         {
             if (w.SizeToContent != SizeToContent.Manual || lineWidth <= 0.0) return 1;
-            double scaleAt(int n) => Math.Min(w.ClientSize.Width / (n * lineWidth + (n - 1) * 16.0 + 12.0), w.ClientSize.Height / ((8 / n + 1) * 34.0 + 12.0));
+            double scaleAt(int n) => Math.Min(w.ClientSize.Width / (n * lineWidth + (n - 1) * 16.0 + 12.0), w.ClientSize.Height / (((TrackerModel.ShuffleAnywhere ? 9 : 8) / n + 1) * 34.0 + 12.0));
             var best = 1;
             for (var n = 2; n <= 9; n++) if (scaleAt(n) > scaleAt(best)) best = n;
             return best;
@@ -627,8 +627,32 @@ public static class Popouts
                 lines.Add(line);
                 lineWidth = Math.Max(lineWidth, 80.0 + boxes.Count * 34.0);
             }
+            if (TrackerModel.ShuffleAnywhere)
+            {
+                // the coast, armos and white sword spots can hold a triforce / map / compass too
+                var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) };
+                var label = text("OVERWORLD", 14.0);
+                label.Width = 80.0;
+                label.TextAlignment = TextAlignment.Center;
+                label.VerticalAlignment = VerticalAlignment.Center;
+                line.Children.Add(label);
+                foreach (var (box, bmp, spot) in new[] { (TrackerModel.ladderBox, Graphics.ladder_bmp, "Coast item"), (TrackerModel.armosBox, Graphics.ow_key_armos_bmp, "Armos item"),
+                                                         (TrackerModel.sword2Box, Graphics.ow_sword2_item_bmp, "White sword item") })
+                {
+                    var icon = Graphics.BMPtoImage(bmp);
+                    icon.Width = 21.0; icon.Height = 21.0; icon.Stretch = Stretch.Uniform;
+                    RenderOptions.SetBitmapInterpolationMode(icon, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                    ToolTip.SetTip(icon, spot);
+                    line.Children.Add(icon);
+                    var view = itemBox(box);
+                    view.Margin = new Thickness(4.0, 0.0, 8.0, 0.0);
+                    line.Children.Add(view);
+                }
+                lines.Add(line);
+                lineWidth = Math.Max(lineWidth, 80.0 + 3 * (21.0 + 42.0));
+            }
             shownColumns = bestColumns();
-            var perColumn = 8 / shownColumns + 1;   // (9 levels, rounded up; read down each column, then the next)
+            var perColumn = (lines.Count + shownColumns - 1) / shownColumns;   // (rounded up; read down each column, then the next)
             for (var i = 0; i < lines.Count; i += perColumn)
             {
                 var column = new StackPanel { Orientation = Orientation.Vertical, Width = lineWidth, Margin = new Thickness(i == 0 ? 0.0 : 16.0, 0.0, 0.0, 0.0) };
