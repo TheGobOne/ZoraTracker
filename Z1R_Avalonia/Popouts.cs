@@ -468,7 +468,7 @@ public static class Popouts
             }
             return sp;
         }
-        // a triforce / map / compass placed in a spot: asks which level it is for (triforce 1-8, map and compass 1-9), and
+        // a triforce / map / compass placed in a box: asks which level it is for (triforce 1-8, map and compass 1-9), and
         // marks it collected (these are marked as they are picked up)
         void pickLevel(Control at, int id, TrackerModel.Box box) =>
             showMenu(at, done => levelStrip(id == TrackerModel.ITEMS.TRIFORCE ? 8 : 9, lvl => done(() => box.AttemptToSetForLevel(id, TrackerModel.PlayerHas.YES, lvl))));
@@ -516,14 +516,13 @@ public static class Popouts
         Control itemBox(TrackerModel.Box box)
         {
             var (view, _) = Views.MakeBoxItemWithExtraDecorations(null, box, false, null);   // (draws and redraws; the clicks are below)
-            // a spot (Shuffle Type Anywhere) takes any item, a triforce / map / compass included; a dungeon's own box never takes those three
-            var isSpot = TrackerModel.shuffleSlotBoxes.Contains(box);
-            bool allowed(int id) => isSpot || !TrackerModel.ITEMS.isShuffleItem(id);
+            // Shuffle Type Anywhere: every box here takes any item, a triforce / map / compass included (otherwise none takes those three)
+            bool allowed(int id) => TrackerModel.ShuffleAnywhere || !TrackerModel.ITEMS.isShuffleItem(id);
             void pickItem() => showMenu(view, done =>
             {
                 var extra = (TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER } : new int[0])
                                 .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k))
-                                .Concat(new[] { TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS });   // (only this window offers them: spots, Shuffle Type Anywhere)
+                                .Concat(new[] { TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS });   // (only this window offers them, Shuffle Type Anywhere)
                 var items = CustomComboBoxes.itemMenuIdents.Concat(extra)
                     .Where(id => id != -1 && allowed(id) && !TrackerModel.progressiveDisabledIdent(id) && (id == box.CellCurrent() || box.Domain.CanAddUse(id) && !CustomComboBoxes.ownedUniqueItem(id) && !(id == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled)))
                     .Concat(new[] { -1 })   // (the clear button comes last)
@@ -537,7 +536,7 @@ public static class Popouts
                 {
                     done(() =>
                     {
-                        if (isSpot && TrackerModel.ITEMS.isShuffleItem(id)) pickLevel(view, id, box);
+                        if (TrackerModel.ShuffleAnywhere && TrackerModel.ITEMS.isShuffleItem(id)) pickLevel(view, id, box);
                         else if (id != box.CellCurrent()) box.AttemptToSet(id, TrackerModel.PlayerHas.NO);
                     });
                 });

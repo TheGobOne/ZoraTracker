@@ -543,6 +543,14 @@ public static class SelfTest
                     if (told == 0) fail("anywhere: changing a spot did not tell the levels to update");
                     if (!TrackerModel.ShuffleCredits(0, 4)) fail("anywhere: a triforce spot tagged for level 5 did not credit level 5");
                     if (TrackerModel.ShuffleCredits(0, 3)) fail("anywhere: a triforce spot tagged for level 5 also credited level 4");
+                    var host = TrackerModel.GetDungeon(2).Boxes[0];
+                    var (hostCell, hostHas) = (host.CellCurrent(), host.PlayerHas());
+                    host.AttemptToSetForLevel(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.YES, 6);
+                    if (!TrackerModel.ShuffleCredits(0, 6) || TrackerModel.GetDungeon(2).TriforceIsInItemSlot) fail("anywhere: a triforce in level 3's box tagged for level 7 did not credit level 7 only");
+                    var hostSaved = CoopSync.toSerializableBox(host);
+                    host.Set(-1, TrackerModel.PlayerHas.NO);
+                    if (TrackerModel.ShuffleCredits(0, 6)) fail("anywhere: an emptied level box still credited its level");
+                    if (!hostSaved.TryApply(host) || host.ShuffleLevel != 6) fail("anywhere: a level box's tag did not survive a round trip");
                     var mapSpot = TrackerModel.shuffleSlotBoxes[4];
                     var itemSpot = TrackerModel.shuffleSlotBoxes[5];
                     mapSpot.AttemptToSetForLevel(TrackerModel.ITEMS.MAP, TrackerModel.PlayerHas.YES, 2);
@@ -550,6 +558,9 @@ public static class SelfTest
                     itemSpot.AttemptToSet(TrackerModel.ITEMS.APITEM, TrackerModel.PlayerHas.YES);
                     if (!TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Contains(itemSpot)) fail("anywhere: an item in a spot does not count as owned");
                     var dAny = DungeonSaveAndLoad.LoadAll(build(""));
+                    if (dAny.Items.Dungeons[2].Boxes[0].ShuffleLevel != 6) fail("anywhere: a level box's tag was not written to the save file");
+                    host.Set(-1, TrackerModel.PlayerHas.NO);
+                    host.Set(hostCell, hostHas);
                     foreach (var b in new[] { spot, mapSpot, itemSpot }) b.Set(-1, TrackerModel.PlayerHas.NO);
                     SaveAndLoad.ApplyLoadedOptions(dAny.Overworld);
                     if (!SaveAndLoad.ApplyLoadedShuffleSpots(dAny.Overworld)) fail("anywhere: a saved spot did not load");

@@ -147,9 +147,9 @@ public static class MainTrackerTriforcesAndItems
             {
                 if (i > 7) return -1;
                 var dd = TrackerModel.GetDungeon(i);
-                var k = Array.FindIndex(dd.Boxes, b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
+                var k = Array.FindIndex(dd.Boxes, b => b.IsOwnTriforce);
                 if (k >= 0) return (k < 3 && dd.Boxes[k].CurrentlyHasBasementStair) ? k : -1;   // (a Triforce Piece in a non-basement slot gets no staircase backdrop)
-                return (i == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) && TrackerModel.level2StairBoxEnabled && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) ? dd.Boxes.Length : -1;
+                return (i == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) && TrackerModel.level2StairBoxEnabled && TrackerModel.level2StairBox.IsOwnTriforce) ? dd.Boxes.Length : -1;
             }
             Control headerOf(int i, int slotK)
             {
@@ -555,7 +555,7 @@ public static class MainTrackerTriforcesAndItems
             if (dungeonIndexFnOpt is Func<int> dungeonIndexFn)
             {
                 // a triforce piece that is marked as obtained (green) checks the dungeon's triforce; changing/removing that item, or marking it not-obtained, unchecks it again
-                bool isObtainedTriforcePiece() => box.CellCurrent() == TrackerModel.ITEMS.TRIFORCE && box.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
+                bool isObtainedTriforcePiece() => box.IsOwnTriforce && box.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
                 var wasObtainedTriforcePiece = isObtainedTriforcePiece();   // ref cell, since closures can't capture mutable locals
                 var dungeonIndexWhenMarked = dungeonIndexFn();              // which dungeon we checked off, so un-marking unchecks that same one
                 onEvent(box.Changed, _ =>
@@ -1214,9 +1214,9 @@ public static class MainTrackerTriforcesAndItems
                     Canvas innerc = triforceInnerCanvases[i];
                     var boxes = d.Boxes;
                     int? slotIndex;
-                    var k0 = Array.FindIndex(boxes, b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
+                    var k0 = Array.FindIndex(boxes, b => b.IsOwnTriforce);
                     if (k0 >= 0) slotIndex = (k0 < 3 && boxes[k0].CurrentlyHasBasementStair) ? k0 : null;   // (a Triforce Piece in a non-basement slot gets no staircase backdrop)
-                    else slotIndex = (i == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) && TrackerModel.level2StairBoxEnabled && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) ? 2 : null;   // the extra level 2 staircase slot shares level 2's bottom cell
+                    else slotIndex = (i == 1 && !(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)) && TrackerModel.level2StairBoxEnabled && TrackerModel.level2StairBox.IsOwnTriforce) ? 2 : null;   // the extra level 2 staircase slot shares level 2's bottom cell
                     // detach from wherever it currently is
                     header.Children.Remove(innerc);
                     if (stairBackdrops[i] != null)

@@ -599,10 +599,10 @@ public static class DungeonUI
                 headerCell.Children.Clear();
                 foreach (var sc in slotCells) sc.Children.Remove(extraFloorView);
                 level2StairCell?.Children.Remove(extraFloorView);
-                var k = Array.FindIndex(d.Boxes, b => b.CellCurrent() == TrackerModel.ITEMS.TRIFORCE);
+                var k = Array.FindIndex(d.Boxes, b => b.IsOwnTriforce);
                 Canvas host = null;   // (the slot that shows the floor item box; only a basement slot does)
                 if (k >= 0) { if (k < 3 && k < slotCells.Count && d.Boxes[k].CurrentlyHasBasementStair) host = slotCells[k]; }
-                else if (level2StairCell != null && TrackerModel.level2StairBox.CellCurrent() == TrackerModel.ITEMS.TRIFORCE) host = level2StairCell;
+                else if (level2StairCell != null && TrackerModel.level2StairBox.IsOwnTriforce) host = level2StairCell;
                 if (host != null)
                 {
                     headerCell.Children.Add(stairBackdrop);

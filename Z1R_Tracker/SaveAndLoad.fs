@@ -35,7 +35,8 @@ type Overworld() =
 type Box() =
     member val CellCurrent = -1 with get,set
     member val PlayerHas = 0 with get,set
-    member this.TryApply(b : TrackerModel.Box) = b.AttemptToSet(this.CellCurrent, TrackerModel.PlayerHas.FromInt this.PlayerHas)
+    member val ShuffleLevel = -1 with get,set   // the level a triforce / map / compass in this box is for (-1 = none)
+    member this.TryApply(b : TrackerModel.Box) = b.AttemptToSetForLevel(this.CellCurrent, TrackerModel.PlayerHas.FromInt this.PlayerHas, this.ShuffleLevel)
 
 [<AllowNullLiteral>]
 type Dungeon() =
@@ -330,7 +331,8 @@ let ApplyLoadedItemExtras(items:Items) =
 let SaveItems(prefix) =
     let lines = ResizeArray()
     let SaveBox(pre, box:TrackerModel.Box) =
-        lines.Add(sprintf """%s%s"CellCurrent": %d, "PlayerHas": %d""" prefix pre (box.CellCurrent()) (box.PlayerHas().AsInt()))
+        let level = if box.ShuffleLevel >= 0 then sprintf """, "ShuffleLevel": %d""" box.ShuffleLevel else ""
+        lines.Add(sprintf """%s%s"CellCurrent": %d, "PlayerHas": %d%s""" prefix pre (box.CellCurrent()) (box.PlayerHas().AsInt()) level)
     lines.Add(sprintf """"Items": {""")
     lines.Add(sprintf """    "HiddenDungeonNumbers": %b,""" (TrackerModel.IsHiddenDungeonNumbers()))
     lines.Add(sprintf """    "SecondQuestDungeons": %b,""" TrackerModel.IsSecondQuestDungeons)
