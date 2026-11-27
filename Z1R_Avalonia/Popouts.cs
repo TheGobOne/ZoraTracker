@@ -556,6 +556,41 @@ public static class Popouts
             };
             return view;
         }
+        void watch<T>(Control owner, Microsoft.FSharp.Control.IEvent<Microsoft.FSharp.Control.FSharpHandler<T>, T> e, Action changed)
+        {
+            var h = new Microsoft.FSharp.Control.FSharpHandler<T>((_, _) => changed());
+            Views.WhileInTree(owner, () => e.AddHandler(h), () => e.RemoveHandler(h), changed);
+        }
+        // under a level's name: that level's own triforce, map and compass, dim until collected (wherever they turned up)
+        Control levelLamps(int row)
+        {
+            var strip = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 3.0 };
+            Image lamp(System.Drawing.Bitmap bmp)
+            {
+                var img = Graphics.BMPtoImage(bmp);
+                img.Width = 12.0; img.Height = 12.0; img.Stretch = Stretch.Uniform;
+                RenderOptions.SetBitmapInterpolationMode(img, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                strip.Children.Add(img);
+                return img;
+            }
+            var tri = lamp(CustomComboBoxes.boxCurrentBMP(TrackerModel.ITEMS.TRIFORCE, null));
+            var map = lamp(Graphics.zi_map_bmp);
+            var compass = lamp(Graphics.zi_compass_bmp);
+            var d = TrackerModel.GetDungeon(row);
+            void light()
+            {
+                tri.Opacity = row == 8 ? 0.0 : d.PlayerHasTriforce() ? 1.0 : 0.25;   // (level 9 has no triforce; the space stays so the icons line up)
+                map.Opacity = d.PlayerHasMapOfThisDungeon ? 1.0 : 0.25;
+                compass.Opacity = TrackerModel.ShuffleCredits(2, row) ? 1.0 : 0.25;
+            }
+            light();
+            // (compass changes redraw the whole window; these are the ones that do not: the main tracker's marks, and a triforce got in an item box)
+            watch(strip, d.PlayerHasTriforceChanged, light);
+            watch(strip, d.PlayerHasMapOfThisDungeonChanged, light);
+            foreach (var box in d.Boxes) watch(strip, box.Changed, light);
+            if (row == 1) watch(strip, TrackerModel.level2StairBox.Changed, light);
+            return strip;
+        }
         // the levels flow into the number of columns that shows them largest at the window's shape (the window opens as one column)
         var shownColumns = 1;
         var lineWidth = 0.0;
@@ -577,7 +612,11 @@ public static class Popouts
                 var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) };
                 var label = text($"LEVEL-{levelName(row)}", 14.0);
                 label.Width = 80.0;
-                line.Children.Add(label);
+                label.TextAlignment = TextAlignment.Center;
+                var name = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center };
+                name.Children.Add(label);
+                name.Children.Add(levelLamps(row));
+                line.Children.Add(name);
                 var boxes = new List<Control>();
                 if (TrackerModel.ShuffleAnywhere) for (var slot = row < 8 ? 0 : 1; slot <= 2; slot++) boxes.Add(itemBox(TrackerModel.shuffleSlotBoxes[row * 3 + slot]));   // (level 9 has two floor item slots)
                 else for (var slot = row < 8 ? 0 : 1; slot <= 2; slot++) boxes.Add(slotBox(row, slot));

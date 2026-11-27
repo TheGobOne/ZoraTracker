@@ -89,7 +89,7 @@ public static class WPFUI
     private static readonly Dictionary<int, System.Drawing.Bitmap> decorIconCache = new Dictionary<int, System.Drawing.Bitmap>();
     public static readonly int CLEAR_ICONS = 2000;   // pseudo-id of the red-X menu cell that removes every marker icon from the tile
     public static readonly int ANYROAD_MENU = 2001;   // pseudo-result: an Any Road cell was right-clicked (offers to place all four vanilla any roads)
-    public static string decorDescription(int ident) => TrackerModel.isShuffleMarker(ident) ? $"{new[] { "Triforce", "Map", "Compass" }[TrackerModel.shuffleMarkerSlot(ident)]} for level {Popouts.shuffleLevelName(TrackerModel.shuffleMarkerLevel(ident))}" : ident == TrackerModel.DECOR_BOMB ? "Bomb" :ident == TrackerModel.DECOR_BOMB_DROPPER ? "Bomb Dropper" : TrackerModel.ITEMS.AsDisplayDescription(ident);
+    public static string decorDescription(int ident) => TrackerModel.isShuffleMarker(ident) ? $"{new[] { "Triforce", "Map", "Compass" }[TrackerModel.shuffleMarkerSlot(ident)]} for level {Popouts.shuffleLevelName(TrackerModel.shuffleMarkerLevel(ident))}" : ident == TrackerModel.DECOR_BOMB ? "Bomb" :ident == TrackerModel.DECOR_BOMB_DROPPER ? "Bomb Dropper" : ident == TrackerModel.DECOR_FAIRY ? "Fairy" :TrackerModel.ITEMS.AsDisplayDescription(ident);
     // once the player has the magic key, the key marker icons on the map are hidden; likewise wood arrow markers once silver arrows are collected (they come back if deselected)
     public static bool isKeyDecor(int ident) => (ident == TrackerModel.ITEMS.KEY || ident == TrackerModel.ITEMS.OLDKEY);
     public static List<int> visibleDecorIcons(int packed)
@@ -272,6 +272,7 @@ public static class WPFUI
     {
         if (item == TrackerModel.DECOR_BOMB) return Graphics.bomb_bmp;
         else if (item == TrackerModel.DECOR_BOMB_DROPPER) return bombDropperBmp;
+        else if (item == TrackerModel.DECOR_FAIRY) return Graphics.fairy_bmp;
         else if (TrackerModel.isShuffleMarker(item)) return shuffleMarkerBmp(item);
         else if (item == TrackerModel.ITEMS.BLUEPOTION) return (TrackerModelOptions.UseOldPotionLetterIcons.Value ? Graphics.old_blue_potion_bmp : Graphics.blue_potion_bmp);
         else if (item == TrackerModel.ITEMS.REDPOTION) return (TrackerModelOptions.UseOldPotionLetterIcons.Value ? Graphics.old_red_potion_bmp : Graphics.red_potion_bmp);
@@ -416,6 +417,7 @@ public static class WPFUI
     {
         var idents = new List<int> { TrackerModel.ITEMS.WOODSWORD, TrackerModel.ITEMS.WHITESWORD, TrackerModel.ITEMS.MAGICALSWORD, TrackerModel.ITEMS.WHITESWORD4, TrackerModel.ITEMS.PROGRESSIVESWORD }
             .Concat(markerIdents())
+            .Append(TrackerModel.DECOR_FAIRY)   // (shop picker only: in the tile menu it would add a whole row)
             .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k))
             .Concat(TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER } : new int[0]).ToList();
         bool isProgressiveDisabled(int ident) => TrackerModel.progressiveDisabledIdent(ident);

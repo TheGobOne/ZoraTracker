@@ -1432,11 +1432,12 @@ let owBombDroppers = Array2D.create 16 8 false   // bomb dropper screens: their 
 let owSwordIcons = Array2D.create 16 8 -1   // decorative marker icons per overworld tile: up to 3 packed into one int (see decorIconsOf/decorIconsPack below), -1 means none
 let DECOR_BOMB_DROPPER = 101   // marker-icon id for a screen whose enemies drop bombs
 let DECOR_BOMB = 100   // marker-icon id for the generic bomb (it is not a tracked ITEMS entry, so it lives outside that id range)
+let DECOR_FAIRY = 102   // marker-icon id for a fairy sold in a shop (like the bomb, not a tracked ITEMS entry)
 let MaxDecorIcons = 3
 // each icon takes 7 bits holding (id+1); 0 means an empty slot. Ids are ITEMS ids (0-29) or DECOR_BOMB.
 // bits 21-23 hold a 'collected' flag for each of the three slots
-// bombs and potions on the overworld are just markers: they never need to be (and cannot be) checked off as collected
-let decorNeedsCollecting(ident:int) = not (ident = DECOR_BOMB || ident = DECOR_BOMB_DROPPER || ident = ITEMS.OLDKEY || ident = ITEMS.BLUEPOTION || ident = ITEMS.REDPOTION)
+// bombs, potions and fairies on the overworld are just markers: they never need to be (and cannot be) checked off as collected
+let decorNeedsCollecting(ident:int) = not (ident = DECOR_BOMB || ident = DECOR_BOMB_DROPPER || ident = DECOR_FAIRY || ident = ITEMS.OLDKEY || ident = ITEMS.BLUEPOTION || ident = ITEMS.REDPOTION)
 let decorEntriesOf(packed:int) : (int*bool) list =
     if packed <= 0 then [] else [ for k in 0..MaxDecorIcons-1 do
                                     let v = (packed >>> (7*k)) &&& 127
