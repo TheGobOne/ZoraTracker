@@ -2351,6 +2351,7 @@ public static class Program
                 // remember which startup checkboxes were checked (if the user asked for that)
                 CoopSync.hostStartupOptions = null;
                 CoopSync.startScreenOptionsHandler = null;   // (the run is starting: the checkboxes are being read)
+                turnHeartShuffleOn();   // (the preview boxes must give back their heart uses on every start, crash recovery included)
                 if (loadData == null)
                 {
                     var keys = new List<string>();
@@ -2697,7 +2698,8 @@ public static class Program
                             finishCrashInfo();
                             if (LoadDump.isActive || SelfTest.isSelfTest)
                             {
-                                LoadDump.Fail(e.Message);   // (a headless run has nobody to click OK)
+                                // (a headless run has nobody to click OK)
+                                if (LoadDump.isActive) LoadDump.Fail(e.Message); else SelfTest.startupFailed(e.Message);
                                 return;
                             }
                             foreach (var tb in startupOptionsCanvas.Children.OfType<TextBox>().Where(t => t.Text != null && t.Text.StartsWith("Loading UI")).ToList())
@@ -3098,6 +3100,8 @@ public static class Program
                             // (the web build has no shuffle boxes: a paste neither ticks nor reports them)
                             var shufTri = Platform.isBrowser ? FlagPaste.Tri.Off : z.ShuffleTriforces;
                             var shufMaps = Platform.isBrowser ? FlagPaste.Tri.Off : z.ShuffleMapsCompasses;
+                            if (Platform.isBrowser && (z.ShuffleTriforces != FlagPaste.Tri.Off || z.ShuffleMapsCompasses != FlagPaste.Tri.Off))
+                                lines.Add("Not tracked in the web version: Map/Compass/Triforce Shuffle");
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
                                         || z.Progressive || shufTri != FlagPaste.Tri.Off || shufMaps != FlagPaste.Tri.Off || z.Level9SwordEntrance;

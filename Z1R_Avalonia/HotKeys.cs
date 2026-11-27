@@ -516,7 +516,6 @@ public static class HotKeys
         private readonly string contextName;
         private readonly Dictionary<(SingleKeyboardModifier, Key), V> table = new Dictionary<(SingleKeyboardModifier, Key), V>();
         private readonly Dictionary<V, List<(SingleKeyboardModifier, Key)>> stateToKeys = new Dictionary<V, List<(SingleKeyboardModifier, Key)>>();  // caching
-        private readonly Dictionary<V, string> cachedDescriptions = new Dictionary<V, string>();  // hotkeys never change during runtime, so first lookup is always the permanent description
         public HotKeyProcessor(string contextName) { this.contextName = contextName; }
         public string ContextName => contextName;
         public bool TryGetValue((SingleKeyboardModifier, Key) k, out V value) => table.TryGetValue(k, out value);
@@ -561,22 +560,9 @@ public static class HotKeys
         }
         public string AppendHotKeyToDescription(string desc, V state)
         {
-            if (cachedDescriptions.TryGetValue(state, out var r0))
-                return r0;
-            else
-            {
-                string make_r()
-                {
-                    var keys = this.StateToKeys(state);
-                    if (keys.Count > 0)
-                        return $"{desc}\nHotKey = {PrettyKey(keys[0])}";
-                    else
-                        return desc;
-                }
-                var r = make_r();
-                cachedDescriptions.Add(state, r);
-                return r;
-            }
+            // (not cached: an item's name can change during a run, e.g. Book / boomstick)
+            var keys = this.StateToKeys(state);
+            return keys.Count > 0 ? $"{desc}\nHotKey = {PrettyKey(keys[0])}" : desc;
         }
     }
 

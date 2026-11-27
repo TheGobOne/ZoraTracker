@@ -333,12 +333,16 @@ public static class Views
             if (replaced) inSlot.AttemptToSetForLevel(was.cell, was.has, was.level);   // (refused if the item was marked elsewhere since: the slot stays empty)
             return true;
         }
-        if (TrackerModel.ShuffleTriforces) return false;   // (triforces shuffled: a dungeon box cannot take the piece; taking one out above still works)
+        if (TrackerModel.ShuffleTriforces)   // (triforces shuffled: a dungeon box cannot take the piece; taking one out above still works)
+        {
+            Graphics.ErrorBeepWithReminderLogText("Triforce Pieces are shuffled: place them in the M/C/Tri Shuffle window");
+            return true;   // (the click is used up here, so it does not also toggle the level's triforce collected)
+        }
         var target = stairOn ? (TrackerModel.level2StairBox.CellCurrent() == -1 ? TrackerModel.level2StairBox : null)
                              : d.Boxes.Take(3).FirstOrDefault(b => b.CurrentlyHasBasementStair && b.CellCurrent() == -1);
         // no empty slot: replace the item in the basement slot (the piece is there, so that item was marked in the wrong place)
         // (never a collected one: the item would leave the inventory)
-        bool uncollected(TrackerModel.Box b) => !b.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
+        bool uncollected(TrackerModel.Box b) => !b.PlayerHas().Equals(TrackerModel.PlayerHas.YES) && b.CellCurrent() != TrackerModel.ITEMS.TRIFORCE;   // (a level-tagged piece is not replaced)
         target ??= stairOn ? (uncollected(TrackerModel.level2StairBox) ? TrackerModel.level2StairBox : null)
                            : d.Boxes.Take(3).FirstOrDefault(b => b.CurrentlyHasBasementStair && uncollected(b));
         if (target == null) return false;
@@ -819,7 +823,7 @@ public static class Views
             {
                 if (newValue < 0 || newValue == box.CellCurrent()) return null;
                 if (newValue != TrackerModel.ITEMS.TRIFORCE && box.Domain.CanAddUse(newValue)) return null;
-                var other = otherSlotsInDungeon().FirstOrDefault(b => b.CellCurrent() == newValue);
+                var other = otherSlotsInDungeon().FirstOrDefault(b => b.CellCurrent() == newValue && (newValue != TrackerModel.ITEMS.TRIFORCE || b.IsOwnTriforce));   // (a level-tagged piece stays where it is)
                 if (other == null) return null;
                 var had = other.PlayerHas().Equals(TrackerModel.PlayerHas.YES);
                 other.Set(-1, TrackerModel.PlayerHas.NO);
@@ -843,10 +847,11 @@ public static class Views
                     {
                         var (newBoxCellValue, newPlayerHas) = r.result;
                         var had = takeFromOtherSlot(newBoxCellValue);
-                        if (had.HasValue)
-                            box.Set(newBoxCellValue, (had.Value ? TrackerModel.PlayerHas.YES : newPlayerHas));   // the piece moves here, keeping its checked state
+                        // (the popout or a co-op partner can use the item up while the menu is open: Set would throw)
+                        if (newBoxCellValue != box.CellCurrent() && box.LockedItem == -1 && !box.Domain.CanAddUse(newBoxCellValue))
+                            Graphics.ErrorBeepWithReminderLogText($"Tried to mark item box as {TrackerModel.ITEMS.AsDisplayDescription(newBoxCellValue)}, but that item is already marked in a different box");
                         else
-                            box.Set(newBoxCellValue, newPlayerHas);
+                            box.Set(newBoxCellValue, (had == true ? TrackerModel.PlayerHas.YES : newPlayerHas));   // (a moved piece keeps its checked state)
                     }
                     CustomComboBoxes.GlobalFlag.popupIsActive = false;
                 }))());

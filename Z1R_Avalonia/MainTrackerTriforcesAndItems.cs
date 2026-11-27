@@ -343,6 +343,9 @@ public static class MainTrackerTriforcesAndItems
                 if (s != tfSig) { tfSig = s; build(); }
             });
             foreach (var tb in tfBoxes) tb.Changed.AddHandler(tfHandler);
+            // the 1Q/2Q toggle moves the shared third box between levels 1 and 4
+            Action questHandler = () => { if (itemLocationsWindow == w) { tfSig = triforceSig(); build(); } };
+            OptionsMenu.secondQuestDungeonsOptionChanged += questHandler;
             var mainWin = ShowRunCustom.mainWindow();
             EventHandler onMainClosed = (_, _) => { mainClosing = true; try { w.Close(); } catch { } };   // (stays 'open' in the settings, so it reappears next time)
             mainWin.Closed += onMainClosed;
@@ -358,6 +361,7 @@ public static class MainTrackerTriforcesAndItems
                 TrackerModel.level2StairBoxEnabledChanged.Publish.RemoveHandler(stairHandler);
                 TrackerModel.level9FloorBoxEnabledChanged.Publish.RemoveHandler(floorHandler);
                 foreach (var tb in tfBoxes) tb.Changed.RemoveHandler(tfHandler);
+                OptionsMenu.secondQuestDungeonsOptionChanged -= questHandler;
                 mainWin.Closed -= onMainClosed;
                 itemLocationsWindow = null;
                 saveTimer.Stop();

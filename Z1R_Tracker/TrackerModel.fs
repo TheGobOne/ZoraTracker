@@ -1005,7 +1005,8 @@ type DungeonTrackerInstance(kind) =
             if anyChanged.IsNone then
                 anyChanged <- Some(
                     new SyntheticEventingBool((fun()-> 
-                        pct <- float(allWithSpots() |> Seq.sumBy (fun b -> if not(b.IsEmptyRedBox) then 1 else 0)) / 20. // 23 items exist; be max red when few left
+                        let spots = if ShuffleAnywhere then [0..2] |> List.sumBy (fun s -> if not (shuffledKind s) then 0 elif s = 0 then 8 else 9) else 0
+                        pct <- float(allWithSpots() |> Seq.sumBy (fun b -> if not(b.IsEmptyRedBox) then 1 else 0)) / float(20 + spots) // 23 items exist; be max red when few left
                         pct <- min pct 1.0    // don't say e.g. 23./20., and also hidden dungeon numbers has extra boxes
                         false), allWithSpots() |> Seq.map (fun b -> b.Changed)))
             anyChanged.Value
@@ -1107,7 +1108,7 @@ and Dungeon(id,numBoxes) =
     member this.TriforceIsInItemSlot = this.Boxes |> Array.exists (fun b -> b.IsOwnTriforce) || (id=1 && level2StairBoxEnabled && level2StairBox.IsOwnTriforce)
     member private this.TriforceAndBoxesDone(ignoreHearts:bool) : bool =
         // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
-        let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
+        let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.IsOwnTriforce) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
         // completion is about the piece found IN this dungeon, not this dungeon's piece turning up elsewhere (M/C/Tri Shuffle window)
         // Anywhere: shuffled pieces join the item pool, so a level need not hold one; instead that kind's spot is an item location too (level 9 has no triforce)
         let spotsDone = not ShuffleAnywhere || ([ (if id < 8 then 0 else 1) .. 2 ] |> List.forall (fun s -> not (shuffledKind s) || boxDone shuffleSlotBoxes.[id*3+s]))

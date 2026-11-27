@@ -627,7 +627,7 @@ public static class CoopSync
                     b.AttemptToSetForLevel(n[0], b.PlayerHas(), shuffleLevelOf(n[2]));
             }
         }
-        else if (payload[ShuffleSlotsField] is Newtonsoft.Json.Linq.JArray slots)
+        else if ((TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces) && payload[ShuffleSlotsField] is Newtonsoft.Json.Linq.JArray slots)   // (not with our shuffle off, as on web)
             for (int k = 0; k < slots.Count && k < 27; k++)
                 if (m.Takes(shuffleSlotKey(k)) && shuffleNumbers(slots[k], 2) is int[] n
                     && (TrackerModel.shuffleSlotGot[k] != (n[0] == 1) || TrackerModel.shuffleSlotChosen[k] != shuffleLevelOf(n[1])))
@@ -2251,6 +2251,8 @@ public static class CoopSync
                 noteLocalEdit();   // (the box gets its version when the Items message is built, see stamp)
             }
         }
+
+        onEvent(TrackerModel.shuffleSlotsChanged.Publish, _ => markChanged(null));   // (the M/C/Tri Shuffle window's spots and slots)
 
         // Top-level boxes
         onEvent(TrackerModel.sword2Box.Changed, _ => markChanged(TrackerModel.sword2Box));

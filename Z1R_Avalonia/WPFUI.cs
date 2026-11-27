@@ -588,10 +588,11 @@ public static class WPFUI
         SaveAndLoad.ApplyLoadedOptions(ow);
         if (Platform.isBrowser)
         {
+            var shuffled = new[] { TrackerModel.ShuffleTriforces, TrackerModel.ShuffleMaps, TrackerModel.ShuffleCompasses };   // (by slot)
             TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = TrackerModel.ShuffleTriforces = false;
-            // (a desktop shuffle save's "?" window slots must not light their rows' levels here)
+            // (a desktop shuffle save's "?" window slots must not light their rows' levels here; a kind that was not shuffled keeps its slots)
             for (var k = 0; k < 27; k++)
-                if (TrackerModel.shuffleSlotChosen[k] < 0) TrackerModel.SetShuffleSlot(k / 3, k % 3, false, -1);
+                if (shuffled[k % 3] && TrackerModel.shuffleSlotChosen[k] < 0) TrackerModel.SetShuffleSlot(k / 3, k % 3, false, -1);
         }
         if (!(TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces)) { TrackerModel.ShuffleBetweenLevels = false; TrackerModel.ShuffleAnywhere = false; }
         TrackerModel.ApplyShuffleAnywhereCaps();
@@ -1452,7 +1453,7 @@ public static class WPFUI
                 (o.CellCurrent() != -1 && !(isHeart(o)) && (slots.Length < 3 || o.PlayerHas().Equals(TrackerModel.PlayerHas.YES) || o.CellCurrent() == TrackerModel.ITEMS.TRIFORCE)));
             bool uncollectedHeart(TrackerModel.Box b) => isHeart(b) && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO);
             int extraDungeon(string boxName) => boxName.StartsWith("x") ? int.Parse(boxName.Substring(1)) : -1;   // (namedBoxes: "x3" is dungeon index 3's extra floor box)
-            SaveAndLoad.IntraHeartGuessesText = () => string.Join(";", SaveAndLoad.namedBoxes()
+            SaveAndLoad.IntraHeartGuessesText = () => string.Join(";", SaveAndLoad.tierBoxes()
                 .Where(nb => IsIntraHeartGuess(nb.Item2) || (autoExtraHearts.Contains(extraDungeon(nb.Item1)) && uncollectedHeart(nb.Item2)))
                 .Select(nb => nb.Item1));
             RegisterSavedIntraHearts = saved =>
@@ -1461,7 +1462,7 @@ public static class WPFUI
                 // so an entry made during the load is a heart this code put there)
                 autoHearts.Clear();
                 var names = new HashSet<string>(saved.Split(';'));
-                foreach (var nb in SaveAndLoad.namedBoxes())
+                foreach (var nb in SaveAndLoad.tierBoxes())
                     if (names.Contains(nb.Item1) && uncollectedHeart(nb.Item2))
                     {
                         if (extraDungeon(nb.Item1) >= 0) autoExtraHearts.Add(extraDungeon(nb.Item1));

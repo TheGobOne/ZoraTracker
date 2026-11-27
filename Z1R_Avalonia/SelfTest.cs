@@ -546,6 +546,7 @@ public static class SelfTest
                     if (TrackerModel.ShuffleCredits(0, 3)) fail("anywhere: a triforce spot tagged for level 5 also credited level 4");
                     var host = TrackerModel.GetDungeon(2).Boxes[0];
                     var (hostCell, hostHas) = (host.CellCurrent(), host.PlayerHas());
+                    boxes5Was.Add((host, hostCell, hostHas));   // (put back even after a failure part way through)
                     host.AttemptToSetForLevel(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.YES, 6);
                     if (!TrackerModel.ShuffleCredits(0, 6) || TrackerModel.GetDungeon(2).TriforceIsInItemSlot) fail("anywhere: a triforce in level 3's box tagged for level 7 did not credit level 7 only");
                     var hostSaved = CoopSync.toSerializableBox(host);
@@ -859,6 +860,7 @@ public static class SelfTest
                     SaveAndLoad.ApplyLoadedOptions(d.Overworld);
                     OverworldItemGridUI.ApplyLoadedFourthSword(d.Items);
                     if (!TrackerModelOptions.FourthSwordEnabled) fail("4th sword load: an older save with Progressive Items on should leave the 4th sword unrestricted");
+                    TrackerModel.ProgressiveItems = false;   // (the next save must record it off)
                     // a save with the 4th sword in level 2 but Progressive Items 0 (a damaged or hand-edited save): Progressive Items comes on, with its caps
                     OverworldItemGridUI.ApplyProgressiveItemCaps();
                     TrackerModel.SetLevel2StairBoxEnabled(true);
@@ -1669,6 +1671,13 @@ public static class SelfTest
         log($"{clicks} button/checkbox clicks, {popupsSeen} popups opened and closed");
         log(failures == 0 ? "RESULT: PASS" : $"RESULT: FAIL ({failures})");
         (Application.Current.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown(failures == 0 ? 0 : 1);
+    }
+
+    public static void startupFailed(string why)
+    {
+        fail("starting the run failed: " + why);
+        log($"RESULT: FAIL ({failures})");
+        (Application.Current.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown(1);
     }
 
     public static void arm()
