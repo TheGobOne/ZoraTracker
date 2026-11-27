@@ -2,6 +2,14 @@
 
 Scope: all work since v3.2 (v3.2..d7c7e20). Six read-only agents, 2026-11-26. Findings come from reading code. Nothing was reproduced in the running app. 57-60, 63 and 64 were checked against the source after the review. The web Debug build compiles with 0 errors. Numbers 1-56 are from earlier reviews. Shuffle is not in the released 3.2, so the shuffle findings affect unreleased code only.
 
+## Status
+
+Last updated 2026-11-26. Commits: `1d2e081` (Critical and High fixes), `ed89633` (quick fixes 69, 70, 79). Release and web Debug build with 0 errors. Self-test and live save-and-reload not run.
+
+- Critical: 57, 58, 59 fixed. 60 open (co-op: spots sit outside the synced box list on purpose, so the fix is a design change).
+- High: 61, 62, 63, 65 fixed. 64 open (self-test uses the AP Item, which is 0 uses by default). 62 keeps shop markers as intended.
+- Medium and Low: 69, 70, 79 fixed. Rest open.
+
 ## Decided by the user
 
 - 58: a Shuffle Type with no shuffle box ticked is ignored. Fixed.
