@@ -440,6 +440,8 @@ public static class SelfTest
                 var sMarks = (int[])TrackerModel.mapCollectedCount.Clone();
                 var apDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain; var sApMax = apDomain.MaxUses(TrackerModel.ITEMS.APITEM);
                 var boxes5Was = new List<(TrackerModel.Box box, int cell, TrackerModel.PlayerHas has)>();
+                var dung5 = TrackerModel.GetDungeon(4);
+                var (sTri5, sMap5) = (dung5.PlayerHasTriforceFlag(), dung5.PlayerHasOwnMap);
                 try
                 {
                     // states: 0 = Off, 1 = On, 2 = ? (Random, counts as On for the extra blocks and as Off for Boots)
@@ -653,6 +655,8 @@ public static class SelfTest
                     // the shuffle checks' state, also after a failure part way through
                     foreach (var (b, cell, has) in boxes5Was) b.Set(cell, has);
                     foreach (var b in TrackerModel.shuffleSlotBoxes.Skip(3).Take(3)) b.Set(-1, TrackerModel.PlayerHas.NO);
+                    if (dung5.PlayerHasTriforceFlag() != sTri5) dung5.ToggleTriforce();
+                    dung5.PlayerHasMapOfThisDungeon = sMap5;
                     Array.Copy(sMarks, TrackerModel.mapCollectedCount, sMarks.Length);
                     TrackerModel.ShuffleBetweenLevels = sBetween; TrackerModel.ShuffleAnywhere = sAnywhere;
                     TrackerModel.ShuffleMaps = sMaps; TrackerModel.ShuffleCompasses = sCompasses; TrackerModel.ShuffleTriforces = sTris;

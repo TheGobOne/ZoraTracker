@@ -466,11 +466,10 @@ public static class MainTrackerTriforcesAndItems
         layout.AddMainTracker(mainTrackerCanvas);
 
         // items (we draw these before drawing triforces, as triforce display can draw slightly atop the item boxes, when there's a triforce-specific-blocker drawn)
-        var boxActivators = new Dictionary<TrackerModel.Box, Action>(ReferenceEqualityComparer.Instance);
-        Canvas boxItemImpl(TimelineID tid, TrackerModel.Box box, bool requiresForceUpdate)
+        Canvas boxItemImpl(TimelineID tid, TrackerModel.Box box, bool requiresForceUpdate) => wireBox(tid, box, requiresForceUpdate, Views.MakeBoxItem(cm, box).Item1);
+        // the box's timeline entry and upper grid links, with c as its view
+        Canvas wireBox(TimelineID tid, TrackerModel.Box box, bool requiresForceUpdate, Canvas c)
         {
-            var (c, activate) = Views.MakeBoxItem(cm, box);
-            boxActivators[box] = () => activate(0, new CustomComboBoxes.GridClickDismissalWarpReturn.WarpToCenter());
             onEvent(box.Changed, _ => { if (requiresForceUpdate) TrackerModel.forceUpdate(); });
             // an item box (coast, dungeon, etc.) holding one of these items and marked as obtained also checks off that item's box in the upper overworld item grid (and un-checks it again if removed)
             var gridLinks = new (int, TrackerModel.BoolProperty)[]
@@ -626,9 +625,9 @@ public static class MainTrackerTriforcesAndItems
         // optional staircase item slot under level 2: starts as a gray box (like the dungeon-quest toggle under level 4); click to turn it into a staircase item slot,
         // middle-click the slot to hide it again (which also clears whatever item was in it)
         // Shuffle Type Anywhere spots get the same timeline entry and upper grid links as the item boxes. Wired once here (the M/C/Tri Shuffle
-        // window rebuilds its views on every open); the canvas made for each is not shown
+        // window rebuilds its views on every open). Each gets a bare canvas: a box view never put on screen would stay subscribed and redraw all session
         for (int k = 0; k < TrackerModel.shuffleSlotBoxes.Length; k++)
-            boxItemImpl(TimelineID.ShuffleSpot(k), TrackerModel.shuffleSlotBoxes[k], false);
+            wireBox(TimelineID.ShuffleSpot(k), TrackerModel.shuffleSlotBoxes[k], false, new Canvas());
         if (!(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)))
         {
             var l2c = mainTrackerCanvases[1, 4];

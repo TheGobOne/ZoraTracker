@@ -17,10 +17,8 @@ None open.
 
 ## Low and cleanup
 
-- [ ] 123: `Z1R_Avalonia/Popouts.cs:489`, `:555`: not rechecked, low confidence. After a popout click, map hotkeys may do nothing until the main window is clicked. About 15 minutes.
-- [ ] 124: `Z1R_Avalonia/MainTrackerTriforcesAndItems.cs:626-627`: not rechecked. 27 hidden spot views redraw all session. About 15 minutes.
 - [ ] 127: `Z1R_Avalonia/CoopTest.cs`: no co-op test covers spots, slots or tagged boxes. About 45 minutes.
-- [ ] 78: `Z1R_Avalonia/Popouts.cs:393`, `:442`, `:878`: low confidence, not run. On Mac or Linux the popout may drop behind the main window.
+- [ ] 78: `Z1R_Avalonia/Popouts.cs:393`, `:442`, `:878`: low confidence, not run. On Mac or Linux the popout may drop behind the main window. Not changed: needs a Mac or Linux machine to see the behavior and test a fix.
 - [ ] 50: `Z1R_Avalonia/CoopSync.cs:850-853`: the "unversioned 8" filter also drops a real 8 from a 3.2 partner's save. Left open: both look the same on the wire.
 
 ## Before the next release
@@ -47,7 +45,9 @@ Fixed findings are removed from the lists above. Release desktop and web Debug b
 - 110, 126: co-op, needs a live session.
 - 117, 122: Item Locations on the 1Q/2Q toggle (a partner's toggle still does not rebuild it), hotkey descriptions.
 - 93: right-click on a header triforce with triforces shuffled now shows the reminder and does not toggle collected.
-- 128, 129: self-test code. 128 is partly done: level 5 map and triforce toggles are still restored only on success.
+- 128, 129: self-test code. 128 now also restores level 5's map and triforce toggles after a failure. Self-test not run.
+- 123: a click in the M/C/Tri Shuffle window that redraws it now hands the keyboard back to the main window. Cause found on reading, not reproduced. Check on screen.
+- 124: the 27 Anywhere spots keep their timeline and upper grid links without building hidden box views. Check the timeline in an Anywhere run.
 - 60, 101, 52, 81: co-op fixes, hold on reading. Needs live co-op, one Between Levels run and one Anywhere run.
 - 68: shuffle window leak, fixed on reading.
 - 64, 77, 90: covered by the self-test, which has not been run.

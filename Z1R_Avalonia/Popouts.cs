@@ -492,7 +492,10 @@ public static class Popouts
                 var button = ea.GetCurrentPoint(c).Properties.PointerUpdateKind;
                 var chosen = TrackerModel.shuffleSlotChosen[row * 3 + slot];
                 if (button == PointerUpdateKind.LeftButtonPressed)
+                {
                     TrackerModel.SetShuffleSlot(row, slot, !got, chosen);
+                    refocus();   // (that redrew the window, so the release below never comes from this box)
+                }
                 else if (button == PointerUpdateKind.RightButtonPressed)
                     showMenu(c, done =>
                     {
@@ -551,7 +554,11 @@ public static class Popouts
                 ea.Handled = true;
                 var desire = CustomComboBoxes.MouseButtonEventArgsToPlayerHas(ea);
                 if (box.CellCurrent() == -1 || desire.Equals(box.PlayerHas())) pickItem();   // (as the main tracker's boxes)
-                else box.SetPlayerHas(desire);
+                else
+                {
+                    box.SetPlayerHas(desire);
+                    refocus();   // (this can redraw the window, so the release never comes from this box)
+                }
             };
             return view;
         }
