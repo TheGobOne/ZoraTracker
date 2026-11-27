@@ -280,7 +280,7 @@ public static class SelfTest
         // the Guided Tour: every start screen stop (Paste Flags included) must find its anchors, or the tour silently leaves it out
         // (the settings panel's stops are only on screen while it is raised, so those are not checked here)
         var tourPanelOnly = new[] { "Overworld settings", "Dungeon settings", "Reminders", "Auto-save", "Other options", "Co-Op and crash log" };
-        foreach (var title in OptionsMenu.startScreenTourMissingStops(win))
+        foreach (var title in OptionsMenu.tourMissingStops(OptionsMenu.startScreenTourSteps, win))
             if (!tourPanelOnly.Contains(title)) fail($"Guided Tour: the start screen stop '{title}' has no anchor on screen");
         if (!OptionsMenu.startScreenTourSteps.Any(s => s.title == "Paste Flags")) fail("Guided Tour: no Paste Flags stop");
         // the start screen's 4th Sword / Progressive Items rule, through the real checkboxes: 4th Sword checks Progressive Items and holds it on; Progressive Items never checks 4th Sword
@@ -404,6 +404,12 @@ public static class SelfTest
             await pause(1500);
             await settle("tracker start");
             log($"tracker started ({failures} failures so far)");
+            // the main screen's Guided Tour stops that are found by label (the "@" regions are fixed fractions, so they cannot be checked here)
+            guard("main screen Guided Tour anchors", () =>
+            {
+                foreach (var title in OptionsMenu.tourMissingStops(OptionsMenu.mainScreenTourSteps, CustomComboBoxes.CanvasManager.TheOnlyCanvasManager.AppMainCanvas))
+                    fail($"Guided Tour: the main screen stop '{title}' has no anchor on screen");
+            });
             // a save remembers the Heart Shuffle mode (Off / Intra / Full), so a reload does not follow the start screen
             guard("heart shuffle save round trip", () =>
             {
