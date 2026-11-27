@@ -639,7 +639,7 @@ public static class Popouts
                 // the coast, armos and white sword spots can hold a triforce / map / compass too
                 var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) };
                 var label = text("OVERWORLD", 14.0);
-                label.Width = 80.0;
+                label.Width = 114.0;   // (wider than a level's name, which would cut "OVERWORLD" off; one box column more)
                 label.TextAlignment = TextAlignment.Center;
                 label.VerticalAlignment = VerticalAlignment.Center;
                 line.Children.Add(label);
@@ -656,7 +656,7 @@ public static class Popouts
                     line.Children.Add(view);
                 }
                 lines.Add(line);
-                lineWidth = Math.Max(lineWidth, 80.0 + 3 * (21.0 + 42.0));
+                lineWidth = Math.Max(lineWidth, 114.0 + 3 * (21.0 + 42.0));
             }
             shownColumns = bestColumns();
             var perColumn = (lines.Count + shownColumns - 1) / shownColumns;   // (rounded up; read down each column, then the next)
