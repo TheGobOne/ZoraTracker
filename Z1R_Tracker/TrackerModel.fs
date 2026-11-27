@@ -924,11 +924,12 @@ for b in shuffleSlotBoxes do
 let ApplyShuffleAnywhereCaps() =
     for id in [ ITEMS.MAP; ITEMS.COMPASS ] do
         allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, (if ShuffleAnywhere then 9 else 0))
+// whether the triforce (slot 0), map (1) or compass (2) is shuffled
+let shuffledKind(slot) = match slot with 0 -> ShuffleTriforces | 1 -> ShuffleMaps | _ -> ShuffleCompasses
 // the level an item is for: the chosen one, else its own row when that kind is not shuffled, else unknown (-1)
 let ShuffleSlotLevel(row, slot) =
     let chosen = shuffleSlotChosen.[row*3+slot]
-    let shuffled = match slot with 0 -> ShuffleTriforces | 1 -> ShuffleMaps | _ -> ShuffleCompasses
-    if chosen >= 0 then chosen elif shuffled then -1 else row
+    if chosen >= 0 then chosen elif shuffledKind slot then -1 else row
 // whether this level's triforce (slot 0), map (1) or compass (2) has been collected: in the window, or from a shop's marker icon
 let ShuffleCredits(slot, level) =
     ((slot <> 0 || level < 8) && mapCollectedCount.[shuffleMarker(slot, level)] > 0)
@@ -1108,11 +1109,11 @@ and Dungeon(id,numBoxes) =
         // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
         let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
         // completion is about the piece found IN this dungeon, not this dungeon's piece turning up elsewhere (M/C/Tri Shuffle window)
-        // Anywhere: pieces join the item pool, so a level need not hold one; instead its three spots are item locations too (level 9 has two)
-        let spotsDone = not ShuffleAnywhere || ([ (if id < 8 then 0 else 1) .. 2 ] |> List.forall (fun s -> boxDone shuffleSlotBoxes.[id*3+s]))
-        // Between Levels / Anywhere: this level's map and compass must have been collected too, wherever they turned up
-        let mapAndCompass = not (ShuffleBetweenLevels || ShuffleAnywhere) || (this.PlayerHasMapOfThisDungeon && ShuffleCredits(2, id))
-        let pieceFoundHere = ((ShuffleAnywhere && id < 8) || this.PlayerHasOwnTriforce() || (id < 8 && shuffleSlotGot.[id*3])) && spotsDone && mapAndCompass
+        // Anywhere: shuffled pieces join the item pool, so a level need not hold one; instead that kind's spot is an item location too (level 9 has no triforce)
+        let spotsDone = not ShuffleAnywhere || ([ (if id < 8 then 0 else 1) .. 2 ] |> List.forall (fun s -> not (shuffledKind s) || boxDone shuffleSlotBoxes.[id*3+s]))
+        // Between Levels / Anywhere: this level's map must be marked (its own toggle, or the window); its compass only when compasses are shuffled
+        let mapAndCompass = not (ShuffleBetweenLevels || ShuffleAnywhere) || (this.PlayerHasMapOfThisDungeon && (not ShuffleCompasses || ShuffleCredits(2, id)))
+        let pieceFoundHere = ((ShuffleAnywhere && ShuffleTriforces && id < 8) || this.PlayerHasOwnTriforce() || (id < 8 && shuffleSlotGot.[id*3])) && spotsDone && mapAndCompass
         match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
         | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
             if pieceFoundHere then

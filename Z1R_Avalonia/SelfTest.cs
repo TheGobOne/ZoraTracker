@@ -435,6 +435,7 @@ public static class SelfTest
                 var sBox9Cell = box9.CellCurrent(); var sBox9Has = box9.PlayerHas();
                 string build(string notes) => string.Join("\n", SaveAndLoad.BuildSaveLines(notes, 0, new[] { "}" }, new string[0], "", false, 0, false, false));
                 var (sBetween, sAnywhere) = (TrackerModel.ShuffleBetweenLevels, TrackerModel.ShuffleAnywhere);
+                var (sMaps, sCompasses, sTris) = (TrackerModel.ShuffleMaps, TrackerModel.ShuffleCompasses, TrackerModel.ShuffleTriforces);
                 var (sGot6, sChosen6, sGot14, sChosen14) = (TrackerModel.shuffleSlotGot[6], TrackerModel.shuffleSlotChosen[6], TrackerModel.shuffleSlotGot[14], TrackerModel.shuffleSlotChosen[14]);
                 var sMarks = (int[])TrackerModel.mapCollectedCount.Clone();
                 var apDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain; var sApMax = apDomain.MaxUses(TrackerModel.ITEMS.APITEM);
@@ -573,7 +574,8 @@ public static class SelfTest
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 2)] = 1;
                     if (!TrackerModel.ShuffleCredits(1, 2) || TrackerModel.ShuffleCredits(1, 3) || TrackerModel.ShuffleCredits(2, 2)) fail("anywhere: a shop's level 3 map credited the wrong thing");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 2)] = 0;
-                    // completion: level 5 needs its boxes, its three spots, and its map and compass (no triforce with Anywhere)
+                    // completion: with everything shuffled, level 5 needs its boxes, its three spots, and its map and compass (no triforce with Anywhere)
+                    TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = TrackerModel.ShuffleTriforces = true;
                     var level5 = TrackerModel.GetDungeon(4);
                     var boxes5 = level5.Boxes.Concat(TrackerModel.shuffleSlotBoxes.Skip(12).Take(3)).ToArray();
                     boxes5Was.AddRange(boxes5.Select(b => (b, b.CellCurrent(), b.PlayerHas())));
@@ -584,6 +586,16 @@ public static class SelfTest
                     if (level5.IsComplete) fail("anywhere: a level completed without its compass");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(2, 4)] = 1;
                     if (!level5.IsComplete) fail("anywhere: a level with its items, spots, map and compass did not complete");
+                    // triforces not shuffled: the level needs its own triforce, and the triforce spot is not an item location
+                    TrackerModel.ShuffleTriforces = false;
+                    var triWas = level5.PlayerHasOwnTriforce();
+                    TrackerModel.shuffleSlotBoxes[12].Set(-1, TrackerModel.PlayerHas.NO);
+                    if (!triWas && level5.IsComplete) fail("anywhere: a level completed without its unshuffled triforce");
+                    if (!triWas) level5.ToggleTriforce();
+                    if (!level5.IsComplete) fail("anywhere: an unshuffled triforce's empty spot blocked completion");
+                    if (!triWas) level5.ToggleTriforce();
+                    TrackerModel.shuffleSlotBoxes[12].Set(TrackerModel.ITEMS.APITEM, TrackerModel.PlayerHas.YES);
+                    TrackerModel.ShuffleTriforces = true;
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 4)] = 0;
                     if (level5.IsComplete) fail("anywhere: a level completed without its map");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(2, 4)] = 0;
@@ -642,6 +654,7 @@ public static class SelfTest
                     foreach (var b in TrackerModel.shuffleSlotBoxes.Skip(3).Take(3)) b.Set(-1, TrackerModel.PlayerHas.NO);
                     Array.Copy(sMarks, TrackerModel.mapCollectedCount, sMarks.Length);
                     TrackerModel.ShuffleBetweenLevels = sBetween; TrackerModel.ShuffleAnywhere = sAnywhere;
+                    TrackerModel.ShuffleMaps = sMaps; TrackerModel.ShuffleCompasses = sCompasses; TrackerModel.ShuffleTriforces = sTris;
                     TrackerModel.ApplyShuffleAnywhereCaps();
                     TrackerModel.SetShuffleSlot(2, 0, sGot6, sChosen6); TrackerModel.SetShuffleSlot(4, 2, sGot14, sChosen14);
                     apDomain.SetMaxUse(TrackerModel.ITEMS.APITEM, sApMax);
