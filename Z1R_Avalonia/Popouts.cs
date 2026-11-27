@@ -525,7 +525,7 @@ public static class Popouts
             {
                 var extra = (TrackerModelOptions.ArchipelagoSupport.Value ? new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER } : new int[0])
                                 .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k))
-                                .Concat(new[] { TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS });   // (only this window offers them, Shuffle Type Anywhere)
+                                .Concat(new[] { TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS });   // (Shuffle Type Anywhere)
                 var items = CustomComboBoxes.itemMenuIdents.Concat(extra)
                     .Where(id => id != -1 && allowed(id) && !TrackerModel.progressiveDisabledIdent(id) && (id == box.CellCurrent() || box.Domain.CanAddUse(id) && !CustomComboBoxes.ownedUniqueItem(id) && !(id == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled)))
                     .Concat(new[] { -1 })   // (the clear button comes last)
@@ -603,7 +603,7 @@ public static class Popouts
         int bestColumns()
         {
             if (w.SizeToContent != SizeToContent.Manual || lineWidth <= 0.0) return 1;
-            double scaleAt(int n) => Math.Min(w.ClientSize.Width / (n * lineWidth + (n - 1) * 16.0 + 12.0), w.ClientSize.Height / (((TrackerModel.ShuffleAnywhere ? 9 : 8) / n + 1) * 34.0 + 12.0));
+            double scaleAt(int n) => Math.Min(w.ClientSize.Width / (n * lineWidth + (n - 1) * 16.0 + 12.0), w.ClientSize.Height / ((8 / n + 1) * 34.0 + 12.0));
             var best = 1;
             for (var n = 2; n <= 9; n++) if (scaleAt(n) > scaleAt(best)) best = n;
             return best;
@@ -633,30 +633,6 @@ public static class Popouts
                 foreach (var box in boxes) { box.Margin = new Thickness(0.0, 0.0, 4.0, 0.0); line.Children.Add(box); }
                 lines.Add(line);
                 lineWidth = Math.Max(lineWidth, 80.0 + boxes.Count * 34.0);
-            }
-            if (TrackerModel.ShuffleAnywhere)
-            {
-                // the coast, armos and white sword spots can hold a triforce / map / compass too
-                var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) };
-                var label = text("OVERWORLD", 14.0);
-                label.Width = 114.0;   // (wider than a level's name, which would cut "OVERWORLD" off; one box column more)
-                label.TextAlignment = TextAlignment.Center;
-                label.VerticalAlignment = VerticalAlignment.Center;
-                line.Children.Add(label);
-                foreach (var (box, bmp, spot) in new[] { (TrackerModel.ladderBox, Graphics.ladder_bmp, "Coast item"), (TrackerModel.armosBox, Graphics.ow_key_armos_bmp, "Armos item"),
-                                                         (TrackerModel.sword2Box, Graphics.ow_sword2_item_bmp, "White sword item") })
-                {
-                    var icon = Graphics.BMPtoImage(bmp);
-                    icon.Width = 21.0; icon.Height = 21.0; icon.Stretch = Stretch.Uniform;
-                    RenderOptions.SetBitmapInterpolationMode(icon, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
-                    ToolTip.SetTip(icon, spot);
-                    line.Children.Add(icon);
-                    var view = itemBox(box);
-                    view.Margin = new Thickness(4.0, 0.0, 8.0, 0.0);
-                    line.Children.Add(view);
-                }
-                lines.Add(line);
-                lineWidth = Math.Max(lineWidth, 114.0 + 3 * (21.0 + 42.0));
             }
             shownColumns = bestColumns();
             var perColumn = (lines.Count + shownColumns - 1) / shownColumns;   // (rounded up; read down each column, then the next)

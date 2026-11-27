@@ -122,7 +122,10 @@ public static class OverworldMapTileCustomization
         if (r.hasResult)
         {
             var (newBoxCellValue, newPlayerHas) = r.result;
-            trackerModelBoxToUpdate.Set(newBoxCellValue, newPlayerHas);
+            if (CustomComboBoxes.asksShuffleLevel(newBoxCellValue))
+                await CustomComboBoxes.setForPickedLevel(cm, trackerModelBoxToUpdate, newBoxCellValue, newPlayerHas);
+            else
+                trackerModelBoxToUpdate.Set(newBoxCellValue, newPlayerHas);
             TrackerModel.forceUpdate();
         }
     }
@@ -139,7 +142,10 @@ public static class OverworldMapTileCustomization
         if (r.hasResult)
         {
             var (newBoxCellValue, newPlayerHas) = r.result;
-            trackerModelBoxToUpdate.Set(newBoxCellValue, newPlayerHas);
+            if (trackerModelBoxToUpdate.Domain == TrackerModel.allItemWithHeartShuffleChoiceDomain && CustomComboBoxes.asksShuffleLevel(newBoxCellValue))   // (not the level 9 entry note)
+                await CustomComboBoxes.setForPickedLevel(cm, trackerModelBoxToUpdate, newBoxCellValue, newPlayerHas);
+            else
+                trackerModelBoxToUpdate.Set(newBoxCellValue, newPlayerHas);
             TrackerModel.forceUpdate();
         }
     }

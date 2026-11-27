@@ -1691,6 +1691,21 @@ public static class CustomComboBoxes
     public static bool itemMenuTriforceBlocked = false;   // set by an item box while its menu is open: a Triforce Piece can only be placed on a basement slot
     public static HashSet<int> itemMenuMovableIdents = new HashSet<int>();   // set by a dungeon box while its menu is open: used-up items held by another slot of that dungeon, which this slot may take
     public static TrackerModel.ChoiceDomain itemMenuDomain =TrackerModel.allItemWithHeartShuffleChoiceDomain;   // DoLocalItemComboBox swaps this for boxes that don't use up items
+    // Shuffle Type Anywhere: a map, compass or shuffled triforce put in an item box is for a level, asked after the item is picked
+    // (an unshuffled triforce stays the dungeon's own piece: without a level tag, on a basement slot)
+    public static bool asksShuffleLevel(int ident) =>
+        TrackerModel.ShuffleAnywhere && (ident == TrackerModel.ITEMS.MAP || ident == TrackerModel.ITEMS.COMPASS || ident == TrackerModel.ITEMS.TRIFORCE && TrackerModel.ShuffleTriforces);
+    // shows the level picker and puts the item in the box for that level; dismissing it changes nothing
+    public static async Task setForPickedLevel(CanvasManager cm, TrackerModel.Box box, int ident, TrackerModel.PlayerHas playerHas)
+    {
+        if (box.LockedItem != -1) { box.Set(ident, playerHas); return; }   // (Legacy Mode: a locked box keeps its own item, so there is no level to ask)
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);   // (the item menu closes before the level picker opens)
+        var levels = Enumerable.Range(0, ident == TrackerModel.ITEMS.TRIFORCE ? 8 : 9).Select(level => (level,
+            (Control)new TextBlock { Text = Popouts.shuffleLevelName(level), FontSize = 16.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, HorizontalAlignment = HorizontalAlignment.Center })).ToList();
+        var picked = await PieMenus.ItemPickerAsync(cm, levels, 9);
+        if (picked >= 0 && !box.AttemptToSetForLevel(ident, playerHas, picked))
+            Graphics.ErrorBeepWithReminderLogText($"Tried to mark item box as {TrackerModel.ITEMS.AsDisplayDescription(ident)}, but that item is already marked in a different box");
+    }
     // (returns DoModalGridSelect's (hasResult, (ident, playerHas)); callerExtraDecorations: (element, x, y)s)
     public static async Task<(bool hasResult, (int, TrackerModel.PlayerHas) result)> DisplayItemComboBox(CanvasManager cm, double boxX, double boxY, int boxCellCurrent, int activationDelta, TrackerModel.PlayerHas originalPlayerHas,
                                                                                                           IEnumerable<(Control, double, double)> callerExtraDecorations, GridClickDismissalWarpReturn gridClickDismissalWarpReturn)
@@ -1716,8 +1731,10 @@ public static class CustomComboBoxes
         int[] make_gridIdents()
         {
             var nc = TrackerModel.ITEMS.customMenuCount;
-            // a box that already holds an item the menu does not offer (a map or compass from the shuffle window, or a custom icon since turned off) still shows it as its current cell
-            var stray = boxCellCurrent == TrackerModel.ITEMS.MAP || boxCellCurrent == TrackerModel.ITEMS.COMPASS
+            // Shuffle Type Anywhere: any item box can hold a map or compass (not the level 9 entry note, which has its own domain)
+            var offersMaps = TrackerModel.ShuffleAnywhere && itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain;
+            // a box that already holds an item the menu does not offer (a map or compass with Anywhere off, or a custom icon since turned off) still shows it as its current cell
+            var stray = !offersMaps && (boxCellCurrent == TrackerModel.ITEMS.MAP || boxCellCurrent == TrackerModel.ITEMS.COMPASS)
                 || boxCellCurrent >= TrackerModel.ITEMS.CUSTOM_BASE && boxCellCurrent < TrackerModel.ITEMS.CUSTOM_BASE + TrackerModel.ITEMS.CUSTOM_COUNT && boxCellCurrent - TrackerModel.ITEMS.CUSTOM_BASE >= nc ? new[] { boxCellCurrent } : new int[0];
             var offered = Enumerable.Range(0, nc).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k).Concat(stray).ToArray();
             // row 7: the AP Item (an Archipelago multiworld item that belongs to another world; it can be placed any number of times), when Archipelago Support is on
@@ -1725,6 +1742,8 @@ public static class CustomComboBoxes
             var withAp = TrackerModelOptions.ArchipelagoSupport.Value || TrackerModel.ITEMS.isApItem(boxCellCurrent)
                 ? gridIdents0.Concat(new[] { TrackerModel.ITEMS.APITEM, TrackerModel.ITEMS.APITEM_USEFUL, TrackerModel.ITEMS.APITEM_FILLER, -2, -2 }).ToArray()
                 : gridIdents0;
+            if (offersMaps)   // the triforce moves down to head the bottom row, with the map and compass
+                withAp = withAp.Select(id => id == TrackerModel.ITEMS.TRIFORCE ? -2 : id).Concat(new[] { TrackerModel.ITEMS.TRIFORCE, TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS, -2, -2 }).ToArray();
             if (offered.Length == 0) return withAp;
             else
             {
@@ -1738,7 +1757,14 @@ public static class CustomComboBoxes
         foreach (var ident in gridIdents)
         {
             Control fe;
-            if (ident == -1 || ident == -2) fe = new Canvas();
+            if (ident == -2) fe = new Canvas();
+            else if (ident == -1)   // the clear cell: a red X
+            {
+                var x = new Canvas { Width = 21.0, Height = 21.0 };
+                x.Children.Add(new Line { StartPoint = new Point(3.0, 3.0), EndPoint = new Point(18.0, 18.0), Stroke = Brushes.Red, StrokeThickness = 3.0 });
+                x.Children.Add(new Line { StartPoint = new Point(18.0, 3.0), EndPoint = new Point(3.0, 18.0), Stroke = Brushes.Red, StrokeThickness = 3.0 });
+                fe = x;
+            }
             else
             {
                 var sm = swordMenuBmpFor(ident);
@@ -1767,7 +1793,8 @@ public static class CustomComboBoxes
             }
             // a one-of-a-kind item the player already owns from somewhere other than a dungeon box (bought in a shop, a starting item, checked off on the map) can't be found again
             // an item sitting in another slot of the same dungeon can be picked here even when it is used up: picking it moves it to this slot (the caller clears the other slot)
-            var triforceBlocked = !allItemsSelectable && itemMenuTriforceBlocked && ident == TrackerModel.ITEMS.TRIFORCE && ident != boxCellCurrent;
+            var triforceBlocked = !allItemsSelectable && itemMenuTriforceBlocked && ident == TrackerModel.ITEMS.TRIFORCE && ident != boxCellCurrent
+                && !(itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain && asksShuffleLevel(ident));   // (a piece for a chosen level goes in any box)
             var movable = !allItemsSelectable && !progDisabled && !triforceBlocked && ident >= 0 && ident != boxCellCurrent && itemMenuMovableIdents.Contains(ident);   // (a Triforce Piece never moves to a non-basement slot)
             if (movable)
                 ToolTip.SetTip(fe, "Move here from another slot in this dungeon");

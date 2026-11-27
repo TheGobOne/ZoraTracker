@@ -335,7 +335,7 @@ public static class Views
         }
         if (TrackerModel.ShuffleTriforces)   // (triforces shuffled: a dungeon box cannot take the piece; taking one out above still works)
         {
-            Graphics.ErrorBeepWithReminderLogText("Triforce Pieces are shuffled: place them in the M/C/Tri Shuffle window");
+            Graphics.ErrorBeepWithReminderLogText(TrackerModel.ShuffleAnywhere ? "Triforce Pieces are shuffled: place them in an item box or the M/C/Tri Shuffle window" : "Triforce Pieces are shuffled: place them in the M/C/Tri Shuffle window");
             return true;   // (the click is used up here, so it does not also toggle the level's triforce collected)
         }
         var target = stairOn ? (TrackerModel.level2StairBox.CellCurrent() == -1 ? TrackerModel.level2StairBox : null)
@@ -846,12 +846,17 @@ public static class Views
                     if (r.hasResult)
                     {
                         var (newBoxCellValue, newPlayerHas) = r.result;
-                        var had = takeFromOtherSlot(newBoxCellValue);
-                        // (the popout or a co-op partner can use the item up while the menu is open: Set would throw)
-                        if (newBoxCellValue != box.CellCurrent() && box.LockedItem == -1 && !box.Domain.CanAddUse(newBoxCellValue))
-                            Graphics.ErrorBeepWithReminderLogText($"Tried to mark item box as {TrackerModel.ITEMS.AsDisplayDescription(newBoxCellValue)}, but that item is already marked in a different box");
+                        if (CustomComboBoxes.asksShuffleLevel(newBoxCellValue))   // (a piece for a chosen level moves nothing from this dungeon's other slots)
+                            await CustomComboBoxes.setForPickedLevel(cm, box, newBoxCellValue, newPlayerHas);
                         else
-                            box.Set(newBoxCellValue, (had == true ? TrackerModel.PlayerHas.YES : newPlayerHas));   // (a moved piece keeps its checked state)
+                        {
+                            var had = takeFromOtherSlot(newBoxCellValue);
+                            // (the popout or a co-op partner can use the item up while the menu is open: Set would throw)
+                            if (newBoxCellValue != box.CellCurrent() && box.LockedItem == -1 && !box.Domain.CanAddUse(newBoxCellValue))
+                                Graphics.ErrorBeepWithReminderLogText($"Tried to mark item box as {TrackerModel.ITEMS.AsDisplayDescription(newBoxCellValue)}, but that item is already marked in a different box");
+                            else
+                                box.Set(newBoxCellValue, (had == true ? TrackerModel.PlayerHas.YES : newPlayerHas));   // (a moved piece keeps its checked state)
+                        }
                     }
                     CustomComboBoxes.GlobalFlag.popupIsActive = false;
                 }))());
@@ -916,7 +921,16 @@ public static class Views
                         else
                         {
                             // changing from empty/other-item box to this item value always NO on first hotkey press, as this is 'model harmless'
-                            if (i == TrackerModel.ITEMS.TRIFORCE && TrackerModel.ShuffleTriforces)
+                            if (CustomComboBoxes.asksShuffleLevel(i))
+                            {
+                                CustomComboBoxes.GlobalFlag.popupIsActive = true;
+                                CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
+                                {
+                                    try { await CustomComboBoxes.setForPickedLevel(cm, box, i, TrackerModel.PlayerHas.NO); }
+                                    finally { CustomComboBoxes.GlobalFlag.popupIsActive = false; }
+                                }))());
+                            }
+                            else if (i == TrackerModel.ITEMS.TRIFORCE && TrackerModel.ShuffleTriforces)
                                 Graphics.ErrorBeepWithReminderLogText("Triforce Pieces are shuffled: place them in the M/C/Tri Shuffle window");
                             else if (i == TrackerModel.ITEMS.TRIFORCE && !box.CurrentlyHasBasementStair)
                                 Graphics.ErrorBeepWithReminderLogText("A Triforce Piece can only be placed on a basement slot");

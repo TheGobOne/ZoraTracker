@@ -555,6 +555,12 @@ public static class SelfTest
                     host.Set(-1, TrackerModel.PlayerHas.NO);
                     if (TrackerModel.ShuffleCredits(0, 6)) fail("anywhere: an emptied level box still credited its level");
                     if (!hostSaved.TryApply(host) || host.ShuffleLevel != 6) fail("anywhere: a level box's tag did not survive a round trip");
+                    // an overworld box takes a map for a level too, and the menus ask the level for it
+                    var coast = TrackerModel.ladderBox;
+                    boxes5Was.Add((coast, coast.CellCurrent(), coast.PlayerHas()));
+                    if (!CustomComboBoxes.asksShuffleLevel(TrackerModel.ITEMS.MAP) || CustomComboBoxes.asksShuffleLevel(TrackerModel.ITEMS.APITEM)) fail("anywhere: the item menu asks the level for the wrong items");
+                    if (!coast.AttemptToSetForLevel(TrackerModel.ITEMS.MAP, TrackerModel.PlayerHas.YES, 7) || !TrackerModel.ShuffleCredits(1, 7)) fail("anywhere: a map in the coast box did not credit its level");
+                    coast.Set(-1, TrackerModel.PlayerHas.NO);
                     var mapSpot = TrackerModel.shuffleSlotBoxes[4];
                     var itemSpot = TrackerModel.shuffleSlotBoxes[5];
                     mapSpot.AttemptToSetForLevel(TrackerModel.ITEMS.MAP, TrackerModel.PlayerHas.YES, 2);
