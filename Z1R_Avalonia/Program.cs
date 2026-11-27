@@ -903,6 +903,7 @@ public static class Program
                                             }
                                             CoopSync.applyRemote(senderId, timestamp, () =>
                                             {
+                                                CoopSync.fromPartner(payload, senderId);   // (an older partner's tiles keep our fairy / shuffle markers)
                                                 var merge = CoopSync.beginMerge("Overworld", payload, senderId);   // (each tile and each global: is the partner's newer?)
                                                 SaveAndLoad.Overworld data = null;
                                                 string[] tileExtras = null;
@@ -1381,6 +1382,8 @@ public static class Program
                                                     return;
                                                 }
                                                 var key = CoopSync.tileKey(data.X, data.Y);
+                                                CoopSync.fromPartner(payload, senderId);   // (an older partner's tile keeps our fairy / shuffle markers)
+                                                data = payload.ToObject<CoopSync.OverworldTileUpdate>();
                                                 // (with the tile's value as stateOf writes it, so endMerge can check that the tile really took it)
                                                 var merge = CoopSync.beginMergeUnit("Overworld", key, payload, senderId, CoopSync.unitTileValue(data.MapTileValue, data.ExtraData, data.CircleValue, data.Extras));
                                                 if (merge.Takes(key))
@@ -2351,6 +2354,7 @@ public static class Program
                 // remember which startup checkboxes were checked (if the user asked for that)
                 CoopSync.hostStartupOptions = null;
                 CoopSync.startScreenOptionsHandler = null;   // (the run is starting: the checkboxes are being read)
+                turnHeartShuffleOn();   // (the preview boxes must give back their heart uses on every start, crash recovery included)
                 if (loadData == null)
                 {
                     var keys = new List<string>();
@@ -2439,6 +2443,18 @@ public static class Program
                 TrackerModel.ApplyShuffleAnywhereCaps();
                 // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
                 if (loadData != null) WPFUI.ApplyLoadedOptions(loadData.Overworld);
+                // a ZORA-made file has no Shuffle key: its ZORA flags say the shuffle settings (not on the web, which has no shuffle tracking)
+                if (!Platform.isBrowser && loadData?.Overworld is SaveAndLoad.Overworld zow && zow.Shuffle < 0 && zow.BootsReplaceBoomerangs >= 0 && zow.ProgressiveItems < 0 && zow.LegacyMode < 0
+                    && !string.IsNullOrEmpty(loadData.ZoraFlags) && FlagPaste.decodeZora(loadData.ZoraFlags) is var (zp, zerr) && zerr == null)
+                {
+                    TrackerModel.ShuffleTriforces = zp.ShuffleTriforces != FlagPaste.Tri.Off;
+                    TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = zp.ShuffleMapsCompasses != FlagPaste.Tri.Off;
+                    var zoraKinds = new[] { zp.ShuffleTriforces, zp.ShuffleMapsCompasses }.Where(t => t != FlagPaste.Tri.Off).Distinct().ToList();
+                    var zoraAnywhere = zoraKinds.Count == 1 && zoraKinds[0] == FlagPaste.Tri.On;   // (two different types: Between Levels, as ApplyLoadedOptions falls back)
+                    TrackerModel.ShuffleAnywhere = zoraAnywhere;
+                    TrackerModel.ShuffleBetweenLevels = !zoraAnywhere && (TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces);
+                    TrackerModel.ApplyShuffleAnywhereCaps();
+                }
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
                 OverworldItemGridUI.ApplyProgressiveItemCaps();
                 TrackerModel.CustomLevelName =
@@ -2645,6 +2661,9 @@ public static class Program
                                     _ = r;
                                 }
                                 loadData = DungeonSaveAndLoad.LoadAll(json);
+                                // (the web build cannot track Anywhere spots: loading one would drop them, and the next web save would lose them for good)
+                                if (Platform.isBrowser && loadData.Overworld != null && loadData.Overworld.Shuffle >= 0 && (loadData.Overworld.Shuffle & 16) != 0)
+                                    throw new Exception("this save uses Shuffle Type Anywhere, which the web version cannot track. Load it in the desktop app.");
                                 try { loadedSaveTicks = File.GetLastWriteTimeUtc(pickedFile).Ticks; } catch (Exception) { loadedSaveTicks = 0; }
                                 recordRecentLoad(pickedFile);
                             }
@@ -2697,7 +2716,8 @@ public static class Program
                             finishCrashInfo();
                             if (LoadDump.isActive || SelfTest.isSelfTest)
                             {
-                                LoadDump.Fail(e.Message);   // (a headless run has nobody to click OK)
+                                // (a headless run has nobody to click OK)
+                                if (LoadDump.isActive) LoadDump.Fail(e.Message); else SelfTest.startupFailed(e.Message);
                                 return;
                             }
                             foreach (var tb in startupOptionsCanvas.Children.OfType<TextBox>().Where(t => t.Text != null && t.Text.StartsWith("Loading UI")).ToList())
@@ -3098,6 +3118,8 @@ public static class Program
                             // (the web build has no shuffle boxes: a paste neither ticks nor reports them)
                             var shufTri = Platform.isBrowser ? FlagPaste.Tri.Off : z.ShuffleTriforces;
                             var shufMaps = Platform.isBrowser ? FlagPaste.Tri.Off : z.ShuffleMapsCompasses;
+                            if (Platform.isBrowser && (z.ShuffleTriforces != FlagPaste.Tri.Off || z.ShuffleMapsCompasses != FlagPaste.Tri.Off))
+                                lines.Add("Not tracked in the web version: Map/Compass/Triforce Shuffle");
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
                                         || z.Progressive || shufTri != FlagPaste.Tri.Off || shufMaps != FlagPaste.Tri.Off || z.Level9SwordEntrance;
@@ -3163,7 +3185,11 @@ public static class Program
                                 lines.Add("Shuffle Type: " + (anywhere ? "Anywhere" : "Between Levels"));
                             }
                             else if (shuffleKinds.Count == 2)
+                            {
+                                // (clear both ticks, so Start asks for a type instead of using the old one)
+                                shufTypeAnywhereCB.IsChecked = shufTypeBetweenCB.IsChecked = false;
                                 lines.Add("Shuffle Type: the flags pick different types (Between Levels and Anywhere). Pick one.");
+                            }
                         }
                     }
                     result.Text = lines.Count == 0 ? "Nothing to change." : string.Join("\n", lines);

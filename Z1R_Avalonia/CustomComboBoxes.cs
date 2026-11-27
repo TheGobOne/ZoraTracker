@@ -1716,8 +1716,9 @@ public static class CustomComboBoxes
         int[] make_gridIdents()
         {
             var nc = TrackerModel.ITEMS.customMenuCount;
-            // a box that already holds a custom icon the menu no longer offers (option off / folder changed) still shows that icon as its current cell
-            var stray = boxCellCurrent >= TrackerModel.ITEMS.CUSTOM_BASE && boxCellCurrent < TrackerModel.ITEMS.CUSTOM_BASE + TrackerModel.ITEMS.CUSTOM_COUNT && boxCellCurrent - TrackerModel.ITEMS.CUSTOM_BASE >= nc ? new[] { boxCellCurrent } : new int[0];
+            // a box that already holds an item the menu does not offer (a map or compass from the shuffle window, or a custom icon since turned off) still shows it as its current cell
+            var stray = boxCellCurrent == TrackerModel.ITEMS.MAP || boxCellCurrent == TrackerModel.ITEMS.COMPASS
+                || boxCellCurrent >= TrackerModel.ITEMS.CUSTOM_BASE && boxCellCurrent < TrackerModel.ITEMS.CUSTOM_BASE + TrackerModel.ITEMS.CUSTOM_COUNT && boxCellCurrent - TrackerModel.ITEMS.CUSTOM_BASE >= nc ? new[] { boxCellCurrent } : new int[0];
             var offered = Enumerable.Range(0, nc).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k).Concat(stray).ToArray();
             // row 7: the AP Item (an Archipelago multiworld item that belongs to another world; it can be placed any number of times), when Archipelago Support is on
             // (or when the box already holds one); -2 pads the row with blank cells

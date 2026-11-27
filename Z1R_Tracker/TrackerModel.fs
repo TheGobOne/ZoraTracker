@@ -924,11 +924,12 @@ for b in shuffleSlotBoxes do
 let ApplyShuffleAnywhereCaps() =
     for id in [ ITEMS.MAP; ITEMS.COMPASS ] do
         allItemWithHeartShuffleChoiceDomain.SetMaxUse(id, (if ShuffleAnywhere then 9 else 0))
+// whether the triforce (slot 0), map (1) or compass (2) is shuffled
+let shuffledKind(slot) = match slot with 0 -> ShuffleTriforces | 1 -> ShuffleMaps | _ -> ShuffleCompasses
 // the level an item is for: the chosen one, else its own row when that kind is not shuffled, else unknown (-1)
 let ShuffleSlotLevel(row, slot) =
     let chosen = shuffleSlotChosen.[row*3+slot]
-    let shuffled = match slot with 0 -> ShuffleTriforces | 1 -> ShuffleMaps | _ -> ShuffleCompasses
-    if chosen >= 0 then chosen elif shuffled then -1 else row
+    if chosen >= 0 then chosen elif shuffledKind slot then -1 else row
 // whether this level's triforce (slot 0), map (1) or compass (2) has been collected: in the window, or from a shop's marker icon
 let ShuffleCredits(slot, level) =
     ((slot <> 0 || level < 8) && mapCollectedCount.[shuffleMarker(slot, level)] > 0)
@@ -1004,7 +1005,8 @@ type DungeonTrackerInstance(kind) =
             if anyChanged.IsNone then
                 anyChanged <- Some(
                     new SyntheticEventingBool((fun()-> 
-                        pct <- float(allWithSpots() |> Seq.sumBy (fun b -> if not(b.IsEmptyRedBox) then 1 else 0)) / 20. // 23 items exist; be max red when few left
+                        let spots = if ShuffleAnywhere then [0..2] |> List.sumBy (fun s -> if not (shuffledKind s) then 0 elif s = 0 then 8 else 9) else 0
+                        pct <- float(allWithSpots() |> Seq.sumBy (fun b -> if not(b.IsEmptyRedBox) then 1 else 0)) / float(20 + spots) // 23 items exist; be max red when few left
                         pct <- min pct 1.0    // don't say e.g. 23./20., and also hidden dungeon numbers has extra boxes
                         false), allWithSpots() |> Seq.map (fun b -> b.Changed)))
             anyChanged.Value
@@ -1087,6 +1089,8 @@ and Dungeon(id,numBoxes) =
     member _this.HasShuffleTriforceCredit : bool = id < 8 && ShuffleCredits(0,id)
     // without the M/C/Tri Shuffle window's share (what a save records, so the window can still take it back)
     member this.PlayerHasOwnTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.IsOwnTriforce && b.PlayerHas() = PlayerHas.YES)) || (id=1 && level2StairBoxEnabled && level2StairBox.IsOwnTriforce && level2StairBox.PlayerHas() = PlayerHas.YES)   // (a triforce piece marked as obtained in an item slot counts too)
+    // the header flag only: a triforce held in an item box is not counted (the box saves its own)
+    member _this.PlayerHasTriforceFlag() = playerHasTriforce
     member _this.ToggleTriforce() = playerHasTriforce <- not playerHasTriforce; playerHasTriforceChangeEvent.Trigger(playerHasTriforce); dungeonsAndBoxesLastChangedTime.SetNow()
     member _this.PlayerHasTriforceChanged = playerHasTriforceChangeEvent.Publish
     member _this.PlayerHasMapOfThisDungeon with get() = playerHasMap || ShuffleCredits(1,id) and set(x) = playerHasMap <- x; playerHasMapOfThisDungeonChangeEvent.Trigger(); playerCanSeeMapOfThisDungeonChangeEvent.Trigger()
@@ -1106,13 +1110,13 @@ and Dungeon(id,numBoxes) =
     member this.TriforceIsInItemSlot = this.Boxes |> Array.exists (fun b -> b.IsOwnTriforce) || (id=1 && level2StairBoxEnabled && level2StairBox.IsOwnTriforce)
     member private this.TriforceAndBoxesDone(ignoreHearts:bool) : bool =
         // a box holding the triforce counts as done once the player has the triforce (header toggled), even if the box itself was never marked got
-        let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.CellCurrent() = ITEMS.TRIFORCE) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
+        let boxDone (b:Box) = b.IsDone() || (playerHasTriforce && b.IsOwnTriforce) || (ignoreHearts && b.CellCurrent() = ITEMS.HEARTCONTAINER)
         // completion is about the piece found IN this dungeon, not this dungeon's piece turning up elsewhere (M/C/Tri Shuffle window)
-        // Anywhere: pieces join the item pool, so a level need not hold one; instead its three spots are item locations too (level 9 has two)
-        let spotsDone = not ShuffleAnywhere || ([ (if id < 8 then 0 else 1) .. 2 ] |> List.forall (fun s -> boxDone shuffleSlotBoxes.[id*3+s]))
-        // Between Levels / Anywhere: this level's map and compass must have been collected too, wherever they turned up
-        let mapAndCompass = not (ShuffleBetweenLevels || ShuffleAnywhere) || (this.PlayerHasMapOfThisDungeon && ShuffleCredits(2, id))
-        let pieceFoundHere = ((ShuffleAnywhere && id < 8) || this.PlayerHasOwnTriforce() || (id < 8 && shuffleSlotGot.[id*3])) && spotsDone && mapAndCompass
+        // Anywhere: shuffled pieces join the item pool, so a level need not hold one; instead that kind's spot is an item location too (level 9 has no triforce)
+        let spotsDone = not ShuffleAnywhere || ([ (if id < 8 then 0 else 1) .. 2 ] |> List.forall (fun s -> not (shuffledKind s) || boxDone shuffleSlotBoxes.[id*3+s]))
+        // Between Levels / Anywhere: this level's map must be marked (its own toggle, or the window); its compass only when compasses are shuffled
+        let mapAndCompass = not (ShuffleBetweenLevels || ShuffleAnywhere) || (this.PlayerHasMapOfThisDungeon && (not ShuffleCompasses || ShuffleCredits(2, id)))
+        let pieceFoundHere = ((ShuffleAnywhere && ShuffleTriforces && id < 8) || this.PlayerHasOwnTriforce() || (id < 8 && shuffleSlotGot.[id*3])) && spotsDone && mapAndCompass
         match DungeonTrackerInstance.TheDungeonTrackerInstance.Kind with
         | DungeonTrackerInstanceKind.HIDE_DUNGEON_NUMBERS ->
             if pieceFoundHere then

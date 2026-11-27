@@ -49,7 +49,7 @@ type Dungeon() =
     member this.TryApply(d : TrackerModel.Dungeon) =
       if isNull this.Boxes || this.Boxes.Length <> d.Boxes.Length then false   // (a save with a different number of boxes: nothing is applied, rather than throwing mid-load)
       else
-        if this.Triforce <> d.PlayerHasOwnTriforce() then
+        if this.Triforce <> d.PlayerHasTriforceFlag() then
             d.ToggleTriforce()
         d.Color <- this.Color
         d.LabelChar <- (if System.String.IsNullOrEmpty(this.LabelChar) then '?' else this.LabelChar.[0])
@@ -69,7 +69,7 @@ type Items() =
     member val LetterBox : Box = null with get,set
     member val WoodSwordBox : Box = null with get,set
     member val CustomLevelName : string = null with get,set   // (older saves do not have this)
-    member val IntraHeartGuesses : string = null with get,set   // "boxname;..." (namedBoxes) holding a guessed heart; null: older save, not recorded
+    member val IntraHeartGuesses : string = null with get,set   // "boxname;..." (tierBoxes) holding a guessed heart; null: older save, not recorded
     member val ShuffledWoodSwordTiles : string = null with get,set   // "i,j;i,j" overworld tiles whose wood sword cave holds a shuffled item
     member val HintShopColors : string = null with get,set   // "i,j,color;..." background colors chosen for hint shop tiles (older saves do not have this)
     member val ProgressiveTileTiers : string = null with get,set   // "i,j,item,tier;..." the progressive tier each collected overworld item icon was collected at (older saves do not have this)
@@ -371,7 +371,7 @@ let SaveItems(prefix) =
     lines.Add(sprintf """    }, "Level9FloorBoxEnabled": %b, "Dungeons": [""" TrackerModel.level9FloorBoxEnabled)
     for i = 0 to 8 do
         let d = TrackerModel.GetDungeon(i)
-        lines.Add(sprintf """            { "Triforce": %b, "Color": %d, "LabelChar": "%s", "PlayerHasMap": %b, "Boxes": [ {""" (d.PlayerHasOwnTriforce()) d.Color (d.LabelChar.ToString()) d.PlayerHasOwnMap) |> ignore
+        lines.Add(sprintf """            { "Triforce": %b, "Color": %d, "LabelChar": "%s", "PlayerHasMap": %b, "Boxes": [ {""" (d.PlayerHasTriforceFlag()) d.Color (d.LabelChar.ToString()) d.PlayerHasOwnMap) |> ignore
         for box in d.Boxes do
             SaveBox("            ", box)
             lines.Add("                }, {")
@@ -557,7 +557,7 @@ let ApplyLoadedShuffleSpots(ow:Overworld) =
             | _ -> ()
     ok
 
-/// Whether the 4th Sword start option was on in a loaded save: the level 2 staircase slot or the level 9 floor check is only enabled by it (older saves predate the option: nothing is restricted)
+/// Whether the 4th Sword start option was on in a loaded save: the level 2 staircase slot or the level 9 floor check is only enabled by it (older saves predate the option: true, and the load step then turns it off if Progressive Items is off)
 let FourthSwordWasOn(items:Items) =
     if isNull items.Level2StairBox then true else (items.Level2StairBoxEnabled || items.Level9FloorBoxEnabled)
 /// Whether a loaded save says the 4th sword was really on (an older save without the 4th Sword fields cannot say: false, so its Progressive Items setting is not overridden)

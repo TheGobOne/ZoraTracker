@@ -435,10 +435,13 @@ public static class SelfTest
                 var sBox9Cell = box9.CellCurrent(); var sBox9Has = box9.PlayerHas();
                 string build(string notes) => string.Join("\n", SaveAndLoad.BuildSaveLines(notes, 0, new[] { "}" }, new string[0], "", false, 0, false, false));
                 var (sBetween, sAnywhere) = (TrackerModel.ShuffleBetweenLevels, TrackerModel.ShuffleAnywhere);
+                var (sMaps, sCompasses, sTris) = (TrackerModel.ShuffleMaps, TrackerModel.ShuffleCompasses, TrackerModel.ShuffleTriforces);
                 var (sGot6, sChosen6, sGot14, sChosen14) = (TrackerModel.shuffleSlotGot[6], TrackerModel.shuffleSlotChosen[6], TrackerModel.shuffleSlotGot[14], TrackerModel.shuffleSlotChosen[14]);
                 var sMarks = (int[])TrackerModel.mapCollectedCount.Clone();
                 var apDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain; var sApMax = apDomain.MaxUses(TrackerModel.ITEMS.APITEM);
                 var boxes5Was = new List<(TrackerModel.Box box, int cell, TrackerModel.PlayerHas has)>();
+                var dung5 = TrackerModel.GetDungeon(4);
+                var (sTri5, sMap5) = (dung5.PlayerHasTriforceFlag(), dung5.PlayerHasOwnMap);
                 try
                 {
                     // states: 0 = Off, 1 = On, 2 = ? (Random, counts as On for the extra blocks and as Off for Boots)
@@ -545,6 +548,7 @@ public static class SelfTest
                     if (TrackerModel.ShuffleCredits(0, 3)) fail("anywhere: a triforce spot tagged for level 5 also credited level 4");
                     var host = TrackerModel.GetDungeon(2).Boxes[0];
                     var (hostCell, hostHas) = (host.CellCurrent(), host.PlayerHas());
+                    boxes5Was.Add((host, hostCell, hostHas));   // (put back even after a failure part way through)
                     host.AttemptToSetForLevel(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.YES, 6);
                     if (!TrackerModel.ShuffleCredits(0, 6) || TrackerModel.GetDungeon(2).TriforceIsInItemSlot) fail("anywhere: a triforce in level 3's box tagged for level 7 did not credit level 7 only");
                     var hostSaved = CoopSync.toSerializableBox(host);
@@ -573,7 +577,8 @@ public static class SelfTest
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 2)] = 1;
                     if (!TrackerModel.ShuffleCredits(1, 2) || TrackerModel.ShuffleCredits(1, 3) || TrackerModel.ShuffleCredits(2, 2)) fail("anywhere: a shop's level 3 map credited the wrong thing");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 2)] = 0;
-                    // completion: level 5 needs its boxes, its three spots, and its map and compass (no triforce with Anywhere)
+                    // completion: with everything shuffled, level 5 needs its boxes, its three spots, and its map and compass (no triforce with Anywhere)
+                    TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = TrackerModel.ShuffleTriforces = true;
                     var level5 = TrackerModel.GetDungeon(4);
                     var boxes5 = level5.Boxes.Concat(TrackerModel.shuffleSlotBoxes.Skip(12).Take(3)).ToArray();
                     boxes5Was.AddRange(boxes5.Select(b => (b, b.CellCurrent(), b.PlayerHas())));
@@ -584,6 +589,16 @@ public static class SelfTest
                     if (level5.IsComplete) fail("anywhere: a level completed without its compass");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(2, 4)] = 1;
                     if (!level5.IsComplete) fail("anywhere: a level with its items, spots, map and compass did not complete");
+                    // triforces not shuffled: the level needs its own triforce, and the triforce spot is not an item location
+                    TrackerModel.ShuffleTriforces = false;
+                    var triWas = level5.PlayerHasOwnTriforce();
+                    TrackerModel.shuffleSlotBoxes[12].Set(-1, TrackerModel.PlayerHas.NO);
+                    if (!triWas && level5.IsComplete) fail("anywhere: a level completed without its unshuffled triforce");
+                    if (!triWas) level5.ToggleTriforce();
+                    if (!level5.IsComplete) fail("anywhere: an unshuffled triforce's empty spot blocked completion");
+                    if (!triWas) level5.ToggleTriforce();
+                    TrackerModel.shuffleSlotBoxes[12].Set(TrackerModel.ITEMS.APITEM, TrackerModel.PlayerHas.YES);
+                    TrackerModel.ShuffleTriforces = true;
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 4)] = 0;
                     if (level5.IsComplete) fail("anywhere: a level completed without its map");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(2, 4)] = 0;
@@ -640,8 +655,11 @@ public static class SelfTest
                     // the shuffle checks' state, also after a failure part way through
                     foreach (var (b, cell, has) in boxes5Was) b.Set(cell, has);
                     foreach (var b in TrackerModel.shuffleSlotBoxes.Skip(3).Take(3)) b.Set(-1, TrackerModel.PlayerHas.NO);
+                    if (dung5.PlayerHasTriforceFlag() != sTri5) dung5.ToggleTriforce();
+                    dung5.PlayerHasMapOfThisDungeon = sMap5;
                     Array.Copy(sMarks, TrackerModel.mapCollectedCount, sMarks.Length);
                     TrackerModel.ShuffleBetweenLevels = sBetween; TrackerModel.ShuffleAnywhere = sAnywhere;
+                    TrackerModel.ShuffleMaps = sMaps; TrackerModel.ShuffleCompasses = sCompasses; TrackerModel.ShuffleTriforces = sTris;
                     TrackerModel.ApplyShuffleAnywhereCaps();
                     TrackerModel.SetShuffleSlot(2, 0, sGot6, sChosen6); TrackerModel.SetShuffleSlot(4, 2, sGot14, sChosen14);
                     apDomain.SetMaxUse(TrackerModel.ITEMS.APITEM, sApMax);
@@ -840,8 +858,13 @@ public static class SelfTest
                     SaveAndLoad.ApplyLoadedOptions(d.Overworld);   // (a real load applies the options first)
                     OverworldItemGridUI.ApplyLoadedFourthSword(d.Items);
                     if (TrackerModel.ProgressiveItems) fail("4th sword load: an older save with Progressive Items 0 and no 4th Sword fields came back with Progressive Items on");
-                    if (!TrackerModelOptions.FourthSwordEnabled) fail("4th sword load: an older save should leave the 4th sword unrestricted");
+                    if (TrackerModelOptions.FourthSwordEnabled) fail("4th sword load: an older save with Progressive Items off came back with the 4th sword on");
                     if (OverworldItemGridUI.fourthSwordStashItem != -1) fail("4th sword load: an item kept from a turned-off 4th sword slot survived the load");
+                    d.Overworld.ProgressiveItems = 1;
+                    SaveAndLoad.ApplyLoadedOptions(d.Overworld);
+                    OverworldItemGridUI.ApplyLoadedFourthSword(d.Items);
+                    if (!TrackerModelOptions.FourthSwordEnabled) fail("4th sword load: an older save with Progressive Items on should leave the 4th sword unrestricted");
+                    TrackerModel.ProgressiveItems = false;   // (the next save must record it off)
                     // a save with the 4th sword in level 2 but Progressive Items 0 (a damaged or hand-edited save): Progressive Items comes on, with its caps
                     OverworldItemGridUI.ApplyProgressiveItemCaps();
                     TrackerModel.SetLevel2StairBoxEnabled(true);
@@ -1567,6 +1590,18 @@ public static class SelfTest
             if (CoopSync.maxVersion > CoopSync.MaxPartnerVersion) fail($"co-op bound: a hello counter of long.MaxValue raised ours above 2^40, to {CoopSync.maxVersion}");
             else if (CoopSync.maxVersion != before) fail($"co-op bound: a hello counter of long.MaxValue raised ours from {before} to {CoopSync.maxVersion}");
         });
+        guard("co-op old partner markers", () =>
+        {
+            int icons(int a, int b) => TrackerModel.decorIconsPack(Microsoft.FSharp.Collections.ListModule.OfSeq(new[] { a, b }));
+            var ours = TrackerModel.withShopLabel(icons(TrackerModel.shuffleMarker(1, 2), TrackerModel.DECOR_BOMB), 3) + "|0|0|-1|0|||0";
+            var sent = CoopSync.withoutNewMarkers(ours);
+            var wantIcons = TrackerModel.withShopLabel(TrackerModel.decorIconsPack(Microsoft.FSharp.Collections.ListModule.OfSeq(new[] { TrackerModel.DECOR_BOMB })), 3);
+            if (sent != wantIcons + "|0|0|-1|0|||0") fail($"co-op markers: sent '{sent}' to an older partner");
+            if (CoopSync.keepOurNewMarkers(sent, ours) != ours) fail("co-op markers: an older partner's echo changed our tile");
+            var cleared = CoopSync.keepOurNewMarkers("-1|0|0|-1|0|||0", ours);
+            if (!cleared.StartsWith(TrackerModel.decorIconsPack(Microsoft.FSharp.Collections.ListModule.OfSeq(new[] { TrackerModel.shuffleMarker(1, 2) })) + "|"))
+                fail($"co-op markers: an older partner's cleared tile gave '{cleared}'");
+        });
         // 6k. the state cache: a kind's state is parsed again only when its JSON changed, and DungeonMaps is serialized again only when a map changed.
         // It must never miss a change (here a door and a level's big numeral) and must give exactly what an uncached build gives.
         guard("co-op state cache", () =>
@@ -1652,6 +1687,13 @@ public static class SelfTest
         log($"{clicks} button/checkbox clicks, {popupsSeen} popups opened and closed");
         log(failures == 0 ? "RESULT: PASS" : $"RESULT: FAIL ({failures})");
         (Application.Current.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown(failures == 0 ? 0 : 1);
+    }
+
+    public static void startupFailed(string why)
+    {
+        fail("starting the run failed: " + why);
+        log($"RESULT: FAIL ({failures})");
+        (Application.Current.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown(1);
     }
 
     public static void arm()

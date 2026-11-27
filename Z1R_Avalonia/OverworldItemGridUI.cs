@@ -1181,6 +1181,7 @@ public static class OverworldItemGridUI
     internal static bool fourthSwordL2WithHiddenNumbers = false;   // (this run had the level 2 slot on with hidden dungeon numbers; the Extras checkbox then keeps its level 2 state. Reset each run and each load)
     internal static int fourthSwordStashItem = -1;
     internal static TrackerModel.PlayerHas fourthSwordStashHas = TrackerModel.PlayerHas.NO;
+    internal static int fourthSwordStashLevel = -1;   // (the stashed item's level tag, Shuffle Type Anywhere)
     // set when the 4th sword turned Progressive Items on during this run: what the progressive items looked like then, and the tiers the turn-on filled in.
     // Setting the 4th sword back to none with nothing changed since turns Progressive Items off again (null = Progressive Items was on already, or something changed)
     internal static string fourthSwordTurnedProgressiveOn = null;
@@ -1200,6 +1201,7 @@ public static class OverworldItemGridUI
     {
         fourthSwordStashItem = -1;
         fourthSwordStashHas = TrackerModel.PlayerHas.NO;
+        fourthSwordStashLevel = -1;
     }
     // what the progressive items look like now: each family's tier and how many of each base item are marked (a change means a progressive item was marked or collected)
     private static string progressiveFingerprint()
@@ -1237,18 +1239,18 @@ public static class OverworldItemGridUI
         if (target == 1) TrackerModel.SetLevel2StairBoxEnabled(true);
         if (src != null)
         {
-            var item = src.CellCurrent(); var has = src.PlayerHas();
+            var item = src.CellCurrent(); var has = src.PlayerHas(); var level = src.ShuffleLevel;
             // the old slot is emptied first: a unique item (the 4th sword, the bow, ...) can only be in one box at a time, so setting the new slot first would fail
             src.Set(-1, TrackerModel.PlayerHas.NO);
-            if (dest == null || !dest.AttemptToSet(item, has))
+            if (dest == null || !dest.AttemptToSetForLevel(item, has, level))
             {
-                fourthSwordStashItem = item; fourthSwordStashHas = has;   // (turned off: kept, so the checkbox's dash does not lose the item on the way from level 9 back to level 2)
+                fourthSwordStashItem = item; fourthSwordStashHas = has; fourthSwordStashLevel = level;   // (turned off: kept, so the checkbox's dash does not lose the item on the way from level 9 back to level 2)
             }
         }
         else if (dest != null && fourthSwordStashItem != -1)
         {
             // (AttemptToSet: the stashed item may have been marked in another box since; then it stays where the user put it)
-            dest.AttemptToSet(fourthSwordStashItem, fourthSwordStashHas);
+            dest.AttemptToSetForLevel(fourthSwordStashItem, fourthSwordStashHas, fourthSwordStashLevel);
             fourthSwordStashItem = -1;
         }
         if (target != 2) TrackerModel.SetLevel9FloorBoxEnabled(false);
@@ -1302,13 +1304,14 @@ public static class OverworldItemGridUI
             TrackerModel.SetLevel2StairBoxEnabled(items.Level2StairBoxEnabled);
             TrackerModel.SetLevel9FloorBoxEnabled(items.Level9FloorBoxEnabled);   // (older saves: false)
         }
-        TrackerModelOptions.FourthSwordEnabled = SaveAndLoad.FourthSwordWasOn(items);   // (older saves predate the 4th Sword option: nothing is restricted)
         // (only a save that really had the 4th sword on: an older save has no 4th Sword fields, so its own Progressive Items setting stands. Legacy Mode keeps Progressive Items off)
         if (SaveAndLoad.FourthSwordSavedOn(items) && !TrackerModel.ProgressiveItems && !TrackerModel.LegacyMode)
         {
             TrackerModel.ProgressiveItems = true;
             ApplyProgressiveItemCaps();
         }
+        // (older saves predate the 4th Sword option: unrestricted, but the 4th sword never appears with Progressive Items off)
+        TrackerModelOptions.FourthSwordEnabled = SaveAndLoad.FourthSwordWasOn(items) && TrackerModel.ProgressiveItems;
         ResetFourthSwordRunState();   // (this run's 4th Sword memory starts from the loaded save)
         return ok;
     }

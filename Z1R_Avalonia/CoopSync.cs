@@ -627,7 +627,7 @@ public static class CoopSync
                     b.AttemptToSetForLevel(n[0], b.PlayerHas(), shuffleLevelOf(n[2]));
             }
         }
-        else if (payload[ShuffleSlotsField] is Newtonsoft.Json.Linq.JArray slots)
+        else if ((TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces) && payload[ShuffleSlotsField] is Newtonsoft.Json.Linq.JArray slots)   // (not with our shuffle off, as on web)
             for (int k = 0; k < slots.Count && k < 27; k++)
                 if (m.Takes(shuffleSlotKey(k)) && shuffleNumbers(slots[k], 2) is int[] n
                     && (TrackerModel.shuffleSlotGot[k] != (n[0] == 1) || TrackerModel.shuffleSlotChosen[k] != shuffleLevelOf(n[1])))
@@ -755,6 +755,17 @@ public static class CoopSync
         var c = versionCarrier(t);
         if (c == null) return json;
         c["SyncV"] = versionsJson(kind, keys);
+        if (kind == "Overworld")
+        {
+            c[NewMarkersField] = true;
+            if (oldPartners.Count > 0)
+            {
+                c[StrippedField] = true;   // (a newer partner in the same session keeps its own markers)
+                if (c["TileExtras"] is Newtonsoft.Json.Linq.JArray all)
+                    for (var k = 0; k < all.Count; k++) all[k] = withoutNewMarkers((string)all[k]);
+                if (c["Extras"]?.Type == Newtonsoft.Json.Linq.JTokenType.String) c["Extras"] = withoutNewMarkers((string)c["Extras"]);
+            }
+        }
         if (snapshot) c["SyncSnap"] = true;
         return t.ToString(Formatting.None);
     }
@@ -1480,6 +1491,63 @@ public static class CoopSync
         return jo.ToString(Formatting.None);
     }
 
+    // ---- partners from before the fairy and shuffle shop markers (3.2 and older show them as heart containers) ----
+    // Our hello and Overworld messages say we know those markers. A partner whose messages do not is sent none of them,
+    // and its tiles do not remove ours.
+    public const string NewMarkersField = "KnowsNewMarkers";
+    private const string StrippedField = "NewMarkersLeftOut";   // set on a message whose markers were removed for an older partner
+    private static readonly HashSet<string> oldPartners = new HashSet<string>();   // by console ID; UI thread
+
+    public static void notePartnerMarkers(string senderId, bool knows)
+    {
+        if (knows) oldPartners.Remove(senderId ?? ""); else oldPartners.Add(senderId ?? "");
+    }
+
+    private static bool isNewMarker(Tuple<int, bool> e) => e.Item1 == TrackerModel.DECOR_FAIRY || TrackerModel.isShuffleMarker(e.Item1);
+
+    // the extras' first field (the packed marker icons) and the rest; false when it is not a number
+    private static bool splitIcons(string extras, out int icons, out string rest)
+    {
+        var bar = extras?.IndexOf('|') ?? -1;
+        rest = bar < 0 ? "" : extras.Substring(bar);
+        icons = 0;
+        return bar >= 0 && int.TryParse(extras.Substring(0, bar), out icons);
+    }
+
+    private static int packIcons(int labelFrom, IEnumerable<Tuple<int, bool>> entries) =>
+        TrackerModel.withShopLabel(TrackerModel.decorEntriesPack(Microsoft.FSharp.Collections.ListModule.OfSeq(entries)), TrackerModel.shopLabelOf(labelFrom));
+
+    public static string withoutNewMarkers(string extras)
+    {
+        if (!splitIcons(extras, out var icons, out var rest)) return extras;
+        var entries = TrackerModel.decorEntriesOf(icons);
+        if (!entries.Any(isNewMarker)) return extras;
+        return packIcons(icons, entries.Where(e => !isNewMarker(e))) + rest;
+    }
+
+    /// An older partner's tile with our new markers put back on it.
+    public static string keepOurNewMarkers(string theirs, string ours)
+    {
+        var stripped = withoutNewMarkers(ours);
+        if (stripped == ours || !splitIcons(theirs, out var theirIcons, out var rest) || !splitIcons(ours, out var ourIcons, out _)
+            || !splitIcons(stripped, out var strippedIcons, out _)) return theirs;
+        if (theirIcons == strippedIcons) return ourIcons + rest;   // (their icons are ours as sent: keep our order)
+        return packIcons(theirIcons, TrackerModel.decorEntriesOf(theirIcons).Concat(TrackerModel.decorEntriesOf(ourIcons).Where(isNewMarker))) + rest;
+    }
+
+    /// A partner's Overworld or OverworldTile message, before it is merged. UI thread.
+    public static void fromPartner(Newtonsoft.Json.Linq.JToken payload, string senderId)
+    {
+        if (!(payload is Newtonsoft.Json.Linq.JObject o)) return;
+        var knows = o[NewMarkersField] != null;
+        notePartnerMarkers(senderId, knows);
+        if (knows && o[StrippedField] == null) return;
+        if (o["TileExtras"] is Newtonsoft.Json.Linq.JArray all && all.Count == 128)
+            for (var k = 0; k < 128; k++) all[k] = keepOurNewMarkers((string)all[k], tileExtrasOf(k % 16, k / 16));
+        if (o["Extras"] != null && (int?)o["X"] is int x && (int?)o["Y"] is int y && x >= 0 && x <= 15 && y >= 0 && y <= 7)
+            o["Extras"] = keepOurNewMarkers((string)o["Extras"], tileExtrasOf(x, y));
+    }
+
     // ---- The state of an overworld tile beyond its icon value, extra data and circle ----
     // (it changes without the tile's Changed event, so a poll finds the changes; see subscribeToOverworldExtrasChanges)
     // Packed as "icons|bomb|price|hintColor|shuffledWoodSword|tiers|dups|circle":
@@ -1811,6 +1879,7 @@ public static class CoopSync
         public string Nonce { get; set; }   // (makes each hello different, so it is never dropped as a duplicate)
         public long? MaxVersion { get; set; }   // the sender's version counter (null from trackers without one), see notePartnerClock
         public bool Reply { get; set; }   // an answer to a blank partner's joining hello: never answered in turn
+        public bool KnowsNewMarkers { get; set; }   // false from trackers without the fairy / shuffle shop markers, see notePartnerMarkers
     }
 
     // We count as joining for a short time after our own joining hello, long enough for the handshake to finish.
@@ -1825,15 +1894,17 @@ public static class CoopSync
         {
             joiningUntil = DateTime.UtcNow.AddSeconds(15.0);
             resetReceivedState();   // (we will take the partner's snapshot if they win: apply all of it)
+            oldPartners.Clear();   // (learned again from the hello or snapshot that answers this one)
         }
         StateHello hello;
-        lock (stateLock) hello = new StateHello { HasState = hasState, StateTicks = stateTicks, Joining = meJoining(), Nonce = Guid.NewGuid().ToString(), MaxVersion = versionClock, Reply = reply };
+        lock (stateLock) hello = new StateHello { HasState = hasState, StateTicks = stateTicks, Joining = meJoining(), Nonce = Guid.NewGuid().ToString(), MaxVersion = versionClock, Reply = reply, KnowsNewMarkers = true };
         SyncManager.EnqueueSync("StateHello", JsonConvert.SerializeObject(hello), TrackerModelOptions.CoopSyncOptions.MyConsoleId);
     }
 
     /// A partner's hello. UI thread.
     public static void handleStateHello(StateHello them, string senderId)
     {
+        notePartnerMarkers(senderId, them.KnowsNewMarkers);   // (before any snapshot goes to them)
         if (!startupBaselineDone) return;   // our run has not started: we say hello ourselves once it has
         // (before anything is sent: our edits made since a reload get numbers above the partner's, and so does any edit from now on)
         if (them.MaxVersion is long partnerMax) notePartnerClock(partnerMax);
@@ -2251,6 +2322,8 @@ public static class CoopSync
                 noteLocalEdit();   // (the box gets its version when the Items message is built, see stamp)
             }
         }
+
+        onEvent(TrackerModel.shuffleSlotsChanged.Publish, _ => markChanged(null));   // (the M/C/Tri Shuffle window's spots and slots)
 
         // Top-level boxes
         onEvent(TrackerModel.sword2Box.Changed, _ => markChanged(TrackerModel.sword2Box));
