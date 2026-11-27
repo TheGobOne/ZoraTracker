@@ -1665,7 +1665,7 @@ public static class CustomComboBoxes
             _ => null,
         };
     // true when the Item Progress summary says the player owns this one-of-a-kind item (shop, starting item, map check-off, or another dungeon box)
-    static bool ownedUniqueItem(int ident)
+    public static bool ownedUniqueItem(int ident)
     {
         var sm = TrackerModel.playerComputedStateSummary;
         return (ident == TrackerModel.ITEMS.LADDER && sm.HaveLadder) || (ident == TrackerModel.ITEMS.RECORDER && sm.HaveRecorder) || (ident == TrackerModel.ITEMS.RAFT && sm.HaveRaft)
@@ -1772,7 +1772,7 @@ public static class CustomComboBoxes
                 ToolTip.SetTip(fe, "Move here from another slot in this dungeon");
             if (triforceBlocked)
             {
-                ToolTip.SetTip(fe, "A Triforce Piece can only be placed on a basement slot");
+                ToolTip.SetTip(fe, TrackerModel.ShuffleTriforces ? "Triforce Pieces are shuffled: place them in the M/C/Tri Shuffle window" : "A Triforce Piece can only be placed on a basement slot");
                 ToolTip.SetShowOnDisabled(fe, true);
             }
             var ownedElsewhere = !movable && !allItemsSelectable && ident != boxCellCurrent && ident >= 0 && itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain && ownedUniqueItem(ident);

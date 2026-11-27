@@ -1067,7 +1067,8 @@ and Dungeon(id,numBoxes) =
         playerComputedStateSummaryForPlayerHasBookChanged.Publish.Add(fun _ -> playerCanSeeMapOfThisDungeonChangeEvent.Trigger())
     member _this.HasBeenLocated() = mapSquareChoiceDomain.NumUses(id) = 1   // WARNING: this being true does NOT mean TrackerModel.mapStateSummary.DungeonLocations.[i] has a legal (non-NOTFOUND) value
     member _this.HasBeenLocatedChanged = hasBeenLocatedChangeEvent.Publish
-    member this.PlayerHasTriforce() = this.PlayerHasOwnTriforce() || (id < 8 && ShuffleCredits(0,id))
+    member this.PlayerHasTriforce() = this.PlayerHasOwnTriforce() || this.HasShuffleTriforceCredit
+    member _this.HasShuffleTriforceCredit : bool = id < 8 && ShuffleCredits(0,id)
     // without the M/C/Tri Shuffle window's share (what a save records, so the window can still take it back)
     member this.PlayerHasOwnTriforce() = playerHasTriforce || (this.Boxes |> Array.exists (fun b -> b.CellCurrent() = ITEMS.TRIFORCE && b.PlayerHas() = PlayerHas.YES)) || (id=1 && level2StairBoxEnabled && level2StairBox.CellCurrent() = ITEMS.TRIFORCE && level2StairBox.PlayerHas() = PlayerHas.YES)   // (a triforce piece marked as obtained in an item slot counts too)
     member _this.ToggleTriforce() = playerHasTriforce <- not playerHasTriforce; playerHasTriforceChangeEvent.Trigger(playerHasTriforce); dungeonsAndBoxesLastChangedTime.SetNow()
@@ -2404,7 +2405,9 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         match desc with
         | TimelineItemDescription.ExtrasOrShopping(_,bp) -> bp.Changed.Add(fun _ -> stamp(bp.Value(), PlayerHas.YES))
         | TimelineItemDescription.TakeAnyHeart(i) -> playerProgressAndTakeAnyHearts.TakeAnyHeartChanged.Add(fun x -> if x=i then stamp(playerProgressAndTakeAnyHearts.GetTakeAnyHeart(i)=1, PlayerHas.YES))
-        | TimelineItemDescription.Triforce(i) -> GetDungeon(i).PlayerHasTriforceChanged.Add(fun _ -> stamp(GetDungeon(i).PlayerHasTriforce(), PlayerHas.YES))
+        | TimelineItemDescription.Triforce(i) -> GetDungeon(i).PlayerHasTriforceChanged.Add(fun _ ->
+                                                    let has = GetDungeon(i).PlayerHasTriforce()
+                                                    if has <> (finishedTotalSeconds >= 0) then stamp(has, PlayerHas.YES))   // (a second source of the same piece keeps its time)
         | TimelineItemDescription.ItemBox(_,b) -> b.Changed.Add(fun _ -> stamp(b.CellCurrent() <> -1 && b.PlayerHas()<>PlayerHas.NO && not(timelineSuppressedBoxes.Contains(b)), b.PlayerHas()))
         | TimelineItemDescription.UserCustom(_,e) -> e.Publish.Add(fun b -> stamp(b,PlayerHas.YES))
         | TimelineItemDescription.MapCollected _ -> ()

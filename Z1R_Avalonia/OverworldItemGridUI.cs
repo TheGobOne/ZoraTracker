@@ -893,7 +893,7 @@ public static class OverworldItemGridUI
                 {
                     if (TrackerModel.IsHiddenDungeonNumbers.Invoke(null))
                         TrackerModel.startingItemsAndExtras.HDNStartingTriforcePieces[i].Toggle();
-                    else if (TrackerModel.GetDungeon(i).PlayerHasTriforce() == TrackerModel.GetDungeon(i).PlayerHasOwnTriforce())   // (a credit-only triforce is not toggled: the toggle is invisible)
+                    else if (!TrackerModel.GetDungeon(i).HasShuffleTriforceCredit)   // (a credited triforce is not toggled: the toggle is invisible)
                         TrackerModel.GetDungeon(i).ToggleTriforce();
                     redraw();
                 };

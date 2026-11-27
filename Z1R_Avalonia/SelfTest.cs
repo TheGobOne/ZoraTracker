@@ -228,11 +228,11 @@ public static class SelfTest
                 else if (!(z22b.Progressive && z22b.FourthSword == FlagPaste.Tri.On)) fail($"ZORA flags (version 22, '22.{payload}') decoded wrong");
                 // the same payload read as version 21 leaves item_counter over: it must be refused, not read as other flags
                 if (FlagPaste.decodeZora("21." + payload).error == null) fail($"ZORA flags: '21.{payload}' (a version 22 field set) was accepted as version 21");
-                // version 23 (test channel flags/latest.json): add_triforces_to_pool 3, add_maps_compasses_to_pool 3, bomb_upgrades_in_pool 2
+                // version 23 (zora apworld gh-pages test/zora.apworld): triforce_shuffle 3, map_compass_shuffle 3, bomb_upgrades_in_pool 2
                 var r23 = specRadixes.Concat(new[] { 3, 3, 2 }).ToArray();
                 var d23 = new int[r23.Length];
-                d23[46] = 1;   // add_triforces_to_pool On
-                d23[47] = 2;   // add_maps_compasses_to_pool Random
+                d23[46] = 1;   // triforce_shuffle Anywhere (On)
+                d23[47] = 2;   // map_compass_shuffle Between Levels
                 d23[48] = 1;   // bomb_upgrades_in_pool On
                 var n23 = System.Numerics.BigInteger.Zero;
                 for (var k = r23.Length - 1; k >= 0; k--) n23 = n23 * r23[k] + d23[k];
@@ -240,7 +240,7 @@ public static class SelfTest
                 while (n23 > 0) { p23 = alphabet63[(int)(n23 % 63)] + p23; n23 /= 63; }
                 var (z23, err23) = FlagPaste.decodeZora("23." + p23);
                 if (z23 == null || z23.Warning != null) fail($"ZORA flags (version 23, '23.{p23}') were refused or gave a warning: {err23}");
-                else if (z23.ShuffleTriforces != FlagPaste.Tri.On || z23.ShuffleMapsCompasses != FlagPaste.Tri.Random) fail($"ZORA flags (version 23, '23.{p23}') decoded the pool flags wrong");
+                else if (z23.ShuffleTriforces != FlagPaste.Tri.On || z23.ShuffleMapsCompasses != FlagPaste.Tri.Between) fail($"ZORA flags (version 23, '23.{p23}') decoded the pool flags wrong");
                 if (FlagPaste.decodeZora("22." + p23).error == null) fail($"ZORA flags: '22.{p23}' (version 23 fields set) was accepted as version 22");
             }
             // the string the Paste Flags check below uses for "only the 4th sword": add_l4_sword On (in level 9), everything else Off, Progressive Items included
@@ -433,6 +433,11 @@ public static class SelfTest
                 var box9 = TrackerModel.GetDungeon(8).Boxes[0];
                 var sBox9Cell = box9.CellCurrent(); var sBox9Has = box9.PlayerHas();
                 string build(string notes) => string.Join("\n", SaveAndLoad.BuildSaveLines(notes, 0, new[] { "}" }, new string[0], "", false, 0, false, false));
+                var (sBetween, sAnywhere) = (TrackerModel.ShuffleBetweenLevels, TrackerModel.ShuffleAnywhere);
+                var (sGot6, sChosen6, sGot14, sChosen14) = (TrackerModel.shuffleSlotGot[6], TrackerModel.shuffleSlotChosen[6], TrackerModel.shuffleSlotGot[14], TrackerModel.shuffleSlotChosen[14]);
+                var sMarks = (int[])TrackerModel.mapCollectedCount.Clone();
+                var apDomain = TrackerModel.allItemWithHeartShuffleChoiceDomain; var sApMax = apDomain.MaxUses(TrackerModel.ITEMS.APITEM);
+                var boxes5Was = new List<(TrackerModel.Box box, int cell, TrackerModel.PlayerHas has)>();
                 try
                 {
                     // states: 0 = Off, 1 = On, 2 = ? (Random, counts as On for the extra blocks and as Off for Boots)
@@ -499,10 +504,8 @@ public static class SelfTest
                     if (d2.Overworld.MirrorOverworld) fail("save round trip: Mirrored Overworld (off) came back on");
                     if (d2.Items.CustomLevelName == null || d2.Items.CustomLevelName != "") fail("save round trip: an empty custom LEVEL name should come back empty, not missing");
                     // M/C/Tri Shuffle window: a triforce collected for another level lights that level only, survives a save, and is not saved as the level's own
-                    var (betweenBefore, anywhereBefore) = (TrackerModel.ShuffleBetweenLevels, TrackerModel.ShuffleAnywhere);
                     TrackerModel.ShuffleBetweenLevels = false;   // (the preset slots only give credit without Anywhere)
                     TrackerModel.ShuffleAnywhere = false;
-                    var (wasGot, wasChosen) = (TrackerModel.shuffleSlotGot[6], TrackerModel.shuffleSlotChosen[6]);
                     var before = Enumerable.Range(0, 8).Select(i => TrackerModel.GetDungeon(i).PlayerHasTriforce()).ToArray();
                     TrackerModel.SetShuffleSlot(2, 0, true, 4);
                     for (var i = 0; i < 8; i++)
@@ -513,7 +516,7 @@ public static class SelfTest
                     if (TrackerModel.GetDungeon(4).PlayerHasTriforce() != before[4]) fail("shuffle window: un-collecting did not clear the triforce");
                     SaveAndLoad.ApplyLoadedOptions(dShuf.Overworld);
                     if (!TrackerModel.shuffleSlotGot[6] || TrackerModel.shuffleSlotChosen[6] != 4) fail("shuffle window: the slot did not survive a save round trip");
-                    TrackerModel.SetShuffleSlot(2, 0, wasGot, wasChosen);
+                    TrackerModel.SetShuffleSlot(2, 0, sGot6, sChosen6);
                     // Shuffle Type Anywhere: a triforce in a spot tagged for level 5 credits level 5 only, and survives a save with its tag
                     var spot = TrackerModel.shuffleSlotBoxes[3];
                     TrackerModel.ShuffleAnywhere = true;
@@ -529,6 +532,7 @@ public static class SelfTest
                     var mapSpot = TrackerModel.shuffleSlotBoxes[4];
                     var itemSpot = TrackerModel.shuffleSlotBoxes[5];
                     mapSpot.AttemptToSetForLevel(TrackerModel.ITEMS.MAP, TrackerModel.PlayerHas.YES, 2);
+                    apDomain.SetMaxUse(TrackerModel.ITEMS.APITEM, 1000);   // (0 uses while Archipelago Items is off)
                     itemSpot.AttemptToSet(TrackerModel.ITEMS.APITEM, TrackerModel.PlayerHas.YES);
                     if (!TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.AllBoxes().Contains(itemSpot)) fail("anywhere: an item in a spot does not count as owned");
                     var dAny = DungeonSaveAndLoad.LoadAll(build(""));
@@ -547,19 +551,21 @@ public static class SelfTest
                     // completion: level 5 needs its boxes, its three spots, and its map and compass (no triforce with Anywhere)
                     var level5 = TrackerModel.GetDungeon(4);
                     var boxes5 = level5.Boxes.Concat(TrackerModel.shuffleSlotBoxes.Skip(12).Take(3)).ToArray();
-                    var was5 = boxes5.Select(b => (b.CellCurrent(), b.PlayerHas())).ToArray();
+                    boxes5Was.AddRange(boxes5.Select(b => (b, b.CellCurrent(), b.PlayerHas())));
                     foreach (var b in boxes5) b.Set(TrackerModel.ITEMS.APITEM, TrackerModel.PlayerHas.YES);
+                    var ownMap5 = level5.PlayerHasOwnMap;
+                    level5.PlayerHasMapOfThisDungeon = false;   // (only the marker may give the map here)
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 4)] = 1;
                     if (level5.IsComplete) fail("anywhere: a level completed without its compass");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(2, 4)] = 1;
                     if (!level5.IsComplete) fail("anywhere: a level with its items, spots, map and compass did not complete");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(1, 4)] = 0;
-                    if (level5.IsComplete && !level5.PlayerHasOwnMap) fail("anywhere: a level completed without its map");
+                    if (level5.IsComplete) fail("anywhere: a level completed without its map");
                     TrackerModel.mapCollectedCount[TrackerModel.shuffleMarker(2, 4)] = 0;
+                    level5.PlayerHasMapOfThisDungeon = ownMap5;
                     // Between Levels: level 5 (items collected, its own triforce) also needs its map and its compass
                     TrackerModel.ShuffleAnywhere = false;
                     TrackerModel.ShuffleBetweenLevels = true;
-                    var (compassGot, compassChosen) = (TrackerModel.shuffleSlotGot[14], TrackerModel.shuffleSlotChosen[14]);
                     var (hadTri, hadMap) = (level5.PlayerHasOwnTriforce(), level5.PlayerHasOwnMap);
                     if (!hadTri) level5.ToggleTriforce();
                     level5.PlayerHasMapOfThisDungeon = true;
@@ -567,13 +573,13 @@ public static class SelfTest
                     if (level5.IsComplete) fail("between levels: a level completed without its compass");
                     TrackerModel.SetShuffleSlot(4, 2, true, 4);
                     if (!level5.IsComplete) fail("between levels: a level with its items, triforce, map and compass did not complete");
-                    TrackerModel.SetShuffleSlot(4, 2, compassGot, compassChosen);
+                    TrackerModel.SetShuffleSlot(4, 2, sGot14, sChosen14);
                     level5.PlayerHasMapOfThisDungeon = hadMap;
                     if (!hadTri) level5.ToggleTriforce();
-                    for (var k = 0; k < boxes5.Length; k++) boxes5[k].Set(was5[k].Item1, was5[k].Item2);
-                    TrackerModel.ShuffleBetweenLevels = betweenBefore;
-                    TrackerModel.ShuffleAnywhere = anywhereBefore;
-                    TrackerModel.ApplyShuffleAnywhereCaps();
+                    foreach (var (b, cell, has) in boxes5Was) b.Set(cell, has);
+                    boxes5Was.Clear();
+                    TrackerModel.ShuffleBetweenLevels = sBetween;
+                    TrackerModel.ShuffleAnywhere = sAnywhere;
                     TrackerModel.ApplyShuffleAnywhereCaps();
                     // 4th Sword: its two slots (level 2 staircase / level 9 floor check) say whether it was on, and where
                     foreach (var (l2, l9) in new[] { (false, false), (true, false), (false, true) })
@@ -606,6 +612,14 @@ public static class SelfTest
                     TrackerModel.CustomLevelName = sName; TrackerModel.MirrorOverworld = sMirror;
                     TrackerModel.level2StairBoxEnabled = sL2; TrackerModel.level9FloorBoxEnabled = sL9;
                     box9.AttemptToSet(sBox9Cell, sBox9Has);
+                    // the shuffle checks' state, also after a failure part way through
+                    foreach (var (b, cell, has) in boxes5Was) b.Set(cell, has);
+                    foreach (var b in TrackerModel.shuffleSlotBoxes.Skip(3).Take(3)) b.Set(-1, TrackerModel.PlayerHas.NO);
+                    Array.Copy(sMarks, TrackerModel.mapCollectedCount, sMarks.Length);
+                    TrackerModel.ShuffleBetweenLevels = sBetween; TrackerModel.ShuffleAnywhere = sAnywhere;
+                    TrackerModel.ApplyShuffleAnywhereCaps();
+                    TrackerModel.SetShuffleSlot(2, 0, sGot6, sChosen6); TrackerModel.SetShuffleSlot(4, 2, sGot14, sChosen14);
+                    apDomain.SetMaxUse(TrackerModel.ITEMS.APITEM, sApMax);
                 }
             });
             // the save fields added since v2.2.0-beta-23: each is set to a value that is not the default, saved, and read back (or put back the way a real load does)

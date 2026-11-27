@@ -14,8 +14,10 @@ public static class FlagPaste
     private const string alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!";
 
     // a three-state flag: off, on, or "random" (decided per seed, so it can't be known from the string)
-    public enum Tri { Off, On, Random }
+    public enum Tri { Off, On, Random, Between }
     private static Tri tri(int n) => n switch { 0 => Tri.Off, 1 => Tri.On, _ => Tri.Random };
+    // Triforce Shuffle / Map & Compass Shuffle (version 23): 0 Off, 1 Anywhere (On), 2 Between Levels. Never Random.
+    private static Tri levelTri(int n) => n switch { 0 => Tri.Off, 1 => Tri.On, _ => Tri.Between };
 
     // the Z1R string: the 27 option fields (C01..C27) by radix ("slots"), then 91 three-state fields (B01..B91); C01 is the least significant
     private static readonly int[] z1rOptionSlots = { 8, 10, 10, 7, 8, 8, 8, 15, 8, 8, 20, 20, 20, 7, 7, 20, 26, 13, 7, 6, 6, 8, 8, 12, 12, 20, 20 };
@@ -62,8 +64,8 @@ public static class FlagPaste
         l.Add(("detailed_spoiler_log", 2, 20));
         l.Add(("wizzrobes_shoot_wallmasters", 3, 21));
         l.Add(("item_counter", 3, 22));
-        l.Add(("add_triforces_to_pool", 3, 23));
-        l.Add(("add_maps_compasses_to_pool", 3, 23));
+        l.Add(("triforce_shuffle", 3, 23));
+        l.Add(("map_compass_shuffle", 3, 23));
         l.Add(("bomb_upgrades_in_pool", 2, 23));
         return l;
     }
@@ -154,7 +156,7 @@ public static class FlagPaste
                                   Tri RandomizeLostHills,
                                   Tri ExpandedDungeonLocations,
                                   string Warning = null,   // (set when the string is newer than this tracker: it was read anyway)
-                                  Tri ShuffleTriforces = Tri.Off,       // add_triforces_to_pool
+                                  Tri ShuffleTriforces = Tri.Off,       // triforce_shuffle (Off / Anywhere = On / Between)
                                   Tri ShuffleMapsCompasses = Tri.Off,   // add_maps_compasses_to_pool
                                   bool Level9SwordEntrance = false);   // level_9_entrance_sword
 
@@ -213,8 +215,8 @@ public static class FlagPaste
                                  RandomizeLostHills: tri(v("randomize_lost_hills")),
                                  ExpandedDungeonLocations: tri(v("expanded_dungeon_locations")),
                                  Warning: warning,
-                                 ShuffleTriforces: tri(v("add_triforces_to_pool")),
-                                 ShuffleMapsCompasses: tri(v("add_maps_compasses_to_pool")),
+                                 ShuffleTriforces: levelTri(v("triforce_shuffle")),
+                                 ShuffleMapsCompasses: levelTri(v("map_compass_shuffle")),
                                  Level9SwordEntrance: v("level_9_entrance_sword") == 1), null);
         }
         if (s == "") return finish();

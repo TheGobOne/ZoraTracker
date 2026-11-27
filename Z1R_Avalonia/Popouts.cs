@@ -525,7 +525,7 @@ public static class Popouts
                                 .Concat(Enumerable.Range(0, TrackerModel.ITEMS.customMenuCount).Select(k => TrackerModel.ITEMS.CUSTOM_BASE + k))
                                 .Concat(new[] { TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS });   // (only this window offers them: spots, Shuffle Type Anywhere)
                 var items = CustomComboBoxes.itemMenuIdents.Concat(extra)
-                    .Where(id => id != -1 && allowed(id) && !TrackerModel.progressiveDisabledIdent(id) && (id == box.CellCurrent() || box.Domain.CanAddUse(id)))
+                    .Where(id => id != -1 && allowed(id) && !TrackerModel.progressiveDisabledIdent(id) && (id == box.CellCurrent() || box.Domain.CanAddUse(id) && !CustomComboBoxes.ownedUniqueItem(id) && !(id == TrackerModel.ITEMS.WHITESWORD4 && !TrackerModelOptions.FourthSwordEnabled)))
                     .Concat(new[] { -1 })   // (the clear button comes last)
                     .Select(id =>
                     {
@@ -603,16 +603,18 @@ public static class Popouts
         // (subscribed only while on screen; see spotSummaryContent)
         var slotsHandler = new Microsoft.FSharp.Control.FSharpHandler<Microsoft.FSharp.Core.Unit>((_, _) => redraw());
         System.Action questHandler = () => redraw();
+        var wasDetached = false;   // redraw only on coming back: box views thrown away before they are ever on screen would stay subscribed
         rows.AttachedToVisualTree += (_, _) =>
         {
             TrackerModel.shuffleSlotsChanged.Publish.AddHandler(slotsHandler);
             TrackerModel.level2StairBoxEnabledChanged.Publish.AddHandler(slotsHandler);
             TrackerModel.level9FloorBoxEnabledChanged.Publish.AddHandler(slotsHandler);
             OptionsMenu.secondQuestDungeonsOptionChanged += questHandler;
-            redraw();
+            if (wasDetached) redraw();
         };
         rows.DetachedFromVisualTree += (_, _) =>
         {
+            wasDetached = true;
             TrackerModel.shuffleSlotsChanged.Publish.RemoveHandler(slotsHandler);
             TrackerModel.level2StairBoxEnabledChanged.Publish.RemoveHandler(slotsHandler);
             TrackerModel.level9FloorBoxEnabledChanged.Publish.RemoveHandler(slotsHandler);
@@ -1057,6 +1059,7 @@ public static class Popouts
         w.Show();
     }
 
+    public static bool shuffleIsOn => TrackerModel.ShuffleMaps || TrackerModel.ShuffleCompasses || TrackerModel.ShuffleTriforces;
     public static void Startup(Graphics.SharedEvent doUIUpdateEvent)
     {
         theUIUpdateEvent = doUIUpdateEvent;
@@ -1067,7 +1070,7 @@ public static class Popouts
                 (matches.Success && !(parseFloat(matches.Groups[2].Value) < MINIMIZED_THRESHOLD))
                     ? ((int.Parse(matches.Groups[1].Value)) == 1, parseFloat(matches.Groups[2].Value), parseFloat(matches.Groups[3].Value))
                     : (false, 0.0, 0.0);
-            if (disp)
+            if (disp && (kind != PopoutKind.ShuffleItemsPopout || shuffleIsOn))
                 makePopout(kind, false, false, doUIUpdateEvent);
         }
         foreach (var (k, s) in new[] { (PopoutKind.SpotSummaryPopout, TrackerModelOptions.SpotSummaryPopout_DisplayedLT),

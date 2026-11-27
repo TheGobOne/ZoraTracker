@@ -580,6 +580,14 @@ public static class WPFUI
     private static readonly bool _init1 = init1();
     // duplicated markers (copy + paste of a tile's marker icons): source tile -> the tiles it was pasted onto
     public static readonly Dictionary<(int, int), List<(int, int)>> dupLinks = new Dictionary<(int, int), List<(int, int)>>();
+    // a loaded save's start options. It can bring back shuffle settings: the web build has no shuffle window, and a type needs shuffled maps/compasses or triforces
+    public static void ApplyLoadedOptions(SaveAndLoad.Overworld ow)
+    {
+        SaveAndLoad.ApplyLoadedOptions(ow);
+        if (Platform.isBrowser) TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = TrackerModel.ShuffleTriforces = false;
+        if (!(TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces)) { TrackerModel.ShuffleBetweenLevels = false; TrackerModel.ShuffleAnywhere = false; }
+        TrackerModel.ApplyShuffleAnywhereCaps();
+    }
     // heart containers marked 'collected' on the map count toward the player's max hearts; every change to a tile's icons goes through here
     public static void rebuildMapCollected()
     {
@@ -4131,7 +4139,7 @@ public static class WPFUI
                                     if (TrackerModel.GetDungeon(d).LabelChar == labels[k]) { dungeonIndex = d; break; }
                             }
                             else dungeonIndex = (int)labels[k] - (int)'1';
-                            if (dungeonIndex is int d2 && !Views.triforceBlocked[d2] && TrackerModel.GetDungeon(d2).PlayerHasTriforce() == TrackerModel.GetDungeon(d2).PlayerHasOwnTriforce()) TrackerModel.GetDungeon(d2).ToggleTriforce();
+                            if (dungeonIndex is int d2 && !Views.triforceBlocked[d2] && !TrackerModel.GetDungeon(d2).HasShuffleTriforceCredit) TrackerModel.GetDungeon(d2).ToggleTriforce();
                         }
                     };
                 }
@@ -5980,7 +5988,7 @@ public static class WPFUI
             var data = loadData;
             // Overworld
             TrackerModel.MirrorOverworld = data.Overworld.MirrorOverworld;
-            SaveAndLoad.ApplyLoadedOptions(data.Overworld);   // (the extra blocks and their Random ? states, boots, progressive items, hint letters; also applied at startup, before the UI was built)
+            ApplyLoadedOptions(data.Overworld);   // (the extra blocks and their Random ? states, boots, progressive items, hint letters; also applied at startup, before the UI was built)
             // the letters typed into the Dead Woods / Lost Hills hint buttons go back into the buttons (older saves do not have them)
             if (data.Overworld.DeadWoodsHint != null && hintLoadHooks.TryGetValue("Dead Woods", out var dwHook)) dwHook(data.Overworld.DeadWoodsHint);
             if (data.Overworld.LostHillsHint != null && hintLoadHooks.TryGetValue("Lost Hills", out var lhHook)) lhHook(data.Overworld.LostHillsHint);

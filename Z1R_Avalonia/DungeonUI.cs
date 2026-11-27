@@ -360,7 +360,7 @@ public static class DungeonUI
                 break;
 
             case HotKeys.DungeonRoomHotKey.OfFloorDropDetail { Value: FloorDropDetail.Triforce }:
-                if (dungeon.PlayerHasTriforce() == dungeon.PlayerHasOwnTriforce())   // (a triforce lit only by shuffle credit is not toggled: the toggle is invisible)
+                if (!dungeon.HasShuffleTriforceCredit)   // (a triforce lit by shuffle credit is not toggled: the toggle is invisible)
                     dungeon.ToggleTriforce();
                 break;
             case HotKeys.DungeonRoomHotKey.OfFloorDropDetail { Value: FloorDropDetail.OtherKeyItem }:
@@ -382,7 +382,7 @@ public static class DungeonUI
                         // no free floor box: as for a floor heart, the triforce piece must be in an empty stair slot, so infer that and use the extra floor box
                         // (before, the topmost box was reopened, and picking an item there replaced the floor item already in it)
                         var emptyStair = idxs.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && slotFree(i));
-                        if (emptyStair >= 0 && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() == -1
+                        if (!TrackerModel.ShuffleTriforces && emptyStair >= 0 && extraIdx >= 0 && dungeon.ExtraFloorBox.CellCurrent() == -1
                             && boxAt(idxs[emptyStair]).AttemptToSet(TrackerModel.ITEMS.TRIFORCE, TrackerModel.PlayerHas.NO))
                             r = extraIdx;
                         else
@@ -432,7 +432,7 @@ public static class DungeonUI
                             // no free floor box: a floor heart then means the triforce piece must be in an (empty) stair slot, so infer that and put the heart in the extra floor box
                             // (under Intra Heart Shuffle an uncollected heart in a stair slot is only the tracker's guess for "the one heart of this dungeon", and a floor heart disproves it)
                             var emptyStair = validBoxIndices.FindIndex(i => boxAt(i).CurrentlyHasBasementStair && slotFree(i));
-                            if (emptyStair >= 0 && extraIsUsable())
+                            if (!TrackerModel.ShuffleTriforces && emptyStair >= 0 && extraIsUsable())   // (shuffled: the stair need not hold the piece)
                             {
                                 var stair = boxAt(validBoxIndices[emptyStair]);
                                 // heart first: placing the piece makes the Intra logic guess a heart, which it skips once the extra box holds one.
@@ -457,7 +457,10 @@ public static class DungeonUI
                 }
             case HotKeys.DungeonRoomHotKey.OfFloorDropDetail { Value: FloorDropDetail.Map }:
                 // toggle has-map checkbox
-                dungeon.PlayerHasMapOfThisDungeon = !dungeon.PlayerHasMapOfThisDungeon;
+                if (TrackerModel.ShuffleCredits(1, dungeonIndex))   // (the toggle would be invisible, and could clear the level's own mark)
+                    Graphics.ErrorBeepWithReminderLogText("This level's map is already marked in a shop or the M/C/Tri Shuffle window");
+                else
+                    dungeon.PlayerHasMapOfThisDungeon = !dungeon.PlayerHasMapOfThisDungeon;
                 break;
             default: break;
         }

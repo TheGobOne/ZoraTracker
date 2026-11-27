@@ -1086,7 +1086,7 @@ public static class MainTrackerTriforcesAndItems
                         entry("Current Equipment", () => Popouts.isPopoutOpen(Popouts.PopoutKind.InventoryAndHeartsPopout), () => Popouts.openPopout(Popouts.PopoutKind.InventoryAndHeartsPopout), () => Popouts.closePopout(Popouts.PopoutKind.InventoryAndHeartsPopout));
                         entry("Item Locations", () => itemLocationsWindow != null, () => openItemLocationsWindow(), () => { if (itemLocationsWindow != null) { itemLocationsMenuClosing = true; try { itemLocationsWindow.Close(); } finally { itemLocationsMenuClosing = false; } } });
                         entry("Item Progress", () => itemProgressWindow != null, () => openItemProgressWindow(), () => { if (itemProgressWindow != null) itemProgressWindow.Close(); });
-                        if (!Platform.isBrowser)
+                        if (!Platform.isBrowser && Popouts.shuffleIsOn)
                             entry("M/C/Tri Shuffle", () => Popouts.isPopoutOpen(Popouts.PopoutKind.ShuffleItemsPopout), () => Popouts.openPopout(Popouts.PopoutKind.ShuffleItemsPopout), () => Popouts.closePopout(Popouts.PopoutKind.ShuffleItemsPopout));
                         if (!Platform.isBrowser)   // (the web build shows no separate windows)
                             entry("Shops", () => Popouts.isPopoutOpen(Popouts.PopoutKind.ShopsPopout), () => Popouts.openPopout(Popouts.PopoutKind.ShopsPopout), () => Popouts.closePopout(Popouts.PopoutKind.ShopsPopout));

@@ -1636,6 +1636,7 @@ public static class Program
             var smallSpacing = new Thickness(0.0, 3.0, 0.0, 0.0);
 
             var startButtonHasBeenClicked = false;
+            var askingShuffleType = false;   // the "pick a Shuffle Type" box is up (Start was refused)
             {
                 Border menu(ManualResetEvent wh)
                 {
@@ -2201,7 +2202,7 @@ public static class Program
             {
                 var on = isOn(lmcb);
                 settingExtras = true;
-                foreach (var cb in extrasCheckBoxes)
+                foreach (var cb in extrasCheckBoxes.Append(shufTypeBetweenCB).Append(shufTypeAnywhereCB))
                 {
                     if (on) cb.IsChecked = false;
                     cb.IsEnabled = !on;
@@ -2228,14 +2229,14 @@ public static class Program
             var coopOptionsTaken = false;   // (only the first set is taken: a reconnect asks again, and must not undo what the player changed since)
             void applyHostStartupOptions(CoopSync.StartupOptions o)
             {
-                if (coopOptionsTaken || startButtonHasBeenClicked) return;   // (once Start is clicked, the run is reading these checkboxes)
+                if (coopOptionsTaken || (startButtonHasBeenClicked && !askingShuffleType)) return;   // (once Start is clicked, the run is reading these checkboxes)
                 coopOptionsTaken = true;
                 var keys = new HashSet<string>((o.Keys ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
                 var legacy = keys.Contains("legacy");
                 foreach (var (key, cb) in rememberedCheckBoxes)
                 {
                     if (key == "cln") continue;   // (the custom LEVEL name is each player's own)
-                    if (legacy && extrasCheckBoxes.Contains(cb)) continue;   // (Legacy Mode keeps the ZORA Extras off: applyLegacyMode has cleared them)
+                    if (legacy && (extrasCheckBoxes.Contains(cb) || cb == shufTypeBetweenCB || cb == shufTypeAnywhereCB)) continue;   // (Legacy Mode keeps the ZORA Extras off: applyLegacyMode has cleared them)
                     if (cb.IsThreeState && keys.Contains(key + "?")) cb.IsChecked = null;
                     else cb.IsChecked = keys.Contains(key);
                 }
@@ -2434,11 +2435,7 @@ public static class Program
                 TrackerModel.ShuffleAnywhere = anyShuffleBox && shufTypeAnywhereCB.IsChecked == true;
                 TrackerModel.ApplyShuffleAnywhereCaps();
                 // a loaded save brings back its own Boots (Off / On / Random), Progressive Items, extra blocks (with their Random ? states) and hint letters; older saves lack some of them and keep the start screen's choice
-                if (loadData != null) SaveAndLoad.ApplyLoadedOptions(loadData.Overworld);
-                // a loaded save can bring back shuffle settings: the web build has no shuffle window, and a type needs a shuffled maps/compasses or triforces
-                if (Platform.isBrowser) TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = TrackerModel.ShuffleTriforces = false;
-                if (Platform.isBrowser || !(TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces)) { TrackerModel.ShuffleBetweenLevels = false; TrackerModel.ShuffleAnywhere = false; }
-                TrackerModel.ApplyShuffleAnywhereCaps();
+                if (loadData != null) WPFUI.ApplyLoadedOptions(loadData.Overworld);
                 // with Progressive Items there can be up to 4 progressive swords (P1-P4) and 2 of each base ring / candle / arrow (the second one becomes the upgrade; boomerangs / boots work the same way)
                 OverworldItemGridUI.ApplyProgressiveItemCaps();
                 TrackerModel.CustomLevelName =
@@ -2570,6 +2567,8 @@ public static class Program
             void startButtonBehavior(int n)
             {
                 if (startButtonHasBeenClicked) return;
+                // (the web build hides the shuffle boxes, but a paste, co-op host or remembered choice can still tick them)
+                if (Platform.isBrowser) shufMapsCB.IsChecked = shufTriCB.IsChecked = false;
                 // a new run that shuffles maps/compasses or triforces needs a Shuffle Type (a loaded save, 999, brings back its own)
                 // (headless test runs have nobody to click OK)
                 if (n != 999 && !SelfTest.isSelfTest && !CoopTest.isActive && (isOn(shufMapsCB) || isOn(shufTriCB)) && !isOn(shufTypeBetweenCB) && !isOn(shufTypeAnywhereCB))
@@ -2579,9 +2578,15 @@ public static class Program
                         startButtonHasBeenClicked = true;   // (no second box from another Start while this one is up)
                         var popupWasActive = popupIsActive;
                         popupIsActive = true;
+                        askingShuffleType = true;   // (co-op host options may still arrive)
+                        // this Start is dropped, so what it set up for the run goes too ("Other..." map choices, the tour's second half)
+                        Graphics.shouldInitiallyHideOverworldMap = false;
+                        Graphics.alternativeOverworldMapFilename = "";
+                        OptionsMenu.mainTourAfterStart = false;
                         _ = await CustomComboBoxes.DoModalMessageBox(cm, System.Drawing.SystemIcons.Error, "Shuffle is on: pick a Shuffle Type\n(Between Levels or Anywhere) before starting.", new[] { "OK" });
                         if (!popupWasActive) popupIsActive = false;
                         startButtonHasBeenClicked = false;
+                        askingShuffleType = false;
                     }
                     CustomComboBoxes.StartImmediate(askForShuffleType());
                     return;
@@ -3089,7 +3094,7 @@ public static class Program
                             else lines.Add("Random (?): Expanded Dungeon Locations, left as it was");
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
-                                        || z.Progressive || z.ShuffleTriforces == FlagPaste.Tri.On || z.ShuffleMapsCompasses == FlagPaste.Tri.On || z.Level9SwordEntrance;
+                                        || z.Progressive || z.ShuffleTriforces != FlagPaste.Tri.Off || z.ShuffleMapsCompasses != FlagPaste.Tri.Off || z.Level9SwordEntrance;
                             if (anyOn && isOn(lmcb))
                             {
                                 setChk(lmcb, false);   // (Legacy Mode locks every ZORA Extra off)
@@ -3138,13 +3143,21 @@ public static class Program
                             setTri3(erbcb, z.ExtraRaftBlocks, "Extra Raft Blocks");
                             setTri3(dwcb, z.RandomizeDeadWoods, "Randomize Dead Woods");
                             setTri3(lhcb, z.RandomizeLostHills, "Randomize Lost Hills");
-                            // (ZORA's Add Triforces / Add Maps/Compasses to the Item Pool: the Shuffle checkboxes have no ?, so Random leaves them as they were)
-                            setTri(shufTriCB, z.ShuffleTriforces, "Shuffle Triforces");
-                            if (z.ShuffleMapsCompasses == FlagPaste.Tri.Random) lines.Add("Random (?): Shuffle Maps and Compasses, left as they were");
-                            else
+                            // (Triforce Shuffle and Map & Compass Shuffle are Off / Anywhere / Between Levels: any shuffle box ticks, and the Shuffle Type says which)
+                            var shuffleKinds = new[] { z.ShuffleTriforces, z.ShuffleMapsCompasses }.Where(t => t != FlagPaste.Tri.Off).Distinct().ToList();
+                            setChk(shufTriCB, z.ShuffleTriforces != FlagPaste.Tri.Off);
+                            setChk(shufMapsCB, z.ShuffleMapsCompasses != FlagPaste.Tri.Off);
+                            if (z.ShuffleTriforces != FlagPaste.Tri.Off) lines.Add("Checked: Shuffle Triforces");
+                            if (z.ShuffleMapsCompasses != FlagPaste.Tri.Off) lines.Add("Checked: Shuffle Maps/Compasses");
+                            if (shuffleKinds.Count == 1)
                             {
-                                setTri(shufMapsCB, z.ShuffleMapsCompasses, "Shuffle Maps/Compasses");
+                                var anywhere = shuffleKinds[0] == FlagPaste.Tri.On;
+                                shufTypeAnywhereCB.IsChecked = anywhere;
+                                shufTypeBetweenCB.IsChecked = !anywhere;
+                                lines.Add("Shuffle Type: " + (anywhere ? "Anywhere" : "Between Levels"));
                             }
+                            else if (shuffleKinds.Count == 2)
+                                lines.Add("Shuffle Type: the flags pick different types (Between Levels and Anywhere). Pick one.");
                         }
                     }
                     result.Text = lines.Count == 0 ? "Nothing to change." : string.Join("\n", lines);

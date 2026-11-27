@@ -434,7 +434,7 @@ public static class Views
                     ea.Handled = true;
                     redraw();
                 }
-                else if (!CustomComboBoxes.GlobalFlag.popupIsActive && !triforceBlocked[trackerIndex] && dungeon.PlayerHasTriforce() == dungeon.PlayerHasOwnTriforce())   // (a triforce lit only by shuffle credit is not toggled: the toggle is invisible)
+                else if (!CustomComboBoxes.GlobalFlag.popupIsActive && !triforceBlocked[trackerIndex] && !dungeon.HasShuffleTriforceCredit)   // (a triforce lit by shuffle credit is not toggled: the toggle is invisible)
                 {
                     dungeon.ToggleTriforce();
                     if (dungeon.PlayerHasTriforce() && TrackerModel.IsHiddenDungeonNumbers.Invoke(null) && dungeon.LabelChar == '?')
