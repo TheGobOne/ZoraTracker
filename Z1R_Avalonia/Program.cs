@@ -2217,9 +2217,19 @@ public static class Program
                 allExtrasCB.IsEnabled = !on;
                 settingExtras = false;
                 refreshFsLevelEnabled();
+                refreshShuffleType();
             }
             Graphics.onChecked(lmcb, () => applyLegacyMode());
             Graphics.onUnchecked(lmcb, () => applyLegacyMode());
+            // the Shuffle Types are greyed out until something is shuffled (their ticks are kept; Start ignores them without a shuffle box)
+            void refreshShuffleType()
+            {
+                var on = isOn(shufMapsCB) || isOn(shufTriCB);
+                shufTypeBetweenCB.IsEnabled = shufTypeAnywhereCB.IsEnabled = on;
+                shuffleTypeRow.Opacity = on ? 1.0 : 0.4;
+            }
+            foreach (var cb in new[] { shufMapsCB, shufTriCB }) cb.IsCheckedChanged += (_, _) => refreshShuffleType();
+            refreshShuffleType();
             // 'Remember startup selection' (Other options): bring back the checkboxes that were checked when the last game was started
             var rememberedCheckBoxes = new List<(string, CheckBox)> {
                 ("legacy", lmcb), ("hdn", hdcb), ("mirror", mocb), ("bomb", mbcb), ("4th", fscb), ("cln", clncb), ("boots", brcb), ("epb", epbcb), ("erb", erbcb), ("dw", dwcb), ("lh", lhcb), ("prog", pricb), ("shufmap", shufMapsCB), ("shuftri", shufTriCB), ("shufbetween", shufTypeBetweenCB), ("shufanywhere", shufTypeAnywhereCB) };
