@@ -798,10 +798,16 @@ public static class CustomComboBoxes
                 }
                 var used = new HashSet<string>();
                 (Control, bool, TState)[] placed = Enumerable.Repeat(((Control)null, false, default(TState)), total).ToArray();
+                if (uniqueName == "ItemBox")   // pinned items keep their default cells whatever layout was saved
+                    for (int pos = 0; pos <= total - 1; pos++)
+                    {
+                        var k = keyOf(defaultItems[pos]);
+                        if (itemMenuPinnedKeys.Contains(k) && used.Add(k)) placed[pos] = defaultItems[pos];
+                    }
                 for (int pos = 0; pos <= Math.Min(saved.Length, total) - 1; pos++)
                 {
                     var k = saved[pos];
-                    if (k != "" && byKey.ContainsKey(k) && used.Add(k)) placed[pos] = byKey[k];
+                    if (k != "" && placed[pos].Item1 == null && byKey.ContainsKey(k) && used.Add(k)) placed[pos] = byKey[k];
                 }
                 // anything not in the saved layout (e.g. a newly added item) goes into the first free spots, in default order
                 var leftovers = new List<(Control, bool, TState)>();
@@ -1689,6 +1695,7 @@ public static class CustomComboBoxes
     };
     public static bool allItemsSelectable = false;  // true while the level 9 entry item menu is open: that box is only a note, so every item (even a 'disabled' one) can be picked
     public static bool itemMenuTriforceBlocked = false;   // set by an item box while its menu is open: a Triforce Piece can only be placed on a basement slot
+    private static string[] itemMenuPinnedKeys = new string[0];   // item menu cells that a saved Shift+drag layout does not move (the Anywhere bottom row)
     public static HashSet<int> itemMenuMovableIdents = new HashSet<int>();   // set by a dungeon box while its menu is open: used-up items held by another slot of that dungeon, which this slot may take
     public static TrackerModel.ChoiceDomain itemMenuDomain =TrackerModel.allItemWithHeartShuffleChoiceDomain;   // DoLocalItemComboBox swaps this for boxes that don't use up items
     // Shuffle Type Anywhere: a map, compass or shuffled triforce put in an item box is for a level, asked after the item is picked
@@ -1728,11 +1735,11 @@ public static class CustomComboBoxes
         var gridIdents0 = itemMenuIdents;
         // the user's custom icons (if that option is on) go in extra rows at the bottom; -2 pads out the last row with blank, unselectable cells
         var emptyCellIdx = Array.IndexOf(gridIdents0, -1);   // (the clear cell is the -1 at the end of row 6, not the last cell now that row 7 follows)
+        // Shuffle Type Anywhere: any item box can hold a map or compass (not the level 9 entry note, which has its own domain)
+        var offersMaps = TrackerModel.ShuffleAnywhere && itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain;
         int[] make_gridIdents()
         {
             var nc = TrackerModel.ITEMS.customMenuCount;
-            // Shuffle Type Anywhere: any item box can hold a map or compass (not the level 9 entry note, which has its own domain)
-            var offersMaps = TrackerModel.ShuffleAnywhere && itemMenuDomain == TrackerModel.allItemWithHeartShuffleChoiceDomain;
             // a box that already holds an item the menu does not offer (a map or compass with Anywhere off, or a custom icon since turned off) still shows it as its current cell
             var stray = !offersMaps && (boxCellCurrent == TrackerModel.ITEMS.MAP || boxCellCurrent == TrackerModel.ITEMS.COMPASS)
                 || boxCellCurrent >= TrackerModel.ITEMS.CUSTOM_BASE && boxCellCurrent < TrackerModel.ITEMS.CUSTOM_BASE + TrackerModel.ITEMS.CUSTOM_COUNT && boxCellCurrent - TrackerModel.ITEMS.CUSTOM_BASE >= nc ? new[] { boxCellCurrent } : new int[0];
@@ -1861,7 +1868,8 @@ public static class CustomComboBoxes
             }
         }
         var extraDecorations = callerExtraDecorations.ToList();   // (the 'Have it / Don't want it / Don't have it' explainer box was removed)
-        return await DoModalGridSelect<int, (int, TrackerModel.PlayerHas)>(cm, boxX + 3.0, boxY + 3.0, innerc, gridElementsSelectablesAndIDs.ToArray(), originalStateIndex, activationDelta, (5, gridRows, 21, 21),
+        itemMenuPinnedKeys = offersMaps ? new[] { TrackerModel.ITEMS.TRIFORCE, TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS }.Select(id => id.ToString()).ToArray() : new string[0];   // (read before the menu's first await)
+        return await DoModalGridSelect<int, (int, TrackerModel.PlayerHas)>(cm,boxX + 3.0, boxY + 3.0, innerc, gridElementsSelectablesAndIDs.ToArray(), originalStateIndex, activationDelta, (5, gridRows, 21, 21),
                                     17.0, 12.0, gridX, gridY, redrawTile, onClick, extraDecorations, itemBoxModalGridSelectBrushes, gridClickDismissalWarpReturn, null, "ItemBox", null);
     }
 
