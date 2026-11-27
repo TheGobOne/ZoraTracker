@@ -2143,18 +2143,9 @@ public static class Program
             shuffleRow.Children.Add(shuffleOptions);
             shuffleRow.PointerEntered += (_, _) => hoverExplain(shuffleRow, "ZORA can shuffle these between dungeons.\nCheck the ones your seed shuffles: maps and compasses, triforces.");
             shuffleRow.PointerExited += (_, _) => explainHide();
-            // divider between Progressive Items and the shuffle options
-            // (a StackPanel with spacers above and below the line: plainRows overwrites the margin of the item itself, and blanks every Border)
-            var shuffleDivider = new StackPanel { Width = 220.0, Orientation = Orientation.Vertical };
-            shuffleDivider.Children.Add(new Panel { Height = 10.0 });
-            shuffleDivider.Children.Add(new Panel { Height = 1.0, Background = Brushes.Gray });
-            shuffleDivider.Children.Add(new Panel { Height = 10.0 });
             // (the web build has no M/C/Tri Shuffle window, so a shuffle could never complete there: no shuffle options are offered)
             if (!Platform.isBrowser)
-            {
-                extrasSP.Children.Add(shuffleDivider);
                 extrasSP.Children.Add(shuffleRow);
-            }
             // 'Shuffle Type': how the shuffled maps, compasses and triforces are placed (mutually exclusive)
             var shufTypeBetweenCB = makeShuffleCheckBox("Between Levels");
             var shufTypeAnywhereCB = makeShuffleCheckBox("Anywhere");
@@ -2312,9 +2303,8 @@ public static class Program
             var startBoxHeight = 38.0;
             // Custom LEVEL Name lives here: its checkbox is in the same block as the checkboxes above it (so it lines up with them), a blank row above it; its name box is docked at the bottom of the card (see below), level with Paste Flags
             // (Paste Flags and Custom LEVEL Name have swapped sides: Paste Flags is now at the bottom of the Startup Options card, the Custom LEVEL Name checkbox and box at the bottom of the ZORA Extras card.
-            //  The Startup Options card also has a spare checkbox row above its bottom block.)
+            //  Neither card has spare blank rows: with the Shuffle rows, the bottom row of buttons has to stay on screen.)
             var startupRows = plainRows(checkboxSP);
-            for (int spare = 0; spare < 1; spare++) startupRows.Children.Add(new Border { Height = 30.0, Margin = new Thickness(0.0, 0.0, 0.0, 4.0) });
             clnArea.HorizontalAlignment = HorizontalAlignment.Left;
             clnArea.Margin = new Thickness(0.0, 0.0, 0.0, 4.0);
             clnTextBox.Margin = new Thickness(0.0, 8.0, 0.0, 0.0);
@@ -2327,12 +2317,12 @@ public static class Program
             rightCol.Children.Add(extrasHeader);
             rightCol.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });   // line under the header
             var extrasRows = plainRows(extrasSP);
-            extrasRows.Children.Add(new Border { Height = 34.0 });   // a blank row above the Custom LEVEL Name checkbox
             extrasRows.Children.Add(clnArea);
             rightCol.Children.Add(extrasRows);
             // the start screen's blocks are bordered cards of one width, a set distance apart
             var startCardsWidth = WIDTH_SANS_CHROME - 32.0;
-            var startCardsGap = 57.0;   // (was 80; the two spare rows added to each card are about 69px, taken back out of the three gaps so the bottom row stays on screen)
+            var startCardsGap = 24.0;   // (the smallest gap, so the bottom row stays on screen under the cards, Shuffle rows included; centerBlock widens it to fill the window)
+            var owGap = new Panel { Height = startCardsGap };   // (the gap under the overworld card; it holds the co-op note, clear of both cards)
             Border startCard(Control child) => new Border { Child = child, BorderBrush = Brushes.SaddleBrown, BorderThickness = new Thickness(1.0), CornerRadius = new CornerRadius(6.0), Padding = new Thickness(14.0, 10.0, 14.0, 12.0) };
             var leftCard = startCard(leftCol);
             leftCard.Margin = new Thickness(0.0, 0.0, 11.0, 0.0);
@@ -2930,7 +2920,6 @@ public static class Program
                 owSP.Children.Add(new Border { Height = 1.0, Background = Brushes.Gray, Margin = new Thickness(0.0, 2.0, 0.0, 4.0), HorizontalAlignment = HorizontalAlignment.Stretch });   // line under the header
                 owSP.Children.Add(owGrid);
                 colsWrap.Children.Add(startCard(owSP));
-                var owGap = new Panel { Height = startCardsGap };   // (the gap holds the co-op note, clear of both cards)
                 owGap.Children.Add(coopOptionsNote);
                 colsWrap.Children.Add(owGap);
                 twoCols.Margin = new Thickness(0.0);
@@ -3449,14 +3438,19 @@ public static class Program
                 };
                 optionsPanel.DetachedFromVisualTree += (_, _) => { escTop?.RemoveHandler(InputElement.KeyDownEvent, onEsc); escTop = null; };   // (the start screen is removed when a run starts)
             }
-            // the block of cards and buttons sits in the middle of the window: the same margin above and below (once, after the first layout)
+            // the sections are spread down the window with the same space above, between and below them (once, after the first layout)
             var centerBlockOnce = false;
             void centerBlock()
             {
                 if (!centerBlockOnce && mainDock.IsLoaded && stackPanel.Bounds.Height > 0.0 && mainDock.Bounds.Height > stackPanel.Bounds.Height)
                 {
                     centerBlockOnce = true;
-                    Canvas.SetTop(stackPanel, (mainDock.Bounds.Height - stackPanel.Bounds.Height) / 2.0);
+                    var room = mainDock.Bounds.Height - bottomSP.Bounds.Height - stackPanel.Bounds.Height;
+                    // three gaps between the sections, plus the space above and below: five equal spaces
+                    var gap = Math.Max(startCardsGap, (room + 3.0 * startCardsGap) / 5.0);
+                    owGap.Height = gap;
+                    recentsCard.Margin = toolsGrid.Margin = new Thickness(0.0, gap, 0.0, 0.0);
+                    Canvas.SetTop(stackPanel, Math.Max(0.0, (room - 3.0 * (gap - startCardsGap)) / 2.0));
                 }
             }
             mainDock.LayoutUpdated += (_, _) => centerBlock();

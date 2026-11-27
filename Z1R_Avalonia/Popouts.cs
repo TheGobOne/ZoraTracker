@@ -579,7 +579,7 @@ public static class Popouts
                 label.Width = 80.0;
                 line.Children.Add(label);
                 var boxes = new List<Control>();
-                if (TrackerModel.ShuffleAnywhere) for (var slot = 0; slot <= 2; slot++) boxes.Add(itemBox(TrackerModel.shuffleSlotBoxes[row * 3 + slot]));
+                if (TrackerModel.ShuffleAnywhere) for (var slot = row < 8 ? 0 : 1; slot <= 2; slot++) boxes.Add(itemBox(TrackerModel.shuffleSlotBoxes[row * 3 + slot]));   // (level 9 has two floor item slots)
                 else for (var slot = row < 8 ? 0 : 1; slot <= 2; slot++) boxes.Add(slotBox(row, slot));
                 var d = TrackerModel.GetDungeon(row);
                 foreach (var box in d.Boxes) boxes.Add(itemBox(box));

@@ -1428,7 +1428,7 @@ public static class WPFUI
             {
                 var l = new List<TrackerModel.Box>(TrackerModel.GetDungeon(i).Boxes);
                 if (i == 1 && TrackerModel.level2StairBoxEnabled) l.Add(TrackerModel.level2StairBox);
-                if (TrackerModel.ShuffleAnywhere) l.AddRange(TrackerModel.shuffleSlotBoxes.Skip(i * 3).Take(3));   // (the level's spots can hold its heart)
+                if (TrackerModel.ShuffleAnywhere) l.AddRange(TrackerModel.shuffleSlotBoxes.Skip(i < 8 ? i * 3 : i * 3 + 1).Take(i < 8 ? 3 : 2));   // (the level's spots can hold its heart; level 9 has two)
                 return l.ToArray();
             }
             // every slot but b holds a non-heart item (in a dungeon with 3 slots, a collected one; a triforce counts even before it is collected)
@@ -1524,7 +1524,7 @@ public static class WPFUI
                 var boxes0 = new List<TrackerModel.Box>(TrackerModel.GetDungeon(i).Boxes);
                 if (i == 0 || i == 3) boxes0.Add(TrackerModel.DungeonTrackerInstance.TheDungeonTrackerInstance.FinalBoxOf1Or4);
                 if (i == 1) boxes0.Add(TrackerModel.level2StairBox);
-                if (TrackerModel.ShuffleAnywhere) boxes0.AddRange(TrackerModel.shuffleSlotBoxes.Skip(i * 3).Take(3));
+                if (TrackerModel.ShuffleAnywhere) boxes0.AddRange(TrackerModel.shuffleSlotBoxes.Skip(i < 8 ? i * 3 : i * 3 + 1).Take(i < 8 ? 3 : 2));
                 var boxes = boxes0.Distinct().ToArray();   // (F#'s Array.distinct: Box has reference equality)
                 foreach (var b in boxes)
                     onEvent(b.Changed, _ => reconcile(i));
