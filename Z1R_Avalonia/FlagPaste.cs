@@ -157,7 +157,7 @@ public static class FlagPaste
                                   Tri ExpandedDungeonLocations,
                                   string Warning = null,   // (set when the string is newer than this tracker: it was read anyway)
                                   Tri ShuffleTriforces = Tri.Off,       // triforce_shuffle (Off / Anywhere = On / Between)
-                                  Tri ShuffleMapsCompasses = Tri.Off,   // add_maps_compasses_to_pool
+                                  Tri ShuffleMapsCompasses = Tri.Off,   // map_compass_shuffle (as above)
                                   bool Level9SwordEntrance = false);   // level_9_entrance_sword
 
     // a seed file name from the ZORA page (the spec's file_name section): zora-<version>-<Z1R>-<ZORA>-<seed>[-music][.nes | .spoiler.txt | .tracker.json]

@@ -847,7 +847,9 @@ type Box(stair:StairKind, owner, domain:ChoiceDomain) =
             false
     // as AttemptToSet, then tags the item with the level it is for (Shuffle Type Anywhere)
     member _this.AttemptToSetForLevel(v,ph,level:int) =
-        if _this.AttemptToSet(v,ph) then
+        if cell.Current() = v && playerHas = ph && shuffleLevel = level then
+            true   // (picking the same thing again changes nothing: a change would move its timeline time to now)
+        elif _this.AttemptToSet(v,ph) then
             shuffleLevel <- level
             changed.Trigger()
             true
@@ -2408,7 +2410,9 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         | TimelineItemDescription.Triforce(i) -> GetDungeon(i).PlayerHasTriforceChanged.Add(fun _ ->
                                                     let has = GetDungeon(i).PlayerHasTriforce()
                                                     if has <> (finishedTotalSeconds >= 0) then stamp(has, PlayerHas.YES))   // (a second source of the same piece keeps its time)
-        | TimelineItemDescription.ItemBox(_,b) -> b.Changed.Add(fun _ -> stamp(b.CellCurrent() <> -1 && b.PlayerHas()<>PlayerHas.NO && not(timelineSuppressedBoxes.Contains(b)), b.PlayerHas()))
+        | TimelineItemDescription.ItemBox(name,b) ->
+            let isSpot = name.StartsWith("ShuffleSpot")   // (a spot's triforce already has its level's Triforce entry, and maps and compasses have none)
+            b.Changed.Add(fun _ -> stamp(b.CellCurrent() <> -1 && not(isSpot && ITEMS.isShuffleItem(b.CellCurrent())) && b.PlayerHas()<>PlayerHas.NO && not(timelineSuppressedBoxes.Contains(b)), b.PlayerHas()))
         | TimelineItemDescription.UserCustom(_,e) -> e.Publish.Add(fun b -> stamp(b,PlayerHas.YES))
         | TimelineItemDescription.MapCollected _ -> ()
     static member TriggerTimelineChanged() =  // used when Loading a Save file
@@ -2483,6 +2487,8 @@ type TimelineItemModel(desc: TimelineItemDescription) =
         for i = 0 to 7 do
             all.Add(TimelineItemDescription.Triforce i)
         // items
+        for k = 0 to shuffleSlotBoxes.Length-1 do   // Shuffle Type Anywhere spots
+            all.Add(TimelineItemDescription.ItemBox(sprintf "ShuffleSpot%d" k, shuffleSlotBoxes.[k]))
         all.Add(TimelineItemDescription.ItemBox("LadderBox", ladderBox))
         all.Add(TimelineItemDescription.ItemBox("ArmosBox", armosBox))
         all.Add(TimelineItemDescription.ItemBox("MagicalSwordCaveBox", sword3Box))

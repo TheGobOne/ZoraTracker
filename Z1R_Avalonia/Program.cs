@@ -787,8 +787,11 @@ public static class Program
                                                             // numeral is synced with the dungeon map, see DungeonMaps "Fresh", so both trackers show the same)
                                                         }
                                                     }
+                                                    CoopSync.addShuffleSpotPairs(payload, boxes);
                                                     CoopSync.applyBoxes(merge, boxes);
-                                                    WPFUI.RegisterRestoredIntraHearts(b => merge.Takes(CoopSync.boxKey(b)));
+                                                    CoopSync.applyShuffleWindow(merge, payload);
+                                                    // (never a M/C/Tri Shuffle spot: a heart guess is not placed there)
+                                                    WPFUI.RegisterRestoredIntraHearts(b => !TrackerModel.shuffleSlotBoxes.Contains(b) && merge.Takes(CoopSync.boxKey(b)));
 
                                                     TrackerModelOptions.DebugConfig.Log($"[Sync] Applied Items update from {senderId} (Triforce excluded)");
                                                 }
@@ -3092,9 +3095,12 @@ public static class Program
                                 pastedCircles.Clear();
                             }
                             else lines.Add("Random (?): Expanded Dungeon Locations, left as it was");
+                            // (the web build has no shuffle boxes: a paste neither ticks nor reports them)
+                            var shufTri = Platform.isBrowser ? FlagPaste.Tri.Off : z.ShuffleTriforces;
+                            var shufMaps = Platform.isBrowser ? FlagPaste.Tri.Off : z.ShuffleMapsCompasses;
                             var anyOn = z.FourthSword == FlagPaste.Tri.On
                                         || new[] { z.BootsReplaceBoomerangs, z.ExtraRaftBlocks, z.ExtraPowerBlocks, z.RandomizeDeadWoods, z.RandomizeLostHills }.Any(t => t != FlagPaste.Tri.Off)
-                                        || z.Progressive || z.ShuffleTriforces != FlagPaste.Tri.Off || z.ShuffleMapsCompasses != FlagPaste.Tri.Off || z.Level9SwordEntrance;
+                                        || z.Progressive || shufTri != FlagPaste.Tri.Off || shufMaps != FlagPaste.Tri.Off || z.Level9SwordEntrance;
                             if (anyOn && isOn(lmcb))
                             {
                                 setChk(lmcb, false);   // (Legacy Mode locks every ZORA Extra off)
@@ -3144,11 +3150,11 @@ public static class Program
                             setTri3(dwcb, z.RandomizeDeadWoods, "Randomize Dead Woods");
                             setTri3(lhcb, z.RandomizeLostHills, "Randomize Lost Hills");
                             // (Triforce Shuffle and Map & Compass Shuffle are Off / Anywhere / Between Levels: any shuffle box ticks, and the Shuffle Type says which)
-                            var shuffleKinds = new[] { z.ShuffleTriforces, z.ShuffleMapsCompasses }.Where(t => t != FlagPaste.Tri.Off).Distinct().ToList();
-                            setChk(shufTriCB, z.ShuffleTriforces != FlagPaste.Tri.Off);
-                            setChk(shufMapsCB, z.ShuffleMapsCompasses != FlagPaste.Tri.Off);
-                            if (z.ShuffleTriforces != FlagPaste.Tri.Off) lines.Add("Checked: Shuffle Triforces");
-                            if (z.ShuffleMapsCompasses != FlagPaste.Tri.Off) lines.Add("Checked: Shuffle Maps/Compasses");
+                            var shuffleKinds = new[] { shufTri, shufMaps }.Where(t => t != FlagPaste.Tri.Off).Distinct().ToList();
+                            setChk(shufTriCB, shufTri != FlagPaste.Tri.Off);
+                            setChk(shufMapsCB, shufMaps != FlagPaste.Tri.Off);
+                            if (shufTri != FlagPaste.Tri.Off) lines.Add("Checked: Shuffle Triforces");
+                            if (shufMaps != FlagPaste.Tri.Off) lines.Add("Checked: Shuffle Maps/Compasses");
                             if (shuffleKinds.Count == 1)
                             {
                                 var anywhere = shuffleKinds[0] == FlagPaste.Tri.On;

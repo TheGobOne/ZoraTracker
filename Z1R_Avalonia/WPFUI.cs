@@ -584,7 +584,13 @@ public static class WPFUI
     public static void ApplyLoadedOptions(SaveAndLoad.Overworld ow)
     {
         SaveAndLoad.ApplyLoadedOptions(ow);
-        if (Platform.isBrowser) TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = TrackerModel.ShuffleTriforces = false;
+        if (Platform.isBrowser)
+        {
+            TrackerModel.ShuffleMaps = TrackerModel.ShuffleCompasses = TrackerModel.ShuffleTriforces = false;
+            // (a desktop shuffle save's "?" window slots must not light their rows' levels here)
+            for (var k = 0; k < 27; k++)
+                if (TrackerModel.shuffleSlotChosen[k] < 0) TrackerModel.SetShuffleSlot(k / 3, k % 3, false, -1);
+        }
         if (!(TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces)) { TrackerModel.ShuffleBetweenLevels = false; TrackerModel.ShuffleAnywhere = false; }
         TrackerModel.ApplyShuffleAnywhereCaps();
     }
@@ -6115,7 +6121,7 @@ public static class WPFUI
                 var dd = TrackerModel.GetDungeon(i);
                 if (!(ds.TryApply(dd))) anySetProblems = true;
             }
-            if (!(SaveAndLoad.ApplyLoadedShuffleSpots(data.Overworld))) anySetProblems = true;
+            if (!Platform.isBrowser && !(SaveAndLoad.ApplyLoadedShuffleSpots(data.Overworld))) anySetProblems = true;   // (no spots on web: they would use up item caps)
             // the tier each progressive item box was collected at (after the boxes, whose change handlers note the current tier; older saves keep that)
             if (data.Items.ProgressiveBoxTiers != null)
             {

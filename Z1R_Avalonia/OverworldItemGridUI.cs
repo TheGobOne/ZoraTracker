@@ -1067,6 +1067,15 @@ public static class OverworldItemGridUI
                             {
                                 for (var j = 0; j <= 7; j++)
                                 {
+                                    // shop triforce / map / compass markers go back to not collected, or their levels stay lit
+                                    var icons = TrackerModel.owSwordIcons[i, j];
+                                    if (TrackerModel.decorEntriesOf(icons).Any(e => e.Item2 && TrackerModel.isShuffleMarker(e.Item1)))
+                                    {
+                                        var entries = TrackerModel.decorEntriesOf(icons).Select(e => Tuple.Create(e.Item1, e.Item2 && !TrackerModel.isShuffleMarker(e.Item1)));
+                                        TrackerModel.owSwordIcons[i, j] = TrackerModel.withShopLabel(TrackerModel.decorEntriesPack(Microsoft.FSharp.Collections.ListModule.OfSeq(entries)), TrackerModel.shopLabelOf(icons));
+                                        WPFUI.rebuildMapCollected();
+                                        WPFUI.redrawOwTileHook(i, j);
+                                    }
                                     var cur = TrackerModel.overworldMapMarks[i, j].Current();
                                     if (cur == TrackerModel.MapSquareChoiceDomainHelper.THE_LETTER)
                                     {

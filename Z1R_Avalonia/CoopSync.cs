@@ -348,7 +348,7 @@ public static class CoopSync
         if (b == null) return null;
         try
         {
-            foreach (var nb in SaveAndLoad.namedBoxes())
+            foreach (var nb in SaveAndLoad.tierBoxes())   // (the item boxes and the M/C/Tri Shuffle spots)
                 if (ReferenceEquals(nb.Item2, b)) return boxKey(nb.Item1);
         }
         catch (Exception) { }   // (before the dungeon tracker exists there are no named boxes)
@@ -579,6 +579,57 @@ public static class CoopSync
                         box(bs[j], model.Boxes[j]);
                 box(d["ExtraBox"], model.ExtraFloorBox);
             }
+        // the M/C/Tri Shuffle window: its Anywhere spots ("item,got,level") and its Between Levels slots ("collected,level")
+        if (t[ShuffleSpotsField] is Newtonsoft.Json.Linq.JArray spots)
+            for (int k = 0; k < spots.Count && k < 27; k++) r[boxKey("spot" + k)] = spots[k].ToString();
+        if (t[ShuffleSlotsField] is Newtonsoft.Json.Linq.JArray slots)
+            for (int k = 0; k < slots.Count && k < 27; k++) r[shuffleSlotKey(k)] = slots[k].ToString();
+    }
+
+    // ---- the M/C/Tri Shuffle window ----
+    // Its state travels in the Items message in fields of its own, with versions like the boxes (3.2 and older trackers ignore them).
+    // shortcut: a spot's progressive tier is not synced; add the spots to buildBoxTiers if partners show different tiers
+    public const string ShuffleSpotsField = "ShuffleSpotStates";
+    public const string ShuffleSlotsField = "ShuffleSlotStates";
+    public static string shuffleSlotKey(int k) => itemsFlagKey($"slot/{k}");
+
+    private static int[] shuffleNumbers(Newtonsoft.Json.Linq.JToken t, int count)   // "a,b,c" -> numbers; null when it is not that
+    {
+        var p = t.ToString().Split(',');
+        if (p.Length != count) return null;
+        var r = new int[count];
+        for (int i = 0; i < count; i++) if (!int.TryParse(p[i], out r[i])) return null;
+        return r;
+    }
+    private static int shuffleLevelOf(int v) => v >= 0 && v <= 8 ? v : -1;
+
+    /// A partner's Anywhere spots, as box pairs for applyBoxes (an item moved between a box and a spot must not be lost). UI thread.
+    public static void addShuffleSpotPairs(Newtonsoft.Json.Linq.JToken payload, List<(SaveAndLoad.Box src, TrackerModel.Box dest)> pairs)
+    {
+        if (!TrackerModel.ShuffleAnywhere || !(payload[ShuffleSpotsField] is Newtonsoft.Json.Linq.JArray spots)) return;
+        for (int k = 0; k < spots.Count && k < 27; k++)
+            if (shuffleNumbers(spots[k], 3) is int[] n)
+                pairs.Add((new SaveAndLoad.Box { CellCurrent = n[0], PlayerHas = n[1] }, TrackerModel.shuffleSlotBoxes[k]));
+    }
+
+    /// After applyBoxes: the level each taken spot's item is for, and the partner's Between Levels slots. UI thread, inside applyRemote.
+    public static void applyShuffleWindow(Merge m, Newtonsoft.Json.Linq.JToken payload)
+    {
+        if (TrackerModel.ShuffleAnywhere)
+        {
+            if (!(payload[ShuffleSpotsField] is Newtonsoft.Json.Linq.JArray spots)) return;
+            for (int k = 0; k < spots.Count && k < 27; k++)
+            {
+                var b = TrackerModel.shuffleSlotBoxes[k];
+                if (m.Takes(boxKey(b)) && shuffleNumbers(spots[k], 3) is int[] n && b.CellCurrent() == n[0] && b.PlayerHas().AsInt() == n[1])
+                    b.AttemptToSetForLevel(n[0], b.PlayerHas(), shuffleLevelOf(n[2]));
+            }
+        }
+        else if (payload[ShuffleSlotsField] is Newtonsoft.Json.Linq.JArray slots)
+            for (int k = 0; k < slots.Count && k < 27; k++)
+                if (m.Takes(shuffleSlotKey(k)) && shuffleNumbers(slots[k], 2) is int[] n
+                    && (TrackerModel.shuffleSlotGot[k] != (n[0] == 1) || TrackerModel.shuffleSlotChosen[k] != shuffleLevelOf(n[1])))
+                    TrackerModel.SetShuffleSlot(k / 3, k % 3, n[0] == 1, shuffleLevelOf(n[1]));
     }
 
     // Overworld: each tile is one unit (icon, extra data, circle and the extras), plus the start spot, the waypoint, mirroring and the shop globals.
@@ -867,7 +918,9 @@ public static class CoopSync
                 var key = kv.Key;
                 var failed = m.Failed.Contains(key);
                 // (a value the shop stash rule changed after the apply is not a failure: it goes out as an edit of ours, below)
-                if (!failed && now != null && m.Theirs.TryGetValue(key, out var t) && now.TryGetValue(key, out var o) && o != t && !reconciledKeys.Contains(key)) failed = true;
+                // (nor is a whole shop array that was merged shop by shop: it can rightly differ from theirs, and its shops are checked by their own keys)
+                if (!failed && now != null && m.Theirs.TryGetValue(key, out var t) && now.TryGetValue(key, out var o) && o != t && !reconciledKeys.Contains(key)
+                    && !m.PerIndex.Any(a => key == overworldKey(a))) failed = true;
                 if (!failed) { setVersion(key, kv.Value); applyFailures.Remove(key); continue; }
                 applyFailures.TryGetValue(key, out var n);
                 applyFailures[key] = n + 1;
@@ -981,13 +1034,17 @@ public static class CoopSync
     {
         var todo = pairs.Where(p => p.src != null && p.dest != null && m.Takes(boxKey(p.dest))
                                     && (p.src.CellCurrent != p.dest.CellCurrent() || p.src.PlayerHas != p.dest.PlayerHas().AsInt())).ToList();
-        var old = todo.Select(p => (cell: p.dest.CellCurrent(), has: p.dest.PlayerHas())).ToList();
+        var old = todo.Select(p => (cell: p.dest.CellCurrent(), has: p.dest.PlayerHas(), level: p.dest.ShuffleLevel)).ToList();
         for (int k = 0; k < todo.Count; k++)
             if (todo[k].src.CellCurrent != old[k].cell && todo[k].dest.LockedItem == -1)
                 todo[k].dest.AttemptToSet(-1, old[k].has);
         for (int k = 0; k < todo.Count; k++)
             if (!applyBoxFromSync(m, todo[k].src, todo[k].dest))
-                todo[k].dest.AttemptToSet(old[k].cell, old[k].has);   // (ours stays as it was, if it still can)
+            {
+                // (ours stays as it was, if it still can; a spot keeps the level its item is for)
+                if (old[k].level >= 0) todo[k].dest.AttemptToSetForLevel(old[k].cell, old[k].has, old[k].level);
+                else todo[k].dest.AttemptToSet(old[k].cell, old[k].has);
+            }
     }
 
     /// Puts a partner's item in one of our boxes. When the item is allowed once and another box of ours holds it, the newer version keeps it:
@@ -1001,7 +1058,7 @@ public static class CoopSync
         if (dest.AttemptToSet(src.CellCurrent, ph)) return true;
         if (src.CellCurrent >= 0 && dest.LockedItem == -1 && key != null && m.Taken.TryGetValue(key, out var theirs))
         {
-            foreach (var nb in SaveAndLoad.namedBoxes())
+            foreach (var nb in SaveAndLoad.tierBoxes())   // (a M/C/Tri Shuffle spot can hold the item too)
             {
                 var h = nb.Item2;
                 if (ReferenceEquals(h, dest) || !ReferenceEquals(h.Domain, dest.Domain) || h.CellCurrent() != src.CellCurrent || h.LockedItem != -1) continue;
@@ -2041,6 +2098,10 @@ public static class CoopSync
             var jo = Newtonsoft.Json.Linq.JObject.Parse(json);
             jo[FourthSwordField] = fourthSwordPlace();
             jo[ProgressiveField] = TrackerModel.ProgressiveItems;
+            if (TrackerModel.ShuffleAnywhere)
+                jo[ShuffleSpotsField] = new Newtonsoft.Json.Linq.JArray(TrackerModel.shuffleSlotBoxes.Select(b => $"{b.CellCurrent()},{b.PlayerHas().AsInt()},{b.ShuffleLevel}"));
+            else if (TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces)
+                jo[ShuffleSlotsField] = new Newtonsoft.Json.Linq.JArray(Enumerable.Range(0, 27).Select(k => $"{(TrackerModel.shuffleSlotGot[k] ? 1 : 0)},{TrackerModel.shuffleSlotChosen[k]}"));
             return jo.ToString(Formatting.None);
         }
     }

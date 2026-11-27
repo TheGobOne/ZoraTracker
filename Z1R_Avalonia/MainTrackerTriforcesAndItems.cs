@@ -621,6 +621,10 @@ public static class MainTrackerTriforcesAndItems
         }
         // optional staircase item slot under level 2: starts as a gray box (like the dungeon-quest toggle under level 4); click to turn it into a staircase item slot,
         // middle-click the slot to hide it again (which also clears whatever item was in it)
+        // Shuffle Type Anywhere spots get the same timeline entry and upper grid links as the item boxes. Wired once here (the M/C/Tri Shuffle
+        // window rebuilds its views on every open); the canvas made for each is not shown
+        for (int k = 0; k < TrackerModel.shuffleSlotBoxes.Length; k++)
+            boxItemImpl(TimelineID.ShuffleSpot(k), TrackerModel.shuffleSlotBoxes[k], false);
         if (!(TrackerModel.IsHiddenDungeonNumbers.Invoke(null)))
         {
             var l2c = mainTrackerCanvases[1, 4];

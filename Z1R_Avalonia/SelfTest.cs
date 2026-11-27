@@ -269,7 +269,8 @@ public static class SelfTest
         foreach (var b in buttons(win))
         {
             var text = label(b);
-            if (!stuck && text != "" && !isAvoided(text) && !questButtons.Contains(text) && text != "Paste Flags")
+            var recentSave = ToolTip.GetTip(b) is string tip && tip.Contains("\nlast modified ");   // (labelled with the file name; clicking loads it and starts the tracker)
+            if (!stuck && text != "" && !isAvoided(text) && !questButtons.Contains(text) && text != "Paste Flags" && !recentSave)
             {
                 guard($"start screen button '{text}'", () => click(b));
                 await pause(200);
@@ -490,6 +491,19 @@ public static class SelfTest
                     SaveAndLoad.ApplyLoadedOptions(old.Overworld);
                     if (readModel() != (1, 0, 1, 0, 1, 1)) fail($"an older save (ExtraBlocks 5) loaded wrong: {readModel()}");
                     if (OverworldData.DeadWoodsHint != "UD") fail("an older save should leave the hint letters alone");
+                    // an older save turns shuffle off; a ZORA-made file (Boots only, no Shuffle) keeps the ticked boxes and gets a Shuffle Type
+                    TrackerModel.ShuffleMaps = true;
+                    SaveAndLoad.ApplyLoadedOptions(old.Overworld);
+                    if (TrackerModel.ShuffleMaps) fail("an older save should load with shuffle off");
+                    TrackerModel.ShuffleBetweenLevels = false;
+                    var (bootsWas, bootsRandomWas) = (TrackerModel.BootsReplaceBoomerangs, TrackerModel.BootsRandom);
+                    var zoraFile = DungeonSaveAndLoad.LoadAll("{ \"Overworld\": { \"Quest\": 0, \"BootsReplaceBoomerangs\": 0 } }");
+                    TrackerModel.ShuffleMaps = true;
+                    TrackerModel.ShuffleBetweenLevels = TrackerModel.ShuffleAnywhere = false;
+                    SaveAndLoad.ApplyLoadedOptions(zoraFile.Overworld);
+                    if (!TrackerModel.ShuffleMaps || !TrackerModel.ShuffleBetweenLevels) fail("a ZORA-made file should keep the shuffle boxes and pick Between Levels");
+                    TrackerModel.ShuffleMaps = TrackerModel.ShuffleBetweenLevels = false;
+                    (TrackerModel.BootsReplaceBoomerangs, TrackerModel.BootsRandom) = (bootsWas, bootsRandomWas);
                     // Mirrored Overworld, the custom LEVEL name (an empty name must come back empty, not as null), the notes
                     TrackerModel.MirrorOverworld = true;
                     TrackerModel.CustomLevelName = "ZORA";

@@ -80,6 +80,7 @@ namespace Z1R_Avalonia
             public const int Sword4 = 42;
             public const int OWHeart = 43;             // of int
             public const int CustomIcon = 44;          // of int   // a custom icon (1-16) checked off on the overworld map
+            public const int ShuffleSpot = 46;         // of int   // Shuffle Type Anywhere spot (0-26)
             // custom
             public const int UserCustom = 45;          // of string
         }
@@ -125,6 +126,7 @@ namespace Z1R_Avalonia
         public static readonly TimelineID WhiteSwordBox = new TimelineID(Tags.WhiteSwordBox);
         public static readonly TimelineID Level1or4Box3 = new TimelineID(Tags.Level1or4Box3);
         public static TimelineID LevelBox(int item1, int item2) => new TimelineID(Tags.LevelBox, item1, item2);
+        public static TimelineID ShuffleSpot(int item) => new TimelineID(Tags.ShuffleSpot, item);
         // triforces
         public static readonly TimelineID Triforce1 = new TimelineID(Tags.Triforce1);
         public static readonly TimelineID Triforce2 = new TimelineID(Tags.Triforce2);
@@ -192,6 +194,7 @@ namespace Z1R_Avalonia
                 Tags.WhiteSwordBox => "WhiteSwordBox",
                 Tags.Level1or4Box3 => "Level1or4Box3",
                 Tags.LevelBox => $"Level{item1}Box{item2}",
+                Tags.ShuffleSpot => $"ShuffleSpot{item1}",
                 Tags.Triforce1 => "Triforce1",
                 Tags.Triforce2 => "Triforce2",
                 Tags.Triforce3 => "Triforce3",

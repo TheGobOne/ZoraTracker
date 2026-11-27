@@ -25,7 +25,7 @@ type Overworld() =
     member val ExtraBlocksRandom = -1 with get,set   // same bits: which of those four were Random (?) rather than plain On (-1 = older save: none were)
     member val BootsReplaceBoomerangs = -1 with get,set   // 0 = Off, 1 = On, 2 = Random (?, counts as Off until confirmed); -1 = older save: keep what the start screen chose
     member val ProgressiveItems = -1 with get,set   // 0 = Off, 1 = On; -1 = older save: keep what the start screen chose
-    member val Shuffle = 0 with get,set   // bit 0 = maps, bit 1 = compasses, bit 2 = triforces can be in other dungeons; Shuffle Type: bit 3 = Between Levels, bit 4 = Anywhere (older saves: 0, none)
+    member val Shuffle = -1 with get,set   // bit 0 = maps, bit 1 = compasses, bit 2 = triforces can be in other dungeons; Shuffle Type: bit 3 = Between Levels, bit 4 = Anywhere; -1 = no key (older save: none; ZORA-made file: keep what the start screen chose)
     member val ShuffleSlots : string = null with get,set   // M/C/Tri Shuffle window: 27 "collected,level" pairs split by ';' (null = older save: none)
     member val ShuffleSpots : string = null with get,set   // Shuffle Type Anywhere: 27 "item,playerHas,level" triples split by ';' (null = older save: no spots)
     member val DeadWoodsHint : string = null with get,set   // the letters typed into the Dead Woods / Lost Hills hint buttons (null = older save)
@@ -498,11 +498,17 @@ let ApplyLoadedOptions(ow:Overworld) =
             TrackerModel.BootsRandom <- (ow.BootsReplaceBoomerangs = 2)   // (Random, ?, counts as Off until confirmed)
         if ow.ProgressiveItems >= 0 then
             TrackerModel.ProgressiveItems <- (ow.ProgressiveItems = 1)
-        TrackerModel.ShuffleMaps <- (ow.Shuffle &&& 1) <> 0
-        TrackerModel.ShuffleCompasses <- (ow.Shuffle &&& 2) <> 0
-        TrackerModel.ShuffleTriforces <- (ow.Shuffle &&& 4) <> 0
-        TrackerModel.ShuffleBetweenLevels <- (ow.Shuffle &&& 8) <> 0
-        TrackerModel.ShuffleAnywhere <- (ow.Shuffle &&& 16) <> 0
+        // a ZORA-made file has no Shuffle key either, but it writes BootsReplaceBoomerangs without the keys every tracker save has beside it
+        let zoraMade = ow.Shuffle < 0 && ow.BootsReplaceBoomerangs >= 0 && ow.ProgressiveItems < 0 && ow.LegacyMode < 0
+        if not zoraMade then
+            let bits = max 0 ow.Shuffle
+            TrackerModel.ShuffleMaps <- (bits &&& 1) <> 0
+            TrackerModel.ShuffleCompasses <- (bits &&& 2) <> 0
+            TrackerModel.ShuffleTriforces <- (bits &&& 4) <> 0
+            TrackerModel.ShuffleBetweenLevels <- (bits &&& 8) <> 0
+            TrackerModel.ShuffleAnywhere <- (bits &&& 16) <> 0
+        elif (TrackerModel.ShuffleMaps || TrackerModel.ShuffleTriforces) && not (TrackerModel.ShuffleBetweenLevels || TrackerModel.ShuffleAnywhere) then
+            TrackerModel.ShuffleBetweenLevels <- true   // (a load skips Start's "pick a Shuffle Type" box)
         if not (isNull ow.ShuffleSlots) then
             let saved = ow.ShuffleSlots.Split(';')
             for k in 0..26 do
