@@ -2072,9 +2072,11 @@ type TriforceAndGoSummary() =
         let knowSilvers = haveSilvers || silversKnownToBeInLevel9
         if customTrigger && not customTriggerCollected then
             0   // the item that opens level 9 has not been collected yet: nothing to report
-        elif missingDungeonCount=0 || unreachableCount=0 then 
+        elif missingDungeonCount=0 || unreachableCount=0 then
             if haveBow && knowSilvers && haveLadder && haveRecorder then
                 103
+            elif haveBow && haveSilvers && missingDungeonCount=0 then
+                103   // (all triforces in hand, with the bow and silver arrows: go time, the ladder and recorder do not change that)
             elif haveBow && knowSilvers && haveLadder then
                 102
             elif haveBow && knowSilvers then

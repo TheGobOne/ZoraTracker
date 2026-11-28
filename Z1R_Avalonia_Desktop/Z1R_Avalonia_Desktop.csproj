@@ -6,7 +6,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>ZoraTracker.CrossPlatform</AssemblyName>
     <Nullable>disable</Nullable>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!-- the exe's version (Windows file properties) is read from GlobalAssemblyInfo.fs, so a release bump has no extra place to edit -->
+    <_ZtVersionFile>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\GlobalAssemblyInfo.fs'))</_ZtVersionFile>
+    <FileVersion>$([System.Text.RegularExpressions.Regex]::Match($(_ZtVersionFile), 'AssemblyFileVersion\(&quot;([^&quot;]+)').Groups[1].Value)</FileVersion>
+    <AssemblyVersion>$(FileVersion)</AssemblyVersion>
+    <InformationalVersion>$([System.Text.RegularExpressions.Regex]::Match($(_ZtVersionFile), 'AssemblyInformationalVersion\(&quot;([^&quot;]+)').Groups[1].Value)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- the same logo as the WPF tracker's exe (the .exe's icon in Explorer, the taskbar, Alt+Tab) -->
     <ApplicationIcon>..\Z1R_WPF\icons\ztlogo64x64.ico</ApplicationIcon>
   </PropertyGroup>

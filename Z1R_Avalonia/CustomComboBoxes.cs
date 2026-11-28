@@ -937,7 +937,7 @@ public static class CustomComboBoxes
             }
         }
         if (isMovable && moveActive()) applySavedAbs();
-        var noteTipText = "Tip: hold Shift and\ndrag an icon to move it\nto your preferred spot.\n" + (itemMenuPinnedKeys.Length > 0 ? "(Saved for next time, except the pinned bottom row.)" : "(Saved for next time.)");
+        var noteTipText = "Tip: hold Shift and\ndrag an icon to move it\nto your preferred spot.\n" + (layoutKey == "ItemBoxAnywhere" ? "(Saved for next time, except the pinned bottom row.)" : "(Saved for next time.)");
         TextBlock noteTextBlock = null;
         Border noteBox = null;   // (F#: Border option; null for None)
         if (isReorderable)

@@ -280,8 +280,8 @@ public static class SelfTest
         // the Guided Tour: every start screen stop (Paste Flags included) must find its anchors, or the tour silently leaves it out
         // (the settings panel's stops are only on screen while it is raised, so those are not checked here)
         var tourPanelOnly = new[] { "Overworld settings", "Dungeon settings", "Reminders", "Auto-save", "Other options", "Co-Op and crash log" };
-        foreach (var title in OptionsMenu.tourMissingStops(OptionsMenu.startScreenTourSteps, win))
-            if (!tourPanelOnly.Contains(title)) fail($"Guided Tour: the start screen stop '{title}' has no anchor on screen");
+        foreach (var (title, missing) in OptionsMenu.tourMissingLabels(OptionsMenu.startScreenTourSteps, win))
+            if (!tourPanelOnly.Contains(title)) fail($"Guided Tour: the start screen stop '{title}' cannot find '{missing}' on screen");
         if (!OptionsMenu.startScreenTourSteps.Any(s => s.title == "Paste Flags")) fail("Guided Tour: no Paste Flags stop");
         // the start screen's 4th Sword / Progressive Items rule, through the real checkboxes: 4th Sword checks Progressive Items and holds it on; Progressive Items never checks 4th Sword
         var startProgressive = checkboxes(win).FirstOrDefault(c => label(c) == "Progressive Items");
@@ -407,8 +407,8 @@ public static class SelfTest
             // the main screen's Guided Tour stops that are found by label (the "@" regions are fixed fractions, so they cannot be checked here)
             guard("main screen Guided Tour anchors", () =>
             {
-                foreach (var title in OptionsMenu.tourMissingStops(OptionsMenu.mainScreenTourSteps, CustomComboBoxes.CanvasManager.TheOnlyCanvasManager.AppMainCanvas))
-                    fail($"Guided Tour: the main screen stop '{title}' has no anchor on screen");
+                foreach (var (title, missing) in OptionsMenu.tourMissingLabels(OptionsMenu.mainScreenTourSteps, CustomComboBoxes.CanvasManager.TheOnlyCanvasManager.AppMainCanvas))
+                    fail($"Guided Tour: the main screen stop '{title}' cannot find '{missing}' on screen");
             });
             // a save remembers the Heart Shuffle mode (Off / Intra / Full), so a reload does not follow the start screen
             guard("heart shuffle save round trip", () =>
@@ -677,6 +677,69 @@ public static class SelfTest
                     apDomain.SetMaxUse(TrackerModel.ITEMS.APITEM, sApMax);
                 }
             });
+            // Shuffle Type Anywhere, through the menus: the level picker, the item menu's bottom row under a saved Shift+drag layout, and a hotkey
+            {
+                var cm = CustomComboBoxes.CanvasManager.TheOnlyCanvasManager;
+                var (coast, armos) = (TrackerModel.ladderBox, TrackerModel.armosBox);
+                var was = new[] { coast, armos }.Select(b => (b, cell: b.CellCurrent(), has: b.PlayerHas())).ToList();
+                var (sAnywhere, sTris) = (TrackerModel.ShuffleAnywhere, TrackerModel.ShuffleTriforces);
+                TrackerModelOptions.MenuLayouts.TryGetValue("ItemBoxAnywhere", out var sLayout);
+                // opens the level picker through `start`, then clicks the button for `level` (-1: dismisses it)
+                async Task pickLevel(string what, Func<Task> start, int level, int levels)
+                {
+                    var task = start();
+                    for (var w = 0; w < 30 && popupCount() == 0 && !task.IsCompleted; w++) await pause(100);
+                    if (task.IsFaulted) fail($"anywhere menus: {what} threw {task.Exception?.InnerException?.Message}");
+                    else if (task.IsCompleted && !ReferenceEquals(task, Task.CompletedTask) && popupCount() == 0) fail($"anywhere menus: {what} finished without opening the picker (popupIsActive={CustomComboBoxes.GlobalFlag.popupIsActive})");   // (the picker opens at Background priority, after any pending redraws)
+                    await pause(200);
+                    var picks = popupCount() == 0 ? new List<Button>() : buttons(popupRoot());
+                    if (picks.Count != levels) fail($"anywhere menus: {what} showed {picks.Count} level buttons, not {levels}");
+                    if (level >= 0 && level < picks.Count) click(picks[level]);
+                    else if (popupCount() > 0) CustomComboBoxes.DismissTopModal();
+                    await Task.WhenAny(task, Task.Delay(2000));
+                    await pause(200);
+                }
+                try
+                {
+                    TrackerModel.ShuffleAnywhere = TrackerModel.ShuffleTriforces = true;
+                    TrackerModel.ApplyShuffleAnywhereCaps();
+                    foreach (var b in new[] { coast, armos }) b.Set(-1, TrackerModel.PlayerHas.NO);
+                    await pickLevel("a map for the coast box", async () => { CustomComboBoxes.GlobalFlag.popupIsActive = true; try { await CustomComboBoxes.setForPickedLevel(cm, coast, TrackerModel.ITEMS.MAP, TrackerModel.PlayerHas.YES); } finally { CustomComboBoxes.GlobalFlag.popupIsActive = false; } }, -1, 9);
+                    if (coast.CellCurrent() != -1) fail("anywhere menus: dismissing the level picker changed the box");
+                    await pickLevel("a map for the coast box", async () => { CustomComboBoxes.GlobalFlag.popupIsActive = true; try { await CustomComboBoxes.setForPickedLevel(cm, coast, TrackerModel.ITEMS.MAP, TrackerModel.PlayerHas.YES); } finally { CustomComboBoxes.GlobalFlag.popupIsActive = false; } }, 7, 9);
+                    if (coast.CellCurrent() != TrackerModel.ITEMS.MAP || coast.ShuffleLevel != 7) fail($"anywhere menus: picking level 8 left item {coast.CellCurrent()} level {coast.ShuffleLevel}");
+                    CustomComboBoxes.trySetForLevel(armos, TrackerModel.ITEMS.MAP, TrackerModel.PlayerHas.NO, 7);
+                    if (armos.CellCurrent() != -1) fail("anywhere menus: a second box took the same level's map");
+                    // a saved layout that moved the pinned cells to the top row: they must stay in the bottom row
+                    TrackerModelOptions.MenuLayouts["ItemBoxAnywhere"] = new[] { TrackerModel.ITEMS.MAP, TrackerModel.ITEMS.COMPASS, TrackerModel.ITEMS.TRIFORCE }.Select(id => id.ToString()).ToArray();
+                    CustomComboBoxes.GlobalFlag.popupIsActive = true;
+                    var menu = CustomComboBoxes.DisplayItemComboBox(cm, 300.0, 300.0, -1, 0, TrackerModel.PlayerHas.NO, new (Control, double, double)[0], new CustomComboBoxes.GridClickDismissalWarpReturn.NoWarp());
+                    await pause(400);
+                    var grid = popupCount() == 0 ? null : descendants(popupRoot()).OfType<Grid>().FirstOrDefault(g => g.ColumnDefinitions.Count == 5);
+                    var pinnedRow = grid == null ? -1 : grid.RowDefinitions.Count - 1 - (TrackerModel.ITEMS.customMenuCount + 4) / 5;
+                    var mapCell = grid?.Children.FirstOrDefault(c => Grid.GetRow(c) == pinnedRow && Grid.GetColumn(c) == 1);
+                    if (mapCell == null) fail("anywhere menus: the item menu has no pinned row");
+                    else raiseClick(mapCell, MouseButton.Left);
+                    await Task.WhenAny(menu, Task.Delay(2000));
+                    if (!menu.IsCompleted || !menu.Result.hasResult || menu.Result.result.Item1 != TrackerModel.ITEMS.MAP) fail("anywhere menus: a saved layout moved the map out of the pinned bottom row");
+                    CustomComboBoxes.GlobalFlag.popupIsActive = false;
+                    // the hotkey asks which level too
+                    var key = (SingleKeyboardModifier.NoModifier, Key.F24);
+                    HotKeys.ItemHotKeyProcessor.TryAdd(key, TrackerModel.ITEMS.TRIFORCE);
+                    var view = Views.MakeBoxItem(cm, armos).Item1;
+                    await pickLevel("the triforce hotkey", () => { view.RaiseEvent(new MyKeyRoutedEventArgs(key.Item1, key.Item2)); return Task.CompletedTask; }, 3, 8);
+                    if (armos.CellCurrent() != TrackerModel.ITEMS.TRIFORCE || armos.ShuffleLevel != 3) fail($"anywhere menus: the triforce hotkey left item {armos.CellCurrent()} level {armos.ShuffleLevel}");
+                }
+                catch (Exception e) { fail("anywhere menus: " + e); }
+                finally
+                {
+                    foreach (var (b, cell, has) in was) b.Set(cell, has);
+                    TrackerModel.ShuffleAnywhere = sAnywhere; TrackerModel.ShuffleTriforces = sTris;
+                    TrackerModel.ApplyShuffleAnywhereCaps();
+                    if (sLayout == null) TrackerModelOptions.MenuLayouts.Remove("ItemBoxAnywhere"); else TrackerModelOptions.MenuLayouts["ItemBoxAnywhere"] = sLayout;
+                }
+                await settle("anywhere menus");
+            }
             // the save fields added since v2.2.0-beta-23: each is set to a value that is not the default, saved, and read back (or put back the way a real load does)
             guard("newer save fields round trip", () =>
             {

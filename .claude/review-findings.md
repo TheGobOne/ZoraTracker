@@ -18,10 +18,6 @@ None open.
 
 ## Low and cleanup
 
-- [ ] 137: `Z1R_Avalonia/OptionsMenu.cs:658`: no tour stop covers the M/C/Tri Shuffle popout, the level picker or the triforce hotkey. Needs your wording. About 30 minutes.
-- [ ] 143: `Z1R_Avalonia/SelfTest.cs:408-412`: the new tour check fails only when all of a stop's labels are missing and covers 4 of 17 stops, so renaming "Popout Windows" passes. About 15 minutes.
-- [ ] 144: `Z1R_Avalonia/SelfTest.cs:564-569`: the new coast box test skips `setForPickedLevel`, the new menu row, the pinned layout and the hotkey path. About 30 minutes.
-- [ ] 145: `Z1R_Avalonia_Desktop/Z1R_Avalonia_Desktop.csproj:9`: not rechecked, medium confidence. Windows file properties show version 0.0.0.0. Older than 3.3. About 15 minutes.
 - [ ] 111: `Z1R_Avalonia/CoopSync.cs:611`, `:620-622`: partly right. A web partner ignores spot items, silently but harmlessly. Its map box half is part of 106. About 20 minutes.
 
 - [ ] 127: `Z1R_Avalonia/CoopTest.cs`: no co-op test covers spots, slots, tagged boxes or a mismatched Shuffle Type. About 45 minutes.
@@ -32,13 +28,20 @@ None open.
 
 - [ ] Check the shuffle popout on screen.
 - [ ] 146: set the version to 3.3.1 in `GlobalAssemblyInfo.fs:4-6` (`3.3.1.0`, `3.3.1.0`, `3.3.1`) and `Z1R_Avalonia/CustomComboBoxes.cs:1879` (`3.3.1`). Both files must agree: a missed label offers the update forever, a missed assembly file misnames the Mac and Linux zips. About 5 minutes.
-- [ ] 147: push c375297 and the version bump before tagging `v3.3.1`. About 2 minutes.
+- [ ] 147: push the version bump before tagging `v3.3.1` (code through 4bccce6 is pushed). About 2 minutes.
 - [ ] 148: write 3.3.1 release notes. Cover: item boxes take maps, compasses and triforces under Anywhere; the pinned bottom row; the popout's Overworld row is gone; the red X clear cell; the tour hover fix and Shift+drag text. `doc/release-notes-3.3.md:1`, `:3` still say draft and not published. About 20 minutes.
 - [ ] 149: attach the Windows zip before publishing, since the workflow builds only Mac and Linux. The name needs `CrossPlatform`, for example `ZoraTracker-CrossPlatform-v3.3.1-win-x64.zip`. About 10 minutes.
 
 ## Applied, needs a live check
 
-Fixed findings are removed from the lists above. Release desktop and web Debug builds have 0 errors. The Avalonia self-test passed for quest types 0 to 3 on 2026-11-27 (after the item box change). Nothing else here has been run in the app.
+- GitHub issue 44 (Intra heart not inferred after a triforce goes in the basement): a 3-slot level now counts placed items even if uncollected (`WPFUI.cs`, `othersFilled`; owner's call). Desktop build 0 errors, self-test passed for all four quests on 2026-11-28. Not reproduced in the app, web not redeployed with it, uncommitted, issue still open.
+
+Fixed findings are removed from the lists above. The Release desktop build has 0 errors. Fixed 2026-11-28, self-test passed for all four quests, web rebuilt and live at zoratracker.gg (uncommitted):
+- 150: the "except the pinned bottom row" tip shows only on the item box menu (`CustomComboBoxes.cs`, `layoutKey == "ItemBoxAnywhere"`).
+- 143: the self-test checks every tour label, not only stops with none found (`OptionsMenu.tourMissingLabels`). Renaming "Popout Windows" now fails.
+- 144: the self-test covers the level picker (9 levels, 8 for a triforce), dismiss, a second box refused, the pinned bottom row under a saved layout, and the triforce hotkey.
+- 145: the exe reads its version from `GlobalAssemblyInfo.fs` (`Z1R_Avalonia_Desktop.csproj`). The Release exe now shows 3.3.0.0.
+The web build was checked only in the local browser pane (start screen, a 1st Quest run, no console errors). The web Debug build passed before 4bccce6 and has not been rerun. The Avalonia self-test passed for quest types 0 to 3 on 2026-11-27 (after the item box change). Nothing else here has been run in the app.
 
 Fixed 2026-11-27, build only (Release desktop, 0 errors), not run in the app:
 - 131: the Anywhere item grid saves its layout under its own key (`ItemBoxAnywhere`, `CustomComboBoxes.cs` layoutKey).
@@ -79,7 +82,7 @@ Accepted without an on-screen check on 2026-11-27: the item box level picker, th
 - 72, 88, 91: not run in the app.
 - 102: web, not opened in a browser.
 
-Closed: 100 (`Directory.Build.Props` casing has no visible effect beyond DLL metadata on Linux). 98 (Item Locations and Anywhere spots): decided no. 120 (Anywhere box scroll): decided intended, the box keeps "?" until a level is picked.
+Closed: 137 (no tour stop for the M/C/Tri Shuffle popout, level picker or triforce hotkey; the owner decided it is an advanced setting that needs none). 100 (`Directory.Build.Props` casing has no visible effect beyond DLL metadata on Linux). 98 (Item Locations and Anywhere spots): decided no. 120 (Anywhere box scroll): decided intended, the box keeps "?" until a level is picked.
 
 Cleared 2026-11-27: the format 23 flag table recheck. Local `upstream/main` is `9d086e9` "ZORA 2.0.2" and the 49 ZORA fields and `specZoraVersion` match (agent check).
 

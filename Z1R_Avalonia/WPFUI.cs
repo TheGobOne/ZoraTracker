@@ -1429,7 +1429,7 @@ public static class WPFUI
                 TrackerModel.GetDungeon(i).Boxes[0].Set(TrackerModel.ITEMS.HEARTCONTAINER, TrackerModel.PlayerHas.NO);
         // Heart Shuffle 'Intra': each of dungeons 1-8 holds exactly one heart, in one of its item slots (floor or basement). Once every other slot of a
         // dungeon holds a non-heart item, the last open slot is filled with an uncollected heart. A dungeon with 3 slots (1 or 4, 8, or 2 with the 4th
-        // sword) only counts the other items once they are collected, so a placed but uncollected item does not give the heart away.
+        // sword) counts any placed item, collected or not (issue 44: a triforce placed in the basement must still give the heart).
         IsIntraHeartGuess = _ => false;
         RegisterRestoredIntraHearts = _ => { };
         RegisterSavedIntraHearts = _ => { };
@@ -1448,9 +1448,8 @@ public static class WPFUI
                 if (TrackerModel.ShuffleAnywhere) l.AddRange(TrackerModel.shuffleSlotBoxes.Skip(i < 8 ? i * 3 : i * 3 + 1).Take(i < 8 ? 3 : 2));   // (the level's spots can hold its heart; level 9 has two)
                 return l.ToArray();
             }
-            // every slot but b holds a non-heart item (in a dungeon with 3 slots, a collected one; a triforce counts even before it is collected)
-            bool othersFilled(TrackerModel.Box[] slots, TrackerModel.Box b) => slots.All(o => ReferenceEquals(o, b) ||
-                (o.CellCurrent() != -1 && !(isHeart(o)) && (slots.Length < 3 || o.PlayerHas().Equals(TrackerModel.PlayerHas.YES) || o.CellCurrent() == TrackerModel.ITEMS.TRIFORCE)));
+            // every slot but b holds a non-heart item (placed is enough, collected or not: a placed triforce piece counts too)
+            bool othersFilled(TrackerModel.Box[] slots, TrackerModel.Box b) => slots.All(o => ReferenceEquals(o, b) || (o.CellCurrent() != -1 && !(isHeart(o))));
             bool uncollectedHeart(TrackerModel.Box b) => isHeart(b) && b.PlayerHas().Equals(TrackerModel.PlayerHas.NO);
             int extraDungeon(string boxName) => boxName.StartsWith("x") ? int.Parse(boxName.Substring(1)) : -1;   // (namedBoxes: "x3" is dungeon index 3's extra floor box)
             SaveAndLoad.IntraHeartGuessesText = () => string.Join(";", SaveAndLoad.tierBoxes()
