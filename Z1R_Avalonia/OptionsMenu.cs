@@ -549,6 +549,7 @@ public static class OptionsMenu
                             buttons.Children.Add(skipBtn);
                             sp.Children.Add(buttons);
                             var callout = new Border { Child = sp, Background = Brushes.Black, BorderBrush = Brushes.Orange, BorderThickness = new Thickness(3.0), Width = 430.0 };
+                            callout.Styles.Add(Graphics.roundedButtonStyle());   // (measured before it is shown: without this the buttons keep the Fluent template, black text on hover)
                             callout.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                             var (cw, ch) = (callout.DesiredSize.Width, callout.DesiredSize.Height);
                             double clampX(double x) => Math.Max(0.0, Math.Min(W - cw, x));
@@ -634,6 +635,7 @@ public static class OptionsMenu
                         buttons.Children.Add(okBtn);
                         sp.Children.Add(buttons);
                         var callout = new Border { Child = sp, Background = Brushes.Black, BorderBrush = Brushes.Orange, BorderThickness = new Thickness(3.0), Width = 330.0 };
+                        callout.Styles.Add(Graphics.roundedButtonStyle());   // (as the tour's callout)
                         callout.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                         var (cw, ch) = (callout.DesiredSize.Width, callout.DesiredSize.Height);
                         var gap = 12.0;
