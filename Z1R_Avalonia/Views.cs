@@ -838,7 +838,8 @@ public static class Views
                 var extraDecorations = computeExtraDecorationsWhenPopupActivatedOrMouseOverOpt != null ? computeExtraDecorationsWhenPopupActivatedOrMouseOverOpt(pos) : new (Control, double, double)[0];
                 CustomComboBoxes.StartImmediate(((Func<Task>)(async () =>
                 {
-                    CustomComboBoxes.itemMenuMovableIdents = movableIdents();
+                    var movableNow = movableIdents();
+                    CustomComboBoxes.itemMenuMovableIdents = movableNow;
                     CustomComboBoxes.itemMenuTriforceBlocked = !box.CurrentlyHasBasementStair || TrackerModel.ShuffleTriforces;
                     (bool hasResult, (int, TrackerModel.PlayerHas) result) r;
                     try { r = await CustomComboBoxes.DisplayItemComboBox(cm, pos.X, pos.Y, box.CellCurrent(), activationDelta, box.PlayerHas(), extraDecorations, gridClickDismissalWarpReturn); }
@@ -846,14 +847,19 @@ public static class Views
                     if (r.hasResult)
                     {
                         var (newBoxCellValue, newPlayerHas) = r.result;
-                        if (CustomComboBoxes.asksShuffleLevel(newBoxCellValue))   // (a piece for a chosen level moves nothing from this dungeon's other slots)
+                        // a map or compass used up in another slot of this dungeon is moved from there, keeping its level (the picker would find it still taken)
+                        var fromSlot = movableNow.Contains(newBoxCellValue) ? otherSlotsInDungeon().FirstOrDefault(b => b.CellCurrent() == newBoxCellValue) : null;
+                        if (fromSlot == null && CustomComboBoxes.asksShuffleLevel(newBoxCellValue))   // (a piece for a chosen level moves nothing from this dungeon's other slots)
                             await CustomComboBoxes.setForPickedLevel(cm, box, newBoxCellValue, newPlayerHas);
                         else
                         {
+                            var movedLevel = fromSlot?.ShuffleLevel ?? -1;
                             var had = takeFromOtherSlot(newBoxCellValue);
                             // (the popout or a co-op partner can use the item up while the menu is open: Set would throw)
                             if (newBoxCellValue != box.CellCurrent() && box.LockedItem == -1 && !box.Domain.CanAddUse(newBoxCellValue))
                                 Graphics.ErrorBeepWithReminderLogText($"Tried to mark item box as {TrackerModel.ITEMS.AsDisplayDescription(newBoxCellValue)}, but that item is already marked in a different box");
+                            else if (movedLevel >= 0 && box.LockedItem == -1)
+                                box.AttemptToSetForLevel(newBoxCellValue, (had == true ? TrackerModel.PlayerHas.YES : newPlayerHas), movedLevel);   // (a moved piece keeps its checked state and level)
                             else
                                 box.Set(newBoxCellValue, (had == true ? TrackerModel.PlayerHas.YES : newPlayerHas));   // (a moved piece keeps its checked state)
                         }

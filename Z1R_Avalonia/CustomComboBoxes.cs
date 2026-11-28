@@ -786,9 +786,11 @@ public static class CustomComboBoxes
             Enumerable.Range(0, total).Select(n => n < gridElementsSelectablesAndIDs.Length ? gridElementsSelectablesAndIDs[n] : ((Control)null, false, default(TState))).ToArray();
         var originalKey = keyOf(defaultItems[originalStateIndex]);
         (Control, bool, TState)[] items = ((Control, bool, TState)[])defaultItems.Clone();
+        // the Anywhere item grid (pinned bottom row set) saves its own layout, so a normal item grid never shows its Triforce/map/compass cells
+        var layoutKey = uniqueName == "ItemBox" && itemMenuPinnedKeys.Length > 0 ? "ItemBoxAnywhere" : uniqueName;
         if (isReorderable)
         {
-            if (TrackerModelOptions.MenuLayouts.TryGetValue(uniqueName, out var saved) && saved != null)
+            if (TrackerModelOptions.MenuLayouts.TryGetValue(layoutKey, out var saved) && saved != null)
             {
                 var byKey = new Dictionary<string, (Control, bool, TState)>();
                 foreach (var it in defaultItems)
@@ -935,7 +937,7 @@ public static class CustomComboBoxes
             }
         }
         if (isMovable && moveActive()) applySavedAbs();
-        var noteTipText = "Tip: hold Shift and\ndrag an icon to move it\nto your preferred spot.\n(Saved for next time.)";
+        var noteTipText = "Tip: hold Shift and\ndrag an icon to move it\nto your preferred spot.\n" + (itemMenuPinnedKeys.Length > 0 ? "(Saved for next time, except the pinned bottom row.)" : "(Saved for next time.)");
         TextBlock noteTextBlock = null;
         Border noteBox = null;   // (F#: Border option; null for None)
         if (isReorderable)
@@ -1471,7 +1473,7 @@ public static class CustomComboBoxes
         bool isShiftDown(KeyModifiers modifiers) => modifiers.HasFlag(KeyModifiers.Shift);
         void saveLayout()
         {
-            TrackerModelOptions.MenuLayouts[uniqueName] = items.Select(keyOf).ToArray();
+            TrackerModelOptions.MenuLayouts[layoutKey] = items.Select(keyOf).ToArray();
             TrackerModelOptions.writeSettings();
         }
         void refreshHighlights() { foreach (var r in redrawGridFuncs) r(); }
@@ -1710,7 +1712,12 @@ public static class CustomComboBoxes
         var levels = Enumerable.Range(0, ident == TrackerModel.ITEMS.TRIFORCE ? 8 : 9).Select(level => (level,
             (Control)new TextBlock { Text = Popouts.shuffleLevelName(level), FontSize = 16.0, FontWeight = FontWeight.Bold, Foreground = Brushes.Orange, HorizontalAlignment = HorizontalAlignment.Center })).ToList();
         var picked = await PieMenus.ItemPickerAsync(cm, levels, 9);
-        if (picked >= 0 && !box.AttemptToSetForLevel(ident, playerHas, picked))
+        if (picked >= 0) trySetForLevel(box, ident, playerHas, picked);
+    }
+    // each level has one triforce / map / compass, so a second box may not take the same one (checked here, not in the model, so saves and co-op still apply as sent)
+    public static void trySetForLevel(TrackerModel.Box box, int ident, TrackerModel.PlayerHas playerHas, int level)
+    {
+        if (TrackerModel.Box.Tagged.Any(b => b != box && b.CellCurrent() == ident && b.ShuffleLevel == level) || !box.AttemptToSetForLevel(ident, playerHas, level))
             Graphics.ErrorBeepWithReminderLogText($"Tried to mark item box as {TrackerModel.ITEMS.AsDisplayDescription(ident)}, but that item is already marked in a different box");
     }
     // (returns DoModalGridSelect's (hasResult, (ident, playerHas)); callerExtraDecorations: (element, x, y)s)

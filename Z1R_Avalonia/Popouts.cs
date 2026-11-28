@@ -471,7 +471,7 @@ public static class Popouts
         // a triforce / map / compass placed in a box: asks which level it is for (triforce 1-8, map and compass 1-9), and
         // marks it collected (these are marked as they are picked up)
         void pickLevel(Control at, int id, TrackerModel.Box box) =>
-            showMenu(at, done => levelStrip(id == TrackerModel.ITEMS.TRIFORCE ? 8 : 9, lvl => done(() => box.AttemptToSetForLevel(id, TrackerModel.PlayerHas.YES, lvl))));
+            showMenu(at, done => levelStrip(id == TrackerModel.ITEMS.TRIFORCE ? 8 : 9, lvl => done(() => CustomComboBoxes.trySetForLevel(box, id, TrackerModel.PlayerHas.YES, lvl))));
         Control slotBox(int row, int slot)
         {
             var c = new Canvas { Width = 30.0, Height = 30.0, Background = Brushes.Black };
@@ -539,7 +539,7 @@ public static class Popouts
                 {
                     done(() =>
                     {
-                        if (TrackerModel.ShuffleAnywhere && TrackerModel.ITEMS.isShuffleItem(id)) pickLevel(view, id, box);
+                        if (CustomComboBoxes.asksShuffleLevel(id)) pickLevel(view, id, box);
                         else if (id != box.CellCurrent()) box.AttemptToSet(id, TrackerModel.PlayerHas.NO);
                     });
                 });

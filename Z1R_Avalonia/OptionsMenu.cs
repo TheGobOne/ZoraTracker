@@ -382,7 +382,7 @@ public static class OptionsMenu
     // a step can demo its point on the live tracker: returns an undo that puts things back when the tour leaves the step (null for None)
     private static Action tourDemo(string title)
     {
-        if (title == "Triforce in the basement")
+        if (title == "Triforce in the basement" && !TrackerModel.ShuffleTriforces)   // (shuffled pieces go in the M/C/Tri Shuffle window, not a basement box)
         {
             // use the first dungeon whose item boxes are all empty, so a real run is never disturbed (dungeon 1 first, whose basement slot is easy to see)
             for (int i = 0; i <= 7; i++)
@@ -663,9 +663,9 @@ public static class OptionsMenu
         (new[] { "@0.0,0.063,0.358,0.154" }, "Dungeon item boxes",
             "One row of boxes for each dungeon, holding what you found there. Click a box to set its item; a green border means collected."),
         (new[] { "@0.2,0.2,0.8,0.62" }, "Moving and resizing menus",
-            "Menus can be moved and resized. On the item and tile menus, first click Jump to mouse at the top of the menu. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered. Hold Shift and drag an icon to rearrange a menu. That is remembered too, but with Shuffle Type Anywhere the item menu keeps the Triforce Piece, map and compass on its bottom row. If you don't see the LOCKED strip, uncheck Hide lock and hints in Options, Dungeon settings."),
+            "Menus can be moved and resized. On the tile menus, first click Jump to mouse at the top of the menu; on the item menu it is along the bottom. Then click the LOCKED strip beside the tip box to unlock it, drag the bar on top to move the menu, and drag the corner grip at the bottom left to resize it. Click UNLOCKED to lock it again. Your layout is remembered. Hold Shift and drag an icon to rearrange a menu. That is remembered too, but with Shuffle Type Anywhere the item menu keeps the Triforce Piece, map and compass in their own row, above any custom icons. If you don't see the LOCKED strip or Jump to mouse, uncheck Hide lock and hints in Options, Dungeon settings."),
         (new[] { "@0.0,0.0,0.358,0.154" }, "Triforce in the basement",
-            "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it."),
+            "Some seeds hide a dungeon's Triforce Piece in a basement. Click an item box in a dungeon and choose Triforce Piece to put it there. The numbered triforce moves into that box. This means you'll have an extra floor item to make up for it. With Triforce Pieces shuffled, this does not apply."),
         (new[] { "@0.363,0.03,0.67,0.175" }, "Items and hearts",
             "The items you have found, your hearts, and Max Hearts. Click to mark what you own."),
         (new[] { "@0.572,0.004,0.684,0.13" }, "Counters",
@@ -721,7 +721,7 @@ public static class OptionsMenu
             "General settings: animations, remembering your startup choices, update checks, Display seed + flags, listening for speech, the broadcast window, the timer and Race Mode."),
         (new[] { "Co-op client settings", "Show crash log..." }, "Co-Op and crash log",
             "Co-op client settings and Co-op host settings are for tracking together with a partner. Show crash log opens the log file to send along when reporting a problem."),
-        (new[] { "Guided Tour", "v2." }, "Tour, options and version",
+        (new[] { "Guided Tour", "v" }, "Tour, options and version",
             "Guided Tour starts this walkthrough again. Options opens and closes the settings panel. The version button shows the version, with Check for updates, Open folder and Go to website, and glows green when an update is available. Click Continue to start a new run (1st Quest) and tour the main screen.") };
 
     // the titles of the tour stops that would be left out because none of their labels is on screen (a stop with no anchor is skipped silently); used by the self-test

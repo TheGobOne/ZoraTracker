@@ -842,6 +842,7 @@ public static class OverworldMapTileCustomization
             var ck = caveCheckmark(27.0);
             canvasAdd(c, ck, 1.0 + (c.Width - 2.0 - ck.Width) / 2.0, 1.0 + (27.0 - ck.Height) / 2.0);
         }
+        if (box.ShuffleLevel >= 0) canvasAdd(c, Popouts.shuffleLevelTag(box.ShuffleLevel), Math.Max(0.0, c.Width - 11.0), 15.0);
         c.Background = Brushes.Transparent;   // so the whole icon area gets mouse events
         ToolTip.SetTip(c, "Left click: item collected / right click: not collected\n(click the same one again to un-check)");
         c.PointerPressed += (_, ea) =>
