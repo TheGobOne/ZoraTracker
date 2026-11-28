@@ -16,6 +16,7 @@ None open.
 ## Medium
 
 
+
 ## Low and cleanup
 
 - [ ] 111: `Z1R_Avalonia/CoopSync.cs:611`, `:620-622`: partly right. A web partner ignores spot items, silently but harmlessly. Its map box half is part of 106. About 20 minutes.
@@ -27,16 +28,16 @@ None open.
 ## Before the next release
 
 - [ ] Check the shuffle popout on screen.
-- [ ] 146: set the version to 3.3.1 in `GlobalAssemblyInfo.fs:4-6` (`3.3.1.0`, `3.3.1.0`, `3.3.1`) and `Z1R_Avalonia/CustomComboBoxes.cs:1879` (`3.3.1`). Both files must agree: a missed label offers the update forever, a missed assembly file misnames the Mac and Linux zips. About 5 minutes.
-- [ ] 147: push the version bump before tagging `v3.3.1` (code through 4bccce6 is pushed). About 2 minutes.
-- [ ] 148: write 3.3.1 release notes. Cover: item boxes take maps, compasses and triforces under Anywhere; the pinned bottom row; the popout's Overworld row is gone; the red X clear cell; the tour hover fix and Shift+drag text. `doc/release-notes-3.3.md:1`, `:3` still say draft and not published. About 20 minutes.
-- [ ] 149: attach the Windows zip before publishing, since the workflow builds only Mac and Linux. The name needs `CrossPlatform`, for example `ZoraTracker-CrossPlatform-v3.3.1-win-x64.zip`. About 10 minutes.
+- [ ] 147: version is bumped to 3.3.1 in the working tree (not committed). Commit and push before tagging `v3.3.1`. About 2 minutes.
+- [ ] 148: 3.3.1 notes drafted in `doc/release-notes-3.3.1.md`, waiting for review. About 5 minutes.
+- [ ] 149: Windows zip built (`dist/ZoraTracker-CrossPlatform-v3.3.1-win-x64.zip`, exe reads 3.3.1.0, not launched). Attach it when creating the release; the workflow builds only Mac and Linux. About 5 minutes.
 
 ## Applied, needs a live check
 
-- GitHub issue 44 (Intra heart not inferred after a triforce goes in the basement): a 3-slot level now counts placed items even if uncollected (`WPFUI.cs`, `othersFilled`; owner's call). Desktop build 0 errors, self-test passed for all four quests on 2026-11-28. Not reproduced in the app, web not redeployed with it, uncommitted, issue still open.
+- GitHub issue 44 (Intra heart not inferred after a triforce goes in the basement): a 3-slot level now counts placed items even if uncollected (`WPFUI.cs`, `othersFilled`; owner's call). Desktop build 0 errors, self-test passed for all four quests on 2026-11-28. Not reproduced in the app. Committed in dcf8803, issue closed.
 
-Fixed findings are removed from the lists above. The Release desktop build has 0 errors. Fixed 2026-11-28, self-test passed for all four quests, web rebuilt and live at zoratracker.gg (uncommitted):
+Fixed findings are removed from the lists above. The Release desktop build has 0 errors. Fixed 2026-11-28, self-test passed for all four quests, web rebuilt and live at zoratracker.gg (committed in dcf8803):
+- 151: the issue 46 go-time branch now also requires no missing triforce from a located dungeon (`TrackerModel.fs:2078`). Build only, not run in the app, web not redeployed with it.
 - 150: the "except the pinned bottom row" tip shows only on the item box menu (`CustomComboBoxes.cs`, `layoutKey == "ItemBoxAnywhere"`).
 - 143: the self-test checks every tour label, not only stops with none found (`OptionsMenu.tourMissingLabels`). Renaming "Popout Windows" now fails.
 - 144: the self-test covers the level picker (9 levels, 8 for a triforce), dismiss, a second box refused, the pinned bottom row under a saved layout, and the triforce hotkey.

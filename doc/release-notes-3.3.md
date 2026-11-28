@@ -1,6 +1,6 @@
-# ZORATracker 3.3 release notes (draft)
+# ZORATracker 3.3 release notes
 
-Compared against the published 3.2 release. Not published.
+Compared against the 3.2 release. Published 2026-11-27.
 
 ## Discord copy
 

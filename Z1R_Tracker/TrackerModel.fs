@@ -2075,7 +2075,7 @@ type TriforceAndGoSummary() =
         elif missingDungeonCount=0 || unreachableCount=0 then
             if haveBow && knowSilvers && haveLadder && haveRecorder then
                 103
-            elif haveBow && haveSilvers && missingDungeonCount=0 then
+            elif haveBow && haveSilvers && missingDungeonCount=0 && missingTriforceFromLocatedDungeonCount=0 then
                 103   // (all triforces in hand, with the bow and silver arrows: go time, the ladder and recorder do not change that)
             elif haveBow && knowSilvers && haveLadder then
                 102
